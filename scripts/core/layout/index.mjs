@@ -83,7 +83,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         addProp(f, streamFor(f.id));
         break;
       case "label":
-        labels.push({ id: f.id, text: f.text, at: f.at, show: f.show });
+        labels.push({ id: f.id, text: f.text, at: f.at, show: f.show, size: f.size });
         break;
       case "area":
         if (f.class === "yard") {

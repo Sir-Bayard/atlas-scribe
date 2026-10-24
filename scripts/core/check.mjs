@@ -3,7 +3,7 @@
  * can't use is reported. Each problem is { level: "error" | "warning", id, field, message }. Errors stop a
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
-import { PLAN_VERSION, TYPES, PROFILES, normalize } from "./plan.mjs";
+import { PLAN_VERSION, TYPES, PROFILES, SCENE, normalize } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap } from "./geom.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -66,6 +66,16 @@ export function checkPlan(raw) {
   for (const id of Object.keys(plan.seeds ?? {})) if (!seen.has(id)) warn(id, "seeds", `There's a seed for "${id}", but no feature with that id.`);
   for (const id of plan.locked ?? []) if (!seen.has(id)) warn(id, "locked", `"${id}" is locked, but there's no feature with that id.`);
 
+  // The scene it's published to
+  const scene = raw.output?.scene;
+  if (scene !== undefined && (typeof scene !== "object" || scene === null || Array.isArray(scene))) err(null, "output.scene", "output.scene should be an object.");
+  else if (scene) {
+    for (const [name, spec] of Object.entries(SCENE)) checkField(null, `output.scene.${name}`, "output.scene", name, spec, scene[name], { err, warn }, "the default will be used");
+    for (const k of Object.keys(scene)) if (!(k in SCENE)) warn(null, `output.scene.${k}`, `output.scene has a field "${k}" that AtlasScribe doesn't use.`);
+    if (typeof scene.labelColor === "string" && !/^#[0-9a-f]{6}$/i.test(scene.labelColor))
+      warn(null, "output.scene.labelColor", `output.scene.labelColor "${scene.labelColor}" should be a colour like #13202e; the default will be used.`);
+  }
+
   return out.sort((a, b) => (a.level === b.level ? 0 : a.level === "error" ? -1 : 1));
 }
 
@@ -98,18 +108,7 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   }
 
   // Fields: numbers in range, values from their lists, nothing unknown
-  for (const [name, spec] of Object.entries(t.fields)) {
-    const v = f[name];
-    if (v === null || v === undefined) continue;
-    if (spec.kind === "number") {
-      if (!isNum(v)) err(f.id, name, `"${where}": ${name} should be a number${spec.unit ? ` (${spec.unit})` : ""}.`);
-      else if ((spec.min !== undefined && v < spec.min) || (spec.max !== undefined && v > spec.max))
-        err(f.id, name, `"${where}": ${name} is ${v}; it should be ${spec.max !== undefined ? `${spec.min} to ${spec.max}` : `at least ${spec.min}`}.`);
-    } else if (spec.kind === "boolean" && typeof v !== "boolean") err(f.id, name, `"${where}": ${name} should be true or false.`);
-    else if (spec.kind === "string" && typeof v !== "string") err(f.id, name, `"${where}": ${name} should be text.`);
-    else if (spec.kind === "enum" && !spec.values.includes(v))
-      warn(f.id, name, `"${where}": ${name} "${v}" isn't one AtlasScribe knows (${spec.values.join(", ")}); a plain fill will stand in.`);
-  }
+  for (const [name, spec] of Object.entries(t.fields)) checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
   if (f.type === "label" && !String(f.text ?? "").trim()) warn(f.id, "text", `Label "${where}" has no text.`);
   const known = new Set(["id", "type", "class", "at", "path", "shape", "buildings", "note", ...Object.keys(t.fields)]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(f.id, k, `"${where}" has a field "${k}" that AtlasScribe doesn't use.`);
@@ -121,6 +120,19 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
     const mx = w * 0.1, my = h * 0.1;
     if (x1 < -mx || y1 < -my || x0 > w + mx || y0 > h + my) warn(f.id, "position", `"${where}" is entirely off the map.`);
   }
+}
+
+/** One field against its spec: numbers in range, the right kind, values from their list. */
+function checkField(id, field, where, name, spec, v, { err, warn }, fallback = "a plain fill will stand in") {
+  if (v === null || v === undefined) return;
+  if (spec.kind === "number") {
+    if (!isNum(v)) err(id, field, `${where}: ${name} should be a number${spec.unit ? ` (${spec.unit})` : ""}.`);
+    else if ((spec.min !== undefined && v < spec.min) || (spec.max !== undefined && v > spec.max))
+      err(id, field, `${where}: ${name} is ${v}; it should be ${spec.max !== undefined ? `${spec.min} to ${spec.max}` : `at least ${spec.min}`}.`);
+  } else if (spec.kind === "boolean" && typeof v !== "boolean") err(id, field, `${where}: ${name} should be true or false.`);
+  else if (spec.kind === "string" && typeof v !== "string") err(id, field, `${where}: ${name} should be text.`);
+  else if (spec.kind === "enum" && !spec.values.includes(v))
+    warn(id, field, `${where}: ${name} "${v}" isn't one AtlasScribe knows (${spec.values.join(", ")}); ${fallback}.`);
 }
 
 function isPath(p) {

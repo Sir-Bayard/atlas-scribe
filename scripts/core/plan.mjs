@@ -99,8 +99,29 @@ export const TYPES = {
   },
   label: {
     geometry: "point",
-    fields: { text: str(""), show: oneOf(["gm", "all"], "gm") },
+    fields: { text: str(""), show: oneOf(["gm", "all"], "gm"), size: oneOf(["small", "normal", "large", "huge"], "normal") },
   },
+};
+
+/** A label's text height in squares, by its size word. */
+export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };
+
+/**
+ * The scene a plan is published to (output.scene). name falls back to the plan's name. weather is one of the
+ * weather effects Foundry offers (snow, rain, fog and so on); an unknown one is skipped with a warning.
+ */
+export const SCENE = {
+  name: str(null),
+  padding: num(0.05, { min: 0, max: 0.5 }),
+  darkness: num(0, { min: 0, max: 1 }),
+  globalLight: bool(true),
+  tokenVision: bool(false),
+  fog: bool(false),
+  weather: str(null),
+  navigation: bool(false),
+  gridAlpha: num(0.1, { min: 0, max: 1 }),
+  labelColor: str("#13202e"),
+  labelFont: str("Signika"),
 };
 
 /** District profiles this version knows. */
@@ -165,6 +186,8 @@ export function normalize(plan) {
   p.output.format ??= "webp";
   p.output.quality ??= 0.86;
   p.output.scene ??= {};
+  for (const [k, spec] of Object.entries(SCENE)) p.output.scene[k] ??= spec.default;
+  p.output.scene.name ??= p.name ?? p.id ?? "Map";
   return p;
 }
 
