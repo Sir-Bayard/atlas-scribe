@@ -72,7 +72,7 @@ export const TYPES = {
     geometry: "shape",
     fields: {
       profile: str("village"),
-      gardens: bool(true),
+      gardens: num(0.1, { min: 0, max: 1 }), // the share of houses with a tended garden (true and false still read)
       density: num(1, { min: 0, max: 2 }),
       surface: oneOf(SURFACES, null), // its streets' surface; else the surface of a road through it
       bend: num(null, { unit: "deg", min: 0, max: 90 }),
@@ -218,6 +218,7 @@ function normalizeFeature(f) {
   const out = { ...f };
   if (t.classes && !t.classes.includes(out.class)) out.class = t.classes[0]; // unknown classes are drawn as the default (the checker says so)
   for (const [name, spec] of Object.entries(t.fields)) if (out[name] === undefined) out[name] = fieldDefault(spec, out.class);
+  if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? 0.1 : 0; // M1 plans said true or false
   if (f.type === "landmark") out.buildings = (Array.isArray(f.buildings) ? f.buildings : []).map((b) => normalizeFeature({ ...(isObj(b) ? b : {}), type: "building" }));
   return out;
 }

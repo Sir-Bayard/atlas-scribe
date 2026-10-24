@@ -116,23 +116,23 @@ export function paint(ctx) {
   for (const y of yards.filter((y) => y.fence)) {
     g.save(); g.strokeStyle = "rgba(88,66,46,0.9)"; g.lineWidth = Math.max(1.5, pp * 0.05); g.setLineDash([pp * 0.14, pp * 0.06]); poly(g, y.poly); g.stroke(); g.setLineDash([]); g.restore();
   }
+  // Gardens are quiet: the ground shows through, rows barely show (winter) or softly (other seasons), and the fence
+  // is a thin line, never a bright box
+  const winter = s === "winter";
   for (const gd of items("surface", "garden")) {
     const { cx, cy, w: gw, d: gdp, rot } = gd.garden;
-    // The textured bed is filled in map space (patterns stay anchored to the map, so tiles join); rows and the
-    // fence are plain colours, drawn turned
-    const ca = Math.cos((rot * Math.PI) / 180), sa = Math.sin((rot * Math.PI) / 180);
-    const corner = (u, v) => [cx + (u * gw) / 2 * ca - (v * gdp) / 2 * sa, cy + (u * gw) / 2 * sa + (v * gdp) / 2 * ca];
-    g.fillStyle = tex(`ground.${gb}.light`, 3); poly(g, [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]); g.fill();
     g.save(); g.translate(X(cx), Y(cy)); g.rotate((rot * Math.PI) / 180);
     const w = gw * pp, d = gdp * pp;
-    g.fillStyle = "rgba(120,135,155,0.08)"; g.fillRect(-w / 2, -d / 2, w, d);
-    const rows = Math.max(3, Math.round(gdp / 0.22));
+    g.fillStyle = winter ? "rgba(110,120,135,0.07)" : "rgba(105,85,55,0.16)";
+    g.fillRect(-w / 2, -d / 2, w, d);
+    const rows = Math.max(3, Math.round(gdp / 0.25));
     for (let i = 1; i < rows; i++) {
       const yy = -d / 2 + (d * i) / rows;
-      g.fillStyle = "rgba(70,85,105,0.2)"; g.fillRect(-w / 2 + pp * 0.08, yy - pp * 0.03, w - pp * 0.16, pp * 0.05);
-      g.fillStyle = "rgba(255,255,255,0.5)"; g.fillRect(-w / 2 + pp * 0.08, yy + pp * 0.02, w - pp * 0.16, pp * 0.04);
+      g.fillStyle = winter ? "rgba(80,92,110,0.08)" : "rgba(70,95,45,0.22)";
+      g.fillRect(-w / 2 + pp * 0.1, yy - pp * 0.025, w - pp * 0.2, pp * 0.045);
     }
-    g.strokeStyle = "rgba(92,70,50,0.8)"; g.lineWidth = Math.max(1, pp * 0.03); g.setLineDash([pp * 0.1, pp * 0.05]); g.strokeRect(-w / 2, -d / 2, w, d); g.setLineDash([]);
+    g.strokeStyle = "rgba(92,72,52,0.45)"; g.lineWidth = Math.max(1, pp * 0.022);
+    g.strokeRect(-w / 2, -d / 2, w, d);
     g.restore();
   }
 

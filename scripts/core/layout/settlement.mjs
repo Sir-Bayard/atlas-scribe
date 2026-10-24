@@ -15,7 +15,7 @@ const inside = (pts, poly) => pts.every((p) => pointInPolygon(p, poly));
 
 /**
  * The "roadside" profile: houses along both sides of every road and lane through the district, ridges along the
- * street, turned and sized a little differently each, with a walled kitchen garden behind. Each house and its
+ * street, turned and sized a little differently each, a few with a tended garden behind. Each house and its
  * garden lie wholly inside the district.
  *
  * The district's stream is drawn from the same number of times whatever fits, and each house's own choices (roof
@@ -53,13 +53,15 @@ export function fillRoadside({ district, poly, ways, r, free, freeGarden = () =>
           if (!inside(shapeToPolygon(rect, rot), poly) || !free(cx, cy, rad, dep / 2)) continue;
           n++;
           const house = addBuilding({ id: `${district.id}/h${n}`, r: r.fork("house", way.id, i, step, side), building: { shape: rect, rot, roof, height: 20 } });
-          // The garden behind: full depth if it fits, else shallower, else none. It mustn't overlap another garden, a
-          // building, a yard, a square, water or a road.
-          if (district.gardens !== false) {
+          // A tended garden behind (fenced, planted) for only a share of houses (district.gardens, about one in ten),
+          // its size varied; the rest of the plot stays open yard. Its own stream, so it never shifts the district's.
+          const gr = r.fork("garden", way.id, i, step, side);
+          if (gr.next() < (district.gardens ?? 0.1)) {
             const own = house?.footprint ?? null;
-            for (const gd of [1.6, 1.0]) {
+            const depth = 0.8 + gr.next() * 0.6, wide = 0.7 + gr.next() * 0.25;
+            for (const gd of [depth, depth * 0.65]) {
               const g = dep / 2 + 0.1 + gd / 2;
-              const garden = { cx: cx + nx * g, cy: cy + ny * g, w: jl * 0.95, d: gd, rot };
+              const garden = { cx: cx + nx * g, cy: cy + ny * g, w: jl * wide, d: gd, rot };
               const gp = shapeToPolygon({ rect: [garden.cx - garden.w / 2, garden.cy - garden.d / 2, garden.cx + garden.w / 2, garden.cy + garden.d / 2] }, rot);
               if (inside(gp, poly) && freeGarden(gp, own, true)) {
                 items.push({ kind: "surface", id: `${district.id}/g${n}`, from: district.id, class: "garden", garden });

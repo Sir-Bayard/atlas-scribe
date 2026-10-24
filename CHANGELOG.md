@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Streets: districts now make their own streets and lanes, steered by a tensor field built from the plan's roads, rivers and squares, so they run along and across the roads and bend gently. A square with `radial: true` gets streets that ring it. District types (the district's `profile`): `hamlet` (no new streets), `village`, `town` and `core`, each with its own spacing, bend and lanes; `bend`, `spacing` and `axis` override them. Where two districts meet, their streets meet at fixed points on the shared edge, so rerolling one never moves the other. Streets cross water where it makes sense and place their own bridges and footbridges.
+- Gardens: only a share of houses get a tended garden (the district's `gardens`, a share from 0 to 1, about one in ten by default; `true` and `false` from older plans still read), in varied sizes, and they're drawn quietly: a thin fence and faint rows in winter, soft planted rows in other seasons.
 
 ## 0.2.0
 
