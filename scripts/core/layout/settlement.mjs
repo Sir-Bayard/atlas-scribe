@@ -40,17 +40,21 @@ export function fillRoadside({ district, poly, ways, r, free, freeGarden = () =>
           const rad = Math.max(jl, dep) * 0.5;
           if (!pointInPolygon([cx, cy], poly) || !free(cx, cy, rad, dep / 2)) continue;
           n++;
-          // the garden behind, checked before the house is placed (a garden that would spill into a yard, a square,
-          // water or a road is left off; the house stays)
-          let garden = null;
+          const house = addBuilding({ id: `${district.id}/h${n}`, building: { shape: { rect: [cx - jl / 2, cy - dep / 2, cx + jl / 2, cy + dep / 2] }, rot, roof, height: 20 } });
+          // The garden behind: full depth if it fits, else shallower, else none. It mustn't overlap another garden, a
+          // building, a yard, a square, water or a road.
           if (district.gardens !== false) {
-            const g = dep / 2 + 0.9;
-            garden = { cx: cx + nx * g, cy: cy + ny * g, w: jl * 0.95, d: 1.6, rot };
-            const gp = shapeToPolygon({ rect: [garden.cx - garden.w / 2, garden.cy - garden.d / 2, garden.cx + garden.w / 2, garden.cy + garden.d / 2] }, rot);
-            if (!freeGarden(gp)) garden = null;
+            const own = house?.footprint ?? null;
+            for (const gd of [1.6, 1.0]) {
+              const g = dep / 2 + 0.1 + gd / 2;
+              const garden = { cx: cx + nx * g, cy: cy + ny * g, w: jl * 0.95, d: gd, rot };
+              const gp = shapeToPolygon({ rect: [garden.cx - garden.w / 2, garden.cy - garden.d / 2, garden.cx + garden.w / 2, garden.cy + garden.d / 2] }, rot);
+              if (freeGarden(gp, own, true)) {
+                items.push({ kind: "surface", id: `${district.id}/g${n}`, from: district.id, class: "garden", garden });
+                break;
+              }
+            }
           }
-          addBuilding({ id: `${district.id}/h${n}`, building: { shape: { rect: [cx - jl / 2, cy - dep / 2, cx + jl / 2, cy + dep / 2] }, rot, roof, height: 20 } });
-          if (garden) items.push({ kind: "surface", id: `${district.id}/g${n}`, from: district.id, class: "garden", garden });
         }
         s += len + 0.25 + r.next() * 0.5;
       }

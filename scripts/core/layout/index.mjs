@@ -32,6 +32,8 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   const space = {
     reserved: [], // polygons
     zones: [], // squares and yards: open ground that gardens mustn't spill into either
+    plots: [], // gardens laid so far, and every building's footprint, for gardens to keep out of
+    gardens: [], // gardens laid so far, for houses to keep out of
     buildings: [], // {cx, cy, len, dep}
     ways: [], // {path, clear}: distance a new thing's edge keeps from the way's centre line
     water: [],
@@ -116,7 +118,10 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     };
     items.push(item);
     space.buildings.push(item);
-    space.reserved.push(grow(shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot), 0.4));
+    const foot = shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot);
+    space.reserved.push(grow(foot, 0.4));
+    space.plots.push(foot);
+    Object.defineProperty(item, "footprint", { value: foot, enumerable: false }); // for its own garden; not part of the layout data
     return item;
   }
 
@@ -134,18 +139,28 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   function free(x, y, rad, half = rad) {
     if (x < -1 || y < -1 || x > W + 1 || y > H + 1) return false;
     for (const poly of space.reserved) if (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9) return false;
+    for (const poly of space.gardens) if (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9) return false;
     for (const w of space.water) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
     for (const w of space.ways) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
     for (const b of space.buildings) if (Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false;
     return true;
   }
 
-  /** True when a garden (a polygon) stays out of squares, yards, water and roads. */
-  function freeGarden(poly) {
+  /**
+   * True when a garden (a polygon) stays out of squares, yards, water and roads, other gardens and every building
+   * except its own house (own: that house's footprint, which the garden only touches). A garden that fits is
+   * remembered with record.
+   */
+  function freeGarden(poly, own = null, record = false) {
     for (const z of space.zones) if (polygonsOverlap(poly, z)) return false;
+    for (const p of space.plots) if (p !== own && polygonsOverlap(shrink(poly, 0.04), p)) return false;
     for (const w of [...space.water, ...space.ways]) {
       if (pathTouchesPolygon(w.path, poly)) return false;
       if (poly.some((p) => distanceToPath(p, w.path) < w.clear)) return false;
+    }
+    if (record) {
+      space.plots.push(poly);
+      space.gardens.push(poly);
     }
     return true;
   }
@@ -206,3 +221,10 @@ function grow(poly, by) {
 }
 
 const closed = (poly) => [...poly, poly[0]];
+
+/** A polygon pulled in toward its centre by a fraction, so shapes that only touch don't count as overlapping. */
+function shrink(poly, by) {
+  const [x0, y0, x1, y1] = bbox(poly);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  return poly.map(([x, y]) => [x + (cx - x) * by, y + (cy - y) * by]);
+}
