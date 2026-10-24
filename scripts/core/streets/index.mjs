@@ -8,13 +8,16 @@ export { districtGates } from "./borders.mjs";
 
 /**
  * District types. Spacings and widths in feet. streets: the main streets (spacing range: each district picks a
- * value in it from its seed); lanes: the closer pass between them; bridge: what each pass builds where it crosses
- * water (none: it stops at the bank); bend: the wobble in degrees; trim: drop short dead ends.
+ * value in it from its seed); lanes: the closer pass between them (only: keep them to the field's minor direction,
+ * across the main streets); back: back lanes a plot's depth behind the main streets (depth: a range, picked per
+ * district from its seed; the burgage pattern: long plots from the street back to the lane, Patrick 24 Oct);
+ * bridge: what each pass builds where it crosses water (none: it stops at the bank); bend: the wobble in degrees;
+ * trim: drop short dead ends.
  */
 export const DISTRICT_TYPES = {
   hamlet: { streets: null, lanes: null, bend: 0, trim: false },
   village: { streets: { spacing: [220, 320], width: 15, bridge: "footbridge" }, lanes: null, bend: 40, trim: false },
-  town: { streets: { spacing: [175, 250], width: 20, bridge: "bridge" }, lanes: { spacing: 100, width: 10, bridge: "footbridge" }, bend: 18, trim: true },
+  town: { streets: { spacing: [350, 450], width: 20, bridge: "bridge" }, back: { depth: [150, 200], width: 10 }, lanes: { spacing: 250, width: 10, bridge: "footbridge", only: "minor" }, bend: 18, trim: true },
   core: { streets: { spacing: [125, 175], width: 15, bridge: "bridge" }, lanes: { spacing: 60, width: 8, bridge: null }, bend: 8, trim: true },
 };
 
@@ -78,8 +81,11 @@ export function streetsFor({ district, poly, roads, water = [], radials = [], bl
     wobble: spacing * 1.3,
   });
   const passes = [{ kind: "street", spacing, minLength: spacing * 0.6, bridge: type.streets.bridge ?? null }];
-  if (type.lanes) passes.push({ kind: "lane", spacing: Math.min(sq(type.lanes.spacing), spacing * 0.6), minLength: sq(type.lanes.spacing) * 0.5, bridge: type.lanes.bridge ?? null });
+  // The back lanes' depth: from the street's centre to the lane's, so a plot of the type's depth fits between
+  const backDepth = type.back ? sq(type.back.depth[0] + r.next() * (type.back.depth[1] - type.back.depth[0]) + type.streets.width / 2 + type.back.width / 2) : null;
+  if (type.back) passes.push({ kind: "back", depth: backDepth });
+  if (type.lanes) passes.push({ kind: "lane", spacing: Math.min(sq(type.lanes.spacing), spacing * 0.6), minLength: sq(type.lanes.spacing) * 0.5, bridge: type.lanes.bridge ?? null, only: type.lanes.only ?? null });
   const traced = traceStreets({ poly, field, roads, water, blocked, gates, borders, passes, r, trimDeadEnds: type.trim });
-  const width = { street: sq(type.streets.width), lane: sq(type.lanes?.width ?? type.streets.width) };
-  return { streets: traced.streets.map((s) => ({ ...s, width: width[s.kind] })), bridges: traced.bridges, field };
+  const width = { street: sq(type.streets.width), lane: sq(type.lanes?.width ?? type.streets.width), back: sq(type.back?.width ?? 10) };
+  return { streets: traced.streets.map((s) => ({ ...s, width: width[s.kind] })), bridges: traced.bridges, field, backDepth };
 }

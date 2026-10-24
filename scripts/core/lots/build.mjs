@@ -64,8 +64,11 @@ const fitsIn = (pts, poly) => {
 export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r }) {
   // In the plot, and clear of anything the plot was cut round (a named building inside a block is a hole in it)
   // and clear of every street: the plot already stops at the street, but fitsIn's small tolerance could let a
-  // corner over the line
-  const clearOfWays = (pts) => pts.every((p) => ways.every((w) => distToPath(p, w.path) >= w.width / 2 - 0.005));
+  // corner over the line. Points along each side are tested too, since a street may bend at a house
+  const clearOfWays = (pts) => pts.every((p, i) => {
+    const q = pts[(i + 1) % pts.length];
+    return [0, 0.25, 0.5, 0.75].every((t) => { const x = p[0] + (q[0] - p[0]) * t, y = p[1] + (q[1] - p[1]) * t; return ways.every((w) => distToPath([x, y], w.path) >= w.width / 2 - 0.005); });
+  });
   const fits = (pts, poly) => fitsIn(pts, poly) && clearOfWays(pts) && !blocked.some((b) => polygonsOverlap(pts, b));
   const T = lotTypeOf(district);
   const sq = (ft) => ft / ftPerSquare;
@@ -114,6 +117,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     const X = T.extras ?? {};
     const wantBay = lr.next() < (X.bay ?? 0), wantDormers = lr.next() < (X.dormers ?? 0), wantTurret = lr.next() < (X.turret ?? 0);
     const wantSteps = lr.next() < (X.steps ?? 0), oRound = lr.next() < (X.roundShed ?? 0);
+    const wantRear = lr.next() < (X.rear ?? 0); // a stable, workshop or warehouse at the far end, by the back lane
     const dr = lr.fork("details"); // sizes for the details, so their count never moves the plot's other dice
     const [ux, uy] = lot.along, [nx, ny] = lot.inward;
     const [mx, my] = lot.front.mid;
@@ -308,6 +312,14 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         out.outbuildings.push({ id: `l${lot.block}-${i}o`, lot: i, r: lr.fork("out"), building: { shape, rot: ang, roof: roof === "thatch" ? "thatch" : "wood-shingle", roofStyle: round ? "cone" : square ? "pyramid" : "gable", height: round ? 20 : 15, chimney: false } });
         behind = back + od + 0.1;
       }
+    }
+    // On a long plot, a range at the far end: the stable, workshop or warehouse that the back lane served
+    if (house && wantRear && lot.depth - behind > sq(45)) {
+      const rw = Math.min(lot.frontage * 0.85, sq(16 + dr.next() * 12)), rd = sq(14 + dr.next() * 8);
+      const back = lot.depth - rd / 2 - sq(2);
+      const cx = mx + nx * back, cy = my + ny * back;
+      if (fits(corners(cx, cy, rw, rd, [ux, uy]), lot.poly))
+        out.outbuildings.push({ id: `l${lot.block}-${i}r`, lot: i, r: lr.fork("rear"), building: { shape: { rect: [cx - rw / 2, cy - rd / 2, cx + rw / 2, cy + rd / 2] }, rot: ang, roof, variant, roofStyle: "gable", height: 18, chimney: false } });
     }
     // The yard behind the house ends here; a croft, if any, starts exactly here, so they share one fence
     const reachBack = Math.max(houseBack, behind) + yard;

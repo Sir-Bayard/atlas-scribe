@@ -59,13 +59,15 @@ function crossAt(px, py, qx, qy, s) {
  * shared with another district (nx, ny: the way into this district) where a street of that kind must start, so
  * the two districts' streets meet. borders: the edges shared with other districts, as paths: a street that reaches
  * one away from a gate bends onto a gate nearby or is cut back to its last junction. passes: [{ kind, spacing, minLength, bridge }] in order (spacing in squares;
- * bridge: "bridge" or "footbridge" lets that pass cross water). r: the district's random stream. trimDeadEnds:
+ * bridge: "bridge" or "footbridge" lets that pass cross water; only: "major" or "minor" keeps that pass to one of
+ * the field's two directions). A pass { kind: "back", depth } traces nothing: it lays back lanes, depth behind the
+ * streets and roads so far that run with the field's major direction (see backLanes). r: the district's random stream. trimDeadEnds:
  * drop short spurs that end nowhere.
  * Returns { streets: [{ path, kind, ends: [start, end] }], bridges: [{ at, angle, length, kind }] }; ends are
  * "road", "junction", "edge", "gate", "blocked", "water" or "open"; bridge angle in degrees, length in squares.
  */
 export function traceStreets({ poly, field, roads = [], water = [], blocked = [], gates = [], borders = [], passes = [], r, step = 0.35, maxLength = 300, trimDeadEnds = false }) {
-  const finest = Math.min(...passes.map((p) => p.spacing), 8);
+  const finest = Math.min(...passes.filter((p) => p.spacing).map((p) => p.spacing), 8);
   const grid = new SegmentGrid(Math.max(1, finest / 2));
   const lines = [];
   let nextId = 0;
@@ -203,7 +205,113 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
     return { pts, end, bridges: mine, met };
   };
 
+  /**
+   * Back lanes (the burgage pattern): a lane `depth` behind each street or road that runs with the field's major
+   * direction, on both sides, where there's room for a full plot between them. It runs only where that street
+   * does (and keeps its distance from any other street running the same way), is shared when two streets' back
+   * lanes would fall together, and is carried on at each end to the street it meets. The lane pass after it seeds
+   * its cross lanes from them.
+   */
+  const backLanes = (pass) => {
+    const nearBorder = ([x, y], d) => borders.some((b) => b.some((q, i) => i && distToSeg(x, y, { ax: b[i - 1][0], ay: b[i - 1][1], bx: q[0], by: q[1] }) < d));
+    const D = pass.depth, ds = 0.25;
+    const fronts = lines.filter((l) => !l.edge && (l.kind === "road" || l.kind === "street"));
+    const made = [];
+    const nearParallel = (x, y, tx, ty, skip, dist) => {
+      for (const sg of grid.near(x, y, dist)) {
+        if (sg.line === skip || sg.line.edge) continue; // only streets and roads count, not the edge or buildings
+        if (Math.abs(sg.ux * tx + sg.uy * ty) < 0.8) continue; // a cross street: the lane may meet it
+        if (distToSeg(x, y, sg) < dist) return true;
+      }
+      return false;
+    };
+    for (const f of fronts) {
+      for (const side of [-1, 1]) {
+        const runs = [];
+        let cur = null;
+        const p = f.path;
+        for (let i = 0; i < p.length - 1; i++) {
+          const [ax, ay] = p[i], [bx, by] = p[i + 1];
+          const l = Math.hypot(bx - ax, by - ay);
+          if (!l) continue;
+          const tx = (bx - ax) / l, ty = (by - ay) / l;
+          const nx = -ty * side, ny = tx * side;
+          for (let t = 0; t < l; t += ds) {
+            const x = ax + tx * t, y = ay + ty * t, qx = x + nx * D, qy = y + ny * D;
+            const ma = field.major(x, y);
+            const ok =
+              Math.abs(Math.cos(ma) * tx + Math.sin(ma) * ty) > 0.82 && // this stretch of street runs with the major direction
+              inside(qx, qy) && !blocked.some((b) => pointInPolygon([qx, qy], b)) &&
+              !nearParallel(qx, qy, tx, ty, f, D * 0.85) && // no other street running the same way within a plot's depth
+              !made.some((m) => m.pts.some(([mx, my]) => Math.hypot(mx - qx, my - qy) < D * 0.5)); // another street's back lane is here: share it
+            if (ok) { if (!cur) { cur = []; runs.push(cur); } cur.push([qx, qy]); }
+            else cur = null;
+          }
+        }
+        for (const pts of runs) {
+          if (pts.length * ds < Math.max(2, D)) continue;
+          made.push({ pts, from: f });
+        }
+      }
+    }
+    for (const m of made) {
+      let path = smooth(simplify(m.pts, 0.12), 2);
+      const ends = ["open", "open"], met = [];
+      // Each end carried on to the street, road or edge it runs towards, if one is near
+      for (const endIx of [0, 1]) {
+        const n = path.length;
+        const [ex, ey] = endIx ? path[n - 1] : path[0];
+        const [qx, qy] = endIx ? path[n - 2] : path[1];
+        const d = Math.hypot(ex - qx, ey - qy) || 1;
+        const ux = (ex - qx) / d, uy = (ey - qy) / d;
+        const reach = D * 1.2, fx = ex + ux * reach, fy = ey + uy * reach;
+        let best = null;
+        for (const sg of grid.near(ex, ey, reach + 1)) {
+          if (sg.line.edge === "blocked") continue;
+          const t = crossAt(ex, ey, fx, fy, sg);
+          if (t !== null && (!best || t < best.t)) best = { t, sg };
+        }
+        const pt = best && [ex + (fx - ex) * best.t, ey + (fy - ey) * best.t];
+        // Towards a neighbouring district with no street to meet: it turns back to its own street instead, a short
+        // cross lane closing the loop (back lanes joined their high street at the ends of the town)
+        if (!best || best.sg.line.edge === "edge" && nearBorder(pt, 0.3) || !inside(ex + (fx - ex) * best.t * 0.5, ey + (fy - ey) * best.t * 0.5)) {
+          const back = Math.min(pathLen(path) * 0.3, 1);
+          path = endIx ? cutPath(path, 0, pathLen(path) - back) : cutPath(path, back, pathLen(path));
+          const e = endIx ? path[path.length - 1] : path[0];
+          const q = nearestOnPath(m.from.path, e);
+          const link = [e, [(e[0] + q[0]) / 2, (e[1] + q[1]) / 2], q];
+          if (endIx) path.push(...link.slice(1)); else path.unshift(...link.slice(1).reverse());
+          ends[endIx] = m.from.fixed ? "road" : "junction";
+          met.push({ line: m.from, pt: q });
+          continue;
+        }
+        if (endIx) path.push(pt); else path.unshift(pt);
+        ends[endIx] = best.sg.line.edge ?? (best.sg.line.fixed ? "road" : "junction");
+        if (!best.sg.line.edge) met.push({ line: best.sg.line, pt });
+      }
+      const line = addLine(path, "back");
+      line.ends = ends;
+      for (const { line: other, pt } of met) { joinAt(other, pt); line.joins.push(posOn(line.path, pt)); }
+      // Streets it crosses on the way are junctions too
+      for (let i = 1; i < line.path.length; i++) {
+        const [ax, ay] = line.path[i - 1], [bx, by] = line.path[i];
+        for (const sg of grid.near((ax + bx) / 2, (ay + by) / 2, Math.hypot(bx - ax, by - ay))) {
+          if (sg.line === line || sg.line.edge) continue;
+          const t = crossAt(ax, ay, bx, by, sg);
+          if (t === null) continue;
+          const pt = [ax + (bx - ax) * t, ay + (by - ay) * t];
+          joinAt(sg.line, pt);
+          line.joins.push(posOn(line.path, pt));
+        }
+      }
+    }
+  };
+
   for (const pass of passes) {
+    if (pass.kind === "back") {
+      backLanes(pass);
+      continue;
+    }
     const spacing = pass.spacing;
     const minLength = pass.minLength ?? spacing * 0.5;
     // Seeds: points along every line so far, each asking for a street square to that line
@@ -251,6 +359,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
       const ma = field.major(x, y);
       const mx = Math.cos(ma), my = Math.sin(ma);
       const which = Math.abs(mx * ux + my * uy) < 0.7071 ? "major" : "minor";
+      if (pass.only && which !== pass.only) continue;
       const a = which === "major" ? ma : ma + Math.PI / 2;
       const sx = Math.cos(a), sy = Math.sin(a);
       if (crowded(x, y, sx, sy, spacing * (0.85 + 0.15 * jitter), line)) continue;
@@ -341,12 +450,25 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
 
   let out = lines.filter((l) => !l.fixed && !l.dropped);
   if (trimDeadEnds) {
-    const minSpur = Math.min(...passes.map((p) => p.spacing));
+    const minSpur = Math.min(...passes.filter((p) => p.spacing).map((p) => p.spacing));
     out = out.filter((l) => l.gate || !(l.ends.includes("open") && pathLen(l.path) < minSpur));
   }
   // A bridge belongs to a street that was kept
   const kept = bridges.filter((b) => out.some((l) => l.path.some((p, i) => i && distToSeg(b.at[0], b.at[1], { ax: l.path[i - 1][0], ay: l.path[i - 1][1], bx: p[0], by: p[1] }) < 0.3)));
   return { streets: out.map((l) => ({ path: l.path, kind: l.kind, ends: l.ends })), bridges: kept };
+}
+
+/** The nearest point on a path to pt. */
+function nearestOnPath(path, [x, y]) {
+  let best = Infinity, out = path[0];
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i];
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+    const q = [ax + t * dx, ay + t * dy], d = Math.hypot(q[0] - x, q[1] - y);
+    if (d < best) { best = d; out = q; }
+  }
+  return out;
 }
 
 /** How far along a path the nearest point to pt is. */
