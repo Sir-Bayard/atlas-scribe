@@ -8,6 +8,7 @@ import { upload, freeName } from "./foundry/files.mjs";
 import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
+import { resolveArt } from "./foundry/art/index.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
@@ -45,6 +46,46 @@ const api = {
     if (!plan) return { plan: null, problems: [{ level: "error", id: null, field: null, message: error }], ok: false };
     const problems = checkPlan(plan);
     return { plan: normalize(plan), problems, ok: !problems.some((p) => p.level === "error") };
+  },
+
+  /**
+   * Renders a plan into an image, in the worker, and saves it to <output>/maps (never over an existing file).
+   * Steps: check the plan (errors stop it), lay it out, fetch the art its style needs (FA Nexus; roles with no art
+   * are painted in plain colours and listed in missingArt), paint, save.
+   * Returns { path, width, height, tiles, ms, layout, missingArt, notes, warnings }.
+   */
+  async render(input, { save = true } = {}) {
+    requireGM();
+    const checked = api.checkPlan(input);
+    if (!checked.ok) {
+      const errors = checked.problems.filter((p) => p.level === "error").map((p) => p.message);
+      throw new Error(`AtlasScribe: the plan has ${errors.length} error(s): ${errors.join(" ")}`);
+    }
+    const plan = checked.plan;
+    const title = `AtlasScribe: ${plan.name ?? plan.id ?? "map"}`;
+    const bar = progressBar(title);
+    const t0 = performance.now();
+    try {
+      const { layout, roles } = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
+      const { art, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
+      const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+      let path = null;
+      if (save) {
+        bar.update(0.97, "Uploading");
+        const dir = `${outputFolder()}/maps`;
+        path = await upload(dir, await freeName(dir, plan.id ?? "map", "webp"), img.blob);
+      }
+      const ms = Math.round(performance.now() - t0);
+      bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
+      return {
+        path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, missingArt: missing,
+        notes: [...layout.notes.map((n) => n.message), ...notes],
+        warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
+      };
+    } catch (e) {
+      bar.done(e.cancelled ? `${title}: cancelled` : `${title}: failed (${e.message})`);
+      throw e;
+    }
   },
 
   /**

@@ -7,8 +7,21 @@
  * Messages out: { id, progress: { pct, label } } while working, then { id, result } or { id, error }.
  */
 import { rng } from "../core/rng.mjs";
+import { layoutPlan } from "../core/layout/index.mjs";
+import { paintLayout, styleOf } from "./painter.mjs";
 
 const jobs = {
+  /** Plan to Layout. Returns { layout, roles }: roles are the art roles the layout's style needs. */
+  async layout({ plan }, progress) {
+    const layout = layoutPlan(plan, { onProgress: (p, l) => progress(p, l) });
+    return { layout, roles: styleOf(layout).rolesFor(layout) };
+  },
+
+  /** Layout to image. art: { role: [url, ...] }. Returns { blob, width, height, tiles, ms }. */
+  async paint({ layout, art, tileSize, quality }, progress) {
+    return paintLayout({ layout, art, tileSize, quality }, progress);
+  },
+
   /** A test pattern: proves the worker, image loading, soft masks, progress and WebP output. */
   async test({ width = 2048, height = 2048, texture = null, seed = 1 }, progress) {
     const t0 = performance.now();

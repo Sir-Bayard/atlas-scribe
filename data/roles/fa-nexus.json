@@ -1,0 +1,29 @@
+{
+  "about": "Art roles for the FA Nexus provider: each role lists Forgotten Adventures file names (found in the user's own FA Nexus catalog and downloaded through it). Several files for one role are variants. A role is looked up with its season first (roof.slate.winter), then without (roof.slate).",
+  "roles": {
+    "ground.snow": ["Snow_B1_01.jpg"],
+    "ground.snow.light": ["Snow_C1_01.jpg"],
+    "ground.snow.grassy": ["Grassy_Snow_C1_01.jpg"],
+    "ground.snow.rocky": ["Rocky_Snow_A1_01.jpg"],
+    "surface.trodden.winter": ["Snow_Disturbed_A1_01.jpg"],
+    "surface.slush": ["Slush_A1_01.jpg"],
+    "surface.cobble.winter": ["Cobblestone_A_Snowy.webp"],
+    "overlay.snow": ["Snow_Overlay_A1.webp"],
+    "water.ice": ["Ice_A1_01.jpg"],
+    "water.ice.cracked": ["Ice_Cracked_A1_01.jpg"],
+    "stone.rough.winter": ["Rocky_Snow_A1_01.jpg"],
+    "roof.slate.winter": ["Roof_Texture_Slate_Snowy_A1.webp", "Roof_Texture_Slate_Frosty_A1.webp"],
+    "roof.wood-shingle.winter": ["Roof_Texture_Wood_Snowy_Shingle_A1.webp", "Roof_Texture_Wood_Frosty_Shingle_A1.webp"],
+    "roof.tile-red": ["Roof_Texture_Tile_Red_A1.webp"],
+    "roof.tile-brown": ["Roof_Texture_Tile_Brown_A1.webp"],
+    "tree.conifer.large.winter": ["Arctic_Fir_Tree_Snow_Large_A1_4x4.webp", "Arctic_Fir_Tree_Snow_Large_A2_4x4.webp", "Arctic_Fir_Tree_Snow_Large_A3_4x4.webp", "Arctic_Fir_Tree_Snow_Large_A4_4x4.webp", "Arctic_Fir_Tree_Snow_Large_A5_4x4.webp"],
+    "tree.conifer.medium.winter": ["Arctic_Fir_Tree_Snow_Medium_A1_3x3.webp", "Arctic_Fir_Tree_Snow_Medium_A2_3x3.webp", "Arctic_Fir_Tree_Snow_Medium_A3_3x3.webp", "Arctic_Fir_Tree_Snow_Medium_A4_3x3.webp", "Arctic_Fir_Tree_Snow_Medium_A5_3x3.webp"],
+    "tree.conifer.small.winter": ["Arctic_Fir_Tree_Snow_Small_A1_2x2.webp", "Arctic_Fir_Tree_Snow_Small_A2_2x2.webp", "Arctic_Fir_Tree_Snow_Small_A3_2x2.webp", "Arctic_Fir_Tree_Snow_Small_A4_2x2.webp", "Arctic_Fir_Tree_Snow_Small_A5_2x2.webp"],
+    "tree.bare.winter": ["Bare_Tree_Snow_A2_9x9.webp", "Bare_Tree_Snow_B3_9x9.webp", "Bare_Tree_Snow_B5_9x9.webp"],
+    "bush.bare.winter": ["Bare_Bush_Snow_A1_2x2.webp", "Bare_Bush_Snow_A2_2x2.webp", "Bare_Bush_Snow_A3_2x2.webp", "Bare_Bush_Snow_A4_2x2.webp", "Bare_Bush_Snow_A5_2x2.webp", "Bare_Bush_Snow_A6_2x2.webp"],
+    "chimney.stone": ["Chimney_Stone_Earthy_A_1x1.webp", "Chimney_Stone_Earthy_B_1x1.webp", "Chimney_Stone_Earthy_C_1x1.webp", "Chimney_Stone_Earthy_D_1x1.webp", "Chimney_Stone_Redrock_A_1x1.webp", "Chimney_Stone_Redrock_B_1x1.webp"],
+    "prop.cart": ["Cart_Wood_Dark_A1_2x3.webp"],
+    "prop.wagon": ["Wagon_Wood_Ashen_B3_3x6.webp"],
+    "prop.well": ["Well_Stone_Earthy_C1_2x2.webp"]
+  }
+}
