@@ -36,19 +36,17 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
   const gardenShare = district.gardens ?? 0.1;
   const out = { houses: [], outbuildings: [], gardens: [], crofts: [], bounds: [] };
   const wayById = new Map(ways.map((w) => [w.id, w]));
-  const boundsSeen = new Set();
   const boundClass = (lr) => (district.profile === "hamlet" || district.profile === "roadside" ? (lr.next() < 0.5 ? "hedge" : "wall") : lr.next() < 0.8 ? "fence" : "wall");
 
   let croftOf = -1;
-  /** A polygon's edges as boundary segments, except those along the street; each shared side once. */
+  /** A polygon's edges as boundary segments, except those along a street. */
   const addBounds = (p, way, cls) => {
     for (let k = 0; k < p.length; k++) {
       const a = p[k], b = p[(k + 1) % p.length];
       const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      if (way && Math.abs(distToPath(mid, way.path) - way.width / 2) < 0.1) continue;
-      const key = [a, b].map((q) => q.map((v) => v.toFixed(2)).join(",")).sort().join("|");
-      if (boundsSeen.has(key)) continue;
-      boundsSeen.add(key);
+      // Never along a street: this plot's own, or another one at its back or side
+      if (ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1)) continue;
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.02) continue;
       out.bounds.push({ path: [a, b], class: cls });
     }
   };
@@ -117,24 +115,26 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
         behind = back + od + 0.1;
       }
     }
+    // The yard behind the house ends here; a croft, if any, starts exactly here, so they share one fence
+    const reachBack = Math.max(houseBack, behind) + yard;
     // The croft: the back of the plot as a small fenced field
     if (wantCroft && lot.depth * 0.55 > behind) {
-      const far = lot.depth * 1.6, near = Math.max(behind, lot.depth * 0.55);
+      const far = lot.depth * 1.6, near = house ? reachBack : Math.max(behind, lot.depth * 0.55);
       const slab = [[mx + nx * near - ux * 99, my + ny * near - uy * 99], [mx + nx * near + ux * 99, my + ny * near + uy * 99], [mx + nx * far + ux * 99, my + ny * far + uy * 99], [mx + nx * far - ux * 99, my + ny * far - uy * 99]];
       const piece = intersect([lot.poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
       if (piece && area(piece) > 0.5) { out.crofts.push(piece); croftOf = i; }
     }
     // Boundaries near the house only (Patrick, 24 Oct): the yard round the house and outbuilding, fenced on its
     // sides and back but not along the street, and the fence round a croft. The long back lines aren't drawn.
+    const way = wayById.get(lot.way);
     if (T.bounds && house) {
-      const way = wayById.get(lot.way);
-      const reachBack = Math.max(houseBack, behind) + yard;
       const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);
       if (toft) addBounds(toft, way, bClass);
     }
-    if (T.bounds && out.crofts[out.crofts.length - 1] && wantCroft && croftOf === i) addBounds(out.crofts[out.crofts.length - 1], null, bClass);
+    if (T.bounds && wantCroft && croftOf === i) addBounds(out.crofts[out.crofts.length - 1], way, bClass);
   });
-  out.bounds = joinBounds(out.bounds);
+  // Neighbours' fences on the same line become one fence (their pieces overlap with staggered ends otherwise)
+  out.bounds = joinBounds(mergeCollinear(out.bounds));
   return out;
 }
 
@@ -142,6 +142,48 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
 function clipDepth(poly, [mx, my], [ux, uy], [nx, ny], depth) {
   const slab = [[mx - nx * 0.5 - ux * 99, my - ny * 0.5 - uy * 99], [mx - nx * 0.5 + ux * 99, my - ny * 0.5 + uy * 99], [mx + nx * depth + ux * 99, my + ny * depth + uy * 99], [mx + nx * depth - ux * 99, my + ny * depth - uy * 99]];
   return intersect([poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
+}
+
+/**
+ * Merges fence segments lying on one line: overlapping or touching pieces become one, so two neighbours' fences
+ * along their shared side are drawn once, from the front to the deeper of the two.
+ */
+function mergeCollinear(segs) {
+  const lines = [];
+  for (const sgm of segs) {
+    const [[ax, ay], [bx, by]] = sgm.path;
+    let ang = Math.atan2(by - ay, bx - ax);
+    if (ang < 0) ang += Math.PI;
+    if (ang >= Math.PI - 1e-9) ang -= Math.PI;
+    // An existing line within a hair in angle and offset (a line near 0 and one near pi are the same, reversed)
+    let L = null;
+    for (const q of lines) {
+      const d = Math.abs(ang - q.ang);
+      if (d >= 0.004 && Math.PI - d >= 0.004) continue;
+      const ux = q.ux, uy = q.uy;
+      if (Math.abs(-ax * uy + ay * ux - q.off) < 0.03 && Math.abs(-bx * uy + by * ux - q.off) < 0.03) { L = q; break; }
+    }
+    if (!L) {
+      const ux = Math.cos(ang), uy = Math.sin(ang);
+      L = { ang, ux, uy, off: -ax * uy + ay * ux, cls: sgm.class, spans: [] };
+      lines.push(L);
+    }
+    const t0 = ax * L.ux + ay * L.uy, t1 = bx * L.ux + by * L.uy;
+    L.spans.push([Math.min(t0, t1), Math.max(t0, t1)]);
+  }
+  const out = [];
+  for (const L of lines) {
+    L.spans.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const sp of L.spans) {
+      const last = merged[merged.length - 1];
+      if (last && sp[0] <= last[1] + 0.03) last[1] = Math.max(last[1], sp[1]);
+      else merged.push([...sp]);
+    }
+    const at = (t) => [t * L.ux - L.off * L.uy, t * L.uy + L.off * L.ux];
+    for (const [t0, t1] of merged) out.push({ path: [at(t0), at(t1)], class: L.cls });
+  }
+  return out;
 }
 
 /** Joins boundary segments end to end into longer lines of the same kind, so they draw as fences, not dashes. */
