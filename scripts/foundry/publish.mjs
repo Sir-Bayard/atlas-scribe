@@ -10,12 +10,16 @@ import { LABEL_SIZES } from "../core/plan.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
+/** Foundry's limits on a drawing's font size. */
+const FONT = { min: 8, max: 256 };
 
 /**
- * plan: a normalized plan. image: the rendered map's path, width and height in pixels. folder: the output folder.
- * sceneId: a scene to update instead of creating one. Returns { sceneId, created, backup, thumb, labels, warnings }.
+ * plan: a normalized plan. image: the rendered map's path, width and height in pixels, and thumb (a Blob) when
+ * the worker made one. folder: the output folder. sceneId: a scene to update instead of creating one; one
+ * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was cancelled; it's called
+ * before anything is written. Returns { sceneId, created, backup, thumb, labels, warnings }.
  */
-export async function publish({ plan, image, width, height, folder, sceneId = null, onProgress = () => {} }) {
+export async function publish({ plan, image, width, height, folder, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
   const opts = plan.output.scene;
   let backup = null;
@@ -23,6 +27,9 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
   // The scene to update, if one was named, and a backup of it first
   if (sceneId) {
     const scene = sceneById(sceneId);
+    if (!scene.flags?.[MOD] && !force)
+      throw new Error(`AtlasScribe: "${scene.name}" wasn't made by AtlasScribe, so it isn't changed. Publish with force: true to replace its background and settings anyway (it's backed up first).`);
+    check();
     onProgress(0.1, "Backing up the scene");
     const json = JSON.stringify(scene.toObject(), null, 1);
     const dir = `${folder}/backups`;
@@ -30,9 +37,11 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
   }
 
   // The thumbnail is named after the scene, so a republish replaces it rather than adding another
+  check();
   onProgress(0.3, "Making the thumbnail");
   const id = sceneId ?? foundry.utils.randomID();
   const thumb = await makeThumb(image, `${folder}/thumbs`, id);
+  check(); // the last chance to stop: from here the scene is written
 
   let weather = opts.weather ?? "";
   if (weather && !(weather in (CONFIG.weatherEffects ?? {}))) {
@@ -56,9 +65,11 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
   let scene, created = false;
   if (sceneId) {
     scene = sceneById(sceneId);
+    const before = scene.getFlag(MOD, "image");
     await scene.update(data);
     scene = sceneById(sceneId);
-    const level = scene.initialLevel ?? scene.levels.contents[0];
+    // The level that shows AtlasScribe's last map, else the one the scene opens on
+    const level = scene.levels.find((l) => before && l.background?.src === before) ?? scene.initialLevel ?? scene.levels.contents[0];
     if (level) await scene.updateEmbeddedDocuments("Level", [{ _id: level.id, background: { src: image.path } }]);
     else await scene.createEmbeddedDocuments("Level", [{ name: "Ground", background: { src: image.path } }]);
   } else {
@@ -70,11 +81,12 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
 
   // Labels: this plan's earlier labels out, the plan's labels in
   onProgress(0.75, "Placing the labels");
+  // The new labels go in before the old ones come out, so a failure never leaves the scene with none
   scene = sceneById(sceneId);
   const old = scene.drawings.filter((d) => d.getFlag(MOD, "batch") === (plan.id ?? null)).map((d) => d.id);
-  if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
   const labels = await labelDrawings(plan, sceneById(sceneId), warnings);
   if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", labels);
+  if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
 
   onProgress(1, "Published");
   return { sceneId, created, backup, thumb, labels: labels.length, warnings };
@@ -95,11 +107,18 @@ function freeSceneName(name) {
   return out;
 }
 
-/** A small preview for the scene list, saved in <output>/thumbs as <scene id>.webp. */
+/**
+ * A small preview for the scene list, saved in <output>/thumbs as <scene id>.webp (replaced on a republish; the
+ * scene list may show the old one until the page reloads). The worker's thumbnail when there is one; else Foundry
+ * makes one from the image.
+ */
 async function makeThumb(image, dir, id) {
-  const IH = foundry.helpers.media.ImageHelper;
-  const t = await IH.createThumbnail(image.path, { width: THUMB, height: THUMB, format: "image/webp", quality: 0.8 });
-  const blob = await (await fetch(t.thumb)).blob();
+  let blob = image.thumb ?? null;
+  if (!blob) {
+    const IH = foundry.helpers.media.ImageHelper;
+    const t = await IH.createThumbnail(image.path, { width: THUMB, height: THUMB, format: "image/webp", quality: 0.8 });
+    blob = await (await fetch(t.thumb)).blob();
+  }
   return upload(dir, `${id}.webp`, blob);
 }
 
@@ -116,7 +135,7 @@ async function labelDrawings(plan, scene, warnings) {
     if (f.type !== "label" || !Array.isArray(f.at)) continue;
     const text = String(f.text ?? "").trim();
     if (!text) continue;
-    const size = Math.round(pps * (LABEL_SIZES[f.size] ?? LABEL_SIZES.normal));
+    const size = Math.min(FONT.max, Math.max(FONT.min, Math.round(pps * (LABEL_SIZES[f.size] ?? LABEL_SIZES.normal))));
     try {
       await document.fonts.load(`${size}px "${font}"`);
     } catch {
@@ -136,7 +155,8 @@ async function labelDrawings(plan, scene, warnings) {
       flags: { [MOD]: { batch: plan.id ?? null, feature: f.id } },
     });
   }
-  if (!document.fonts.check(`20px "${font}"`)) warnings.push(`The font "${font}" isn't loaded in this browser, so the labels use another.`);
+  const known = font in (CONFIG.fontDefinitions ?? {}) || [...document.fonts].some((f) => f.family.replace(/["']/g, "") === font);
+  if (out.length && !known) warnings.push(`The font "${font}" isn't one Foundry knows, so the labels may show in another.`);
   return out;
 }
 

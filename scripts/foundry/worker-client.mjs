@@ -12,6 +12,7 @@ export class WorkerClient {
     const w = new Worker(new URL("../render/worker.mjs", import.meta.url), { type: "module", name: "atlas-scribe" });
     w.onmessage = (event) => {
       const { id, progress, result, error } = event.data ?? {};
+      if (id === null && error) return this.#fail(new Error(`AtlasScribe worker: ${error.message}`)); // not tied to one job
       const job = this.#pending.get(id);
       if (!job) return;
       if (progress) return job.onProgress?.(progress.pct, progress.label);
@@ -22,6 +23,7 @@ export class WorkerClient {
         job.reject(e);
       } else job.resolve(result);
     };
+    w.onmessageerror = () => this.#fail(new Error("AtlasScribe worker: a reply from the worker couldn't be read"));
     w.onerror = (event) => {
       event.preventDefault?.();
       this.#fail(new Error(`AtlasScribe worker failed: ${event.message ?? "unknown error"}`));

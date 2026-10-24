@@ -3,7 +3,7 @@
  * can't use is reported. Each problem is { level: "error" | "warning", id, field, message }. Errors stop a
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
-import { PLAN_VERSION, TYPES, PROFILES, SCENE, normalize } from "./plan.mjs";
+import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap } from "./geom.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -21,17 +21,43 @@ export function checkPlan(raw) {
   }
   if (raw.atlasScribe !== undefined && raw.atlasScribe !== PLAN_VERSION)
     err(null, "atlasScribe", `This plan is version ${raw.atlasScribe}; this AtlasScribe reads version ${PLAN_VERSION}.`);
+  // The containers first: nothing else can be checked if these are the wrong kind
+  if (raw.size !== undefined && !isObj(raw.size)) err(null, "size", "size should be an object, like { squares: [100, 100], ftPerSquare: 25 }.");
+  else if (raw.size?.squares !== undefined && !Array.isArray(raw.size.squares)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
+  if (!Array.isArray(raw.features)) err(null, "features", "The plan has no features list: features: [ ... ].");
+  if (raw.output !== undefined && !isObj(raw.output)) err(null, "output", "output should be an object, like { pxPerSquare: 50 }.");
+  else if (raw.output?.scene !== undefined && !isObj(raw.output.scene)) err(null, "output.scene", "output.scene should be an object.");
+  if (raw.seeds !== undefined && !isObj(raw.seeds)) err(null, "seeds", 'seeds should be an object of feature ids and numbers, like { "old-town": 4 }.');
+  if (raw.locked !== undefined && !Array.isArray(raw.locked)) err(null, "locked", "locked should be a list of feature ids.");
+  if (out.length) return out;
+
   const plan = normalize(raw);
-  const [w, h] = plan.size.squares ?? [];
-  if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
+  const [w, h] = plan.size.squares;
+  if (!(plan.size.squares.length === 2 && Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
   if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number above 0.");
-  if (!Array.isArray(raw.features)) err(null, "features", "The plan has no features list.");
+  for (const [name, values] of [["season", SEASONS], ["style", STYLES], ["ground", SURFACES]])
+    if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "textured" : "a plain fill"} will be used.`);
+
+  // The image: Foundry's grid needs a whole number of pixels, 20 or more; WebP stops at 16383 px a side
+  const pps = plan.output.pxPerSquare;
+  if (!(Number.isInteger(pps) && pps >= OUTPUT_LIMITS.minPxPerSquare))
+    err(null, "output.pxPerSquare", `output.pxPerSquare is ${pps}; it should be a whole number of pixels, ${OUTPUT_LIMITS.minPxPerSquare} or more (Foundry's smallest grid).`);
+  else if (Number.isInteger(w) && Number.isInteger(h)) {
+    const side = Math.max(w, h) * pps;
+    if (side > OUTPUT_LIMITS.maxSide)
+      err(null, "output.pxPerSquare", `The map would be ${w * pps} by ${h * pps} px; images can't be more than ${OUTPUT_LIMITS.maxSide} px a side. Use fewer pixels per square (at most ${Math.floor(OUTPUT_LIMITS.maxSide / Math.max(w, h))}).`);
+    else if (side > OUTPUT_LIMITS.warnSide)
+      warn(null, "output.pxPerSquare", `The map will be ${w * pps} by ${h * pps} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and it takes a lot of memory to paint.`);
+  }
+  if (!(isNum(plan.output.quality) && plan.output.quality > 0 && plan.output.quality <= 1)) err(null, "output.quality", `output.quality is ${plan.output.quality}; it should be a number above 0, up to 1.`);
+  if (plan.output.format !== "webp") warn(null, "output.format", `output.format "${plan.output.format}" isn't supported yet; the map is saved as WebP.`);
+  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene"].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
 
   // Ids: present, simple, unique
   const seen = new Map();
   plan.features.forEach((f, i) => {
     const where = f?.id ?? `feature ${i + 1}`;
-    if (!f || typeof f !== "object") return err(null, `features[${i}]`, `Feature ${i + 1} isn't an object.`);
+    if (!isObj(raw.features[i])) return err(null, `features[${i}]`, `Feature ${i + 1} isn't an object.`);
     if (!f.id) err(null, `features[${i}]`, `Feature ${i + 1} (${f.type ?? "no type"}) has no id.`);
     else if (!ID.test(f.id)) err(f.id, "id", `The id "${f.id}" should use only letters, digits, - and _.`);
     else if (seen.has(f.id)) err(f.id, "id", `The id "${f.id}" is used twice.`);
@@ -48,19 +74,31 @@ export function checkPlan(raw) {
       warn(d.id, "shape", `District "${d.id}" has no road or lane running into it, so nothing will be built along streets there.`);
   }
 
+  // Districts that overlap: the shared part is filled twice, and reseeding one can move the other
+  const dpolys = plan.features.filter((f) => f.type === "district").map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape) })).filter((d) => d.poly.length >= 3);
+  for (let i = 0; i < dpolys.length; i++)
+    for (let j = i + 1; j < dpolys.length; j++)
+      if (polygonsOverlap(shrink(dpolys[i].poly), shrink(dpolys[j].poly)))
+        warn(dpolys[i].id, "shape", `Districts "${dpolys[i].id}" and "${dpolys[j].id}" overlap. They can share an edge, but where they overlap, reseeding one can move the other's houses.`);
+
   // Buildings that overlap each other
   const footprints = [];
   for (const f of plan.features) {
     if (f.type === "building" && f.shape) footprints.push({ id: f.id, poly: shapeToPolygon(f.shape, f.rot) });
-    if (f.type === "landmark") (f.buildings ?? []).forEach((b, j) => b.shape && footprints.push({ id: `${f.id}`, part: j, poly: shapeToPolygon(b.shape, b.rot) }));
+    if (f.type === "landmark") f.buildings.forEach((b, j) => b.shape && footprints.push({ id: `${f.id}`, part: j, poly: shapeToPolygon(b.shape, b.rot) }));
   }
-  for (let i = 0; i < footprints.length; i++)
-    for (let j = i + 1; j < footprints.length; j++) {
-      const a = footprints[i], b = footprints[j];
+  // Shrunk once each, sorted by left edge, and only pairs whose boxes meet are compared (fast for thousands)
+  const fps = footprints.filter((f) => f.poly.length >= 3).map((f) => { const poly = shrink(f.poly); return { ...f, poly, box: bbox(poly) }; });
+  fps.sort((a, b) => a.box[0] - b.box[0]);
+  for (let i = 0; i < fps.length; i++) {
+    const a = fps[i];
+    for (let j = i + 1; j < fps.length && fps[j].box[0] <= a.box[2]; j++) {
+      const b = fps[j];
       if (a.id === b.id) continue; // parts of one landmark may touch
-      if (a.poly.length >= 3 && b.poly.length >= 3 && polygonsOverlap(shrink(a.poly), shrink(b.poly)))
-        warn(a.id, "shape", `"${a.id}" overlaps "${b.id}".`);
+      if (b.box[1] > a.box[3] || b.box[3] < a.box[1]) continue;
+      if (polygonsOverlap(a.poly, b.poly)) warn(a.id, "shape", `"${a.id}" overlaps "${b.id}".`);
     }
+  }
 
   // Seeds and locks must point at something
   for (const id of Object.keys(plan.seeds ?? {})) if (!seen.has(id)) warn(id, "seeds", `There's a seed for "${id}", but no feature with that id.`);
@@ -68,8 +106,7 @@ export function checkPlan(raw) {
 
   // The scene it's published to
   const scene = raw.output?.scene;
-  if (scene !== undefined && (typeof scene !== "object" || scene === null || Array.isArray(scene))) err(null, "output.scene", "output.scene should be an object.");
-  else if (scene) {
+  if (scene) {
     for (const [name, spec] of Object.entries(SCENE)) checkField(null, `output.scene.${name}`, "output.scene", name, spec, scene[name], { err, warn }, "the default will be used");
     for (const k of Object.keys(scene)) if (!(k in SCENE)) warn(null, `output.scene.${k}`, `output.scene has a field "${k}" that AtlasScribe doesn't use.`);
     if (typeof scene.labelColor === "string" && !/^#[0-9a-f]{6}$/i.test(scene.labelColor))
@@ -89,8 +126,10 @@ function shrink(poly, by = 0.02) {
 function checkFeature(f, where, raw, { err, warn, w, h }) {
   const t = TYPES[f.type];
   if (!t) return err(f.id ?? null, "type", `"${where}" has the type "${f.type}", which AtlasScribe doesn't know (types: ${Object.keys(TYPES).join(", ")}).`);
-  if (t.classes && !t.classes.includes(f.class))
-    warn(f.id, "class", `"${where}" is a ${f.type} of class "${f.class}", which isn't one AtlasScribe draws yet (${t.classes.join(", ")}); it will be drawn as "${t.classes[0]}".`);
+  if (t.classes && raw.class !== undefined && !t.classes.includes(raw.class))
+    warn(f.id, "class", `"${where}" is a ${f.type} of class "${raw.class}", which AtlasScribe doesn't know (${t.classes.join(", ")}); it will be drawn as a ${t.classes[0]}.`);
+  else if (NOT_DRAWN_YET[f.type]?.includes(f.class))
+    warn(f.id, "class", `"${where}": ${f.type}s of class "${f.class}" aren't drawn yet; it stays in the plan but won't appear on the map.`);
 
   // Geometry
   const g = t.geometry;
@@ -103,7 +142,7 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
     else checkShape(f.shape, where, "shape", need);
   }
   if (g === "buildings") {
-    if (need(Array.isArray(f.buildings) && f.buildings.length > 0, "buildings", `Landmark "${where}" needs a list of buildings.`))
+    if (need(Array.isArray(raw.buildings) && raw.buildings.length > 0, "buildings", `Landmark "${where}" needs a list of buildings.`))
       f.buildings.forEach((b, j) => checkShape(b.shape, `${where}, building ${j + 1}`, `buildings[${j}].shape`, need));
   }
 

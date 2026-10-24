@@ -127,6 +127,16 @@ export const SCENE = {
 /** District profiles this version knows. */
 export const PROFILES = ["roadside"];
 
+/** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
+export const NOT_DRAWN_YET = { area: ["fields", "park", "cemetery"] };
+
+/** Top-level words this version knows. */
+export const SEASONS = ["spring", "summer", "autumn", "winter"];
+export const STYLES = ["textured"];
+
+/** Limits on the image: Foundry's smallest grid, the largest WebP side, and the size some graphics cards stop at. */
+export const OUTPUT_LIMITS = { minPxPerSquare: 20, maxSide: 16383, warnSide: 8192 };
+
 /** Top-level defaults. */
 const DEFAULTS = {
   kind: "settlement",
@@ -144,7 +154,8 @@ const DEFAULTS = {
 export function readPlan(input) {
   if (input && typeof input === "object") return { plan: input, error: null };
   let text = String(input ?? "");
-  const fence = text.match(/```(?:mapplan|json)?[^\n]*\n([\s\S]*?)```/);
+  // A ```mapplan block wins; else a ```json block; else the whole text
+  const fence = text.match(/```mapplan[^\n]*\n([\s\S]*?)```/) ?? text.match(/```json[^\n]*\n([\s\S]*?)```/);
   if (fence) text = fence[1];
   try {
     return { plan: JSON.parse(text), error: null };
@@ -171,32 +182,38 @@ export function fieldDefault(spec, cls) {
  * reports them), so nothing a newer version wrote is lost.
  */
 export function normalize(plan) {
-  const p = structuredClone(plan ?? {});
+  const p = structuredClone(isObj(plan) ? plan : {});
   for (const [k, v] of Object.entries(DEFAULTS)) p[k] ??= v;
   p.atlasScribe ??= PLAN_VERSION;
-  p.size ??= {};
-  p.size.squares ??= [50, 50];
+  // Containers of the wrong kind are replaced (the checker reports them), so nothing downstream trips on them
+  if (!isObj(p.size)) p.size = {};
+  if (!Array.isArray(p.size.squares)) p.size.squares = [50, 50];
   p.size.ftPerSquare ??= p.kind === "battle" ? 5 : 25;
-  p.features = (p.features ?? []).map((f) => normalizeFeature(f));
-  p.seeds ??= {};
-  p.locked ??= [];
-  p.art ??= {};
-  p.output ??= {};
+  p.features = (Array.isArray(p.features) ? p.features : []).map((f) => normalizeFeature(isObj(f) ? f : {}));
+  if (!isObj(p.seeds)) p.seeds = {};
+  if (!Array.isArray(p.locked)) p.locked = [];
+  if (!isObj(p.art)) p.art = {};
+  if (!isObj(p.output)) p.output = {};
   p.output.pxPerSquare ??= 50;
   p.output.format ??= "webp";
   p.output.quality ??= 0.86;
-  p.output.scene ??= {};
+  if (!isObj(p.output.scene)) p.output.scene = {};
   for (const [k, spec] of Object.entries(SCENE)) p.output.scene[k] ??= spec.default;
   p.output.scene.name ??= p.name ?? p.id ?? "Map";
   return p;
+}
+
+/** A plain object (not null, not a list). */
+export function isObj(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
 function normalizeFeature(f) {
   const t = TYPES[f?.type];
   if (!t) return { ...f };
   const out = { ...f };
-  if (t.classes) out.class ??= t.classes[0];
+  if (t.classes && !t.classes.includes(out.class)) out.class = t.classes[0]; // unknown classes are drawn as the default (the checker says so)
   for (const [name, spec] of Object.entries(t.fields)) if (out[name] === undefined) out[name] = fieldDefault(spec, out.class);
-  if (f.type === "landmark") out.buildings = (f.buildings ?? []).map((b) => normalizeFeature({ ...b, type: "building" }));
+  if (f.type === "landmark") out.buildings = (Array.isArray(f.buildings) ? f.buildings : []).map((b) => normalizeFeature({ ...(isObj(b) ? b : {}), type: "building" }));
   return out;
 }

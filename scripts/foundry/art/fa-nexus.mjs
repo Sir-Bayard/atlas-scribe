@@ -17,16 +17,17 @@ export function available() {
   return !!game.modules.get("fa-nexus")?.active;
 }
 
+/** FA Nexus's window, opened if it isn't (its catalog lives there). opened: true when we opened it, to close after. */
 async function nexusApp() {
   let app = foundry.applications.instances.get("fa-nexus-app");
-  if (app) return app;
-  if (typeof globalThis.faNexus?.open !== "function") return null;
+  if (app) return { app, opened: false };
+  if (typeof globalThis.faNexus?.open !== "function") return { app: null, opened: false };
   globalThis.faNexus.open();
   for (let i = 0; i < 30 && !app; i++) {
     await new Promise((r) => setTimeout(r, 200));
     app = foundry.applications.instances.get("fa-nexus-app");
   }
-  return app ?? null;
+  return { app: app ?? null, opened: !!app };
 }
 
 async function loadRoleMap() {
@@ -41,21 +42,51 @@ async function loadRoleMap() {
  * progress(pct, label) while downloading.
  */
 export async function resolve(roles, progress = () => {}) {
+  if (!available()) return { art: {}, missing: [...roles], downloaded: 0, why: "FA Nexus isn't active, so the map is painted in plain colours" };
+  let nexus = { app: null, opened: false };
+  try {
+    nexus = await nexusApp();
+    return await resolveWith(nexus.app, roles, progress);
+  } catch (e) {
+    // FA Nexus changed, or failed: every role falls back to a plain colour, and the render goes on
+    console.warn(`${MOD} | FA Nexus couldn't be used`, e);
+    return { art: {}, missing: [...roles], downloaded: 0, why: `FA Nexus couldn't be used (${e?.message ?? e}), so the map is painted in plain colours` };
+  } finally {
+    if (nexus.opened) {
+      try {
+        await nexus.app?.close?.(); // we opened it only for its catalog
+      } catch {
+        /* closing is a nicety */
+      }
+    }
+  }
+}
+
+async function resolveWith(app, roles, progress) {
   const art = {};
   const missing = [];
-  if (!available()) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus isn't active" };
   const map = await loadRoleMap();
-  const app = await nexusApp();
-  if (!app?._contentService || !app?._downloadManager) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus didn't open" };
-  catalog ??= Object.values(await app._contentService.list("assets"))[0] ?? [];
+  if (!app?._contentService || !app?._downloadManager) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus didn't open, so the map is painted in plain colours" };
+  if (!catalog?.length) {
+    const listed = await app._contentService.list("assets");
+    const list = Array.isArray(listed) ? listed : Object.values(listed ?? {}).find(Array.isArray);
+    catalog = Array.isArray(list) ? list : [];
+    if (!catalog.length) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus's catalog came back empty, so the map is painted in plain colours" };
+  }
   const byName = new Map();
   for (const a of catalog) {
-    const k = String(a.filename ?? "").toLowerCase();
+    const k = String(a?.filename ?? "").toLowerCase();
+    if (!k) continue;
     if (!byName.has(k)) byName.set(k, a);
     const b = k.replace(/\.\w+$/, "");
     if (!byName.has(`~${b}`)) byName.set(`~${b}`, a);
   }
-  const state = game.settings.get("fa-nexus", "patreon_auth_data")?.state ?? null;
+  let state = null;
+  try {
+    state = game.settings.get("fa-nexus", "patreon_auth_data")?.state ?? null;
+  } catch {
+    state = null; // no Patreon login to be had: free files only
+  }
 
   // What each role needs
   const wanted = [];

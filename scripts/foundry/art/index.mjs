@@ -13,7 +13,12 @@ export async function resolveArt(roles, progress = () => {}) {
   const notes = [];
   for (const p of PROVIDERS) {
     if (!remaining.length) break;
-    const res = await p.resolve(remaining, progress);
+    let res;
+    try {
+      res = await p.resolve(remaining, progress);
+    } catch (e) {
+      res = { art: {}, missing: remaining, why: `An art source failed (${e?.message ?? e}); its roles are painted in plain colours` };
+    }
     if (res.why) notes.push(res.why);
     Object.assign(art, res.art);
     remaining = res.missing;

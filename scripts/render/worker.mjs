@@ -17,7 +17,7 @@ const jobs = {
     return { layout, roles: styleOf(layout).rolesFor(layout) };
   },
 
-  /** Layout to image. art: { role: [url, ...] }. Returns { blob, width, height, tiles, ms }. */
+  /** Layout to image. art: { role: [url, ...] }. Returns { blob, thumb, width, height, tiles, failedArt, ms }. */
   async paint({ layout, art, tileSize, quality }, progress) {
     return paintLayout({ layout, art, tileSize, quality }, progress);
   },
@@ -37,6 +37,7 @@ const jobs = {
       p.setTransform(new DOMMatrix().scale(0.5));
       g.fillStyle = p;
       g.fillRect(0, 0, width, height);
+      bmp.close();
     }
     progress(0.25, "Soft patches");
     softFill(g, width, height, (k) => {
@@ -100,6 +101,9 @@ function softFill(g, width, height, shape, fill, blurPx, alpha = 1, op = "source
   g.drawImage(m, 0, 0);
   g.restore();
 }
+
+// A message that can't be read (it failed to clone) would otherwise leave its job waiting for ever
+self.onmessageerror = () => self.postMessage({ id: null, error: { message: "a message to the worker couldn't be read" } });
 
 self.onmessage = async (event) => {
   const { id, type, payload } = event.data ?? {};

@@ -2,7 +2,8 @@
  * Plan to Layout: everything the generator works out from a plan, as plain items in squares.
  *
  * Fixed features become items as they are; districts and areas are filled. Each district or area has its own
- * random stream (the plan seed, or its own seed in plan.seeds, and its id), so changing one never moves another.
+ * random stream (the plan seed, or its own seed in plan.seeds, and its id), and draws from it the same number of
+ * times whatever fits, so reseeding one moves only what it places and anything that was crowding against it.
  * Every random choice is made here, never in the painter, so the same plan always paints the same map, whatever
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
@@ -28,7 +29,19 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   const streamFor = (id) => rng(plan.seeds?.[id] ?? plan.seed, id);
   const progress = (pct, label) => onProgress?.(pct, label);
 
-  // Everything placed so far that new things must keep clear of
+  // Everything placed so far that new things must keep clear of. While a district fills, what other districts
+  // placed is ignored (each district's houses and gardens stay inside it, so they can't overlap), which keeps
+  // districts independent: reseeding one never moves another.
+  const owner = new WeakMap(); // a polygon or building item to the district that placed it
+  const districts = plan.features.filter((f) => f.type === "district").map((f) => ({ id: f.id, poly: shapeToPolygon(f.shape) }));
+  const districtIds = new Set(districts.map((d) => d.id));
+  const touching = new Set(); // "a|b" for districts that overlap: those do see each other's houses
+  for (const a of districts) for (const b of districts) if (a !== b && polygonsOverlap(shrink(a.poly, 0.01), shrink(b.poly, 0.01))) touching.add(`${a.id}|${b.id}`);
+  let filling = null; // the district being filled
+  const elsewhere = (o) => {
+    const by = owner.get(o);
+    return filling !== null && by !== undefined && by !== filling && districtIds.has(by) && !touching.has(`${filling}|${by}`);
+  };
   const space = {
     reserved: [], // polygons
     zones: [], // squares and yards: open ground that gardens mustn't spill into either
@@ -87,12 +100,14 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         break;
       case "area":
         if (f.class === "yard") {
-          const poly = shapeToPolygon(f.shape);
+          const poly = shapeToPolygon(f.shape, f.rot);
           items.push({ kind: "surface", id: f.id, from: f.id, class: "yard", poly, surface: f.surface ?? "trodden", fence: f.fence ?? null });
           space.reserved.push(grow(poly, 0.35));
           space.zones.push(poly);
         } else if (f.class === "trodden") {
-          items.push({ kind: "surface", id: f.id, from: f.id, class: "trodden", poly: shapeToPolygon(f.shape, 0, 48), surface: "trodden" });
+          items.push({ kind: "surface", id: f.id, from: f.id, class: "trodden", poly: shapeToPolygon(f.shape, f.rot, 48), surface: "trodden" });
+        } else if (f.class !== "farmstead" && f.class !== "woods") {
+          notes.push({ level: "warning", id: f.id, message: `"${f.id}": areas of class "${f.class}" aren't drawn yet.` });
         }
         break;
       default:
@@ -100,6 +115,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     }
   }
 
+  /** Adds a building item and keeps space clear around it. r: the stream for its own small choices. */
   function addBuilding(b, id, r, from = id) {
     let cx, cy, len, dep;
     if (b.shape?.rect) {
@@ -119,7 +135,9 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     items.push(item);
     space.buildings.push(item);
     const foot = shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot);
-    space.reserved.push(grow(foot, 0.4));
+    const kept = grow(foot, 0.4);
+    for (const o of [item, foot, kept]) owner.set(o, from);
+    space.reserved.push(kept);
     space.plots.push(foot);
     Object.defineProperty(item, "footprint", { value: foot, enumerable: false }); // for its own garden; not part of the layout data
     return item;
@@ -138,11 +156,11 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   /** True when a thing of radius rad (half-depth half, when given) at x, y keeps clear of everything placed so far. */
   function free(x, y, rad, half = rad) {
     if (x < -1 || y < -1 || x > W + 1 || y > H + 1) return false;
-    for (const poly of space.reserved) if (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9) return false;
-    for (const poly of space.gardens) if (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9) return false;
+    for (const poly of space.reserved) if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false;
+    for (const poly of space.gardens) if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false;
     for (const w of space.water) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
     for (const w of space.ways) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
-    for (const b of space.buildings) if (Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false;
+    for (const b of space.buildings) if (!elsewhere(b) && Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false;
     return true;
   }
 
@@ -153,36 +171,49 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
    */
   function freeGarden(poly, own = null, record = false) {
     for (const z of space.zones) if (polygonsOverlap(poly, z)) return false;
-    for (const p of space.plots) if (p !== own && polygonsOverlap(shrink(poly, 0.04), p)) return false;
+    const small = shrink(poly, 0.04);
+    for (const p of space.plots) if (p !== own && !elsewhere(p) && polygonsOverlap(small, p)) return false;
     for (const w of [...space.water, ...space.ways]) {
       if (pathTouchesPolygon(w.path, poly)) return false;
       if (poly.some((p) => distanceToPath(p, w.path) < w.clear)) return false;
     }
     if (record) {
+      if (filling !== null) owner.set(poly, filling);
       space.plots.push(poly);
       space.gardens.push(poly);
     }
     return true;
   }
 
+  // Farmsteads first, so district houses keep out of the farmyards
+  progress(0.25, "Farms");
+  for (const f of plan.features.filter((f) => f.type === "area" && f.class === "farmstead")) {
+    const r = streamFor(f.id);
+    const before = items.length;
+    notes.push(...fillFarmstead({ area: f, r, free, addBuilding: (b, id, br) => addBuilding(b, id, br, f.id), items }));
+    const yard = items.slice(before).find((i) => i.class === "farmyard");
+    if (yard) {
+      space.reserved.push(grow(yard.poly, 0.35));
+      space.zones.push(yard.poly);
+    }
+  }
+
   // Districts: houses along every road or lane that runs into them
-  progress(0.25, "Districts");
+  progress(0.4, "Districts");
   for (const d of plan.features.filter((f) => f.type === "district")) {
     const poly = shapeToPolygon(d.shape);
     const r = streamFor(d.id);
     const along = ways.filter((w) => pathTouchesPolygon(w.path, poly));
     const before = items.length;
-    fillRoadside({ district: d, poly, ways: along, r, free, freeGarden, addBuilding: (spec) => addBuilding(spec.building, spec.id, r, d.id), items });
+    filling = d.id;
+    fillRoadside({ district: d, poly, ways: along, r, free, freeGarden, addBuilding: (spec) => addBuilding(spec.building, spec.id, spec.r, d.id), items });
+    filling = null;
     const houses = items.slice(before).filter((i) => i.kind === "building").length;
     notes.push({ level: "info", id: d.id, message: `"${d.id}": ${houses} houses along ${along.length} roads and lanes.` });
   }
 
-  // Farmsteads, then woods and lone trees (trees keep clear of the farms' buildings)
-  progress(0.5, "Farms and woods");
-  for (const f of plan.features.filter((f) => f.type === "area" && f.class === "farmstead")) {
-    const r = streamFor(f.id);
-    fillFarmstead({ area: f, r, addBuilding: (b, id) => addBuilding(b, id, r, f.id), items });
-  }
+  // Woods and hedgerows last: trees keep clear of every building
+  progress(0.6, "Woods");
   for (const f of plan.features.filter((f) => f.type === "area" && f.class === "woods")) {
     fillWoods({ area: f, r: streamFor(f.id), free, items });
   }
@@ -191,7 +222,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   }
 
   progress(0.85, "Ground");
-  items.unshift({ kind: "ground", id: "ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) });
+  items.unshift({ kind: "ground", id: "plan/ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) });
 
   const layout = {
     atlasScribe: LAYOUT_VERSION,

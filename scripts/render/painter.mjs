@@ -12,7 +12,8 @@ export function styleOf(layout) {
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, width, height, ms, tiles }.
+ * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt }: thumb is a
+ * 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colours).
  * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
  */
 export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
@@ -22,25 +23,29 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   const [MW, MH] = layout.size.squares;
   const W = Math.round(MW * pp), H = Math.round(MH * pp);
 
-  // Load every image once
+  // Load every image once (a file used by two roles is fetched once); roles whose files all fail are reported
   progress(0.01, "Loading art");
   const urls = Object.entries(art);
-  const bitmaps = {};
+  const unique = [...new Set(urls.flatMap(([, list]) => list))];
+  const loaded = new Map();
   let done = 0;
-  const total = urls.reduce((n, [, list]) => n + list.length, 0) || 1;
-  await Promise.all(urls.map(async ([role, list]) => {
-    bitmaps[role] = (await Promise.all(list.map(async (url) => {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await createImageBitmap(await res.blob());
-      } catch {
-        return null;
-      } finally {
-        progress(0.01 + 0.09 * (++done / total), "Loading art");
-      }
-    }))).filter(Boolean);
+  await Promise.all(unique.map(async (url) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loaded.set(url, await createImageBitmap(await res.blob()));
+    } catch {
+      loaded.set(url, null);
+    } finally {
+      progress(0.01 + 0.09 * (++done / (unique.length || 1)), "Loading art");
+    }
   }));
+  const bitmaps = {};
+  const failedArt = [];
+  for (const [role, list] of urls) {
+    bitmaps[role] = list.map((u) => loaded.get(u)).filter(Boolean);
+    if (list.length && !bitmaps[role].length) failedArt.push(role);
+  }
   const getArt = (role, variant = 0) => {
     const list = bitmaps[role];
     return list?.length ? list[Math.abs(variant | 0) % list.length] : null;
@@ -74,7 +79,26 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     }
   }
 
+  for (const bmp of loaded.values()) bmp?.close();
+
   progress(0.92, "Saving the image");
   const blob = await out.convertToBlob({ type: "image/webp", quality });
-  return { blob, width: W, height: H, tiles: n, ms: Math.round(performance.now() - t0) };
+  progress(0.98, "Making the thumbnail");
+  const thumb = await thumbnail(out, THUMB);
+  out.width = out.height = 1;
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, ms: Math.round(performance.now() - t0) };
+}
+
+/** Thumbnail size, as Foundry makes them. */
+const THUMB = 300;
+
+/** A size by size WebP of the map's middle, scaled to cover (as Foundry's own scene thumbnails are). */
+async function thumbnail(src, size) {
+  const k = Math.max(size / src.width, size / src.height);
+  const w = src.width * k, h = src.height * k;
+  const c = new OffscreenCanvas(size, size);
+  const g = c.getContext("2d");
+  g.imageSmoothingQuality = "high";
+  g.drawImage(src, (size - w) / 2, (size - h) / 2, w, h);
+  return c.convertToBlob({ type: "image/webp", quality: 0.8 });
 }

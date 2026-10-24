@@ -1,7 +1,7 @@
 /**
  * AtlasScribe: a map plan in, a map out.
  * The entry point: settings and the API at game.modules.get("atlas-scribe").api. Everything that changes the
- * world is GM only.
+ * world is GM only. One job runs at a time; cancel() stops it between any two steps (and mid-paint).
  */
 import { WorkerClient } from "./foundry/worker-client.mjs";
 import { upload, freeName } from "./foundry/files.mjs";
@@ -14,6 +14,9 @@ import { publish } from "./foundry/publish.mjs";
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
 
+/** The job running now: { cancelled }, or null. */
+let job = null;
+
 /** The folder AtlasScribe writes into: the setting, or this world's own atlas-scribe folder. */
 function outputFolder() {
   const set = String(game.settings.get(MOD, "outputFolder") ?? "").trim().replace(/^\/+|\/+$/g, "");
@@ -24,18 +27,83 @@ function requireGM() {
   if (!game.user.isGM) throw new Error("AtlasScribe: only a GM can do that");
 }
 
+function cancelledError() {
+  const e = new Error("AtlasScribe: cancelled");
+  e.cancelled = true;
+  return e;
+}
+
+/** Runs fn(check) as the one job; check() throws once the job has been cancelled. */
+async function exclusive(fn) {
+  if (job) throw new Error("AtlasScribe is already working on a map. Wait for it to finish, or stop it with cancel().");
+  const me = { cancelled: false };
+  job = me;
+  try {
+    return await fn(() => {
+      if (me.cancelled) throw cancelledError();
+    });
+  } finally {
+    if (job === me) job = null;
+  }
+}
+
+/** Checks a plan and throws, in plain words, if it has errors. Returns { plan (normalized), problems }. */
+function planOrThrow(input) {
+  const checked = api.checkPlan(input);
+  if (!checked.ok) {
+    const errors = checked.problems.filter((p) => p.level === "error").map((p) => p.message);
+    throw new Error(`AtlasScribe: the plan has ${errors.length} error(s): ${errors.join(" ")}`);
+  }
+  return checked;
+}
+
+/** { path, width, height, thumb? } for an image: from render's result, or measured from its file. */
+async function imageInfo(image) {
+  if (image && typeof image === "object" && image.path && image.width && image.height)
+    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null };
+  const path = typeof image === "string" ? image : image?.path;
+  if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
+  const res = await fetch(new URL(path, window.location.href));
+  if (!res.ok) throw new Error(`AtlasScribe: couldn't load the map image ${path}`);
+  const bmp = await createImageBitmap(await res.blob());
+  const info = { path, width: bmp.width, height: bmp.height, thumb: null };
+  bmp.close();
+  return info;
+}
+
+/** Publishes a checked plan's image, with its own progress bar. */
+async function publishChecked(plan, image, { scene, force }, check) {
+  if (scene && !game.scenes.get(scene)) throw new Error(`AtlasScribe: there's no scene with the id ${scene}`);
+  const img = await imageInfo(image);
+  const title = `AtlasScribe: publishing ${plan.output.scene.name}`;
+  const bar = progressBar(title);
+  try {
+    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), sceneId: scene, force, check, onProgress: (p, l) => bar.update(p, l) });
+    bar.done(`${title}: ${res.created ? "created the scene" : "updated the scene"}${res.backup ? ` (backup: ${res.backup})` : ""}`);
+    return res;
+  } catch (e) {
+    bar.done(e.cancelled ? `${title}: cancelled` : `${title}: failed (${e.message})`);
+    throw e;
+  }
+}
+
 const api = {
   get version() {
     return game.modules.get(MOD)?.version ?? null;
   },
 
-  /** True while the worker is busy. */
+  /** True while a job (render, publish or test) is running. */
   get busy() {
-    return worker.busy;
+    return job !== null || worker.busy;
   },
 
-  /** Stops the running job. */
-  cancel: () => worker.cancel(),
+  /** Stops the running job at its next step (a paint stops at once). Returns true if there was one to stop. */
+  cancel() {
+    if (!job) return worker.cancel();
+    job.cancelled = true;
+    worker.cancel();
+    return true;
+  },
 
   /**
    * Reads a plan (an object, JSON text, or text with a ```mapplan block) and checks it.
@@ -53,78 +121,72 @@ const api = {
    * Renders a plan into an image, in the worker, and saves it to <output>/maps (never over an existing file).
    * Steps: check the plan (errors stop it), lay it out, fetch the art its style needs (FA Nexus; roles with no art
    * are painted in plain colours and listed in missingArt), paint, save.
-   * With publish: true the map is then published (see publish; scene names a scene to update).
+   * With publish: true the map is then published (see publish; scene and force as there). If publishing fails,
+   * the error carries the saved map's result as error.result.
    * Returns { path, width, height, tiles, ms, layout, missingArt, notes, warnings }, and scene when published.
    */
-  async render(input, { save = true, publish: andPublish = false, scene = null } = {}) {
-    if (andPublish && !save) throw new Error("AtlasScribe: a map has to be saved to be published");
+  async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
     requireGM();
+    if (andPublish && !save) throw new Error("AtlasScribe: a map has to be saved to be published");
     if (andPublish && scene && !game.scenes.get(scene)) throw new Error(`AtlasScribe: there's no scene with the id ${scene}`);
-    const checked = api.checkPlan(input);
-    if (!checked.ok) {
-      const errors = checked.problems.filter((p) => p.level === "error").map((p) => p.message);
-      throw new Error(`AtlasScribe: the plan has ${errors.length} error(s): ${errors.join(" ")}`);
-    }
+    const checked = planOrThrow(input);
     const plan = checked.plan;
-    const title = `AtlasScribe: ${plan.name ?? plan.id ?? "map"}`;
-    const bar = progressBar(title);
-    const t0 = performance.now();
-    let result;
-    try {
-      const { layout, roles } = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
-      const { art, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
-      const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
-      let path = null;
-      if (save) {
-        bar.update(0.97, "Uploading");
-        const dir = `${outputFolder()}/maps`;
-        path = await upload(dir, await freeName(dir, plan.id ?? "map", "webp"), img.blob);
+    return exclusive(async (check) => {
+      const title = `AtlasScribe: ${plan.name ?? plan.id ?? "map"}`;
+      const bar = progressBar(title);
+      const t0 = performance.now();
+      let result;
+      try {
+        const { layout, roles } = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
+        check();
+        const { art, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
+        check();
+        const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        check();
+        let path = null;
+        if (save) {
+          bar.update(0.97, "Saving");
+          const dir = `${outputFolder()}/maps`;
+          path = await upload(dir, await freeName(dir, plan.id ?? "map", "webp"), img.blob);
+        }
+        const ms = Math.round(performance.now() - t0);
+        bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
+        result = {
+          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout,
+          missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
+          notes: [...layout.notes.map((n) => n.message), ...notes],
+          warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
+        };
+        Object.defineProperty(result, "thumb", { value: img.thumb ?? null, enumerable: false }); // for publish
+      } catch (e) {
+        bar.done(e.cancelled ? `${title}: cancelled` : `${title}: failed (${e.message})`);
+        throw e;
       }
-      const ms = Math.round(performance.now() - t0);
-      bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
-      result = {
-        path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, missingArt: missing,
-        notes: [...layout.notes.map((n) => n.message), ...notes],
-        warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
-      };
-    } catch (e) {
-      bar.done(e.cancelled ? `${title}: cancelled` : `${title}: failed (${e.message})`);
-      throw e;
-    }
-    if (andPublish) {
-      result.scene = await api.publish(plan, { image: result, scene });
-      result.warnings.push(...result.scene.warnings);
-    }
-    return result;
+      if (andPublish) {
+        try {
+          result.scene = await publishChecked(plan, result, { scene, force }, check);
+          result.warnings.push(...result.scene.warnings);
+        } catch (e) {
+          e.result = result; // the map was saved; say where
+          throw e;
+        }
+      }
+      return result;
+    });
   },
 
   /**
    * Makes a rendered map into a scene: the image as its background, the grid and settings from the plan's
    * output.scene, a thumbnail, and the plan's labels as locked text drawings (hidden from players unless show is
-   * "all"). image: the result of render, or a path. scene: the id of a scene to update instead of creating one;
-   * all of that scene is backed up to <output>/backups first, and only the labels an earlier publish of this plan
-   * added are replaced. Returns { sceneId, created, backup, thumb, labels, warnings }.
+   * "all"). image: the result of render, or a path. scene: the id of a scene to update instead of creating one.
+   * AtlasScribe only updates scenes it made, unless force is true; all of the scene is backed up to
+   * <output>/backups first, its name is kept, and only the labels an earlier publish of this plan added are
+   * replaced. Returns { sceneId, created, backup, thumb, labels, warnings }.
    */
-  async publish(input, { image, scene = null } = {}) {
+  async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();
-    const checked = api.checkPlan(input);
-    if (!checked.ok) {
-      const errors = checked.problems.filter((p) => p.level === "error").map((p) => p.message);
-      throw new Error(`AtlasScribe: the plan has ${errors.length} error(s): ${errors.join(" ")}`);
-    }
-    if (scene && !game.scenes.get(scene)) throw new Error(`AtlasScribe: there's no scene with the id ${scene}`);
-    const img = await imageInfo(image);
-    const plan = checked.plan;
-    const title = `AtlasScribe: publishing ${plan.output.scene.name}`;
-    const bar = progressBar(title);
-    try {
-      const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), sceneId: scene, onProgress: (p, l) => bar.update(p, l) });
-      bar.done(`${title}: ${res.created ? "created" : "updated"} the scene${res.backup ? ` (backup: ${res.backup})` : ""}`);
-      return res;
-    } catch (e) {
-      bar.done(`${title}: failed (${e.message})`);
-      throw e;
-    }
+    const { plan } = planOrThrow(input);
+    return exclusive((check) => publishChecked(plan, image, { scene, force }, check));
   },
 
   /**
@@ -134,34 +196,29 @@ const api = {
    */
   async test({ width = 2048, height = 2048, texture = null, seed = 1 } = {}) {
     requireGM();
-    const bar = progressBar("AtlasScribe test");
-    const textureUrl = texture ? new URL(texture, window.location.href).href : null;
-    const res = await worker.run("test", { width, height, texture: textureUrl, seed }, { onProgress: (p, l) => bar.update(p, l) });
-    bar.update(0.95, "Uploading");
-    const dir = `${outputFolder()}/tests`;
-    const path = await upload(dir, await freeName(dir, "atlas-scribe-test", "webp"), res.blob);
-    bar.done(`AtlasScribe test saved: ${path}`);
-    return { path, width: res.width, height: res.height, ms: res.ms, bytes: res.blob.size };
+    return exclusive(async (check) => {
+      const bar = progressBar("AtlasScribe test");
+      try {
+        const textureUrl = texture ? new URL(texture, window.location.href).href : null;
+        const res = await worker.run("test", { width, height, texture: textureUrl, seed }, { onProgress: (p, l) => bar.update(p, l) });
+        check();
+        bar.update(0.95, "Saving");
+        const dir = `${outputFolder()}/tests`;
+        const path = await upload(dir, await freeName(dir, "atlas-scribe-test", "webp"), res.blob);
+        bar.done(`AtlasScribe test saved: ${path}`);
+        return { path, width: res.width, height: res.height, ms: res.ms, bytes: res.blob.size };
+      } catch (e) {
+        bar.done(e.cancelled ? "AtlasScribe test: cancelled" : `AtlasScribe test: failed (${e.message})`);
+        throw e;
+      }
+    });
   },
 };
-
-/** { path, width, height } for an image: from render's result, or measured from its file. */
-async function imageInfo(image) {
-  if (image && typeof image === "object" && image.path && image.width && image.height) return { path: image.path, width: image.width, height: image.height };
-  const path = typeof image === "string" ? image : image?.path;
-  if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
-  const res = await fetch(new URL(path, window.location.href));
-  if (!res.ok) throw new Error(`AtlasScribe: couldn't load the map image ${path}`);
-  const bmp = await createImageBitmap(await res.blob());
-  const info = { path, width: bmp.width, height: bmp.height };
-  bmp.close();
-  return info;
-}
 
 Hooks.once("init", () => {
   game.settings.register(MOD, "outputFolder", {
     name: "Output folder",
-    hint: "Where AtlasScribe saves maps, plans and backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",
+    hint: "Where AtlasScribe saves maps, thumbnails and scene backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",
     scope: "world",
     config: true,
     type: String,

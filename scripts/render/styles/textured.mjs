@@ -118,9 +118,13 @@ export function paint(ctx) {
   }
   for (const gd of items("surface", "garden")) {
     const { cx, cy, w: gw, d: gdp, rot } = gd.garden;
+    // The textured bed is filled in map space (patterns stay anchored to the map, so tiles join); rows and the
+    // fence are plain colours, drawn turned
+    const ca = Math.cos((rot * Math.PI) / 180), sa = Math.sin((rot * Math.PI) / 180);
+    const corner = (u, v) => [cx + (u * gw) / 2 * ca - (v * gdp) / 2 * sa, cy + (u * gw) / 2 * sa + (v * gdp) / 2 * ca];
+    g.fillStyle = tex(`ground.${gb}.light`, 3); poly(g, [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]); g.fill();
     g.save(); g.translate(X(cx), Y(cy)); g.rotate((rot * Math.PI) / 180);
     const w = gw * pp, d = gdp * pp;
-    g.fillStyle = tex(`ground.${gb}.light`, 3); g.fillRect(-w / 2, -d / 2, w, d);
     g.fillStyle = "rgba(120,135,155,0.08)"; g.fillRect(-w / 2, -d / 2, w, d);
     const rows = Math.max(3, Math.round(gdp / 0.22));
     for (let i = 1; i < rows; i++) {
@@ -198,12 +202,19 @@ export function paint(ctx) {
       const x = fx + Math.cos(t) * rx * rr * Math.cos(fa) - Math.sin(t) * ry * rr * Math.sin(fa);
       const y = fy + Math.cos(t) * rx * rr * Math.sin(fa) + Math.sin(t) * ry * rr * Math.cos(fa);
       const sz = (0.25 + r.next() * 0.45) * pp;
-      g.save(); g.translate(X(x), Y(y)); g.rotate(r.next() * 3);
+      // The rock's corners are worked out in tile space, so its texture stays anchored to the map
+      const turn = r.next() * 3, ct = Math.cos(turn), st = Math.sin(turn), px = X(x), py = Y(y);
+      g.save();
       g.shadowColor = "rgba(20,30,48,0.55)"; g.shadowBlur = pp * 0.05; g.shadowOffsetY = -pp * 0.04;
       g.fillStyle = tex(`ground.${gb}`, 2);
       g.beginPath();
       const nv = 5 + Math.floor(r.next() * 3);
-      for (let v = 0; v < nv; v++) { const a = (v / nv) * Math.PI * 2, rr2 = sz * (0.3 + r.next() * 0.25); v ? g.lineTo(Math.cos(a) * rr2, Math.sin(a) * rr2) : g.moveTo(Math.cos(a) * rr2, Math.sin(a) * rr2); }
+      for (let v = 0; v < nv; v++) {
+        const a = (v / nv) * Math.PI * 2, rr2 = sz * (0.3 + r.next() * 0.25);
+        const lx = Math.cos(a) * rr2, ly = Math.sin(a) * rr2;
+        const qx = px + lx * ct - ly * st, qy = py + lx * st + ly * ct;
+        v ? g.lineTo(qx, qy) : g.moveTo(qx, qy);
+      }
       g.closePath(); g.fill(); g.shadowColor = "transparent"; g.fillStyle = "rgba(150,175,200,0.25)"; g.fill(); g.restore();
     }
     for (let i = 0; i < 16; i++) {
