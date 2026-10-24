@@ -14,8 +14,25 @@ const num = (dflt, extra = {}) => ({ kind: "number", default: dflt, ...extra });
 const str = (dflt = null, extra = {}) => ({ kind: "string", default: dflt, ...extra });
 const bool = (dflt) => ({ kind: "boolean", default: dflt });
 const oneOf = (values, dflt) => ({ kind: "enum", values, default: dflt });
+const listOf = (values, dflt = null) => ({ kind: "list", values, default: dflt });
 
-export const ROOFS = ["slate", "wood-shingle", "tile-red", "tile-brown", "thatch"];
+/**
+ * Roof materials. The plain words ("slate", "wood-shingle") are the old defaults; the rest name a colour. Tile
+ * colours come in several tile shapes (round, flat, beaver tail), picked by the building's variant.
+ */
+export const ROOFS = [
+  "slate", "slate-black", "slate-blue", "slate-purple", "slate-mossy",
+  "tile-red", "tile-orange", "tile-brown", "tile-tan", "tile-gray", "tile-black", "tile-blue", "tile-green", "tile-purple", "tile-mossy",
+  "wood-shingle", "wood-shingle-dark", "wood-shingle-light", "wood-shingle-red", "wood-shingle-ashen", "wood-shingle-walnut",
+  "thatch",
+];
+
+/**
+ * Roof forms. gable: two slopes, upright ends. hip: four slopes. half-hip: a gable with its peak clipped into a small
+ * hip. pyramid: four slopes to one point. flat: a flat roof behind a low parapet. mansard: steep slopes round a flat
+ * top with a skylight. A round building always gets a cone.
+ */
+export const ROOF_STYLES = ["gable", "hip", "half-hip", "pyramid", "flat", "mansard"];
 export const SURFACES = ["dirt", "slush", "snow", "trodden", "cobble", "gravel", "grass", "mud", "flagstone"];
 
 /**
@@ -61,7 +78,7 @@ export const TYPES = {
       height: num(20, { unit: "ft", min: 1 }),
       rot: num(0, { unit: "deg" }),
       chimney: { kind: "boolean", default: null }, // null: the generator decides
-      roofStyle: oneOf(["gable", "hip"], "gable"),
+      roofStyle: { ...oneOf(ROOF_STYLES, "gable"), fallback: "it's drawn as a gable" },
       name: str(),
     },
   },
@@ -83,6 +100,8 @@ export const TYPES = {
       crofts: num(null, { min: 0, max: 1 }), // the share of plots with a croft behind; else the type's
       croftDepth: num(null, { min: 0.1, max: 1 }), // how far back a croft runs, as a share of the plot behind the yard; else the type's
       croftFence: oneOf(["all", "sides", "none"], null), // the croft's fence: all round, sides only (open at the back), none; else the type's
+      roofs: listOf(ROOFS), // the roof materials its houses choose from, equally; else a mix picked for its type from its seed
+      roofStyles: listOf(ROOF_STYLES), // the roof forms its houses choose from, equally; else its type's mix
     },
   },
   area: {

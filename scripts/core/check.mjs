@@ -170,8 +170,11 @@ function checkField(id, field, where, name, spec, v, { err, warn }, fallback = "
       err(id, field, `${where}: ${name} is ${v}; it should be ${spec.max !== undefined ? `${spec.min} to ${spec.max}` : `at least ${spec.min}`}.`);
   } else if (spec.kind === "boolean" && typeof v !== "boolean") err(id, field, `${where}: ${name} should be true or false.`);
   else if (spec.kind === "string" && typeof v !== "string") err(id, field, `${where}: ${name} should be text.`);
-  else if (spec.kind === "enum" && !spec.values.includes(v))
-    warn(id, field, `${where}: ${name} "${v}" isn't one AtlasScribe knows (${spec.values.join(", ")}); ${fallback}.`);
+  else if (spec.kind === "list") {
+    if (!Array.isArray(v)) err(id, field, `${where}: ${name} should be a list, like ["${spec.values[0]}", "${spec.values[1]}"].`);
+    else for (const x of v) if (!spec.values.includes(x)) warn(id, field, `${where}: ${name} has "${x}", which AtlasScribe doesn't know (${spec.values.join(", ")}); it's left out.`);
+  } else if (spec.kind === "enum" && !spec.values.includes(v))
+    warn(id, field, `${where}: ${name} "${v}" isn't one AtlasScribe knows (${spec.values.join(", ")}); ${spec.fallback ?? fallback}.`);
 }
 
 function isPath(p) {

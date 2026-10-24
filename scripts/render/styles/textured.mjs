@@ -8,6 +8,12 @@
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { rng } from "../../core/rng.mjs";
+import { roofFacets } from "../roofs.mjs";
+export { roofFacets };
+
+/** Roof materials whose winter art already has snow on it; every other roof gets the snow overlay in winter. */
+const SNOWY_IN_WINTER = new Set(["slate", "wood-shingle"]);
+const hasFlat = (b) => !b.round && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 4;
@@ -27,7 +33,8 @@ export function rolesFor(layout) {
     if (i.kind === "wall") roles.add(`stone.rough.${s}`);
     if (i.kind === "building") {
       roles.add(`roof.${i.roof}.${s}`);
-      if (s === "winter" && /^tile/.test(i.roof)) roles.add("overlay.snow");
+      if (hasFlat(i)) roles.add(`roof.flat.${s}`);
+      if (s === "winter" && (!SNOWY_IN_WINTER.has(i.roof) || hasFlat(i))) roles.add("overlay.snow");
       if (i.chimney) roles.add("chimney.stone");
     }
     if (i.kind === "tree") roles.add(i.species === "bare" ? `tree.bare.${s}` : `tree.conifer.${i.size ?? "large"}.${s}`);
@@ -269,7 +276,9 @@ export function paint(ctx) {
     for (const b of buildings) {
       const sh = 0.35 + 0.3 * (b.tall || 0);
       k.save(); k.translate(X(b.cx) + sh * 0.3 * pp, Y(b.cy) - sh * pp); k.rotate((b.rot * Math.PI) / 180);
-      k.fillRect((-b.len * pp) / 2, (-b.dep * pp) / 2, b.len * pp, b.dep * pp); k.restore();
+      if (b.round) { k.beginPath(); k.arc(0, 0, (Math.min(b.len, b.dep) * pp) / 2, 0, 2 * Math.PI); k.fill(); }
+      else k.fillRect((-b.len * pp) / 2, (-b.dep * pp) / 2, b.len * pp, b.dep * pp);
+      k.restore();
     }
   }, "rgb(28,38,58)", 0.12, 0.45);
   const rs = (ROOF_SCALE * pp) / 50;
@@ -280,42 +289,58 @@ export function paint(ctx) {
     g.save(); g.translate(X(b.cx), Y(b.cy)); g.rotate(th);
     const role = `roof.${b.roof}.${s}`;
     const im = art(role, b.variant);
-    const snow = s === "winter" && /^tile/.test(b.roof) ? art("overlay.snow", 0) : null;
+    const flatIm = hasFlat(b) ? art(`roof.flat.${s}`, b.variant) : null;
+    const snow = s === "winter" ? art("overlay.snow", 0) : null;
     const P = ([x, y]) => [x * pp, y * pp];
     const shape = (pts) => { g.beginPath(); pts.forEach((q, k) => { const [x, y] = P(q); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
+    const line = (a2, b2) => { g.beginPath(); g.moveTo(...P(a2)); g.lineTo(...P(b2)); g.stroke(); };
+    const fillTex = (img, angle, fallback) => {
+      if (img) {
+        const p = g.createPattern(img, "repeat");
+        p.setTransform(new DOMMatrix().rotate(angle).scale((rs * 1200) / img.width));
+        g.fillStyle = p;
+      } else g.fillStyle = fallback;
+    };
     for (const f of facets) {
       if (!f.poly.length) continue; // a gable's verge: outline only
-      // The texture's rows run along the facet's eave
-      if (im) {
-        const p = g.createPattern(im, "repeat");
-        p.setTransform(new DOMMatrix().rotate(f.eaveAngle).scale((rs * 1200) / im.width));
-        g.fillStyle = p;
-      } else g.fillStyle = fallbackColor(role);
+      // The texture's rows run along the facet's eave; flat pieces take the flat roof's paving
+      if (f.flat) fillTex(flatIm, 0, fallbackColor(`roof.flat.${s}`));
+      else fillTex(im, f.eaveAngle, fallbackColor(role));
       shape(f.poly); g.fill();
-      if (snow) {
+      if (snow && (f.flat || !SNOWY_IN_WINTER.has(b.roof))) {
         const p = g.createPattern(snow, "repeat"); p.setTransform(new DOMMatrix().rotate(f.eaveAngle).scale((pp * 1.5) / snow.width));
-        g.globalAlpha = 0.5; g.fillStyle = p; shape(f.poly); g.fill(); g.globalAlpha = 1;
+        // A pale wash first, so a coloured roof reads as snowed on as much as the art that comes with snow
+        g.fillStyle = "rgba(232,237,243,0.3)"; shape(f.poly); g.fill();
+        g.globalAlpha = f.flat ? 0.9 : 0.75; g.fillStyle = p; shape(f.poly); g.fill(); g.globalAlpha = 1;
       }
       // Shade by which way the slope faces: lit to the south, in shade to the north, between to east and west
       const dx = f.down[0] * c - f.down[1] * sn, dy = f.down[0] * sn + f.down[1] * c;
-      const lit = dx * SUN[0] + dy * SUN[1];
+      const lit = f.flat ? 0.35 : dx * SUN[0] + dy * SUN[1];
       g.fillStyle = `rgba(18,28,48,${(0.2 - 0.16 * lit).toFixed(3)})`; shape(f.poly); g.fill();
       if (lit > 0.5) { g.fillStyle = "rgba(255,248,236,0.05)"; shape(f.poly); g.fill(); }
     }
-    // Hips, valleys and the ridge as fine lines; snow lies along the ridge in winter
     g.lineCap = "round";
-    for (const f of facets) {
-      g.strokeStyle = "rgba(28,28,36,0.45)"; g.lineWidth = Math.max(1, pp * 0.02);
-      for (const [a2, b2] of f.creases) { g.beginPath(); g.moveTo(...P(a2)); g.lineTo(...P(b2)); g.stroke(); }
+    // Valleys (and hips, under their caps) as fine lines
+    g.strokeStyle = "rgba(28,28,36,0.45)"; g.lineWidth = Math.max(1, pp * 0.02);
+    for (const cr of facets.creases) line(...cr.seg);
+    // Ridge caps: a pale band along the ridge and down each hip, edged in shadow; snow along them in winter
+    if (facets.caps.length) {
+      const capW = Math.max(1.5, pp * 0.04);
+      g.strokeStyle = "rgba(28,28,36,0.35)"; g.lineWidth = capW + Math.max(1, pp * 0.015);
+      for (const seg of facets.caps) line(...seg);
+      g.strokeStyle = s === "winter" ? "rgb(228,232,237)" : capColor(b.roof); g.lineWidth = capW;
+      for (const seg of facets.caps) line(...seg);
     }
-    const ridge = facets.ridge;
-    if (ridge) {
-      g.strokeStyle = s === "winter" ? "rgba(235,238,242,0.75)" : "rgba(60,50,40,0.5)"; g.lineWidth = Math.max(2, pp * 0.06);
-      g.beginPath(); g.moveTo(...P(ridge[0])); g.lineTo(...P(ridge[1])); g.stroke();
-    }
+    // A flat roof's parapet: a low stone wall round its edge (not across a wing's join), casting a little shade inward
+    if (facets.parapet) paintParapet(g, b, facets.parapet, pp, c, sn, s);
+    // A mansard's skylight
+    if (facets.skylight) paintSkylight(g, facets.skylight, pp, s);
     // The outline: only the eaves and verges, so a wing's roof joins its house's without a seam
     g.strokeStyle = "rgba(28,28,36,0.85)"; g.lineWidth = Math.max(1, pp * 0.035);
-    for (const f of facets) for (const [a2, b2] of f.eaves) { g.beginPath(); g.moveTo(...P(a2)); g.lineTo(...P(b2)); g.stroke(); }
+    for (const f of facets) for (const [a2, b2] of f.eaves) line(a2, b2);
+    if (facets.finial) {
+      g.fillStyle = "rgb(70,62,54)"; g.beginPath(); g.arc(0, 0, Math.max(2, pp * 0.05), 0, 2 * Math.PI); g.fill();
+    }
     if (b.chimney) {
       const ci = art("chimney.stone", b.chimney.variant);
       const cw = 0.3 * pp, len = b.len * pp, dep = b.dep * pp;
@@ -372,47 +397,67 @@ function wayDirectionAt(L, [x, y]) {
   return bestD < 3 && best ? best : [0, 1];
 }
 
-/**
- * A roof's facets, in the building's own frame (squares, x along len, y along dep, centred). Each facet is
- * { poly, down (its downslope, a unit vector), eaveAngle (degrees, for the texture), eaves (outline edges),
- * creases (hips and valleys) }; the array also carries ridge: [a, b] or null.
- *
- * gable: two slopes from a ridge along x, upright ends. hip: four slopes, the ridge along the longer side,
- * triangles at the ends. A wing's end that runs into another roof (b.join.start: the -x end, b.join.end: +x) has
- * no hip: its two slopes carry on past the end and meet in a point half its width further in, forming the
- * valleys where it joins the other roof (equal pitches; Tom Cartos-style roofs).
- */
-export function roofFacets(b) {
-  const hip = b.roofStyle === "hip";
-  const join = b.join ?? {};
-  // A hipped roof's ridge runs along its longer side; a gable's (and any wing's) along x
-  const swap = hip && !b.join && b.dep > b.len;
-  const A = (swap ? b.dep : b.len) / 2, B = (swap ? b.len : b.dep) / 2;
-  const map = ([u, v]) => (swap ? [v, u] : [u, v]);
-  let h0 = join.start ? -A - B : hip ? -A + B : -A;
-  let h1 = join.end ? A + B : hip ? A - B : A;
-  if (h0 > h1) h0 = h1 = (h0 + h1) / 2; // a short hipped roof comes to a point
-  const r0 = [h0, 0], r1 = [h1, 0];
-  const deg = (u, v) => { const [x, y] = map([u, v]); return (Math.atan2(y, x) * 180) / Math.PI; };
-  const out = [];
-  const facet = (poly, down, eaveDir, eaves, creases) => out.push({ poly: poly.map(map), down: map(down), eaveAngle: deg(...eaveDir), eaves: eaves.map((e) => e.map(map)), creases: creases.map((e) => e.map(map)) });
-  // The two long slopes
-  for (const sgn of [-1, 1]) {
-    const e0 = [-A, sgn * B], e1 = [A, sgn * B];
-    const creases = [];
-    if (h0 !== -A) creases.push([e0, r0]);
-    if (h1 !== A) creases.push([e1, r1]);
-    facet([e0, e1, r1, r0], [0, sgn], [1, 0], [[e0, e1]], creases);
-  }
-  // The ends: a hip triangle, or a gable's upright verge (an outline only)
-  for (const [end, hx, joined] of [[-1, h0, join.start], [1, h1, join.end]]) {
-    if (joined) continue;
-    const c0 = [end * A, -B], c1 = [end * A, B];
-    if (hip) facet([c0, c1, [hx, 0]], [end, 0], [0, 1], [[c0, c1]], []);
-    else out.push({ poly: [], down: [0, 0], eaveAngle: 0, eaves: [[c0, c1].map(map)], creases: [] });
-  }
-  const kept = out.filter((f) => f.poly.length || f.eaves.length);
-  kept.ridge = h1 > h0 ? [map(r0), map(r1)] : null;
-  return kept;
+/** A ridge cap's colour: the roof's own colour, much paler. */
+function capColor(roof) {
+  const hex = fallbackColor(`roof.${roof}`);
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return "rgb(200,196,188)";
+  const n = parseInt(m[1], 16);
+  const mix = (v) => Math.round(v + (225 - v) * 0.32);
+  return `rgb(${mix(n >> 16)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
 }
 
+/**
+ * A flat roof's parapet, in the building's frame (the context is already turned to it). Each free edge gets a band
+ * of pale stone; a wing's joined end gets none, and its roof runs on over its house's parapet, so the two join.
+ * The bands on the sunny side throw a soft shadow onto the roof.
+ */
+function paintParapet(g, b, { w, joined }, pp, c, sn, season) {
+  const A = (b.len / 2) * pp, B = (b.dep / 2) * pp, W = w * pp;
+  const edges = [
+    { on: true, rect: [-A, -B, 2 * A, W], n: [0, 1] },
+    { on: true, rect: [-A, B - W, 2 * A, W], n: [0, -1] },
+    { on: !joined.start, rect: [-A, -B, W, 2 * B], n: [1, 0] },
+    { on: !joined.end, rect: [A - W, -B, W, 2 * B], n: [-1, 0] },
+  ];
+  // Shade inside the walls that face the sun (the wall on the south side shades the roof just north of it)
+  for (const ed of edges) {
+    if (!ed.on) continue;
+    const ny = ed.n[0] * sn + ed.n[1] * c; // the inward normal, in map space (y down)
+    const k = Math.max(0, -ny);
+    if (k < 0.05) continue;
+    const [x, y, ww, hh] = ed.rect;
+    const sx = x + ed.n[0] * W, sy = y + ed.n[1] * W;
+    g.fillStyle = `rgba(18,28,48,${(0.22 * k).toFixed(3)})`;
+    g.fillRect(sx, sy, ww, hh);
+  }
+  g.fillStyle = season === "winter" ? "rgb(226,230,235)" : "rgb(178,170,158)";
+  for (const ed of edges) if (ed.on) g.fillRect(...ed.rect);
+  // Its inner edge, a fine dark line
+  g.strokeStyle = "rgba(28,28,36,0.5)"; g.lineWidth = Math.max(1, pp * 0.015);
+  for (const ed of edges) {
+    if (!ed.on) continue;
+    const [x, y, ww, hh] = ed.rect;
+    const inner = ed.n[1] === 1 ? [[x, y + hh], [x + ww, y + hh]] : ed.n[1] === -1 ? [[x, y], [x + ww, y]] : ed.n[0] === 1 ? [[x + ww, y], [x + ww, y + hh]] : [[x, y], [x, y + hh]];
+    g.beginPath(); g.moveTo(...inner[0]); g.lineTo(...inner[1]); g.stroke();
+  }
+  // The outer edge (joined ends left open)
+  g.strokeStyle = "rgba(28,28,36,0.85)"; g.lineWidth = Math.max(1, pp * 0.035);
+  const outer = [[[-A, -B], [A, -B], true], [[-A, B], [A, B], true], [[-A, -B], [-A, B], !joined.start], [[A, -B], [A, B], !joined.end]];
+  for (const [p0, p1, on] of outer) if (on) { g.beginPath(); g.moveTo(...p0); g.lineTo(...p1); g.stroke(); }
+}
+
+/** A glass skylight: pale panes in a dark frame, with glazing bars. */
+function paintSkylight(g, { cx, cy, len, dep }, pp, season) {
+  const x = (cx - len / 2) * pp, y = (cy - dep / 2) * pp, w = len * pp, h = dep * pp;
+  g.fillStyle = "rgb(58,60,66)"; g.fillRect(x, y, w, h);
+  const f = Math.max(1, pp * 0.02);
+  const grad = g.createLinearGradient(x, y, x, y + h);
+  grad.addColorStop(0, season === "winter" ? "rgb(214,224,232)" : "rgb(176,204,214)");
+  grad.addColorStop(1, season === "winter" ? "rgb(236,242,246)" : "rgb(218,234,238)");
+  g.fillStyle = grad; g.fillRect(x + f, y + f, w - 2 * f, h - 2 * f);
+  g.strokeStyle = "rgb(58,60,66)"; g.lineWidth = Math.max(1, pp * 0.012);
+  const nx = Math.max(2, Math.round(len / 0.12)), ny = Math.max(1, Math.round(dep / 0.12));
+  for (let i = 1; i < nx; i++) { g.beginPath(); g.moveTo(x + (w * i) / nx, y); g.lineTo(x + (w * i) / nx, y + h); g.stroke(); }
+  for (let j = 1; j < ny; j++) { g.beginPath(); g.moveTo(x, y + (h * j) / ny); g.lineTo(x + w, y + (h * j) / ny); g.stroke(); }
+}

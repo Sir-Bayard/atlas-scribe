@@ -85,11 +85,11 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         break;
       }
       case "building":
-        addBuilding(f, f.id, streamFor(f.id));
+        addBuilding(planBuilding(f), f.id, streamFor(f.id));
         break;
       case "landmark": {
         const r = streamFor(f.id);
-        f.buildings.forEach((b, j) => addBuilding(b, `${f.id}/${j + 1}`, r, f.id));
+        f.buildings.forEach((b, j) => addBuilding(planBuilding(b), `${f.id}/${j + 1}`, r, f.id));
         break;
       }
       case "wall":
@@ -119,29 +119,41 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     }
   }
 
+  /** A plan's building as addBuilding takes it: join and cut are the generator's own, never read from a plan. */
+  function planBuilding(b) {
+    const { join, cut, ...rest } = b;
+    return rest;
+  }
+
   /** Adds a building item and keeps space clear around it. r: the stream for its own small choices. */
   function addBuilding(b, id, r, from = id) {
-    let cx, cy, len, dep;
-    if (b.shape?.rect) {
+    let cx, cy, len, dep, round = false;
+    if (b.shape?.circle) {
+      // A round building (a tower, a dovecote): drawn under a cone
+      const [x, y, rad] = b.shape.circle;
+      cx = x; cy = y; len = dep = 2 * rad; round = true;
+    } else if (b.shape?.rect) {
       const [x0, y0, x1, y1] = b.shape.rect;
       cx = (x0 + x1) / 2; cy = (y0 + y1) / 2; len = x1 - x0; dep = y1 - y0;
     } else {
       const [x0, y0, x1, y1] = bbox(shapeToPolygon(b.shape));
       cx = (x0 + x1) / 2; cy = (y0 + y1) / 2; len = x1 - x0; dep = y1 - y0;
-      notes.push({ level: "warning", id, message: `"${id}": only rectangular buildings are drawn so far; this one is drawn as its bounding box.` });
+      notes.push({ level: "warning", id, message: `"${id}": only rectangular and round buildings are drawn so far; this one is drawn as its bounding box.` });
     }
     const roof = b.roof ?? "slate";
     const v = r.int(8); // drawn even when given, so the stream stays the same
     const item = {
       kind: "building", id, from, cx, cy, len, dep, rot: b.rot ?? 0, roof, variant: b.variant ?? v, tall: tallOf(b.height ?? 20),
-      roofStyle: b.roofStyle ?? "gable", // hip: sloped on all four sides; gable: two slopes, upright ends
+      roofStyle: round ? "cone" : b.roofStyle ?? "gable", // see ROOF_STYLES; a round building's is always a cone
+      ...(round ? { round: true } : {}),
       ...(b.join ? { join: b.join } : {}), // a wing's ends that run into another roof (valleys there, no hip)
-      chimney: (b.chimney ?? r.chance(0.75)) ? { u: 0.3, v: r.chance(0.5) ? -0.2 : 0.2, variant: r.int(8) } : null,
+      ...(b.cut ? { cut: b.cut } : {}), // hips that start in from their corner, where a flush wing covers it
+      chimney: (b.chimney ?? r.chance(0.75)) && !round ? { u: 0.3, v: r.chance(0.5) ? -0.2 : 0.2, variant: r.int(8) } : null,
       ...(b.name ? { name: b.name } : {}),
     };
     items.push(item);
     space.buildings.push(item);
-    const foot = shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot);
+    const foot = round ? shapeToPolygon({ circle: [cx, cy, len / 2] }) : shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot);
     const kept = grow(foot, 0.4);
     for (const o of [item, foot, kept]) owner.set(o, from);
     space.reserved.push(kept);
@@ -239,7 +251,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     built.crofts.forEach((poly, k) => items.push({ kind: "surface", id: `${d.id}/c${k + 1}`, from: d.id, class: "croft", poly }));
     built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
     filling = null;
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts.` });
   }
 
   // Woods and hedgerows last: trees keep clear of every building

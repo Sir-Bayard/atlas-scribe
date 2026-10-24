@@ -18,14 +18,21 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
  * the yard) and croftFence how it's fenced (Patrick, 24 Oct: a quarter of village plots, half depth, open at the
  * back); bounds: whether plot boundaries are drawn; shapes: the chance a house has one rear wing (L), two (U) or
  * wings and a back range round a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
- * merge: the chance a plot is joined to the one before it (a double plot); hip: the share of houses with hipped
- * roofs (the rest are gabled; terraces always are, so a row reads as one ridge).
+ * merge: the chance a plot is joined to the one before it (a double plot); roofs: roof materials and their weights,
+ * of which each district keeps `palette` (picked from its seed), so neighbouring districts can differ; styles: the
+ * share of each roof form (a terrace row shares its material and form, so it reads as a row); shapes also take T (a
+ * wing from the middle of the back); extras: the chance of a bay out to the street (a cross-gable), gabled dormers on
+ * a long roof, a round corner turret, a long house built in stepped sections, and a square shed being round.
  */
 export const LOT_TYPES = {
-  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, hip: 0.7, shapes: { L: 0.3, U: 0, court: 0 } },
-  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.25, croftDepth: 0.5, croftFence: "sides", bounds: true, hip: 0.6, shapes: { L: 0.3, U: 0.05, court: 0 } },
-  town: { frontage: [25, 40], depth: [100, 160], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false, merge: 0.12, shapes: { L: 0.4, U: 0.1, court: 0.08 } },
-  core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.5, U: 0.1, court: 0.05 } },
+  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, shapes: { L: 0.25, T: 0.1, U: 0, court: 0 }, extras: { bay: 0.1, dormers: 0.05, turret: 0, steps: 0.2, roundShed: 0.25 },
+    roofs: { thatch: 4, "wood-shingle": 2, "wood-shingle-dark": 1, "wood-shingle-light": 1, slate: 1 }, palette: 3, styles: { hip: 0.45, "half-hip": 0.3, gable: 0.25 } },
+  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.25, croftDepth: 0.5, croftFence: "sides", bounds: true, shapes: { L: 0.25, T: 0.12, U: 0.05, court: 0 }, extras: { bay: 0.15, dormers: 0.1, turret: 0.06, steps: 0.3, roundShed: 0.2 },
+    roofs: { slate: 4, "wood-shingle": 2, thatch: 2, "slate-blue": 1, "tile-red": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 3, styles: { hip: 0.4, "half-hip": 0.2, gable: 0.4 } },
+  town: { frontage: [25, 40], depth: [100, 160], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false, merge: 0.12, shapes: { L: 0.35, T: 0.1, U: 0.1, court: 0.08 }, extras: { bay: 0, dormers: 0.25, turret: 0.08, steps: 0.5, roundShed: 0.05 },
+    roofs: { slate: 3, "slate-blue": 2, "slate-purple": 1, "tile-red": 2, "tile-orange": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 4, styles: { gable: 0.7, hip: 0.2, "half-hip": 0.05, flat: 0.05 } },
+  core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.45, T: 0.1, U: 0.1, court: 0.05 }, extras: { bay: 0, dormers: 0.2, turret: 0.1, steps: 0.6, roundShed: 0 },
+    roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 } },
 };
 
 export function lotTypeOf(district) {
