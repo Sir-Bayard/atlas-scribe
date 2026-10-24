@@ -11,7 +11,9 @@ import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt } from "./foundry/art/index.mjs";
 import { publish } from "./foundry/publish.mjs";
-import { PreviewApp } from "./foundry/preview.mjs";
+import { AtlasScribeApp } from "./foundry/preview.mjs";
+import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
+import { quickPlan, QUICK, QUICK_LABELS } from "./core/quick.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
@@ -19,8 +21,10 @@ const worker = new WorkerClient();
 /** The job running now: { cancelled }, or null. */
 let job = null;
 
-/** The preview window, while it's open. */
-let previewApp = null;
+/** The AtlasScribe window: one for the session, kept when closed so its plan and undo history are there next time. */
+let theApp = null;
+/** The longer side of the preview picture, in pixels. */
+let previewPx = 1600;
 
 /** The folder AtlasScribe writes into: the setting, or this world's own atlas-scribe folder. */
 function outputFolder() {
@@ -156,25 +160,44 @@ const api = {
    * job is running, say) the window says why.
    */
   async preview(input, { px = 1600 } = {}) {
+    requireGM();
     const { plan, error } = readPlan(input);
     if (!plan) throw new Error(`AtlasScribe: ${error}`);
     planOrThrow(plan);
-    const run = (p) => exclusive(async () => {
-      const checked = planOrThrow(p);
-      return worker.run("preview", { plan: checked.plan, px });
-    });
-    // A window that is open, or still opening, shows the new plan; a closed one is replaced
-    const S = foundry.applications.api.ApplicationV2.RENDER_STATES;
-    const open = () => previewApp && previewApp.state >= S.NONE;
-    if (!open()) {
-      await previewApp?.settled(); // a window closed mid-draw still holds the job until its draw ends
-      if (!open()) previewApp = new PreviewApp({ plan, run }); // another call may have opened one meanwhile
-    }
-    const app = previewApp;
+    previewPx = px;
+    const app = theWindow();
     if (app.minimized) await app.maximize();
     if (app.rendered) app.bringToFront();
-    await app.show(plan, run);
+    // The window may hold unsaved work: ask before putting another plan in its place
+    if (!(await app.confirmDiscard())) throw new Error("AtlasScribe: kept the window's unsaved plan; save it, then preview again");
+    await app.show(plan);
     return app;
+  },
+
+  /**
+   * Opens the AtlasScribe window (GM only): the plan it had, else the plan last opened, else a welcome with Quick
+   * Start. Returns the window.
+   */
+  async open() {
+    requireGM();
+    const app = theWindow();
+    if (app.minimized) await app.maximize();
+    if (app.rendered) app.bringToFront();
+    await app.reopen();
+    return app;
+  },
+
+  /**
+   * Quick Start without the window: a plan from { size, season, water, roads, centre, surroundings, name, seed }
+   * (any left out is picked from the seed). Returns { plan, choices }. The choices are listed in api.quickChoices.
+   */
+  quickPlan(options = {}) {
+    return quickPlan(options);
+  },
+
+  /** Quick Start's choices: { size: [...], season: [...], water, roads, centre, surroundings }. */
+  get quickChoices() {
+    return structuredClone(QUICK);
   },
 
   /**
@@ -275,6 +298,45 @@ const api = {
   },
 };
 
+/** What the window asks of the module. */
+const plansDir = () => `${outputFolder()}/plans`;
+const host = {
+  check: (input) => api.checkPlan(input),
+  read: (input) => readPlan(input),
+  quick: (options) => quickPlan(options),
+  quickChoices: { QUICK, LABELS: QUICK_LABELS },
+  folder: plansDir,
+  plans: {
+    list: () => listPlans(plansDir()),
+    load: (path) => loadPlan(path),
+    save: (plan, file) => savePlan(plansDir(), plan, file),
+    exists: (file) => planExists(plansDir(), file),
+    fileFor,
+  },
+  publish: (plan, { scene = null } = {}) => api.render(plan, { publish: true, scene }),
+  // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
+  last: () => {
+    try {
+      const { world, path } = JSON.parse(game.settings.get(MOD, "lastPlan") || "{}");
+      return world === game.world.id && path ? path : null;
+    } catch {
+      return null;
+    }
+  },
+  setLast: (path) => game.settings.set(MOD, "lastPlan", path ? JSON.stringify({ world: game.world.id, path }) : ""),
+};
+
+/** The preview's drawing: one job at a time, as render is. */
+const runPreview = (p) => exclusive(async () => {
+  const checked = planOrThrow(p);
+  return worker.run("preview", { plan: checked.plan, px: previewPx });
+});
+
+function theWindow() {
+  theApp ??= new AtlasScribeApp({ run: runPreview, host });
+  return theApp;
+}
+
 Hooks.once("init", () => {
   game.settings.register(MOD, "outputFolder", {
     name: "Output folder",
@@ -284,6 +346,21 @@ Hooks.once("init", () => {
     type: String,
     default: "",
   });
+  game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
+});
+
+// An AtlasScribe button at the top of the Scenes tab, for the GM
+Hooks.on("renderSceneDirectory", (app, html) => {
+  if (!game.user.isGM) return;
+  const root = html instanceof HTMLElement ? html : html?.[0];
+  if (!root || root.querySelector(".atlas-scribe-open")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "atlas-scribe-open";
+  button.innerHTML = `<i class="fa-solid fa-map"></i> AtlasScribe`;
+  button.dataset.tooltip = "Make a map: Quick Start, preview, reroll, and make it a scene";
+  button.addEventListener("click", () => api.open().catch((e) => ui.notifications.error(e.message)));
+  (root.querySelector(".header-actions") ?? root.querySelector(".directory-header") ?? root).append(button);
 });
 
 Hooks.once("ready", () => {

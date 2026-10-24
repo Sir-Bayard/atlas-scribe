@@ -2,7 +2,7 @@
 
 A map plan in, a map out, inside Foundry VTT.
 
-You decide what matters: where the roads run, the river and its crossings, the square, the walls and gates, the landmarks, and what each district is like. AtlasScribe fills in everything nobody wants to place by hand (houses, gardens, trees and clutter; side streets, blocks and lots are coming) and paints the map from the map art you already have. Every random choice is seeded, so the same plan always gives the same map, and each district has its own seed: reroll one and the districts beside it don't move (only woods its new houses crowd can change). Pinning a feature so it stays put is planned.
+You decide what matters: where the roads run, the river and its crossings, the square, the walls and gates, the landmarks, and what each district is like. AtlasScribe fills in everything nobody wants to place by hand (side streets, plots, houses, gardens, trees and clutter) and paints the map from the map art you already have. Every random choice is seeded, so the same plan always gives the same map, and each district has its own seed: reroll one and the districts beside it don't move (only woods its new houses crowd can change). Pinning a feature so it stays put is planned.
 
 It's system agnostic and GM only.
 
@@ -20,9 +20,18 @@ What's planned, in order:
 6. A painted style for city maps.
 7. Battle maps built as Foundry content: tiles, walls, doors, lights and regions (1.0.0).
 
-## Trying the engine
+## Making a map
 
-There's no panel yet: for now AtlasScribe is driven from the browser console (F12) or a script macro, as a GM, with a preview window to try plans and rerolls in. A plan is JSON (see the sample below); positions are in grid squares from the top left, sizes in feet.
+As the GM, open the Scenes tab and click **AtlasScribe**.
+
+1. **Quick Start** asks a few things: a hamlet, village or town; the season; a river, a stream or no water; a crossroads, a road through or a fork; a market square, a village green or neither; and what's around it (farms and woods, farmland, woodland or open ground). Leave any of them on "Any" and the seed picks. It writes a plan and draws it in about a second.
+2. **Change it in the preview.** Each district, farm and wood has a button to reroll it and one to lock it; Reroll all rerolls everything that isn't locked; Undo steps back. Shapes lets you drag the districts' corners. Scroll to zoom, drag to move.
+3. **Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and exported.
+4. **Make scene** paints the map with your art and makes it a scene, with the plan's labels hidden from players. After changes, **Update scene** repaints that scene (it's backed up first).
+
+## From a script
+
+Everything the window does can also be done from the browser console (F12) or a script macro, as a GM. A plan is JSON (see the sample below); positions are in grid squares from the top left, sizes in feet.
 
 ```js
 const as = game.modules.get("atlas-scribe").api;
@@ -38,6 +47,7 @@ await as.preview(plan);                // a quick sketch in a window: reroll and
 await as.render(plan, { publish: true }); // paints it, saves it, and makes a new scene
 ```
 
+- `open()`: opens the AtlasScribe window. `quickPlan({ size, season, water, roads, centre, surroundings, name, seed })` gives `{ plan, choices }` without the window; `quickChoices` lists the choices.
 - `checkPlan(plan)`: reads a plan (an object, JSON text, or text with a fenced `mapplan` block) and lists its problems, errors first. Errors stop a render; warnings don't.
 - `render(plan, options)`: lays the plan out and paints it in the background (Foundry stays responsive, with a progress bar), then saves the image to the output folder's `maps` folder. It never writes over a file. `publish: true` also makes a scene.
 - `publish(plan, { image })`: makes a scene from a rendered map (render's result, or the image's path): the background, the grid, lighting, fog, weather and navigation from the plan's `output.scene`, a thumbnail, and the plan's labels as locked text drawings, hidden from players unless the label says `show: "all"`.

@@ -59,7 +59,8 @@ export function paint(ctx) {
     if (y.fence) { g.setLineDash([px(0.14, 2), px(0.06, 1)]); stroke(y.poly.concat([y.poly[0]]), 0.04, "rgb(110,84,58)"); g.setLineDash([]); }
   }
   for (const pk of items("surface", "park")) {
-    if (!winter) fillPoly(pk.poly, mix(base, [120, 170, 70], 0.18));
+    fillPoly(pk.poly, winter ? mix(base, [200, 210, 220], 0.25) : mix(base, [120, 170, 70], 0.3)); // a green shows as a green
+    stroke([...pk.poly, pk.poly[0]], 0.04, winter ? "rgba(120,130,140,0.5)" : "rgba(70,100,50,0.5)");
     for (const w of pk.paths ?? []) stroke(w.path, w.width, winter ? mix(trodden, [150, 142, 132], 0.3) : mix(col(`surface.${w.surface}.${s}`), [255, 255, 255], 0.1));
     if (pk.basin) {
       const { at, radius } = pk.basin;

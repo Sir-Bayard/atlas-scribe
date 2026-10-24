@@ -204,3 +204,66 @@
 .atlas-scribe .as-pv-handle:hover {
   fill: rgb(255, 220, 120);
 }
+
+/* The window with no plan yet: a welcome with Quick Start */
+.atlas-scribe .as-pv.as-empty {
+  align-items: center;
+  justify-content: center;
+}
+.atlas-scribe .as-pv-welcome {
+  max-width: 34rem;
+  padding: 2rem;
+  text-align: center;
+}
+.atlas-scribe .as-pv-welcome > i {
+  font-size: 3rem;
+  opacity: 0.6;
+}
+.atlas-scribe .as-pv-welcome h2 {
+  border: none;
+  margin: 0.5rem 0;
+}
+.atlas-scribe .as-pv-welcome .as-pv-error {
+  position: static;
+  margin-top: 1rem;
+}
+/* The plan's file tools: icon buttons in a row */
+.atlas-scribe .as-pv-file button {
+  flex: 1;
+  padding: 0;
+  height: 1.9rem;
+}
+.atlas-scribe .as-pv-dirty {
+  color: rgb(200, 120, 20);
+}
+.atlas-scribe .as-pv-problems ul {
+  max-height: 8rem;
+  overflow-y: auto;
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85em;
+}
+.atlas-scribe .as-pv-problems summary i {
+  color: rgb(200, 120, 20);
+}
+.atlas-scribe .as-pv-problems li.as-error {
+  color: rgb(190, 50, 40);
+}
+.atlas-scribe .as-pv-scene button.as-primary {
+  flex: 3;
+  font-weight: 600;
+}
+/* The Quick Start dialog */
+.atlas-scribe.as-quick .form-group,
+.atlas-scribe.as-import .form-group {
+  margin-bottom: 0.4rem;
+}
+.atlas-scribe.as-quick .hint {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.atlas-scribe.as-import textarea {
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.85em;
+}
