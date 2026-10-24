@@ -181,13 +181,24 @@ function isPath(p) {
   return Array.isArray(p) && p.length >= 2 && p.every(isPoint);
 }
 
+/** The smallest a shape may be, in squares across (and so a tenth of a square across, squared, in area). */
+const MIN_SHAPE = 0.1;
+
 function checkShape(shape, where, field, need) {
-  if (Array.isArray(shape)) return need(shape.length >= 3 && shape.every(isPoint), field, `"${where}" has a polygon that needs three or more [x, y] points.`);
+  const big = (ok) => need(ok, field, `"${where}" is too small to draw: make it at least ${MIN_SHAPE} of a square across.`);
+  if (Array.isArray(shape)) {
+    if (!need(shape.length >= 3 && shape.every(isPoint), field, `"${where}" has a polygon that needs three or more [x, y] points.`)) return false;
+    let a = 0;
+    for (let i = 0; i < shape.length; i++) { const [x1, y1] = shape[i], [x2, y2] = shape[(i + 1) % shape.length]; a += x1 * y2 - x2 * y1; }
+    const xs = shape.map((p) => p[0]), ys = shape.map((p) => p[1]);
+    return big(Math.abs(a / 2) >= MIN_SHAPE * MIN_SHAPE && Math.max(...xs) - Math.min(...xs) >= MIN_SHAPE && Math.max(...ys) - Math.min(...ys) >= MIN_SHAPE);
+  }
   if (shape?.rect) {
     const r = shape.rect;
-    return need(Array.isArray(r) && r.length === 4 && r.every(isNum) && r[0] < r[2] && r[1] < r[3], field, `"${where}" has a rect that should be [left, top, right, bottom], left below right and top below bottom.`);
+    if (!need(Array.isArray(r) && r.length === 4 && r.every(isNum) && r[0] < r[2] && r[1] < r[3], field, `"${where}" has a rect that should be [left, top, right, bottom], left below right and top below bottom.`)) return false;
+    return big(r[2] - r[0] >= MIN_SHAPE && r[3] - r[1] >= MIN_SHAPE);
   }
-  if (shape?.circle) return need(Array.isArray(shape.circle) && shape.circle.length === 3 && shape.circle.every(isNum) && shape.circle[2] > 0, field, `"${where}" has a circle that should be [x, y, radius].`);
-  if (shape?.ellipse) return need(Array.isArray(shape.ellipse) && shape.ellipse.length === 4 && shape.ellipse.every(isNum) && shape.ellipse[2] > 0 && shape.ellipse[3] > 0, field, `"${where}" has an ellipse that should be [x, y, radius across, radius down].`);
+  if (shape?.circle) return need(Array.isArray(shape.circle) && shape.circle.length === 3 && shape.circle.every(isNum) && shape.circle[2] > 0, field, `"${where}" has a circle that should be [x, y, radius].`) && big(shape.circle[2] * 2 >= MIN_SHAPE);
+  if (shape?.ellipse) return need(Array.isArray(shape.ellipse) && shape.ellipse.length === 4 && shape.ellipse.every(isNum) && shape.ellipse[2] > 0 && shape.ellipse[3] > 0, field, `"${where}" has an ellipse that should be [x, y, radius across, radius down].`) && big(Math.min(shape.ellipse[2], shape.ellipse[3]) * 2 >= MIN_SHAPE);
   return need(false, field, `"${where}" needs a shape: a polygon [[x, y], ...], { rect: [left, top, right, bottom] }, { circle: [x, y, r] } or { ellipse: [x, y, rx, ry] }.`);
 }

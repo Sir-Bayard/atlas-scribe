@@ -63,7 +63,10 @@ const fitsIn = (pts, poly) => {
  */
 export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r }) {
   // In the plot, and clear of anything the plot was cut round (a named building inside a block is a hole in it)
-  const fits = (pts, poly) => fitsIn(pts, poly) && !blocked.some((b) => polygonsOverlap(pts, b));
+  // and clear of every street: the plot already stops at the street, but fitsIn's small tolerance could let a
+  // corner over the line
+  const clearOfWays = (pts) => pts.every((p) => ways.every((w) => distToPath(p, w.path) >= w.width / 2 - 0.005));
+  const fits = (pts, poly) => fitsIn(pts, poly) && clearOfWays(pts) && !blocked.some((b) => polygonsOverlap(pts, b));
   const T = lotTypeOf(district);
   const sq = (ft) => ft / ftPerSquare;
   const spacious = Math.max(0, Math.min(1, district.spacious ?? 0));
@@ -242,12 +245,15 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
           placed.push(rectOf(q));
         }
       }
-      // Gabled dormers on the front slope of a long roof (the house's roof carries on round them, in valleys)
+      // Gables on the front slope of a long roof, the house's roof carrying on round them in valleys: either wall
+      // dormers (a short gabled roof running back from the eave) or cross-gables (a gable rising straight from the
+      // eave, its two slopes meeting the roof in a pair of valleys), half and half
       if (!sections.length && !bay && pitched && style !== "pyramid" && wantDormers && w >= sq(28)) {
         const n = w >= sq(45) ? 2 : 1;
         const dw = Math.min(sq(8 + dr.next() * 3), w / (n * 2.5));
-        const dl = Math.min(depth / 2 - dw / 2 - 0.02, depth * 0.3);
-        if (dl >= sq(4)) for (let k = 0; k < n; k++) {
+        const crossGable = dr.next() < 0.5;
+        const dl = crossGable ? Math.min(0.04, depth / 2 - dw / 2 - 0.02) : Math.min(depth / 2 - dw / 2 - 0.02, depth * 0.3);
+        if (crossGable ? dl > 0.02 : dl >= sq(4)) for (let k = 0; k < n; k++) {
           const along = n === 1 ? (dr.next() - 0.5) * w * 0.3 : (k ? 1 : -1) * w * 0.22;
           // On a hipped roof the front slope narrows towards the ridge: the dormer must sit inside it, clear of the hips
           if (style !== "gable" && Math.abs(along) + dw / 2 + dl > w / 2 - 0.02) continue;

@@ -8,7 +8,8 @@ const PREC = 3; // decimal places Clipper keeps: a thousandth of a square
 
 const toC = (poly) => poly.map(([x, y]) => ({ x, y }));
 const fromC = (path) => path.map((p) => [p.x, p.y]);
-const many = (polys) => polys.filter((p) => p.length >= 3).map(toC);
+// Slivers with next to no area are dropped: Clipper's offset fails on a polygon that has collapsed to a point
+const many = (polys) => polys.filter((p) => p.length >= 3 && area(p) > 1e-6).map(toC);
 
 /** The shapes covered by each path, buffered to its own half width (open paths, round ends). */
 export function bands(paths) {

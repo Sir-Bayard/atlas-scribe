@@ -12,7 +12,7 @@ import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
 import { fillFarmstead, fillWoods, hedgeBushes, groundPatches } from "./settlement.mjs";
-import { streetsFor, districtGates, gateSpacing } from "../streets/index.mjs";
+import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor } from "../lots/index.mjs";
 import { buildOnLots } from "../lots/build.mjs";
@@ -21,6 +21,12 @@ export const LAYOUT_VERSION = 1;
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
 const tallOf = (heightFt) => Math.max(0, (Number(heightFt) - 20) / 20);
+
+/** The widest street and lane any district type makes, in feet: what a neighbour's street at a gate can be. */
+const GATE_WIDTH = {
+  street: Math.max(...Object.values(DISTRICT_TYPES).map((t) => t.streets?.width ?? 0)),
+  lane: Math.max(...Object.values(DISTRICT_TYPES).map((t) => t.lanes?.width ?? t.streets?.width ?? 0)),
+};
 
 export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   const plan = normalize(rawPlan);
@@ -235,10 +241,13 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
       const foot = b.kind === "footbridge";
       items.push({ kind: "crossing", id: `${d.id}/b${k + 1}`, from: d.id, class: b.kind, at: b.at, angle: b.angle, length: b.length + 0.3, width: (foot ? 8 : 20) / sq, frozen: false });
     });
-    // Plots along every road and street, and what stands on them
+    // Plots along every road and street, and what stands on them. Each gate is kept clear too: the neighbour's street
+    // starts there, and its width reaches a little over the shared edge even where this district's street doesn't
     const waterItems = items.filter((i) => i.kind === "water" && i.path);
-    const { lots } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked, ftPerSquare: sq, r: r.fork("lots") });
-    const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], blocked, ftPerSquare: sq, r: r.fork("build") });
+    const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
+    const keepOff = [...blocked, ...gateClear];
+    const { lots } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
+    const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build") });
     filling = d.id;
     for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
     for (const o of built.outbuildings) addBuilding(o.building, `${d.id}/o-${o.id}`, o.r, d.id);
