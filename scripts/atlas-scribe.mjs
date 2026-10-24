@@ -8,6 +8,7 @@ import { upload, freeName } from "./foundry/files.mjs";
 import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
+import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt } from "./foundry/art/index.mjs";
 import { publish } from "./foundry/publish.mjs";
 
@@ -115,6 +116,32 @@ const api = {
     if (!plan) return { plan: null, problems: [{ level: "error", id: null, field: null, message: error }], ok: false };
     const problems = checkPlan(plan);
     return { plan: normalize(plan), problems, ok: !problems.some((p) => p.level === "error") };
+  },
+
+  /**
+   * Rerolls districts and areas: a copy of the plan with new seeds for the ids given (one id or a list), or for every
+   * district and area that isn't locked when ids is left out. Locked features, the plan's own seed and everything
+   * else stay as they are, and each rerolled one changes alone. Doesn't render: pass the plan to render.
+   * Returns { plan, rerolled: [id], skipped: [{ id, why }] }.
+   */
+  reroll(input, ids = null) {
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    return rerollPlan(plan, ids);
+  },
+
+  /** A copy of the plan with these features locked, so a reroll leaves them alone. Returns the plan. */
+  lock(input, ids) {
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    return setLocked(plan, ids, true);
+  },
+
+  /** A copy of the plan with these features unlocked. Returns the plan. */
+  unlock(input, ids) {
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    return setLocked(plan, ids, false);
   },
 
   /**
