@@ -3,7 +3,7 @@
  * and in hamlets and villages often a croft (a small fenced field) at the back, with the plot's boundary drawn.
  * Everything in squares. Pure: runs anywhere.
  */
-import { pointInPolygon } from "../geom.mjs";
+import { pointInPolygon, polygonsOverlap } from "../geom.mjs";
 import { lotTypeOf } from "./index.mjs";
 import { intersect, area } from "./poly.mjs";
 
@@ -17,18 +17,21 @@ function corners(cx, cy, len, dep, [ux, uy]) {
 
 /** True when a rectangle (its corners) lies in the plot; tested a hair inside its edges, so a house built right
  * on the street line or against its neighbour still counts as fitting. */
-const fits = (pts, poly) => {
+const fitsIn = (pts, poly) => {
   const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   return pts.every(([x, y]) => pointInPolygon([cx + (x - cx) * 0.96, cy + (y - cy) * 0.96], poly));
 };
 
 /**
- * lots: from lotsFor. district: the plan feature. ways: [{ id, path, width }]. ftPerSquare. r: a stream for the
+ * lots: from lotsFor. district: the plan feature. ways: [{ id, path, width }]. blocked: polygons to keep clear of
+ * (squares, yards, named buildings). ftPerSquare. r: a stream for the
  * district's plots (each plot forks its own). Returns { houses, outbuildings, gardens, crofts, bounds }: houses and
  * outbuildings are { id, lot, building: { shape, rot, roof, height, chimney }, r }; gardens { cx, cy, w, d, rot };
  * crofts polygons; bounds [{ path, class }].
  */
-export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
+export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r }) {
+  // In the plot, and clear of anything the plot was cut round (a named building inside a block is a hole in it)
+  const fits = (pts, poly) => fitsIn(pts, poly) && !blocked.some((b) => polygonsOverlap(pts, b));
   const T = lotTypeOf(district);
   const sq = (ft) => ft / ftPerSquare;
   const spacious = Math.max(0, Math.min(1, district.spacious ?? 0));
@@ -52,6 +55,7 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
     }
   };
 
+  const row = { key: null, roof: null, left: 0 };
   lots.forEach((lot, i) => {
     const lr = r.fork("lot", lot.block, i);
     // Every choice drawn first, so a plot's dice never depend on what fitted
@@ -59,15 +63,24 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
     const cover = (T.cover[0] + lr.next() * (T.cover[1] - T.cover[0])) * (1 - 0.35 * spacious);
     const hd = sq(T.houseDepth[0] + lr.next() * (T.houseDepth[1] - T.houseDepth[0]));
     const sb = sq(T.setback[0] + lr.next() * (T.setback[1] - T.setback[0]) + 15 * spacious);
-    const roof = lr.pick(HOUSE_ROOFS);
+    let roof = lr.pick(HOUSE_ROOFS);
     const turn = (lr.next() - 0.5) * (T.cover[1] < 1 ? 4 : 0); // village houses sit a little askew; terraces don't
     const wantGarden = lr.next() < gardenShare, wantOut = lr.next() < T.outbuilding, wantCroft = lr.next() < (district.crofts ?? T.croft);
     const gDepth = 0.8 + lr.next() * 0.6, oSize = sq(9 + lr.next() * 9), oSide = lr.next() - 0.5, yard = sq(10 + lr.next() * 15);
     const bClass = boundClass(lr);
+    // The house's shape: one rear wing (L), two (U), or two and a back range round a yard (court)
+    const shapeRoll = lr.next(), wingLeft = lr.next() < 0.5, wingW = sq(12 + lr.next() * 8), wingL = sq(15 + lr.next() * 20);
+    const rowLen = 2 + lr.int(4); // terraces: houses in a row share one roof material
     const [ux, uy] = lot.along, [nx, ny] = lot.inward;
     const [mx, my] = lot.front.mid;
     const ang = (Math.atan2(uy, ux) * 180) / Math.PI;
 
+    // Terraces: a row of houses along one street shares its roof material, so it reads as a row
+    if (T.cover[1] >= 1) {
+      const key = `${lot.block}|${lot.way}`;
+      if (row.key === key && row.left > 0) { roof = row.roof; row.left--; }
+      else Object.assign(row, { key, roof, left: rowLen - 1 });
+    }
     // The house, at the front, as wide as its share of the frontage; narrowed if the plot's sides close in
     let house = null;
     if (!vacant) {
@@ -75,22 +88,61 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
       const rot = ang + turn;
       const a = (rot * Math.PI) / 180;
       const dir = [Math.cos(a), Math.sin(a)];
-      const full = Math.min(hd, lot.depth * (T.cover[1] >= 1 ? 0.85 : 0.6));
-      search: for (const depth of [full, full * 0.75]) {
+      // A house that will have wings keeps its front range shallower, leaving the plot room behind for them
+      const S0 = T.shapes ?? {};
+      const winged = shapeRoll < (S0.L ?? 0) + (S0.U ?? 0) + (S0.court ?? 0);
+      const plain = Math.min(hd, lot.depth * (T.cover[1] >= 1 ? 0.85 : 0.6));
+      const depths = winged ? [Math.min(hd, lot.depth * 0.45), plain, plain * 0.75] : [plain, plain * 0.75];
+      search: for (const depth of depths) {
         if (depth < sq(12)) continue;
         for (let w = lot.frontage * cover * 0.98; w > sq(12); w *= 0.85) {
           for (const slide of [0, 0.15, -0.15, 0.3, -0.3]) {
             const off = slide * lot.frontage;
             const cx = mx + nx * (sb + depth / 2) + ux * off, cy = my + ny * (sb + depth / 2) + uy * off;
             if (!fits(corners(cx, cy, w, depth, dir), lot.poly)) continue;
-            house = { cx, cy, w, depth, off };
-            out.houses.push({ id: `l${lot.block}-${i}`, lot: i, r: lr.fork("house"), building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, height: 20 } });
+            house = { cx, cy, w, depth, off, rot, dir };
             break search;
           }
         }
       }
     }
-    let behind = (house ? sb + house.depth : sb) + 0.15; // how far back from the street the next thing starts
+    // Wings behind the house, at right angles to it, then the house itself (drawn last, so its roof covers the joins)
+    let reach = house ? sb + house.depth : sb;
+    if (house) {
+      const { cx, cy, w, depth, rot, dir } = house;
+      const [dx, dy] = dir;
+      // The house's own "back": square to its front, on the side away from the street
+      const [bx, by] = -dy * nx + dx * ny >= 0 ? [-dy, dx] : [dy, -dx];
+      const S = T.shapes ?? {};
+      // Only a house wide enough gets wings, and a wing is never a thin stick: at least 10 ft wide, longer than wide
+      // A double plot's house leans to the bigger forms: a courtyard or two wings far more often
+      const roll = lot.merged ? shapeRoll * 0.35 + (S.L ?? 0) * 0.8 : shapeRoll;
+      const kindWanted = roll < S.L ? "L" : roll < S.L + S.U ? "U" : roll < S.L + S.U + S.court ? "court" : null;
+      const kind = !kindWanted || w < sq(22) ? null : kindWanted === "U" && w < sq(30) ? "L" : kindWanted === "court" && w < sq(32) ? "U" : kindWanted;
+      const parts = [];
+      const ww = Math.max(sq(10), Math.min(wingW, w * (kind === "L" ? 0.5 : 0.4)));
+      const wl = Math.max(kind === "court" ? Math.max(wingL, ww * 1.8) : wingL, ww * 1.2);
+      const wing = (side) => {
+        // A wing running back from one end of the house, flush with its side, overlapping it a little
+        const along = side * (w / 2 - ww / 2);
+        const ox = cx + dx * along + bx * (depth / 2 + wl / 2 - 0.05), oy = cy + dy * along + by * (depth / 2 + wl / 2 - 0.05);
+        return { cx: ox, cy: oy, len: wl, dep: ww, rot: rot + 90, back: depth + wl };
+      };
+      if (kind === "L") parts.push(wing(wingLeft ? -1 : 1));
+      if (kind === "U" || kind === "court") parts.push(wing(-1), wing(1));
+      if (kind === "court") {
+        const off = depth / 2 + wl - 0.05 + ww / 2;
+        parts.push({ cx: cx + bx * off, cy: cy + by * off, len: w, dep: ww, rot, back: depth + wl + ww - 0.05 });
+      }
+      // Every part must fit the plot, or the house stays a plain block
+      const ok = parts.every((q) => { const a = (q.rot * Math.PI) / 180; return fits(corners(q.cx, q.cy, q.len, q.dep, [Math.cos(a), Math.sin(a)]), lot.poly); });
+      if (ok) parts.forEach((q, k) => {
+        out.houses.push({ id: `l${lot.block}-${i}w${k + 1}`, lot: i, wing: true, r: lr.fork("wing", k), building: { shape: { rect: [q.cx - q.len / 2, q.cy - q.dep / 2, q.cx + q.len / 2, q.cy + q.dep / 2] }, rot: q.rot, roof, height: 20, chimney: false } });
+        reach = Math.max(reach, sb + q.back);
+      });
+      out.houses.push({ id: `l${lot.block}-${i}`, lot: i, r: lr.fork("house"), shape: ok ? kind : null, building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, height: 20 } });
+    }
+    let behind = reach + 0.15; // how far back from the street the next thing starts
     const houseBack = behind;
 
     // A tended garden right behind the house

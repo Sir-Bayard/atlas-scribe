@@ -223,7 +223,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     // Plots along every road and street, and what stands on them
     const waterItems = items.filter((i) => i.kind === "water" && i.path);
     const { lots } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked, ftPerSquare: sq, r: r.fork("lots") });
-    const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], ftPerSquare: sq, r: r.fork("build") });
+    const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], blocked, ftPerSquare: sq, r: r.fork("build") });
     filling = d.id;
     for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
     for (const o of built.outbuildings) addBuilding(o.building, `${d.id}/o-${o.id}`, o.r, d.id);
@@ -236,7 +236,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     built.crofts.forEach((poly, k) => items.push({ kind: "surface", id: `${d.id}/c${k + 1}`, from: d.id, class: "croft", poly }));
     built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
     filling = null;
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.length} houses, ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts.` });
   }
 
   // Woods and hedgerows last: trees keep clear of every building
