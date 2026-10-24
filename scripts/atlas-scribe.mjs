@@ -6,6 +6,8 @@
 import { WorkerClient } from "./foundry/worker-client.mjs";
 import { upload, freeName } from "./foundry/files.mjs";
 import { progressBar } from "./foundry/progress.mjs";
+import { readPlan, normalize } from "./core/plan.mjs";
+import { checkPlan } from "./core/check.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
@@ -32,6 +34,18 @@ const api = {
 
   /** Stops the running job. */
   cancel: () => worker.cancel(),
+
+  /**
+   * Reads a plan (an object, JSON text, or text with a ```mapplan block) and checks it.
+   * Returns { plan, problems, ok }: plan has every default filled in (null if it couldn't be read), problems is the
+   * checker's list ({ level, id, field, message }), and ok is true when there are no errors.
+   */
+  checkPlan(input) {
+    const { plan, error } = readPlan(input);
+    if (!plan) return { plan: null, problems: [{ level: "error", id: null, field: null, message: error }], ok: false };
+    const problems = checkPlan(plan);
+    return { plan: normalize(plan), problems, ok: !problems.some((p) => p.level === "error") };
+  },
 
   /**
    * Paints a test pattern in the worker and uploads it to <output>/tests. Proves the whole pipeline: the worker,
