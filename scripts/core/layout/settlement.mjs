@@ -1,81 +1,14 @@
 /**
- * The settlement fill: houses along streets, farmsteads, woods, hedgerows and ground patches. Numbers are in
- * squares and were tuned on a 25 ft square (a village overview). Pure: runs anywhere.
+ * The settlement fill outside the plots: farmsteads, woods, hedgerows and ground patches (houses stand on plots,
+ * in lots/). Numbers are in squares and were tuned on a 25 ft square (a village overview). Pure: runs anywhere.
  */
-import { DEG, bbox, pointInPolygon, rotateAbout, shapeToPolygon } from "../geom.mjs";
-
-/** Roofs for ordinary houses: slate most of all, then wood shingle, a few clay tiles. */
-const HOUSE_ROOFS = ["slate", "slate", "slate", "slate", "wood-shingle", "wood-shingle", "tile-red", "tile-brown"];
+import { bbox, pointInPolygon, rotateAbout, shapeToPolygon } from "../geom.mjs";
 
 /** Cap on random tries for one area, so a huge or odd shape can't run on for ever. */
 const MAX_TRIES = 20000;
 
 /** True when every corner of a polygon is inside another. */
 const inside = (pts, poly) => pts.every((p) => pointInPolygon(p, poly));
-
-/**
- * The "roadside" profile: houses along both sides of every road and lane through the district, ridges along the
- * street, turned and sized a little differently each, a few with a tended garden behind. Each house and its
- * garden lie wholly inside the district.
- *
- * The district's stream is drawn from the same number of times whatever fits, and each house's own choices (roof
- * variant, chimney) come from a stream of its own, so what happens elsewhere on the map never shifts this
- * district's dice; only things that physically crowd it can change it.
- */
-export function fillRoadside({ district, poly, ways, r, free, freeGarden = () => true, addBuilding, items }) {
-  const density = district.density ?? 1;
-  let n = 0;
-  for (const way of ways) {
-    const pts = way.path;
-    const setback = way.width / 2 + 0.25;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-      const seg = Math.hypot(bx - ax, by - ay);
-      if (!seg) continue;
-      const ux = (bx - ax) / seg, uy = (by - ay) / seg;
-      const ang = Math.atan2(uy, ux) / DEG;
-      let s = 0.4;
-      for (let step = 0; s < seg - 0.4; step++) {
-        const len = 1.3 + r.next() * 0.8, dep = 0.85 + r.next() * 0.35;
-        const t = s + len / 2;
-        const px = ax + ux * t, py = ay + uy * t;
-        for (const side of [1, -1]) {
-          if (r.next() < 0.12 + (1 - Math.min(1, density)) * 0.5) continue;
-          const nx = -uy * side, ny = ux * side;
-          const d = setback + dep / 2 + r.next() * 0.15;
-          // a little variety, so rows don't look ruled
-          const jl = len * (0.92 + r.next() * 0.16);
-          const cx = px + nx * d + (r.next() - 0.5) * 0.12, cy = py + ny * d + (r.next() - 0.5) * 0.12;
-          const rot = ang + (r.next() * 2 - 1) * 3 + (r.next() - 0.5) * 7;
-          const roof = r.pick(HOUSE_ROOFS);
-          const rad = Math.max(jl, dep) * 0.5;
-          const rect = { rect: [cx - jl / 2, cy - dep / 2, cx + jl / 2, cy + dep / 2] };
-          if (!inside(shapeToPolygon(rect, rot), poly) || !free(cx, cy, rad, dep / 2)) continue;
-          n++;
-          const house = addBuilding({ id: `${district.id}/h${n}`, r: r.fork("house", way.id, i, step, side), building: { shape: rect, rot, roof, height: 20 } });
-          // A tended garden behind (fenced, planted) for only a share of houses (district.gardens, about one in ten),
-          // its size varied; the rest of the plot stays open yard. Its own stream, so it never shifts the district's.
-          const gr = r.fork("garden", way.id, i, step, side);
-          if (gr.next() < (district.gardens ?? 0.1)) {
-            const own = house?.footprint ?? null;
-            const depth = 0.8 + gr.next() * 0.6, wide = 0.7 + gr.next() * 0.25;
-            for (const gd of [depth, depth * 0.65]) {
-              const g = dep / 2 + 0.1 + gd / 2;
-              const garden = { cx: cx + nx * g, cy: cy + ny * g, w: jl * wide, d: gd, rot };
-              const gp = shapeToPolygon({ rect: [garden.cx - garden.w / 2, garden.cy - garden.d / 2, garden.cx + garden.w / 2, garden.cy + garden.d / 2] }, rot);
-              if (inside(gp, poly) && freeGarden(gp, own, true)) {
-                items.push({ kind: "surface", id: `${district.id}/g${n}`, from: district.id, class: "garden", garden });
-                break;
-              }
-            }
-          }
-        }
-        s += len + 0.25 + r.next() * 0.5;
-      }
-    }
-  }
-  return n;
-}
 
 /**
  * A farmstead: its yard (the area's shape, turned by rot), a house near the yard's top left and a barn across from

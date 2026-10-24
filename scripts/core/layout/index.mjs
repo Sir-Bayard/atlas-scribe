@@ -11,9 +11,11 @@ import { normalize } from "../plan.mjs";
 import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
-import { fillRoadside, fillFarmstead, fillWoods, hedgeBushes, groundPatches } from "./settlement.mjs";
+import { fillFarmstead, fillWoods, hedgeBushes, groundPatches } from "./settlement.mjs";
 import { streetsFor, districtGates, gateSpacing } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
+import { lotsFor } from "../lots/index.mjs";
+import { buildOnLots } from "../lots/build.mjs";
 
 export const LAYOUT_VERSION = 1;
 
@@ -166,26 +168,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     return true;
   }
 
-  /**
-   * True when a garden (a polygon) stays out of squares, yards, water and roads, other gardens and every building
-   * except its own house (own: that house's footprint, which the garden only touches). A garden that fits is
-   * remembered with record.
-   */
-  function freeGarden(poly, own = null, record = false) {
-    for (const z of space.zones) if (polygonsOverlap(poly, z)) return false;
-    const small = shrink(poly, 0.04);
-    for (const p of space.plots) if (p !== own && !elsewhere(p) && polygonsOverlap(small, p)) return false;
-    for (const w of [...space.water, ...space.ways.filter((q) => !elsewhere(q))]) {
-      if (pathTouchesPolygon(w.path, poly)) return false;
-      if (poly.some((p) => distanceToPath(p, w.path) < w.clear)) return false;
-    }
-    if (record) {
-      if (filling !== null) owner.set(poly, filling);
-      space.plots.push(poly);
-      space.gardens.push(poly);
-    }
-    return true;
-  }
+
 
   // Farmsteads first, so district houses keep out of the farmyards
   progress(0.25, "Farms");
@@ -237,13 +220,23 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
       const foot = b.kind === "footbridge";
       items.push({ kind: "crossing", id: `${d.id}/b${k + 1}`, from: d.id, class: b.kind, at: b.at, angle: b.angle, length: b.length + 0.3, width: (foot ? 8 : 20) / sq, frozen: false });
     });
-    const along = [...fixedHere, ...own];
-    const before = items.length;
+    // Plots along every road and street, and what stands on them
+    const waterItems = items.filter((i) => i.kind === "water" && i.path);
+    const { lots } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked, ftPerSquare: sq, r: r.fork("lots") });
+    const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], ftPerSquare: sq, r: r.fork("build") });
     filling = d.id;
-    fillRoadside({ district: d, poly, ways: along, r, free, freeGarden, addBuilding: (spec) => addBuilding(spec.building, spec.id, spec.r, d.id), items });
+    for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
+    for (const o of built.outbuildings) addBuilding(o.building, `${d.id}/o-${o.id}`, o.r, d.id);
+    built.gardens.forEach((garden, k) => {
+      items.push({ kind: "surface", id: `${d.id}/g${k + 1}`, from: d.id, class: "garden", garden });
+      const gp = shapeToPolygon({ rect: [garden.cx - garden.w / 2, garden.cy - garden.d / 2, garden.cx + garden.w / 2, garden.cy + garden.d / 2] }, garden.rot);
+      owner.set(gp, d.id);
+      space.gardens.push(gp);
+    });
+    built.crofts.forEach((poly, k) => items.push({ kind: "surface", id: `${d.id}/c${k + 1}`, from: d.id, class: "croft", poly }));
+    built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
     filling = null;
-    const houses = items.slice(before).filter((i) => i.kind === "building").length;
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes made, ${made.bridges.length} bridges, ${houses} houses.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.length} houses, ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts.` });
   }
 
   // Woods and hedgerows last: trees keep clear of every building

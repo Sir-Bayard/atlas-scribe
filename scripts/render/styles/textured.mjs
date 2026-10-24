@@ -136,6 +136,29 @@ export function paint(ctx) {
     g.restore();
   }
 
+  // Plots: crofts as a faint tint, then their boundaries as thin fences, low walls or hedges
+  for (const c of items("surface", "croft")) {
+    g.fillStyle = winter ? "rgba(120,132,150,0.06)" : "rgba(110,135,60,0.12)";
+    poly(g, c.poly); g.fill();
+  }
+  const bounds = items("boundary");
+  const boundStyle = {
+    fence: { color: "rgba(88,68,48,0.55)", width: 0.03 },
+    wall: { color: "rgba(105,102,98,0.6)", width: 0.05 },
+    hedge: { color: winter ? "rgba(70,78,70,0.45)" : "rgba(60,85,45,0.6)", width: 0.08 },
+  };
+  for (const [cls, st] of Object.entries(boundStyle)) {
+    const these = bounds.filter((b) => b.class === cls);
+    if (!these.length) continue;
+    g.save(); g.strokeStyle = st.color; g.lineWidth = Math.max(1, st.width * pp); g.lineCap = "round"; g.lineJoin = "round";
+    for (const b of these) { path(g, b.path); g.stroke(); }
+    if (winter && cls !== "hedge") {
+      g.strokeStyle = "rgba(240,243,247,0.5)"; g.lineWidth = Math.max(1, st.width * pp * 0.4);
+      for (const b of these) { path(g, b.path); g.stroke(); }
+    }
+    g.restore();
+  }
+
   // Walls and hedges
   progress(0.25, "Walls and hedges");
   const walls = items("wall");
