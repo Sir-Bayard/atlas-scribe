@@ -47,6 +47,7 @@ export const TYPES = {
       width: num(null, { unit: "ft", min: 1, byClass: { highway: 30, street: 20, lane: 15, track: 10, path: 5 } }),
       surface: oneOf(SURFACES, "dirt"),
       ruts: bool(false),
+      straight: bool(false), // drawn straight between its points; else it curves smoothly through them
     },
   },
   water: {
@@ -55,6 +56,7 @@ export const TYPES = {
     fields: {
       width: num(null, { unit: "ft", min: 1, byClass: { stream: 15, river: 60, canal: 20 } }),
       frozen: bool(false),
+      straight: bool(false), // drawn straight between its points (a canal, say); else it curves smoothly through them
     },
   },
   crossing: {
@@ -120,7 +122,10 @@ export const TYPES = {
   wall: {
     geometry: "path",
     classes: ["drystone", "hedge", "fence", "stone"],
-    fields: { height: num(null, { unit: "ft", min: 0, byClass: { drystone: 3, hedge: 5, fence: 4, stone: 6 } }) },
+    fields: {
+      height: num(null, { unit: "ft", min: 0, byClass: { drystone: 3, hedge: 5, fence: 4, stone: 6 } }),
+      straight: bool(false), // drawn straight between its points (a town wall's straight runs, say); else it curves
+    },
   },
   prop: {
     geometry: "point",

@@ -9,6 +9,7 @@
  */
 import { roadWaterCrossings, snapCrossing } from "./crossings.mjs";
 import { normalize } from "../plan.mjs";
+import { smoothPlanPaths } from "../smooth.mjs";
 import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
@@ -32,7 +33,8 @@ const GATE_WIDTH = {
 };
 
 export function layoutPlan(rawPlan, { onProgress = null } = {}) {
-  const plan = normalize(rawPlan);
+  // Roads, rivers and walls curve through their points (the plan itself is left as it is)
+  const plan = smoothPlanPaths(normalize(rawPlan));
   const sq = plan.size.ftPerSquare;
   const ft = (v) => (v == null ? null : v / sq);
   const [W, H] = plan.size.squares;
