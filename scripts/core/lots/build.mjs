@@ -39,6 +39,20 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
   const boundsSeen = new Set();
   const boundClass = (lr) => (district.profile === "hamlet" || district.profile === "roadside" ? (lr.next() < 0.5 ? "hedge" : "wall") : lr.next() < 0.8 ? "fence" : "wall");
 
+  let croftOf = -1;
+  /** A polygon's edges as boundary segments, except those along the street; each shared side once. */
+  const addBounds = (p, way, cls) => {
+    for (let k = 0; k < p.length; k++) {
+      const a = p[k], b = p[(k + 1) % p.length];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (way && Math.abs(distToPath(mid, way.path) - way.width / 2) < 0.1) continue;
+      const key = [a, b].map((q) => q.map((v) => v.toFixed(2)).join(",")).sort().join("|");
+      if (boundsSeen.has(key)) continue;
+      boundsSeen.add(key);
+      out.bounds.push({ path: [a, b], class: cls });
+    }
+  };
+
   lots.forEach((lot, i) => {
     const lr = r.fork("lot", lot.block, i);
     // Every choice drawn first, so a plot's dice never depend on what fitted
@@ -49,7 +63,7 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
     const roof = lr.pick(HOUSE_ROOFS);
     const turn = (lr.next() - 0.5) * (T.cover[1] < 1 ? 4 : 0); // village houses sit a little askew; terraces don't
     const wantGarden = lr.next() < gardenShare, wantOut = lr.next() < T.outbuilding, wantCroft = lr.next() < T.croft;
-    const gDepth = 0.8 + lr.next() * 0.6, oSize = 0.5 + lr.next() * 0.5, oSide = lr.next() - 0.5;
+    const gDepth = 0.8 + lr.next() * 0.6, oSize = sq(9 + lr.next() * 9), oSide = lr.next() - 0.5, yard = sq(10 + lr.next() * 15);
     const bClass = boundClass(lr);
     const [ux, uy] = lot.along, [nx, ny] = lot.inward;
     const [mx, my] = lot.front.mid;
@@ -58,20 +72,27 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
     // The house, at the front, as wide as its share of the frontage; narrowed if the plot's sides close in
     let house = null;
     if (!vacant) {
-      const depth = Math.min(hd, lot.depth * (T.cover[1] >= 1 ? 0.85 : 0.6));
-      for (let w = lot.frontage * cover * 0.98; w > sq(14); w *= 0.85) {
-        const cx = mx + nx * (sb + depth / 2), cy = my + ny * (sb + depth / 2);
-        const rot = ang + turn;
-        const a = (rot * Math.PI) / 180;
-        const pts = corners(cx, cy, w, depth, [Math.cos(a), Math.sin(a)]);
-        if (fits(pts, lot.poly)) {
-          house = { cx, cy, w, depth };
-          out.houses.push({ id: `l${lot.block}-${i}`, lot: i, r: lr.fork("house"), building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, height: 20 } });
-          break;
+      // Narrower, then shallower, then slid along the front, before a plot is left as a yard (odd corner plots)
+      const rot = ang + turn;
+      const a = (rot * Math.PI) / 180;
+      const dir = [Math.cos(a), Math.sin(a)];
+      const full = Math.min(hd, lot.depth * (T.cover[1] >= 1 ? 0.85 : 0.6));
+      search: for (const depth of [full, full * 0.75]) {
+        if (depth < sq(12)) continue;
+        for (let w = lot.frontage * cover * 0.98; w > sq(12); w *= 0.85) {
+          for (const slide of [0, 0.15, -0.15, 0.3, -0.3]) {
+            const off = slide * lot.frontage;
+            const cx = mx + nx * (sb + depth / 2) + ux * off, cy = my + ny * (sb + depth / 2) + uy * off;
+            if (!fits(corners(cx, cy, w, depth, dir), lot.poly)) continue;
+            house = { cx, cy, w, depth, off };
+            out.houses.push({ id: `l${lot.block}-${i}`, lot: i, r: lr.fork("house"), building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, height: 20 } });
+            break search;
+          }
         }
       }
     }
     let behind = (house ? sb + house.depth : sb) + 0.15; // how far back from the street the next thing starts
+    const houseBack = behind;
 
     // A tended garden right behind the house
     if (house && wantGarden) {
@@ -85,14 +106,15 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
         }
       }
     }
-    // A shed, barn or workshop further back, to one side
+    // A shed, barn or workshop across the yard behind, to one side: small, so it never reads as a second house
     if (house && wantOut) {
-      const ow = Math.min(oSize * 1.4, lot.frontage * 0.6), od = oSize;
+      const ow = Math.min(oSize * 1.3, lot.frontage * 0.5, house.w * 0.7), od = oSize;
       const side = oSide * Math.max(0, lot.frontage - ow) * 0.8;
-      const cx = mx + nx * (behind + od / 2) + ux * side, cy = my + ny * (behind + od / 2) + uy * side;
+      const back = behind + sq(8);
+      const cx = mx + nx * (back + od / 2) + ux * side, cy = my + ny * (back + od / 2) + uy * side;
       if (behind + od < lot.depth * 0.9 && fits(corners(cx, cy, ow, od, [ux, uy]), lot.poly)) {
         out.outbuildings.push({ id: `l${lot.block}-${i}o`, lot: i, r: lr.fork("out"), building: { shape: { rect: [cx - ow / 2, cy - od / 2, cx + ow / 2, cy + od / 2] }, rot: ang, roof: "wood-shingle", height: 15, chimney: false } });
-        behind += od + 0.1;
+        behind = back + od + 0.1;
       }
     }
     // The croft: the back of the plot as a small fenced field
@@ -100,25 +122,26 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
       const far = lot.depth * 1.6, near = Math.max(behind, lot.depth * 0.55);
       const slab = [[mx + nx * near - ux * 99, my + ny * near - uy * 99], [mx + nx * near + ux * 99, my + ny * near + uy * 99], [mx + nx * far + ux * 99, my + ny * far + uy * 99], [mx + nx * far - ux * 99, my + ny * far - uy * 99]];
       const piece = intersect([lot.poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-      if (piece && area(piece) > 0.5) out.crofts.push(piece);
+      if (piece && area(piece) > 0.5) { out.crofts.push(piece); croftOf = i; }
     }
-    // The plot's boundary, except along its street; each shared side once
-    if (T.bounds) {
+    // Boundaries near the house only (Patrick, 24 Oct): the yard round the house and outbuilding, fenced on its
+    // sides and back but not along the street, and the fence round a croft. The long back lines aren't drawn.
+    if (T.bounds && house) {
       const way = wayById.get(lot.way);
-      const p = lot.poly;
-      for (let k = 0; k < p.length; k++) {
-        const a = p[k], b = p[(k + 1) % p.length];
-        const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-        if (way && Math.abs(distToPath(mid, way.path) - way.width / 2) < 0.1) continue;
-        const key = [a, b].map((q) => q.map((v) => v.toFixed(2)).join(",")).sort().join("|");
-        if (boundsSeen.has(key)) continue;
-        boundsSeen.add(key);
-        out.bounds.push({ path: [a, b], class: bClass });
-      }
+      const reachBack = Math.max(houseBack, behind) + yard;
+      const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);
+      if (toft) addBounds(toft, way, bClass);
     }
+    if (T.bounds && out.crofts[out.crofts.length - 1] && wantCroft && croftOf === i) addBounds(out.crofts[out.crofts.length - 1], null, bClass);
   });
   out.bounds = joinBounds(out.bounds);
   return out;
+}
+
+/** The part of a plot from its front back to a given depth. */
+function clipDepth(poly, [mx, my], [ux, uy], [nx, ny], depth) {
+  const slab = [[mx - nx * 0.5 - ux * 99, my - ny * 0.5 - uy * 99], [mx - nx * 0.5 + ux * 99, my - ny * 0.5 + uy * 99], [mx + nx * depth + ux * 99, my + ny * depth + uy * 99], [mx + nx * depth - ux * 99, my + ny * depth - uy * 99]];
+  return intersect([poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
 }
 
 /** Joins boundary segments end to end into longer lines of the same kind, so they draw as fences, not dashes. */

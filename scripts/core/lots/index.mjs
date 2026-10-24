@@ -17,9 +17,9 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
  * chance the back of the plot is a small fenced field; bounds: whether plot boundaries are drawn.
  */
 export const LOT_TYPES = {
-  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.6, croft: 0.7, bounds: true },
-  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.45, croft: 0.45, bounds: true },
-  town: { frontage: [25, 40], depth: [100, 160], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.25, croft: 0, bounds: false },
+  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.7, bounds: true },
+  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.45, bounds: true },
+  town: { frontage: [25, 40], depth: [100, 160], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false },
   core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false },
 };
 
@@ -52,7 +52,8 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
     ...ways.map((w) => ({ path: w.path, half: w.width / 2 })),
     ...water.map((w) => ({ path: w.path, half: w.width / 2 + 0.2 })),
   ]);
-  const raw = difference([poly], [...cut, ...blocked]);
+  // Squares, yards and named buildings keep a little clear ground round them
+  const raw = difference([poly], [...cut, ...offset(blocked, 0.12)]);
   const blocks = shapes(raw).filter((b) => area(b.outer) - b.holes.reduce((s, h) => s + area(h), 0) > 0.5);
   // A fixed order, by position, so the same plan always cuts the same lots
   blocks.sort((a, b) => { const [ax, ay] = centroid(a.outer), [bx, by] = centroid(b.outer); return ay - by || ax - bx; });
