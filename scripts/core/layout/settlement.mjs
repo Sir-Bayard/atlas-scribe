@@ -3,6 +3,8 @@
  * in lots/). Numbers are in squares and were tuned on a 25 ft square (a village overview). Pure: runs anywhere.
  */
 import { bbox, pointInPolygon, rotateAbout, shapeToPolygon } from "../geom.mjs";
+import { poissonInPolygon } from "../scatter.mjs";
+import { makeNoise } from "../noise.mjs";
 
 /** Cap on random tries for one area, so a huge or odd shape can't run on for ever. */
 const MAX_TRIES = 20000;
@@ -49,28 +51,51 @@ export function fillFarmstead({ area, r, free, addBuilding, items }) {
 }
 
 /**
- * Woods: trees scattered through the area's shape (turned by rot), keeping clear of everything else. mix gives the
- * share of each species; trees (default: a quarter of the area's box, in squares) is how many to try. Every try
- * draws the same numbers whether or not its tree fits.
+ * Woods: groves of trees whose crowns touch, rather than trees dotted evenly. Trees are spread by Poisson-disk sampling
+ * (Bridson 2007) at a close spacing, but only where a noise is high enough, the threshold set so the area holds about
+ * the number of trees asked for (trees; else about one per 2.4 square squares): a few trees make a few groves with
+ * open ground between, many make a forest with clearings. Points are laid out before checking for anything else, so
+ * what another district places can remove trees but never moves the rest. mix gives the share of each species.
  */
 export function fillWoods({ area, r, free, items }) {
   const poly = shapeToPolygon(area.shape, area.rot ?? 0);
   if (poly.length < 3) return;
-  const [x0, y0, x1, y1] = bbox(poly);
-  const want = area.trees ?? (x1 - x0) * (y1 - y0) * 0.25;
-  const tries = Number.isFinite(want) ? Math.min(MAX_TRIES, Math.max(0, Math.round(want))) : 0;
+  const a = polyArea(poly);
+  if (!(a > 0)) return;
+  const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a / 2.4);
+  const spacing = 0.85; // squares between trees in a grove: crowns overlap a little
+  const full = a / (spacing * spacing * 1.6); // about what a wood packed edge to edge would hold
+  const share = Math.min(1, want / full);
+  const grove = makeNoise(r.int(2 ** 31), `${area.id}/groves`, { scale: 5, octaves: 2 });
+  // The noise level above which the right share of the area is wooded, measured on a grid over the shape
+  let level = -Infinity;
+  if (share < 0.98) {
+    const [x0, y0, x1, y1] = bbox(poly);
+    const step = Math.max(0.5, Math.sqrt(((x1 - x0) * (y1 - y0)) / 40000));
+    const vals = [];
+    for (let y = y0 + step / 2; y < y1; y += step) for (let x = x0 + step / 2; x < x1; x += step) if (pointInPolygon([x, y], poly)) vals.push(grove(x, y));
+    vals.sort((p, q) => p - q);
+    if (vals.length) level = vals[Math.min(vals.length - 1, Math.floor((1 - share) * vals.length))];
+  }
+  const pts = poissonInPolygon(poly, spacing, r.fork("points"), { keep: (x, y) => grove(x, y) >= level, max: MAX_TRIES });
+  const tr = r.fork("trees");
   const bareShare = area.mix?.bare ?? 0.15;
   const sizes = ["large", "medium", "small"];
   let n = 0;
-  for (let i = 0; i < tries; i++) {
-    const x = x0 + r.next() * (x1 - x0), y = y0 + r.next() * (y1 - y0);
-    const bare = r.next() < bareShare, size = r.pick(sizes), u = r.next(), rot = r.next() * 360, variant = r.int(8);
-    if (!pointInPolygon([x, y], poly) || !free(x, y, 0.3)) continue;
+  for (const [x, y] of pts) {
+    const bare = tr.next() < bareShare, size = tr.pick(sizes), u = tr.next(), rot = tr.next() * 360, variant = tr.int(8);
+    if (!free(x, y, 0.3)) continue;
     n++;
     items.push(bare
       ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.55 + u * 0.3, rot, variant }
       : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: 0.9 + u * 0.6, rot, variant });
   }
+}
+
+function polyArea(poly) {
+  let s = 0;
+  for (let i = 0; i < poly.length; i++) { const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length]; s += x1 * y2 - x2 * y1; }
+  return Math.abs(s / 2);
 }
 
 /** A hedgerow: small bushes every 0.4 squares along the wall's path. */
