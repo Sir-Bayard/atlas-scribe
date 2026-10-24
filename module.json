@@ -2,7 +2,7 @@
   "id": "atlas-scribe",
   "title": "AtlasScribe: Map Generator",
   "description": "<p>A map plan in, a map out. You decide what matters (the roads, the river, the square, the landmarks, what each district is like) and AtlasScribe fills in the rest procedurally: streets, lots, houses, gardens, trees and clutter, painted from the map art you already have. Settlements and cities first, battle maps later. System agnostic. Early development: not ready for use yet.</p>",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "authors": [
     {
       "name": "Sir Bayard",
