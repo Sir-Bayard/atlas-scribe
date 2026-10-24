@@ -100,6 +100,7 @@ export const TYPES = {
       crofts: num(null, { min: 0, max: 1 }), // the share of plots with a croft behind; else the type's
       croftDepth: num(null, { min: 0.1, max: 1 }), // how far back a croft runs, as a share of the plot behind the yard; else the type's
       croftFence: oneOf(["all", "sides", "none"], null), // the croft's fence: all round, sides only (open at the back), none; else the type's
+      plotLines: bool(false), // draw plot lines: yard and croft fences in hamlets and villages, faint walls between long plots elsewhere
       roofs: listOf(ROOFS), // the roof materials its houses choose from, equally; else a mix picked for its type from its seed
       roofStyles: listOf(ROOF_STYLES), // the roof forms its houses choose from, equally; else its type's mix
     },

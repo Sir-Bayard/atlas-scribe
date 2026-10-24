@@ -94,6 +94,11 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   };
 
   const palette = roofPalette(district, T, r), styles = roofStyles(district, T);
+  // Plot lines: off unless the district's plotLines is true (Patrick, 24 Oct, from a side-by-side render: plots show by
+  // what's in them). When on, types that fence yards (hamlets, villages) draw yards and crofts; the others draw faint
+  // lines between long plots behind the yards
+  const linesOn = district.plotLines === true;
+  const yardLines = linesOn && !!T.bounds, stripLines = linesOn && !T.bounds;
   const row = { key: null, roof: null, style: null, left: 0 };
   lots.forEach((lot, i) => {
     const lr = r.fork("lot", lot.block, i);
@@ -381,7 +386,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         }
       }
       // Faint lines between long town plots, behind the yard only, where neighbours' backs meet (decision 24)
-      if (T.backBounds && span > sq(20)) {
+      if (stripLines && span > sq(20)) {
         const behindYard = difference([lot.poly], [clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack) ?? []]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
         const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
         // Not across the plot where the yard ends: only its sides and its far end
@@ -391,13 +396,13 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     // Boundaries near the house only (Patrick, 24 Oct): the yard round the house and outbuilding, fenced on its
     // sides and back but not along the street, and the fence round a croft. The long back lines aren't drawn.
     const way = wayById.get(lot.way);
-    if (T.bounds && house) {
+    if (yardLines && house) {
       const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);
       if (toft) addBounds(toft, way, bClass);
     }
     // The croft's fence: all round, its sides only (open at the back, fading into the fields), or none
     const croftFence = district.croftFence ?? T.croftFence ?? "all";
-    if (T.bounds && wantCroft && croftOf === i && croftFence !== "none") {
+    if (yardLines && wantCroft && croftOf === i && croftFence !== "none") {
       const croft = out.crofts[out.crofts.length - 1];
       const backOf = croftFence === "sides" ? (a, b) => {
         const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;

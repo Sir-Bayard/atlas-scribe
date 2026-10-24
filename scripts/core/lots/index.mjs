@@ -16,16 +16,15 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
  * house takes; houseDepth; setback: from the street; outbuilding: the chance of one behind the house; croft: the
  * chance the back of the plot is a small fenced field, croftDepth how far back it runs (a share of the plot behind
  * the yard) and croftFence how it's fenced (Patrick, 24 Oct: a quarter of village plots, half depth, open at the
- * back); bounds: whether plot boundaries are drawn; shapes: the chance a house has one rear wing (L), two (U) or
- * wings and a back range round a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
+ * back); bounds: the plot-line style when a district turns plotLines on (yards and crofts; else faint strips);
+ * shapes: the chance a house has one rear wing (L), two (U) or wings and a back range round a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
  * merge: the chance a plot is joined to the one before it (a double plot); roofs: roof materials and their weights,
  * of which each district keeps `palette` (picked from its seed), so neighbouring districts can differ; styles: the
  * share of each roof form (a terrace row shares its material and form, so it reads as a row); shapes also take T (a
  * wing from the middle of the back); extras: the chance of a bay out to the street (a cross-gable), gabled dormers on
  * a long roof, a round corner turret, a long house built in stepped sections, a square shed being round, and a range
  * at the far end of a long plot (rear); fill: what the back of a plot behind the yard holds (a strip garden, an
- * orchard in rows, a few trees, open ground) by share; backBounds: faint lines between long plots behind the yard
- * (off everywhere: Patrick, 24 Oct, after renders, preferred the plots to show by what's in them);
+ * orchard in rows, a few trees, open ground) by share;
  * wild: the spacing, in squares, of trees scattered over ground no plot takes (beyond the back lanes, inside blocks).
  */
 export const LOT_TYPES = {
@@ -34,7 +33,7 @@ export const LOT_TYPES = {
   village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.25, croftDepth: 0.5, croftFence: "sides", bounds: true, shapes: { L: 0.25, T: 0.12, U: 0.05, court: 0 }, extras: { bay: 0.15, dormers: 0.1, turret: 0.06, steps: 0.3, roundShed: 0.2 },
     roofs: { slate: 4, "wood-shingle": 2, thatch: 2, "slate-blue": 1, "tile-red": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 3, styles: { hip: 0.4, "half-hip": 0.2, gable: 0.4 }, fill: { orchard: 0.25, trees: 0.45, open: 0.3 }, wild: 1.4 },
   town: { frontage: [25, 40], depth: [200, 240], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false, merge: 0.12, shapes: { L: 0.35, T: 0.1, U: 0.1, court: 0.08 }, extras: { bay: 0, dormers: 0.25, turret: 0.08, steps: 0.5, roundShed: 0.05, rear: 0.45 },
-    roofs: { slate: 3, "slate-blue": 2, "slate-purple": 1, "tile-red": 2, "tile-orange": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 4, styles: { gable: 0.7, hip: 0.2, "half-hip": 0.05, flat: 0.05 }, fill: { garden: 0.3, orchard: 0.25, trees: 0.3, open: 0.15 }, backBounds: false, wild: 1.8 },
+    roofs: { slate: 3, "slate-blue": 2, "slate-purple": 1, "tile-red": 2, "tile-orange": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 4, styles: { gable: 0.7, hip: 0.2, "half-hip": 0.05, flat: 0.05 }, fill: { garden: 0.3, orchard: 0.25, trees: 0.3, open: 0.15 }, wild: 1.8 },
   core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.45, T: 0.1, U: 0.1, court: 0.05 }, extras: { bay: 0, dormers: 0.2, turret: 0.1, steps: 0.6, roundShed: 0 },
     roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 }, fill: { trees: 0.35, open: 0.65 }, wild: 2.5 },
 };
