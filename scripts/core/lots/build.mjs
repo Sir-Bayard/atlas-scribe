@@ -71,6 +71,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     // The house's shape: one rear wing (L), two (U), or two and a back range round a yard (court)
     const shapeRoll = lr.next(), wingLeft = lr.next() < 0.5, wingW = sq(12 + lr.next() * 8), wingL = sq(15 + lr.next() * 20);
     const rowLen = 2 + lr.int(4); // terraces: houses in a row share one roof material
+    const variant = lr.int(8), hipped = lr.next() < (T.hip ?? 0); // a house and its wings share one roof
     const [ux, uy] = lot.along, [nx, ny] = lot.inward;
     const [mx, my] = lot.front.mid;
     const ang = (Math.atan2(uy, ux) * 180) / Math.PI;
@@ -106,7 +107,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         }
       }
     }
-    // Wings behind the house, at right angles to it, then the house itself (drawn last, so its roof covers the joins)
+    // Wings behind the house, at right angles to it
     let reach = house ? sb + house.depth : sb;
     if (house) {
       const { cx, cy, w, depth, rot, dir } = house;
@@ -126,7 +127,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         // A wing running back from one end of the house, flush with its side, overlapping it a little
         const along = side * (w / 2 - ww / 2);
         const ox = cx + dx * along + bx * (depth / 2 + wl / 2 - 0.05), oy = cy + dy * along + by * (depth / 2 + wl / 2 - 0.05);
-        return { cx: ox, cy: oy, len: wl, dep: ww, rot: rot + 90, back: depth + wl };
+        return { cx: ox, cy: oy, len: wl, dep: ww, rot: rot + 90, back: depth + wl, wing: true };
       };
       if (kind === "L") parts.push(wing(wingLeft ? -1 : 1));
       if (kind === "U" || kind === "court") parts.push(wing(-1), wing(1));
@@ -136,11 +137,18 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       }
       // Every part must fit the plot, or the house stays a plain block
       const ok = parts.every((q) => { const a = (q.rot * Math.PI) / 180; return fits(corners(q.cx, q.cy, q.len, q.dep, [Math.cos(a), Math.sin(a)]), lot.poly); });
-      if (ok) parts.forEach((q, k) => {
-        out.houses.push({ id: `l${lot.block}-${i}w${k + 1}`, lot: i, wing: true, r: lr.fork("wing", k), building: { shape: { rect: [q.cx - q.len / 2, q.cy - q.dep / 2, q.cx + q.len / 2, q.cy + q.dep / 2] }, rot: q.rot, roof, height: 20, chimney: false } });
+      const style = hipped ? "hip" : "gable";
+      // The house first, then its wings: a wing's roof runs on into the house's and must lie over it (the valleys)
+      out.houses.push({ id: `l${lot.block}-${i}`, lot: i, r: lr.fork("house"), shape: ok ? kind : null, building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, variant, roofStyle: style, height: 20 } });
+      // A courtyard's back range before its side wings, whose far ends run into it
+      if (ok) [...parts].sort((p1, p2) => (p1.wing ? 1 : 0) - (p2.wing ? 1 : 0)).forEach((q, k) => {
+        // Which end of the wing meets the house: its local x runs along rot; the end facing the house joins it
+        const a = (q.rot * Math.PI) / 180;
+        const outward = Math.cos(a) * bx + Math.sin(a) * by > 0; // +x points away from the house
+        const join = !q.wing ? null : kind === "court" ? { start: true, end: true } : outward ? { start: true } : { end: true };
+        out.houses.push({ id: `l${lot.block}-${i}w${k + 1}`, lot: i, wing: true, r: lr.fork("wing", k), building: { shape: { rect: [q.cx - q.len / 2, q.cy - q.dep / 2, q.cx + q.len / 2, q.cy + q.dep / 2] }, rot: q.rot, roof, variant, roofStyle: style, ...(join ? { join } : {}), height: 20, chimney: false } });
         reach = Math.max(reach, sb + q.back);
       });
-      out.houses.push({ id: `l${lot.block}-${i}`, lot: i, r: lr.fork("house"), shape: ok ? kind : null, building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, height: 20 } });
     }
     let behind = reach + 0.15; // how far back from the street the next thing starts
     const houseBack = behind;

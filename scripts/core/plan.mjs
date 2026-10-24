@@ -61,6 +61,7 @@ export const TYPES = {
       height: num(20, { unit: "ft", min: 1 }),
       rot: num(0, { unit: "deg" }),
       chimney: { kind: "boolean", default: null }, // null: the generator decides
+      roofStyle: oneOf(["gable", "hip"], "gable"),
       name: str(),
     },
   },

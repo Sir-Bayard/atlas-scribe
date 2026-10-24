@@ -18,11 +18,12 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
  * the yard) and croftFence how it's fenced (Patrick, 24 Oct: a quarter of village plots, half depth, open at the
  * back); bounds: whether plot boundaries are drawn; shapes: the chance a house has one rear wing (L), two (U) or
  * wings and a back range round a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
- * merge: the chance a plot is joined to the one before it (a double plot).
+ * merge: the chance a plot is joined to the one before it (a double plot); hip: the share of houses with hipped
+ * roofs (the rest are gabled; terraces always are, so a row reads as one ridge).
  */
 export const LOT_TYPES = {
-  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, shapes: { L: 0.3, U: 0, court: 0 } },
-  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.25, croftDepth: 0.5, croftFence: "sides", bounds: true, shapes: { L: 0.3, U: 0.05, court: 0 } },
+  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, hip: 0.7, shapes: { L: 0.3, U: 0, court: 0 } },
+  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.25, croftDepth: 0.5, croftFence: "sides", bounds: true, hip: 0.6, shapes: { L: 0.3, U: 0.05, court: 0 } },
   town: { frontage: [25, 40], depth: [100, 160], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false, merge: 0.12, shapes: { L: 0.4, U: 0.1, court: 0.08 } },
   core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.5, U: 0.1, court: 0.05 } },
 };

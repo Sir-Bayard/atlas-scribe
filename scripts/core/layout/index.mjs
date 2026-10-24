@@ -131,8 +131,11 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
       notes.push({ level: "warning", id, message: `"${id}": only rectangular buildings are drawn so far; this one is drawn as its bounding box.` });
     }
     const roof = b.roof ?? "slate";
+    const v = r.int(8); // drawn even when given, so the stream stays the same
     const item = {
-      kind: "building", id, from, cx, cy, len, dep, rot: b.rot ?? 0, roof, variant: r.int(8), tall: tallOf(b.height ?? 20),
+      kind: "building", id, from, cx, cy, len, dep, rot: b.rot ?? 0, roof, variant: b.variant ?? v, tall: tallOf(b.height ?? 20),
+      roofStyle: b.roofStyle ?? "gable", // hip: sloped on all four sides; gable: two slopes, upright ends
+      ...(b.join ? { join: b.join } : {}), // a wing's ends that run into another roof (valleys there, no hip)
       chimney: (b.chimney ?? r.chance(0.75)) ? { u: 0.3, v: r.chance(0.5) ? -0.2 : 0.2, variant: r.int(8) } : null,
       ...(b.name ? { name: b.name } : {}),
     };
