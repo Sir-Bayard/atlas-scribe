@@ -11,12 +11,16 @@ import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt } from "./foundry/art/index.mjs";
 import { publish } from "./foundry/publish.mjs";
+import { PreviewApp } from "./foundry/preview.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
 
 /** The job running now: { cancelled }, or null. */
 let job = null;
+
+/** The preview window, while it's open. */
+let previewApp = null;
 
 /** The folder AtlasScribe writes into: the setting, or this world's own atlas-scribe folder. */
 function outputFolder() {
@@ -142,6 +146,35 @@ const api = {
     const { plan, error } = readPlan(input);
     if (!plan) throw new Error(`AtlasScribe: ${error}`);
     return setLocked(plan, ids, false);
+  },
+
+  /**
+   * A quick look at a plan: lays it out and draws it in plain colours (no art) in a window, in a second or so, with
+   * its districts and areas outlined. Reroll, lock and undo there, then take the plan the window has made with Copy
+   * plan or from the window's plan property. Only one preview window is open at a time: a second call shows the new
+   * plan in it. px: the longer side of the picture, in pixels. Returns the window; if the plan can't be drawn (another
+   * job is running, say) the window says why.
+   */
+  async preview(input, { px = 1600 } = {}) {
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    planOrThrow(plan);
+    const run = (p) => exclusive(async () => {
+      const checked = planOrThrow(p);
+      return worker.run("preview", { plan: checked.plan, px });
+    });
+    // A window that is open, or still opening, shows the new plan; a closed one is replaced
+    const S = foundry.applications.api.ApplicationV2.RENDER_STATES;
+    const open = () => previewApp && previewApp.state >= S.NONE;
+    if (!open()) {
+      await previewApp?.settled(); // a window closed mid-draw still holds the job until its draw ends
+      if (!open()) previewApp = new PreviewApp({ plan, run }); // another call may have opened one meanwhile
+    }
+    const app = previewApp;
+    if (app.minimized) await app.maximize();
+    if (app.rendered) app.bringToFront();
+    await app.show(plan, run);
+    return app;
   },
 
   /**

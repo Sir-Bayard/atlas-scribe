@@ -403,7 +403,7 @@ function offsetPath(pts, d) {
 }
 
 /** The unit direction of the way passing closest to a point (for a ford), or straight down. */
-function wayDirectionAt(L, [x, y]) {
+export function wayDirectionAt(L, [x, y]) {
   let best = null, bestD = Infinity;
   for (const w of L.items.filter((i) => i.kind === "way")) {
     for (let i = 0; i < w.path.length - 1; i++) {

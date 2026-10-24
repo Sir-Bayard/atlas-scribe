@@ -9,6 +9,7 @@
 import { rng } from "../core/rng.mjs";
 import { layoutPlan } from "../core/layout/index.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
+import * as sketch from "./styles/sketch.mjs";
 
 const jobs = {
   /** Plan to Layout. Returns { layout, roles }: roles are the art roles the layout's style needs. */
@@ -20,6 +21,25 @@ const jobs = {
   /** Layout to image. art: { role: [url, ...] }. Returns { blob, thumb, width, height, tiles, failedArt, ms }. */
   async paint({ layout, art, tileSize, quality }, progress) {
     return paintLayout({ layout, art, tileSize, quality }, progress);
+  },
+
+  /**
+   * A quick look at a plan: laid out, then painted in plain colours (the sketch style, no art) with the longer side
+   * about px pixels. Returns { blob, width, height, pxPerSquare, squares, notes, counts, ms }.
+   */
+  async preview({ plan, px = 1600 }, progress) {
+    const t0 = performance.now();
+    const layout = layoutPlan(plan, { onProgress: (p, l) => progress(0.7 * p, l) });
+    const [MW, MH] = layout.size.squares;
+    const pp = Math.max(4, Math.min(layout.pxPerSquare, px / Math.max(MW, MH)));
+    const W = Math.max(1, Math.round(MW * pp)), H = Math.max(1, Math.round(MH * pp));
+    const c = new OffscreenCanvas(W, H);
+    sketch.paint({ g: c.getContext("2d"), mask: null, W, H, x0: 0, y0: 0, pp, layout, art: () => null, progress: (p, l) => progress(0.7 + 0.25 * p, l) });
+    progress(0.96, "Encoding");
+    const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
+    const counts = {};
+    for (const i of layout.items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, counts, ms: Math.round(performance.now() - t0) };
   },
 
   /** A test pattern: proves the worker, image loading, soft masks, progress and WebP output. */

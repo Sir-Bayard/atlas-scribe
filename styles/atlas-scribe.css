@@ -1,3 +1,190 @@
 /* AtlasScribe. Every rule is scoped under .atlas-scribe so it can't touch Foundry or other modules. */
 .atlas-scribe {
 }
+
+/* The preview window: the map on the left, the plan's districts and areas on the right */
+.atlas-scribe.as-preview .window-content {
+  padding: 0;
+  overflow: hidden;
+}
+.atlas-scribe .as-pv {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.atlas-scribe .as-pv-map {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: #2a2c30;
+  cursor: grab;
+  touch-action: none;
+}
+.atlas-scribe .as-pv-map.as-dragging {
+  cursor: grabbing;
+}
+.atlas-scribe .as-pv-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.atlas-scribe .as-pv-stage img {
+  display: block;
+  max-width: none;
+  border: none;
+  user-select: none;
+  pointer-events: none;
+}
+.atlas-scribe .as-pv-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.atlas-scribe .as-pv-overlay.as-off {
+  display: none;
+}
+.atlas-scribe .as-pv-shape polygon {
+  fill: transparent;
+  stroke: rgba(30, 30, 40, 0.75);
+  stroke-width: 1.5px;
+  stroke-dasharray: 6 4;
+}
+.atlas-scribe .as-pv-shape.as-area polygon {
+  stroke: rgba(40, 70, 40, 0.75);
+  stroke-dasharray: 2 4;
+}
+.atlas-scribe .as-pv-shape.as-hover polygon {
+  fill: rgba(255, 220, 120, 0.18);
+  stroke: rgb(200, 120, 20);
+  stroke-width: 2.5px;
+  stroke-dasharray: none;
+}
+.atlas-scribe .as-pv-overlay text {
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: #1e1e24;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 0.12;
+  pointer-events: none;
+}
+.atlas-scribe .as-pv-overlay text.as-pv-label {
+  font-style: italic;
+  font-weight: 400;
+}
+.atlas-scribe .as-pv-wait {
+  display: none;
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.3rem 0.8rem;
+  border-radius: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+}
+.atlas-scribe .as-pv-map.as-busy .as-pv-wait {
+  display: block;
+}
+.atlas-scribe .as-pv-map.as-stale .as-pv-stage {
+  opacity: 0.35;
+}
+.atlas-scribe .as-pv-map.as-busy .as-pv-stage {
+  opacity: 0.6;
+}
+.atlas-scribe .as-pv-error {
+  position: absolute;
+  inset: auto 1rem 1rem 1rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  background: rgba(120, 20, 20, 0.85);
+  color: #fff;
+}
+.atlas-scribe .as-pv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 270px;
+  flex: none;
+  padding: 0.6rem;
+  overflow: hidden;
+  border-left: 1px solid var(--color-border, #7a7971);
+}
+.atlas-scribe .as-pv-side h3 {
+  margin: 0;
+  border: none;
+}
+.atlas-scribe .as-pv-hint {
+  margin: 0;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.atlas-scribe .as-pv-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.atlas-scribe .as-pv-tools button {
+  flex: 1;
+  white-space: nowrap;
+}
+.atlas-scribe .as-pv-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.atlas-scribe .as-pv-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.3rem;
+  border-radius: 4px;
+}
+.atlas-scribe .as-pv-list li.as-hover {
+  background: rgba(200, 120, 20, 0.18);
+}
+.atlas-scribe .as-pv-list li.as-locked .as-pv-name {
+  opacity: 0.6;
+}
+.atlas-scribe .as-pv-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.atlas-scribe .as-pv-name strong,
+.atlas-scribe .as-pv-name em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atlas-scribe .as-pv-name em {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.atlas-scribe .as-pv-list button {
+  flex: none;
+  width: 2rem;
+  height: 1.8rem;
+  padding: 0;
+}
+.atlas-scribe .as-pv button.as-on {
+  box-shadow: inset 0 0 0 2px rgb(200, 120, 20);
+}
+.atlas-scribe .as-pv-notes ul {
+  max-height: 8rem;
+  overflow-y: auto;
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85em;
+}

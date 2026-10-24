@@ -22,7 +22,7 @@ What's planned, in order:
 
 ## Trying the engine
 
-There's no window yet: for now AtlasScribe is driven from the browser console (F12) or a script macro, as a GM. A plan is JSON (see the sample below); positions are in grid squares from the top left, sizes in feet.
+There's no panel yet: for now AtlasScribe is driven from the browser console (F12) or a script macro, as a GM, with a preview window to try plans and rerolls in. A plan is JSON (see the sample below); positions are in grid squares from the top left, sizes in feet.
 
 ```js
 const as = game.modules.get("atlas-scribe").api;
@@ -34,6 +34,7 @@ const plan = { atlasScribe: 1, id: "vance-crossing", name: "Vance's Crossing", s
     { id: "wood", type: "area", class: "woods", shape: { circle: [6, 5, 5] } },
     { id: "label-inn", type: "label", text: "Kestrel's inn", at: [20, 12], show: "gm" } ] };
 as.checkPlan(plan);                    // { plan, problems, ok }: every problem in plain words
+await as.preview(plan);                // a quick sketch in a window: reroll and lock there
 await as.render(plan, { publish: true }); // paints it, saves it, and makes a new scene
 ```
 
@@ -43,6 +44,7 @@ await as.render(plan, { publish: true }); // paints it, saves it, and makes a ne
 - To update a scene instead of making a new one, give its id: `publish(plan, { image, scene: "<scene id>" })` (or the same options to `render`). AtlasScribe only changes scenes it made; for any other scene add `force: true`. Before anything changes, the whole scene is saved to the output folder's `backups` folder. The scene keeps its name, your own drawings, tokens, walls and lights stay, and only the labels this plan added before are replaced. If the map's size or padding changes, things you placed by hand may no longer line up with it.
 - `reroll(plan, ids)`: a copy of the plan with new seeds for those districts or areas (one id or a list), so they're drawn again and nothing else moves. Leave out `ids` to reroll every district and area that isn't locked. `const { plan: next } = as.reroll(plan, "town"); await as.render(next);`
 - `lock(plan, ids)` and `unlock(plan, ids)`: a copy of the plan with those features locked or unlocked; a reroll leaves locked ones alone. Seeds and locks are kept in the plan (`seeds`, `locked`), so a plan always draws the same map.
+- `preview(plan)`: lays the plan out and draws it in plain colours, with no art, in a window, in about a second, its districts and areas outlined and named. Each district and area has a button to reroll it and one to lock it, Reroll all rerolls everything that isn't locked, and Undo steps back. Scroll to zoom, drag to move, double-click to fit. Copy plan puts the plan, with its new seeds and locks, on the clipboard, and the window's `plan` holds it too: `const app = await as.preview(plan); /* reroll until you like it */ await as.render(app.plan, { publish: true });`
 - `cancel()`: stops the job that's running. One job runs at a time.
 
 The output folder is a setting (by default `worlds/<your world>/atlas-scribe`).
