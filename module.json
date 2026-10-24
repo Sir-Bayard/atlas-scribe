@@ -1,0 +1,35 @@
+{
+  "id": "atlas-scribe",
+  "title": "AtlasScribe: Map Generator",
+  "description": "<p>A map plan in, a map out. You decide what matters (the roads, the river, the square, the landmarks, what each district is like) and AtlasScribe fills in the rest procedurally: streets, lots, houses, gardens, trees and clutter, painted from the map art you already have. Settlements and cities first, battle maps later. System agnostic. Early development: not ready for use yet.</p>",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Sir Bayard",
+      "url": "https://github.com/Sir-Bayard"
+    }
+  ],
+  "url": "https://github.com/Sir-Bayard/atlas-scribe",
+  "manifest": "https://github.com/Sir-Bayard/atlas-scribe/releases/latest/download/module.json",
+  "download": "https://github.com/Sir-Bayard/atlas-scribe/releases/latest/download/module.zip",
+  "bugs": "https://github.com/Sir-Bayard/atlas-scribe/issues",
+  "readme": "https://github.com/Sir-Bayard/atlas-scribe#readme",
+  "changelog": "https://github.com/Sir-Bayard/atlas-scribe/blob/main/CHANGELOG.md",
+  "license": "https://github.com/Sir-Bayard/atlas-scribe/blob/main/LICENSE",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14.369",
+    "maximum": "14"
+  },
+  "esmodules": ["scripts/atlas-scribe.mjs"],
+  "styles": ["styles/atlas-scribe.css"],
+  "relationships": {
+    "recommends": [
+      {
+        "id": "fa-nexus",
+        "type": "module",
+        "reason": "Paints maps with the Forgotten Adventures art you have through FA Nexus. Without it, AtlasScribe uses other art folders or plain fills."
+      }
+    ]
+  }
+}

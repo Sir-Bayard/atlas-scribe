@@ -1,0 +1,3 @@
+/* AtlasScribe. Every rule is scoped under .atlas-scribe so it can't touch Foundry or other modules. */
+.atlas-scribe {
+}
