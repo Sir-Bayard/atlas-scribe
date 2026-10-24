@@ -52,7 +52,7 @@ export const TYPES = {
   },
   square: {
     geometry: "shape",
-    fields: { surface: oneOf(SURFACES, "cobble"), name: str() },
+    fields: { surface: oneOf(SURFACES, "cobble"), name: str(), radial: bool(false) },
   },
   building: {
     geometry: "shape",
@@ -71,9 +71,13 @@ export const TYPES = {
   district: {
     geometry: "shape",
     fields: {
-      profile: str("roadside"),
+      profile: str("village"),
       gardens: bool(true),
       density: num(1, { min: 0, max: 2 }),
+      surface: oneOf(SURFACES, null), // its streets' surface; else the surface of a road through it
+      bend: num(null, { unit: "deg", min: 0, max: 90 }),
+      spacing: num(null, { unit: "ft", min: 25 }),
+      axis: num(null, { unit: "deg" }),
     },
   },
   area: {
@@ -125,7 +129,7 @@ export const SCENE = {
 };
 
 /** District profiles this version knows. */
-export const PROFILES = ["roadside"];
+export const PROFILES = ["hamlet", "village", "town", "core", "roadside"];
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
 export const NOT_DRAWN_YET = { area: ["fields", "park", "cemetery"] };

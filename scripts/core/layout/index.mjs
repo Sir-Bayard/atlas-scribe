@@ -12,6 +12,8 @@ import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
 import { fillRoadside, fillFarmstead, fillWoods, hedgeBushes, groundPatches } from "./settlement.mjs";
+import { streetsFor, districtGates, gateSpacing } from "../streets/index.mjs";
+import { sharedEdges } from "../streets/borders.mjs";
 
 export const LAYOUT_VERSION = 1;
 
@@ -61,7 +63,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         const item = { kind: "way", id: f.id, from: f.id, class: f.class, path: f.path, width, surface: f.surface, ruts: !!f.ruts };
         items.push(item);
         ways.push(item);
-        space.ways.push({ path: f.path, clear: width / 2 + (f.class === "highway" ? 0.05 : -0.05) });
+        space.ways.push({ path: f.path, clear: width / 2 + (f.class === "highway" ? 0.05 : -0.05), owner: null });
         break;
       }
       case "water":
@@ -159,7 +161,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     for (const poly of space.reserved) if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false;
     for (const poly of space.gardens) if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false;
     for (const w of space.water) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
-    for (const w of space.ways) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
+    for (const w of space.ways) if (!elsewhere(w) && distanceToPath([x, y], w.path) < half + w.clear) return false;
     for (const b of space.buildings) if (!elsewhere(b) && Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false;
     return true;
   }
@@ -173,7 +175,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     for (const z of space.zones) if (polygonsOverlap(poly, z)) return false;
     const small = shrink(poly, 0.04);
     for (const p of space.plots) if (p !== own && !elsewhere(p) && polygonsOverlap(small, p)) return false;
-    for (const w of [...space.water, ...space.ways]) {
+    for (const w of [...space.water, ...space.ways.filter((q) => !elsewhere(q))]) {
       if (pathTouchesPolygon(w.path, poly)) return false;
       if (poly.some((p) => distanceToPath(p, w.path) < w.clear)) return false;
     }
@@ -198,18 +200,50 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     }
   }
 
-  // Districts: houses along every road or lane that runs into them
+  // Districts: generated streets first (each district's own, meeting its neighbours' at gates on shared edges),
+  // then houses along every road, street and lane that runs into it
   progress(0.4, "Districts");
-  for (const d of plan.features.filter((f) => f.type === "district")) {
-    const poly = shapeToPolygon(d.shape);
+  const dfeats = plan.features.filter((f) => f.type === "district");
+  const dlist = dfeats.map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }));
+  const waterAt = (x, y) => space.water.some((w) => distanceToPath([x, y], w.path) < w.clear);
+  const gates = districtGates(dlist, { roads: ways, inWater: waterAt, seed: plan.seed });
+  const radials = plan.features.filter((f) => f.type === "square" && f.radial).map((f) => {
+    const poly = shapeToPolygon(f.shape);
+    const [x0, y0, x1, y1] = bbox(poly);
+    const at = [(x0 + x1) / 2, (y0 + y1) / 2];
+    return { at, radius: poly.reduce((s, p) => s + Math.hypot(p[0] - at[0], p[1] - at[1]), 0) / poly.length };
+  });
+  const blocked = [...space.zones, ...space.plots]; // squares, yards and every building so far
+  for (const d of dfeats) {
+    const { poly } = dlist.find((x) => x.id === d.id);
     const r = streamFor(d.id);
-    const along = ways.filter((w) => pathTouchesPolygon(w.path, poly));
+    const fixedHere = ways.filter((w) => pathTouchesPolygon(w.path, poly));
+    const borders = dlist.filter((o) => o.id !== d.id && o.streetSpacing).flatMap((o) => sharedEdges(poly, o.poly));
+    const made = streetsFor({
+      district: d, poly, roads: fixedHere, water: space.water, radials, blocked, gates: gates.get(d.id) ?? [], borders,
+      ftPerSquare: sq, r: r.fork("streets"),
+    });
+    const surface = d.surface ?? fixedHere[0]?.surface ?? "dirt";
+    const own = [];
+    made.streets.forEach((st, k) => {
+      const item = { kind: "way", id: `${d.id}/s${k + 1}`, from: d.id, class: st.kind, path: st.path, width: st.width, surface, ruts: false };
+      items.push(item);
+      own.push(item);
+      const entry = { path: st.path, clear: st.width / 2 - 0.05 };
+      owner.set(entry, d.id);
+      space.ways.push(entry);
+    });
+    made.bridges.forEach((b, k) => {
+      const foot = b.kind === "footbridge";
+      items.push({ kind: "crossing", id: `${d.id}/b${k + 1}`, from: d.id, class: b.kind, at: b.at, angle: b.angle, length: b.length + 0.3, width: (foot ? 8 : 20) / sq, frozen: false });
+    });
+    const along = [...fixedHere, ...own];
     const before = items.length;
     filling = d.id;
     fillRoadside({ district: d, poly, ways: along, r, free, freeGarden, addBuilding: (spec) => addBuilding(spec.building, spec.id, spec.r, d.id), items });
     filling = null;
     const houses = items.slice(before).filter((i) => i.kind === "building").length;
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${houses} houses along ${along.length} roads and lanes.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes made, ${made.bridges.length} bridges, ${houses} houses.` });
   }
 
   // Woods and hedgerows last: trees keep clear of every building

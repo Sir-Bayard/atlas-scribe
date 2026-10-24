@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Streets: districts now make their own streets and lanes, steered by a tensor field built from the plan's roads, rivers and squares, so they run along and across the roads and bend gently. A square with `radial: true` gets streets that ring it. District types (the district's `profile`): `hamlet` (no new streets), `village`, `town` and `core`, each with its own spacing, bend and lanes; `bend`, `spacing` and `axis` override them. Where two districts meet, their streets meet at fixed points on the shared edge, so rerolling one never moves the other. Streets cross water where it makes sense and place their own bridges and footbridges.
+
 ## 0.2.0
 
 The engine: a map plan in, a painted map and a scene out, driven from the console for now (see the README's "Trying the engine").
