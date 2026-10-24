@@ -11,7 +11,7 @@ import { normalize } from "../plan.mjs";
 import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
-import { fillFarmstead, fillWoods, hedgeBushes, groundPatches } from "./settlement.mjs";
+import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
@@ -66,6 +66,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
 
   progress(0.05, "Fixed features");
   const ways = [];
+  const parks = [];
   for (const f of plan.features) {
     switch (f.type) {
       case "road": {
@@ -118,6 +119,8 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
           space.zones.push(poly);
         } else if (f.class === "trodden") {
           items.push({ kind: "surface", id: f.id, from: f.id, class: "trodden", poly: shapeToPolygon(f.shape, f.rot, 48), surface: "trodden" });
+        } else if (f.class === "park") {
+          parks.push(f); // laid out once every road is known, so its paths can meet them
         } else if (f.class !== "farmstead" && f.class !== "woods") {
           notes.push({ level: "warning", id: f.id, message: `"${f.id}": areas of class "${f.class}" aren't drawn yet.` });
         }
@@ -192,6 +195,18 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   }
 
 
+
+  // Parks: open ground that streets and plots keep out of; everything in them comes from fillPark
+  for (const f of parks) {
+    const park = fillPark({ area: f, r: streamFor(f.id), roads: ways, ftPerSquare: sq });
+    items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin });
+    park.trees.forEach((t, k) => items.push({ kind: "tree", id: `${f.id}/t${k + 1}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
+    park.beds.forEach((garden, k) => items.push({ kind: "surface", id: `${f.id}/g${k + 1}`, from: f.id, class: "garden", garden }));
+    // Clipped hedges round the beds: small bushes close together
+    park.hedges.forEach((path, k) => hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: streamFor(f.id).fork("hedge", k), items, step: 0.22, scale: [0.32, 0.08] }));
+    space.reserved.push(grow(park.surface.poly, 0.2));
+    space.zones.push(park.surface.poly);
+  }
 
   // Farmsteads first, so district houses keep out of the farmyards
   progress(0.25, "Farms");

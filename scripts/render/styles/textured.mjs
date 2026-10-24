@@ -28,6 +28,11 @@ export function rolesFor(layout) {
     if (i.kind === "way") roles.add(`surface.${i.surface}.${s}`);
     if (i.kind === "surface" && i.surface) roles.add(`surface.${i.surface}.${s}`);
     if (i.kind === "surface" && i.class === "square" && s === "winter") roles.add("overlay.snow");
+    if (i.kind === "surface" && i.class === "park") {
+      for (const w of i.paths ?? []) roles.add(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`);
+      if (i.basin) roles.add(`stone.rough.${s}`).add(s === "winter" ? "water.ice" : "water.pond");
+      if (s !== "winter") roles.add("ground.grass.grassy");
+    }
     if (i.kind === "water") roles.add(`stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`).add("water.ice.cracked");
     if (i.kind === "crossing") roles.add(`surface.trodden.${s}`).add(`stone.rough.${s}`).add("water.ice.cracked");
     if (i.kind === "wall") roles.add(`stone.rough.${s}`);
@@ -122,6 +127,21 @@ export function paint(ctx) {
   }
   for (const y of yards.filter((y) => y.fence)) {
     g.save(); g.strokeStyle = "rgba(88,66,46,0.9)"; g.lineWidth = Math.max(1.5, pp * 0.05); g.setLineDash([pp * 0.14, pp * 0.06]); poly(g, y.poly); g.stroke(); g.setLineDash([]); g.restore();
+  }
+  // Parks: grass where the season shows it, then their paths (trodden or gravel), then a formal garden's basin
+  for (const pk of items("surface", "park")) {
+    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, 0.35);
+    // Under snow every path is trodden snow
+    for (const w of pk.paths ?? []) soft((k) => strokeLine(k, w.path, w.width), tex(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`, 2.5), 0.06, w.surface === "gravel" ? 0.95 : 0.75);
+    // A little darker, as a road's worn middle is, so a path shows on grass or snow alike
+    soft((k) => { for (const w of pk.paths ?? []) strokeLine(k, w.path, w.width * 0.8); }, "rgb(150,142,132)", 0.08, s === "winter" ? 0.45 : 0.3, "multiply");
+    if (pk.basin) {
+      const { at, radius } = pk.basin;
+      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); k.fill(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1);
+      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), radius * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), 0.01, 1);
+      g.save(); g.strokeStyle = "rgba(40,40,46,0.6)"; g.lineWidth = Math.max(1, pp * 0.025);
+      g.beginPath(); g.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); g.stroke(); g.restore();
+    }
   }
   // Gardens are quiet: the ground shows through, rows barely show (winter) or softly (other seasons), and the fence
   // is a thin line, never a bright box

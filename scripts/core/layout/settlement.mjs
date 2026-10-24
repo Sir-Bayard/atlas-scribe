@@ -99,15 +99,15 @@ function polyArea(poly) {
 }
 
 /** A hedgerow: small bushes every 0.4 squares along the wall's path. */
-export function hedgeBushes({ wall, r, items }) {
+export function hedgeBushes({ wall, r, items, step = 0.4, scale = [0.7, 0.3] }) {
   const pts = wall.path;
   let n = 0;
   for (let i = 0; i < pts.length - 1; i++) {
     const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
     const l = Math.hypot(bx - ax, by - ay);
-    for (let t = 0; t < l; t += 0.4) {
+    for (let t = 0; t < l; t += step) {
       n++;
-      items.push({ kind: "prop", id: `${wall.id}/b${n}`, from: wall.id, class: "bush", x: ax + ((bx - ax) * t) / l + (r.next() - 0.5) * 0.15, y: ay + ((by - ay) * t) / l + (r.next() - 0.5) * 0.15, scale: 0.7 + r.next() * 0.3, rot: r.next() * 360, variant: r.int(8) });
+      items.push({ kind: "prop", id: `${wall.id}/b${n}`, from: wall.from ?? wall.id, class: "bush", x: ax + ((bx - ax) * t) / l + (r.next() - 0.5) * 0.15, y: ay + ((by - ay) * t) / l + (r.next() - 0.5) * 0.15, scale: scale[0] + r.next() * scale[1], rot: r.next() * 360, variant: r.int(8) });
     }
   }
 }
@@ -116,4 +116,130 @@ export function hedgeBushes({ wall, r, items }) {
 export function groundPatches(r, W, H) {
   const k = (W * H) / 10000;
   return Array.from({ length: Math.round(260 * k) }, () => [r.next() * W, r.next() * H, 1.5 + r.next() * 5, r.next()]);
+}
+
+/**
+ * A park, by its style. "green" (the default): a village green of open grass, big trees in groups round its edges and
+ * a few in the open, and trodden paths from where the roads meet it to a point near the middle. "formal": a garden laid
+ * out square to the area's rot: gravel paths round it and across it, a round basin where they cross, four hedged
+ * beds, and avenues of trees along the long walk. Everything is clipped to the area's shape. Returns
+ * { surface, trees, beds, hedges }: surface { poly, style, paths: [{ path, width }], basin }, trees [{ x, y, s, ... }],
+ * beds (gardens), hedges (paths). Squares throughout; ftPerSquare for widths in feet.
+ */
+export function fillPark({ area, r, roads = [], ftPerSquare }) {
+  const sq = (ft) => ft / ftPerSquare;
+  const poly = shapeToPolygon(area.shape, area.rot ?? 0);
+  const style = area.style === "formal" ? "formal" : "green";
+  const out = { surface: { poly, style, paths: [], basin: null }, trees: [], beds: [], hedges: [] };
+  if (poly.length < 3) return out;
+  const inside = (p) => pointInPolygon(p, poly);
+  const edgeDist = (p) => Math.min(...poly.map((q, i) => distSeg(p, q, poly[(i + 1) % poly.length])));
+  const nearPath = (p, d) => out.surface.paths.some((w) => w.path.some((q, i) => i && distSeg(p, w.path[i - 1], q) < d + w.width / 2));
+  const tr = r.fork("trees");
+  const tree = (x, y, s) => out.trees.push({ x, y, s, rot: tr.next() * 360, variant: tr.int(8) });
+  const [bx0, by0, bx1, by1] = bbox(poly);
+  const c = [(bx0 + bx1) / 2, (by0 + by1) / 2];
+
+  if (style === "green") {
+    // Where the roads meet it: the middle of the side that runs closest along each road passing near
+    const entries = [];
+    for (const road of roads) {
+      let best = null;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        let sum = 0;
+        for (let t = 0; t <= 1.0001; t += 0.1) {
+          const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          sum += Math.min(...road.path.map((q, k) => (k ? distSeg(p, road.path[k - 1], q) : Infinity)));
+        }
+        const avg = sum / 11;
+        if (!best || avg < best.avg) best = { avg, a, b };
+      }
+      if (!best || best.avg > 2.5) continue;
+      const t = 0.5 + (r.next() - 0.5) * 0.3;
+      const p = [best.a[0] + (best.b[0] - best.a[0]) * t, best.a[1] + (best.b[1] - best.a[1]) * t];
+      if (!entries.some((e) => Math.hypot(e[0] - p[0], e[1] - p[1]) < 3)) entries.push(p);
+    }
+    // With fewer than two, the ends of the shape's long axis
+    if (entries.length < 2) {
+      const far = poly.reduce((a, b) => (Math.hypot(b[0] - c[0], b[1] - c[1]) > Math.hypot(a[0] - c[0], a[1] - c[1]) ? b : a));
+      const opp = poly.reduce((a, b) => (Math.hypot(b[0] - far[0], b[1] - far[1]) > Math.hypot(a[0] - far[0], a[1] - far[1]) ? b : a));
+      for (const p of [far, opp]) if (!entries.some((e) => Math.hypot(e[0] - p[0], e[1] - p[1]) < 3)) entries.push(p);
+    }
+    // Desire lines: each entry curves gently in to a hub near the middle
+    const hub = [c[0] + (r.next() - 0.5) * (bx1 - bx0) * 0.2, c[1] + (r.next() - 0.5) * (by1 - by0) * 0.2];
+    const hubIn = inside(hub) ? hub : c;
+    for (const e of entries) {
+      const bend = (r.next() - 0.5) * 0.5;
+      const m = [(e[0] + hubIn[0]) / 2 - (hubIn[1] - e[1]) * bend, (e[1] + hubIn[1]) / 2 + (hubIn[0] - e[0]) * bend];
+      const path = [];
+      for (let t = 0; t <= 1.0001; t += 0.1) path.push([(1 - t) ** 2 * e[0] + 2 * (1 - t) * t * m[0] + t * t * hubIn[0], (1 - t) ** 2 * e[1] + 2 * (1 - t) * t * m[1] + t * t * hubIn[1]]);
+      if (path.every(inside) || path.slice(1).every(inside)) out.surface.paths.push({ path, width: sq(5), surface: "trodden" });
+    }
+    // Big trees in groups round the edge, a few out in the open
+    const groups = makeNoise(r.int(2 ** 31), `${area.id}/groups`, { scale: 4, octaves: 2 });
+    const pts = poissonInPolygon(poly, 1.3, r.fork("points"), { keep: (x, y) => { const e = edgeDist([x, y]); return (e < 3 && groups(x, y) > -0.2) || groups(x, y) > 0.45; }, max: 2000 });
+    for (const [x, y] of pts) if (edgeDist([x, y]) > 0.4 && !nearPath([x, y], 0.5)) tree(x, y, 0.6 + tr.next() * 0.25);
+    return out;
+  }
+
+  // Formal: laid out in the area's own frame (turned by rot), then turned back and clipped to the shape
+  const rot = area.rot ?? 0;
+  const local = poly.map((p) => rotateAbout(p, c, -rot));
+  const [x0, y0, x1, y1] = bbox(local);
+  const W = x1 - x0, H = y1 - y0;
+  const along = W >= H; // the long walk runs along the longer side
+  const back = (p) => rotateAbout(p, c, rot);
+  const pw = sq(8), m = Math.min(W, H) * 0.08 + pw / 2;
+  const clipLine = (pts) => {
+    // The parts of a straight-segment path that lie inside the shape, finely sampled
+    const runs = [];
+    let cur = null;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.25));
+      for (let k = i === 1 ? 0 : 1; k <= n; k++) {
+        const p = [ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n];
+        if (inside(p)) { if (!cur) runs.push((cur = [])); cur.push(p); } else cur = null;
+      }
+    }
+    return runs.filter((q) => q.length >= 2);
+  };
+  const addPath = (pts) => { for (const run of clipLine(pts.map(back))) out.surface.paths.push({ path: run, width: pw, surface: "gravel" }); };
+  const lx0 = x0 + m, lx1 = x1 - m, ly0 = y0 + m, ly1 = y1 - m, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  addPath([[lx0, ly0], [lx1, ly0], [lx1, ly1], [lx0, ly1], [lx0, ly0]]); // the walk round
+  addPath([[x0, my], [x1, my]]); // the cross walks, out to the edge
+  addPath([[mx, y0], [mx, y1]]);
+  const br = Math.min(W, H) * 0.12;
+  if (inside(back([mx, my]))) out.surface.basin = { at: back([mx, my]), radius: br };
+  // Four beds between the walks, each hedged
+  const g = pw / 2 + 0.25, gi = Math.max(g, br * 0.72 + 0.3); // the inner sides stand back from the basin
+  for (const [ax, ay, bx2, by2] of [[lx0 + g, ly0 + g, mx - gi, my - gi], [mx + gi, ly0 + g, lx1 - g, my - gi], [lx0 + g, my + gi, mx - gi, ly1 - g], [mx + gi, my + gi, lx1 - g, ly1 - g]]) {
+    if (bx2 - ax < 0.6 || by2 - ay < 0.6) continue;
+    const corners = [[ax, ay], [bx2, ay], [bx2, by2], [ax, by2]].map(back);
+    if (!corners.every(inside)) continue;
+    const bc = back([(ax + bx2) / 2, (ay + by2) / 2]);
+    out.beds.push({ cx: bc[0], cy: bc[1], w: bx2 - ax, d: by2 - ay, rot, strip: true });
+    out.hedges.push([...corners, corners[0]]);
+  }
+  // Avenues: trees either side of the long walk, clear of the basin
+  const step = 1.3, off = pw / 2 + 0.55;
+  if (along) {
+    for (let x = lx0 + step / 2; x <= lx1; x += step) for (const s of [-1, 1]) {
+      const p = back([x, my + s * off]);
+      if (Math.abs(x - mx) > br + 0.8 && inside(p) && edgeDist(p) > 0.3) tree(p[0], p[1], 0.42 + tr.next() * 0.08);
+    }
+  } else {
+    for (let y = ly0 + step / 2; y <= ly1; y += step) for (const s of [-1, 1]) {
+      const p = back([mx + s * off, y]);
+      if (Math.abs(y - my) > br + 0.8 && inside(p) && edgeDist(p) > 0.3) tree(p[0], p[1], 0.42 + tr.next() * 0.08);
+    }
+  }
+  return out;
+}
+
+function distSeg([x, y], [ax, ay], [bx, by]) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+  return Math.hypot(ax + t * dx - x, ay + t * dy - y);
 }

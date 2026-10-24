@@ -114,6 +114,7 @@ export const TYPES = {
       rot: num(0, { unit: "deg" }),
       trees: num(null, { min: 0 }),
       mix: { kind: "object", default: null },
+      style: oneOf(["green", "formal"], null), // a park's: a village green (the default) or a formal garden
     },
   },
   wall: {
@@ -157,7 +158,7 @@ export const SCENE = {
 export const PROFILES = ["hamlet", "village", "town", "core", "roadside"];
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
-export const NOT_DRAWN_YET = { area: ["fields", "park", "cemetery"] };
+export const NOT_DRAWN_YET = { area: ["fields", "cemetery"] };
 
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];
