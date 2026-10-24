@@ -40,9 +40,10 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
 
   let croftOf = -1;
   /** A polygon's edges as boundary segments, except those along a street. */
-  const addBounds = (p, way, cls) => {
+  const addBounds = (p, way, cls, skip = null) => {
     for (let k = 0; k < p.length; k++) {
       const a = p[k], b = p[(k + 1) % p.length];
+      if (skip?.(a, b)) continue;
       const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       // Never along a street: this plot's own, or another one at its back or side
       if (ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1)) continue;
@@ -60,7 +61,7 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
     const sb = sq(T.setback[0] + lr.next() * (T.setback[1] - T.setback[0]) + 15 * spacious);
     const roof = lr.pick(HOUSE_ROOFS);
     const turn = (lr.next() - 0.5) * (T.cover[1] < 1 ? 4 : 0); // village houses sit a little askew; terraces don't
-    const wantGarden = lr.next() < gardenShare, wantOut = lr.next() < T.outbuilding, wantCroft = lr.next() < T.croft;
+    const wantGarden = lr.next() < gardenShare, wantOut = lr.next() < T.outbuilding, wantCroft = lr.next() < (district.crofts ?? T.croft);
     const gDepth = 0.8 + lr.next() * 0.6, oSize = sq(9 + lr.next() * 9), oSide = lr.next() - 0.5, yard = sq(10 + lr.next() * 15);
     const bClass = boundClass(lr);
     const [ux, uy] = lot.along, [nx, ny] = lot.inward;
@@ -119,7 +120,9 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
     const reachBack = Math.max(houseBack, behind) + yard;
     // The croft: the back of the plot as a small fenced field
     if (wantCroft && lot.depth * 0.55 > behind) {
-      const far = lot.depth * 1.6, near = house ? reachBack : Math.max(behind, lot.depth * 0.55);
+      const near = house ? reachBack : Math.max(behind, lot.depth * 0.55);
+      const share = Math.max(0.1, Math.min(1, district.croftDepth ?? T.croftDepth ?? 1));
+      const far = share >= 1 ? lot.depth * 1.6 : near + (lot.depth - near) * share;
       const slab = [[mx + nx * near - ux * 99, my + ny * near - uy * 99], [mx + nx * near + ux * 99, my + ny * near + uy * 99], [mx + nx * far + ux * 99, my + ny * far + uy * 99], [mx + nx * far - ux * 99, my + ny * far - uy * 99]];
       const piece = intersect([lot.poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
       if (piece && area(piece) > 0.5) { out.crofts.push(piece); croftOf = i; }
@@ -131,7 +134,18 @@ export function buildOnLots({ lots, district, ways, ftPerSquare, r }) {
       const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);
       if (toft) addBounds(toft, way, bClass);
     }
-    if (T.bounds && wantCroft && croftOf === i) addBounds(out.crofts[out.crofts.length - 1], way, bClass);
+    // The croft's fence: all round, its sides only (open at the back, fading into the fields), or none
+    const croftFence = district.croftFence ?? T.croftFence ?? "all";
+    if (T.bounds && wantCroft && croftOf === i && croftFence !== "none") {
+      const croft = out.crofts[out.crofts.length - 1];
+      const backOf = croftFence === "sides" ? (a, b) => {
+        const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const across = Math.abs(((b[0] - a[0]) * ux + (b[1] - a[1]) * uy) / l) > 0.7;
+        return across && Math.min(depthOf(a), depthOf(b)) > reachBack + 0.2;
+      } : null;
+      addBounds(croft, way, bClass, backOf);
+    }
   });
   // Neighbours' fences on the same line become one fence (their pieces overlap with staggered ends otherwise)
   out.bounds = joinBounds(mergeCollinear(out.bounds));
@@ -159,7 +173,7 @@ function mergeCollinear(segs) {
     let L = null;
     for (const q of lines) {
       const d = Math.abs(ang - q.ang);
-      if (d >= 0.004 && Math.PI - d >= 0.004) continue;
+      if (d >= 0.03 && Math.PI - d >= 0.03) continue;
       const ux = q.ux, uy = q.uy;
       if (Math.abs(-ax * uy + ay * ux - q.off) < 0.03 && Math.abs(-bx * uy + by * ux - q.off) < 0.03) { L = q; break; }
     }

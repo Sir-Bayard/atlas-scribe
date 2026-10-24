@@ -78,6 +78,10 @@ export const TYPES = {
       bend: num(null, { unit: "deg", min: 0, max: 90 }),
       spacing: num(null, { unit: "ft", min: 25 }),
       axis: num(null, { unit: "deg" }),
+      spacious: num(0, { min: 0, max: 1 }),
+      crofts: num(null, { min: 0, max: 1 }), // the share of plots with a croft behind; else the type's
+      croftDepth: num(null, { min: 0.1, max: 1 }), // how far back a croft runs, as a share of the plot behind the yard; else the type's
+      croftFence: oneOf(["all", "sides", "none"], null), // the croft's fence: all round, sides only (open at the back), none; else the type's
     },
   },
   area: {

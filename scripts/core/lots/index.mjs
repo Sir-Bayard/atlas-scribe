@@ -14,11 +14,13 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
 /**
  * Plot numbers per district type, in feet. frontage and depth: ranges; cover: the share of the frontage the
  * house takes; houseDepth; setback: from the street; outbuilding: the chance of one behind the house; croft: the
- * chance the back of the plot is a small fenced field; bounds: whether plot boundaries are drawn.
+ * chance the back of the plot is a small fenced field, croftDepth how far back it runs (a share of the plot behind
+ * the yard) and croftFence how it's fenced (Patrick, 24 Oct: a quarter of village plots, half depth, open at the
+ * back); bounds: whether plot boundaries are drawn.
  */
 export const LOT_TYPES = {
-  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.7, bounds: true },
-  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.45, bounds: true },
+  hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true },
+  village: { frontage: [40, 80], depth: [100, 200], cover: [0.45, 0.75], houseDepth: [20, 30], setback: [5, 15], outbuilding: 0.3, croft: 0.25, croftDepth: 0.5, croftFence: "sides", bounds: true },
   town: { frontage: [25, 40], depth: [100, 160], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false },
   core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false },
 };
