@@ -7,7 +7,7 @@
  * Every random choice is made here, never in the painter, so the same plan always paints the same map, whatever
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
-import { roadWaterCrossings, snapCrossing } from "./crossings.mjs";
+import { roadWaterCrossings, snapCrossings } from "./crossings.mjs";
 import { normalize } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng } from "../rng.mjs";
@@ -34,7 +34,8 @@ const GATE_WIDTH = {
 
 export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   // Roads, rivers and walls curve through their points (the plan itself is left as it is)
-  const plan = smoothPlanPaths(normalize(rawPlan));
+  const asGiven = normalize(rawPlan);
+  const plan = smoothPlanPaths(asGiven);
   const sq = plan.size.ftPerSquare;
   const ft = (v) => (v == null ? null : v / sq);
   const [W, H] = plan.size.squares;
@@ -73,6 +74,10 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })),
     plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })),
   );
+  const snapped = snapCrossings(
+    plan.features.filter((f) => f.type === "crossing" && Array.isArray(f.at)).map((f) => ({ id: f.id, class: f.class, at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width) })),
+    overWater,
+  );
   const ways = [];
   const parks = [];
   for (const f of plan.features) {
@@ -92,7 +97,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         } else notes.push({ level: "warning", id: f.id, message: `"${f.id}": water drawn as an area isn't painted yet; only rivers and streams along a path are.` });
         break;
       case "crossing": {
-        const c = snapCrossing({ class: f.class, at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width) }, overWater);
+        const c = snapped.get(f.id) ?? { at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width), snappedTo: null };
         if (!c.snappedTo) notes.push({ level: "warning", id: f.id, message: `"${f.id}": there's no road over water near it, so it's drawn where the plan puts it.` });
         items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, at: c.at, angle: c.angle, length: c.length, width: c.width, frozen: !!f.frozen });
         break;
@@ -138,6 +143,24 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         break;
       default:
         break;
+    }
+  }
+
+  // A curve swings a little outside its straight line at a bend: say so where that takes a road into a plan building
+  // its straight line kept clear of (more points, or straight: true, fixes it)
+  {
+    const fixed = new Set(plan.features.filter((f) => f.type === "building" || f.type === "landmark").map((f) => f.id));
+    const feet = items.filter((i) => i.kind === "building" && fixed.has(i.from));
+    for (const w of ways) {
+      const given = asGiven.features.find((f) => f.id === w.id)?.path;
+      if (!given || given.length < 3) continue;
+      for (const b of feet) {
+        const foot = shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot);
+        const ring = [...foot, foot[0]];
+        const gap = (path) => Math.min(...foot.map((p) => distanceToPath(p, path)), ...path.map((p) => (pointInPolygon(p, foot) ? 0 : distanceToPath(p, ring))));
+        if (gap(w.path) < w.width / 2 && gap(given) >= w.width / 2)
+          notes.push({ level: "warning", id: w.id, message: `"${w.id}" curves into "${b.from}" at a bend. Give the road another point there, or set straight: true on it.` });
+      }
     }
   }
 

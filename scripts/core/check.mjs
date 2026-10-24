@@ -4,7 +4,7 @@
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize } from "./plan.mjs";
-import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap } from "./geom.mjs";
+import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself } from "./geom.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
@@ -72,6 +72,12 @@ export function checkPlan(raw) {
     const poly = shapeToPolygon(d.shape);
     if (poly.length >= 3 && !ways.some((r) => pathTouchesPolygon(r.path, poly)))
       warn(d.id, "shape", `District "${d.id}" has no road or lane running into it, so nothing will be built along streets there.`);
+  }
+
+  // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)
+  for (const f of plan.features.filter((f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape))) {
+    const pts = f.shape.filter((p, k) => !(k === f.shape.length - 1 && k > 0 && p[0] === f.shape[0][0] && p[1] === f.shape[0][1]));
+    if (pts.length >= 3 && polygonCrossesItself(pts)) warn(f.id, "shape", `"${f.id}"'s outline crosses itself or repeats a corner, so what's inside it is unclear. Give its corners in order round the edge.`);
   }
 
   // Districts that overlap: the shared part is filled twice, and reseeding one can move the other

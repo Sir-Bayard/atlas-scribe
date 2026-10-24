@@ -87,6 +87,21 @@ export function segmentsIntersect(a, b, c, d) {
   return (o1 === 0 && on(a, c, b)) || (o2 === 0 && on(a, d, b)) || (o3 === 0 && on(c, a, d)) || (o4 === 0 && on(c, b, d));
 }
 
+/** True when a polygon's sides cross each other (a bow-tie), or two of its corners are the same point. */
+export function polygonCrossesItself(poly) {
+  const n = poly?.length ?? 0;
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++)
+      if (Math.hypot(poly[i][0] - poly[j][0], poly[i][1] - poly[j][1]) < 1e-9) return true;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue; // sides that meet at a corner
+      if (segmentsIntersect(poly[i], poly[(i + 1) % n], poly[j], poly[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
+
 /** True when a path crosses or runs inside a polygon. */
 export function pathTouchesPolygon(path, poly) {
   if (path.some((p) => pointInPolygon(p, poly))) return true;

@@ -39,27 +39,39 @@ export function roadWaterCrossings(roads, waters) {
 }
 
 /**
- * crossing: { at, angle, length, width, class }. Returns it snapped (a copy, with snappedTo: road id) to the nearest
- * road-over-water crossing within reach (its length, and at least 3 squares), or unchanged (snappedTo: null).
+ * plan crossings: [{ id, at, angle, length, width, class }]. Returns a Map id -> the crossing snapped (a copy, with
+ * snappedTo: road id) or unchanged (snappedTo: null). Each road-over-water point takes one crossing at most, the
+ * nearest first; a crossing reaches its length, and at least 3 squares.
  */
-export function snapCrossing(crossing, crossings) {
-  const reach = Math.max(3, crossing.length ?? 0);
-  let best = null, bestD = Infinity;
-  for (const c of crossings) {
-    const d = Math.hypot(c.at[0] - crossing.at[0], c.at[1] - crossing.at[1]);
-    if (d < bestD) { bestD = d; best = c; }
+export function snapCrossings(list, crossings) {
+  const pairs = [];
+  list.forEach((c, n) => crossings.forEach((x, m) => {
+    const d = Math.hypot(x.at[0] - c.at[0], x.at[1] - c.at[1]);
+    if (d <= Math.max(3, c.length ?? 0)) pairs.push({ n, m, d });
+  }));
+  pairs.sort((a, b) => a.d - b.d);
+  const takenC = new Set(), takenX = new Set(), out = new Map();
+  for (const { n, m } of pairs) {
+    if (takenC.has(n) || takenX.has(m)) continue;
+    takenC.add(n); takenX.add(m);
+    out.set(list[n].id, snapTo(list[n], crossings[m]));
   }
-  if (!best || bestD > reach) return { ...crossing, snappedTo: null };
-  const [rx, ry] = best.roadDir, [wx, wy] = best.waterDir;
+  for (const c of list) if (!out.has(c.id)) out.set(c.id, { ...c, snappedTo: null });
+  return out;
+}
+
+/** A crossing put on one road-over-water point: along the road, long enough to span the water, a bridge as wide as the road. */
+function snapTo(crossing, x) {
+  const [rx, ry] = x.roadDir, [wx, wy] = x.waterDir;
   const sin = Math.max(0.35, Math.abs(rx * wy - ry * wx)); // how squarely the road meets the water
-  const span = (best.water.width ?? 1) / sin + 1; // water and both banks, as the painter draws them
-  const out = {
-    ...crossing,
-    at: best.at,
-    angle: (Math.atan2(ry, rx) * 180) / Math.PI,
-    length: crossing.class === "ford" ? crossing.length : Math.max(crossing.length ?? 0, span),
-    snappedTo: best.road.id,
-  };
-  if (crossing.class === "bridge") out.width = Math.max(crossing.width ?? 0, (best.road.width ?? 0) + 0.15);
+  const cos = Math.sqrt(Math.max(0, 1 - sin * sin));
+  const out = { ...crossing, at: x.at, angle: (Math.atan2(ry, rx) * 180) / Math.PI, snappedTo: x.road.id };
+  if (crossing.class === "bridge") out.width = Math.max(crossing.width ?? 0, (x.road.width ?? 0) + 0.15);
+  if (crossing.class !== "ford") {
+    // The banks as both painters draw them (the water's width + 0.95) measured along the road, plus what the deck's
+    // corners need on a skew crossing, so no corner of the deck ends over water
+    const span = ((x.water.width ?? 1) + 0.95) / sin + ((out.width ?? 0) * cos) / sin;
+    out.length = Math.max(crossing.length ?? 0, span);
+  }
   return out;
 }

@@ -1,12 +1,15 @@
 /**
  * The preview window: a plan laid out and drawn in plain colours in a second or so, with its districts and areas
  * outlined, so a reroll can be judged before a full render. Rerolling, locking and undoing happen here; the window
- * keeps the plan they make (app.plan), and Copy plan puts it on the clipboard. Scroll to zoom, drag to pan,
- * double-click to fit.
+ * keeps the plan they make (app.plan), and Copy plan puts it on the clipboard. With Shapes on, districts and areas
+ * show handles on their corners: drag one to reshape (corners two shapes share move together, and a corner dropped
+ * on another snaps to it), drag the dot in the middle of a side to add a corner, alt-click or right-click a corner to
+ * remove it. Scroll to zoom, drag to pan, double-click to fit.
  */
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
 import { shapeToPolygon } from "../core/geom.mjs";
 import { normalize } from "../core/plan.mjs";
+import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -37,6 +40,7 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
       asCopy: PreviewApp.#onCopy,
       asOutlines: PreviewApp.#onOutlines,
       asFit: PreviewApp.#onFit,
+      asShapes: PreviewApp.#onShapes,
     },
   };
 
@@ -54,6 +58,9 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
   #drag = null;
   #resize = null;
   #drawing = null; // the draw in flight, so a new plan waits for it
+  #shapes = false; // corner handles shown
+  #handles = []; // handlesOf(plan) as drawn
+  #edit = null; // the handle being dragged: { h, partners, plan, x, y, moved, next }
 
   constructor({ plan, run }, options = {}) {
     super(options);
@@ -143,11 +150,13 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
           <polygon points="${f.poly.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polygon>
           <text x="${cx}" y="${cy}" data-fs="${fs}">${esc(f.name ?? f.id)}</text></g>`;
     }).join("");
+    this.#handles = this.#shapes && r ? handlesOf(this.#plan) : [];
+    const handles = this.#handles.map((h, n) => `<circle class="as-pv-handle as-${h.kind}" data-h="${n}" data-id="${esc(h.id)}" cx="${h.at[0]}" cy="${h.at[1]}" r="0.3"></circle>`).join("");
     const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => `<text class="as-pv-label" x="${l.at[0]}" y="${l.at[1]}" data-fs="${fs * 0.85}">${esc(l.text)}</text>`).join("");
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${labels}</svg>
+          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${labels}${handles}</svg>
         </div>`
       : "";
     const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""}">
@@ -176,10 +185,11 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asOutlines" class="${this.#outlines ? "as-on" : ""}"><i class="fa-solid fa-draw-polygon"></i> Outlines</button>
+          <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip="Drag corners to reshape districts and areas; drag a side's middle dot to add a corner; alt-click or right-click a corner to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
           <button type="button" data-action="asFit" data-tooltip="Fit the map to the window (or double-click it)"><i class="fa-solid fa-expand"></i> Fit</button>
           <button type="button" data-action="asCopy" data-tooltip="Copy the plan, with its rerolls and locks, as JSON"><i class="fa-solid fa-copy"></i> Copy plan</button>
         </div>
-        <p class="as-pv-hint">A quick sketch in plain colours. Scroll to zoom, drag to move.</p>
+        <p class="as-pv-hint">${this.#shapes ? "Drag a corner to reshape; corners districts share move together. A turned area can't be reshaped here yet." : "A quick sketch in plain colours. Scroll to zoom, drag to move."}</p>
       </aside>`;
     return el;
   }
@@ -212,22 +222,42 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
     };
     el.addEventListener("pointerdown", (ev) => {
       const box = ev.target.closest?.(".as-pv-map");
-      if (!box || ev.button !== 0 || !this.#result) return;
+      if (!box || !this.#result) return;
+      const handle = ev.target.closest?.(".as-pv-handle");
+      if (handle && !this.#busy) {
+        const h = this.#handles[Number(handle.dataset.h)];
+        if (!h) return;
+        ev.stopPropagation();
+        if (h.kind === "corner" && (ev.button === 2 || ev.altKey)) return this.#reshape(removeCorner(this.#plan, h.id, h.i));
+        if (ev.button !== 0) return;
+        this.#edit = { h, partners: h.kind === "corner" ? partnersOf(this.#plan, h.id, h.i) : [], plan: this.#plan, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        box.setPointerCapture(ev.pointerId);
+        return;
+      }
+      if (ev.button !== 0) return;
       const v = this.#currentView();
       this.#drag = { x: ev.clientX, y: ev.clientY, tx: v.tx, ty: v.ty, k: v.k };
       box.setPointerCapture(ev.pointerId);
       box.classList.add("as-dragging");
     });
     el.addEventListener("pointermove", (ev) => {
+      if (this.#edit) return this.#editMove(ev);
       if (!this.#drag) return;
       if (ev.buttons === 0) return stop(); // released where we couldn't see it (the map was redrawn mid-drag)
       const d = this.#drag;
       this.#view = { k: d.k, tx: d.tx + ev.clientX - d.x, ty: d.ty + ev.clientY - d.y };
       this.#applyView();
     });
-    el.addEventListener("pointerup", stop);
-    el.addEventListener("pointercancel", stop);
-    el.addEventListener("lostpointercapture", stop);
+    el.addEventListener("pointerup", (ev) => {
+      if (this.#edit) return this.#editEnd(ev);
+      stop();
+    });
+    el.addEventListener("pointercancel", () => {
+      if (this.#edit) { this.#edit = null; this.render(); } // put the outline back
+      stop();
+    });
+    el.addEventListener("lostpointercapture", () => { if (!this.#edit) stop(); });
+    el.addEventListener("contextmenu", (ev) => { if (ev.target.closest?.(".as-pv-handle")) ev.preventDefault(); });
     el.addEventListener("dblclick", (ev) => {
       if (!ev.target.closest?.(".as-pv-map")) return;
       this.#view = null;
@@ -276,6 +306,82 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
     // Names grow only a little as the map is zoomed, so they don't cover it close up
     const grow = Math.pow(fit / k, 0.8);
     for (const t of stage.querySelectorAll("text[data-fs]")) t.setAttribute("font-size", Number(t.dataset.fs) * grow);
+    // Handles stay the same size on screen
+    const r = this.#result;
+    if (r) {
+      const px = (r.width / r.squares[0]) * k; // screen pixels a square
+      for (const c of stage.querySelectorAll(".as-pv-handle")) c.setAttribute("r", (c.classList.contains("as-mid") ? 4 : 6) / px);
+    }
+  }
+
+  /** Squares under a pointer. */
+  #toSquares(ev) {
+    const box = this.element.querySelector(".as-pv-map");
+    const r = this.#result;
+    const { k, tx, ty } = this.#currentView();
+    const rect = box.getBoundingClientRect();
+    const f = r.squares[0] / r.width;
+    return [((ev.clientX - rect.left - tx) / k) * f, ((ev.clientY - rect.top - ty) / k) * f];
+  }
+
+  /** A handle being dragged: the outline follows, and a corner dropped near another corner snaps to it. */
+  #editMove(ev) {
+    const e = this.#edit;
+    if (ev.buttons === 0) { this.#edit = null; this.render(); return; } // let go where we couldn't see it: put it back
+    if (!e.moved && Math.hypot(ev.clientX - e.x, ev.clientY - e.y) < 3) return;
+    e.moved = true;
+    let to = this.#toSquares(ev);
+    const r = this.#result;
+    const [MW, MH] = r.squares;
+    to = [Math.max(0, Math.min(MW, to[0])), Math.max(0, Math.min(MH, to[1]))];
+    let snapped = false;
+    if (e.h.kind === "corner" || e.h.kind === "mid") {
+      const px = (r.width / MW) * this.#currentView().k;
+      // Snap only onto other shapes' corners, never this shape's own (that would fold it) or the ones moving with it
+      const moving = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
+      let best = null, bestD = 10 / px; // within 10 screen pixels
+      for (const o of this.#handles) {
+        if (o.kind !== "corner" || moving.has(o.id)) continue;
+        const d = Math.hypot(o.at[0] - to[0], o.at[1] - to[1]);
+        if (d < bestD) { bestD = d; best = o.at; }
+      }
+      if (best) { to = [...best]; snapped = true; }
+    }
+    e.next = moveHandle(e.plan, e.h, to, e.partners, { exact: snapped });
+    // Redraw the outlines that moved, and the handle, without redrawing the map
+    const ids = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
+    const plan = normalize(e.next);
+    for (const f of plan.features) {
+      if (!ids.has(f.id)) continue;
+      let poly = [];
+      try { poly = shapeToPolygon(f.shape) ?? []; } catch { poly = []; }
+      this.element.querySelector(`.as-pv-shape[data-id="${CSS.escape(f.id)}"] polygon`)?.setAttribute("points", poly.map((p) => p.join(",")).join(" "));
+    }
+    const c = this.element.querySelector(`.as-pv-handle[data-h="${this.#handles.indexOf(e.h)}"]`);
+    c?.setAttribute("cx", to[0]); c?.setAttribute("cy", to[1]);
+  }
+
+  /** A handle let go: the reshaped plan is drawn (a click that didn't move does nothing). */
+  #editEnd() {
+    const e = this.#edit;
+    this.#edit = null;
+    if (!e?.moved || !e.next) return;
+    if (e.plan !== this.#plan) return this.render(); // the plan was replaced mid-drag: drop the drag
+    return this.#reshape(e.next);
+  }
+
+  /** Keeps a reshaped plan and draws it, unless a shape it changed would cross itself (then it says so). */
+  #reshape(next) {
+    const before = new Map((this.#plan.features ?? []).map((f) => [f.id, JSON.stringify(f.shape)]));
+    const changed = (next.features ?? []).filter((f) => before.get(f.id) !== JSON.stringify(f.shape));
+    if (!changed.length) return this.render();
+    const problem = changed.map((f) => shapeProblem(next, f.id)).find(Boolean);
+    if (problem) {
+      this.#error = `${problem} Nothing was changed.`;
+      return this.render();
+    }
+    this.#error = null;
+    return this.#change(next);
   }
 
   /** Keeps the plan as it is now for Undo (the last 50). */
@@ -324,7 +430,8 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
   static async #onUndo() {
     if (this.#busy || !this.#history.length) return;
     const before = this.#history.pop();
-    const sameMap = JSON.stringify(before.seeds ?? {}) === JSON.stringify(this.#plan.seeds ?? {});
+    const map = (p) => JSON.stringify({ ...p, locked: null }); // everything but the locks changes the map
+    const sameMap = map(before) === map(this.#plan);
     this.#plan = before;
     if (sameMap) this.render();
     else await this.#draw();
@@ -339,6 +446,13 @@ export class PreviewApp extends foundry.applications.api.ApplicationV2 {
     this.#outlines = !this.#outlines;
     this.element.querySelector(".as-pv-overlay")?.classList.toggle("as-off", !this.#outlines);
     this.element.querySelector("[data-action='asOutlines']")?.classList.toggle("as-on", this.#outlines);
+  }
+
+  static #onShapes() {
+    if (this.#busy) return;
+    this.#shapes = !this.#shapes;
+    if (this.#shapes) this.#outlines = true; // handles live on the outlines
+    this.render();
   }
 
   static #onFit() {

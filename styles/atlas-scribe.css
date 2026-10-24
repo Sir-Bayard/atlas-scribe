@@ -188,3 +188,19 @@
   padding-left: 1.1rem;
   font-size: 0.85em;
 }
+.atlas-scribe .as-pv-handle {
+  fill: #fff;
+  stroke: rgb(200, 120, 20);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+  cursor: move;
+  pointer-events: all;
+}
+.atlas-scribe .as-pv-handle.as-mid {
+  fill: rgba(255, 255, 255, 0.6);
+  stroke-width: 1.5px;
+  cursor: copy;
+}
+.atlas-scribe .as-pv-handle:hover {
+  fill: rgb(255, 220, 120);
+}
