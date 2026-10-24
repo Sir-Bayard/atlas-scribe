@@ -267,3 +267,33 @@
   font-family: monospace;
   font-size: 0.85em;
 }
+/* A district or area picked for reshaping */
+.atlas-scribe .as-pv-shape.as-selected polygon {
+  stroke: rgb(200, 120, 20);
+  stroke-width: 2.5px;
+  stroke-dasharray: none;
+  fill: rgba(255, 220, 120, 0.1);
+}
+.atlas-scribe .as-pv-list li {
+  cursor: pointer;
+}
+.atlas-scribe .as-pv-list li.as-selected {
+  box-shadow: inset 3px 0 0 rgb(200, 120, 20);
+  background: rgba(200, 120, 20, 0.12);
+}
+/* Roads, rivers and walls on the overlay: their plan line shows when picked, hovered or in Shapes */
+.atlas-scribe .as-pv-shape.as-path polyline {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2px;
+}
+.atlas-scribe .as-pv-overlay.as-shapes .as-pv-shape.as-path polyline,
+.atlas-scribe .as-pv-shape.as-path.as-hover polyline {
+  stroke: rgba(30, 30, 40, 0.6);
+  stroke-dasharray: 4 3;
+}
+.atlas-scribe .as-pv-shape.as-path.as-selected polyline {
+  stroke: rgb(200, 120, 20);
+  stroke-width: 2.5px;
+  stroke-dasharray: 6 3;
+}

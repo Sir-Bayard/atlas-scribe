@@ -8,7 +8,7 @@
  * remove it. Scroll to zoom, drag to pan, double-click to fit.
  */
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
-import { shapeToPolygon } from "../core/geom.mjs";
+import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs";
 import { normalize } from "../core/plan.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 
@@ -66,7 +66,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #drag = null;
   #resize = null;
   #drawing = null; // the draw in flight, so a new plan waits for it
-  #shapes = false; // corner handles shown
+  #shapes = false; // every corner handle shown
+  #selected = null; // the district or area clicked: its handles are shown even with Shapes off
+  #corners = []; // every corner in the plan, for a dragged corner to snap to
   #handles = []; // handlesOf(plan) as drawn
   #edit = null; // the handle being dragged: { h, partners, plan, x, y, moved, next }
 
@@ -124,6 +126,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (run) this.#run = run;
     this.#plan = plan;
     this.#path = path;
+    this.#selected = null;
     this.#saved = saved ? JSON.stringify(plan) : null;
     this.#error = null;
     this.#result = null;
@@ -187,6 +190,14 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
   }
 
+  /** The plan's roads, rivers and walls as drawn on the overlay: [{ id, type, pts, half }] (half: half its width). */
+  #paths() {
+    const plan = normalize(this.#plan);
+    const sq = plan.size.ftPerSquare || 25;
+    return plan.features.filter((f) => (f.type === "road" || f.type === "water" || f.type === "wall") && Array.isArray(f.path) && f.path.length >= 2)
+      .map((f) => ({ id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : (Number(f.width) || 10) / sq / 2 }));
+  }
+
   async _renderHTML() {
     const el = document.createElement("div");
     el.className = "as-pv";
@@ -211,20 +222,24 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const fs = Math.max(MW, MH) / 55;
     const shapes = feats.filter((f) => f.poly.length >= 3).map((f) => {
       const [cx, cy] = centroid(f.poly);
-      return `<g class="as-pv-shape as-${f.type}" data-id="${esc(f.id)}">
+      return `<g class="as-pv-shape as-${f.type} ${f.id === this.#selected ? "as-selected" : ""}" data-id="${esc(f.id)}">
           <polygon points="${f.poly.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polygon>
           <text x="${cx}" y="${cy}" data-fs="${fs}">${esc(f.name ?? f.id)}</text></g>`;
     }).join("");
-    this.#handles = this.#shapes && r ? handlesOf(this.#plan) : [];
+    const every = r ? handlesOf(this.#plan) : [];
+    this.#corners = every.filter((h) => h.kind === "corner");
+    if (this.#selected && !feats.some((f) => f.id === this.#selected) && !this.#paths().some((p) => p.id === this.#selected)) this.#selected = null;
+    this.#handles = every.filter((h) => this.#shapes || h.id === this.#selected);
     const handles = this.#handles.map((h, n) => `<circle class="as-pv-handle as-${h.kind}" data-h="${n}" data-id="${esc(h.id)}" cx="${h.at[0]}" cy="${h.at[1]}" r="0.3"></circle>`).join("");
+    const lines = this.#paths().map((p) => `<g class="as-pv-shape as-path as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}"><polyline points="${p.pts.map((q) => q.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polyline></g>`).join("");
     const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => `<text class="as-pv-label" x="${l.at[0]}" y="${l.at[1]}" data-fs="${fs * 0.85}">${esc(l.text)}</text>`).join("");
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${labels}${handles}</svg>
+          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${lines}${labels}${handles}</svg>
         </div>`
       : "";
-    const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""}">
+    const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""} ${f.id === this.#selected ? "as-selected" : ""}" data-tooltip="Click to reshape it">
         <span class="as-pv-name"><strong>${esc(f.name ?? f.id)}</strong><em>${esc(f.type === "district" ? `${f.kind} district` : f.kind)}</em></span>
         <button type="button" data-action="asReroll" data-id="${esc(f.id)}" data-tooltip="Reroll" ${f.locked || this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i></button>
         <button type="button" data-action="asLock" data-id="${esc(f.id)}" data-tooltip="${f.locked ? "Locked: rerolls leave it alone. Click to unlock." : "Lock, so rerolls leave it alone"}" class="${f.locked ? "as-on" : ""}" ${this.#working ? "disabled" : ""}><i class="fa-solid ${f.locked ? "fa-lock" : "fa-lock-open"}"></i></button>
@@ -271,7 +286,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip="${scene ? "Paint the map with your art and update the scene made from this plan (it's backed up first)" : "Paint the map with your art and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
           ${scene ? `<button type="button" data-action="asView" data-tooltip="Go to the scene"><i class="fa-solid fa-eye"></i></button>` : ""}
         </div>
-        <p class="as-pv-hint">${this.#shapes ? "Drag a corner to reshape; corners districts share move together. A turned area can't be reshaped here yet." : "A quick sketch in plain colours. Scroll to zoom, drag to move."}</p>
+        <p class="as-pv-hint">${esc(this.#hint())}</p>
       </aside>`;
     return el;
   }
@@ -332,7 +347,16 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
     el.addEventListener("pointerup", (ev) => {
       if (this.#edit) return this.#editEnd(ev);
+      // A press that didn't move is a click: pick the district or area under it (or none)
+      const d = this.#drag;
+      if (d && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 4 && ev.target.closest?.(".as-pv-map")) this.#pick(ev);
       stop();
+    });
+    // Clicking a district's or area's name in the list picks it too
+    el.addEventListener("click", (ev) => {
+      const li = ev.target.closest?.(".as-pv-list li[data-id]");
+      if (!li || ev.target.closest("button")) return;
+      this.#select(this.#selected === li.dataset.id ? null : li.dataset.id);
     });
     el.addEventListener("pointercancel", () => {
       if (this.#edit) { this.#edit = null; this.render(); } // put the outline back
@@ -361,6 +385,48 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (this.#url) URL.revokeObjectURL(this.#url);
     this.#url = null;
     this.#result = null;
+  }
+
+  /** What the hint under the tools says: how to reshape, given what's picked. */
+  #hint() {
+    if (this.#selected) {
+      const has = this.#handles.some((h) => h.id === this.#selected);
+      if (has && this.#handles.some((h) => h.id === this.#selected && h.path))
+        return `Drag ${this.#selected}'s points to move it (the dot in a stretch's middle adds a point; right-click a point to remove it). It's drawn as a smooth curve through them. Click elsewhere to finish.`;
+      return has
+        ? `Drag ${this.#selected}'s corners to reshape it (the dot in a side's middle adds a corner; right-click a corner to remove it). Click elsewhere to finish.`
+        : `${this.#selected} is turned (it has a rot), and can't be reshaped here yet.`;
+    }
+    if (this.#shapes) return "Drag a corner or a road's point to reshape; points shared by two districts or two roads move together. A turned area can't be reshaped here yet.";
+    return "A quick sketch in plain colours. Click a district, area, road or river to reshape it; scroll to zoom, drag to move.";
+  }
+
+  /** Picks the district or area under a click: the smallest one there, so a wood inside a district can be picked. */
+  #pick(ev) {
+    if (!this.#result || this.#working) return;
+    const at = this.#toSquares(ev);
+    // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area round it
+    const r = this.#result;
+    const px = (r.width / r.squares[0]) * this.#currentView().k;
+    let road = null, roadD = Infinity;
+    for (const p of this.#paths()) {
+      const d = distanceToPath(at, p.pts);
+      if (d <= Math.max(p.half, 8 / px) && d < roadD) { roadD = d; road = p.id; }
+    }
+    if (road) return this.#select(road);
+    let best = null, bestArea = Infinity;
+    for (const f of this.#features()) {
+      if (f.poly.length < 3 || !pointInPolygon(at, f.poly)) continue;
+      const area = Math.abs(f.poly.reduce((a, p, i) => { const q = f.poly[(i + 1) % f.poly.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+      if (area < bestArea) { bestArea = area; best = f.id; }
+    }
+    this.#select(best);
+  }
+
+  #select(id) {
+    if (id === this.#selected) return;
+    this.#selected = id;
+    this.render();
   }
 
   #hover(id) {
@@ -422,8 +488,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       // Snap only onto other shapes' corners, never this shape's own (that would fold it) or the ones moving with it
       const moving = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
       let best = null, bestD = 10 / px; // within 10 screen pixels
-      for (const o of this.#handles) {
-        if (o.kind !== "corner" || moving.has(o.id)) continue;
+      for (const o of this.#corners) {
+        if (moving.has(o.id) || !!o.path !== !!e.h.path) continue; // roads snap to roads, districts to districts
         const d = Math.hypot(o.at[0] - to[0], o.at[1] - to[1]);
         if (d < bestD) { bestD = d; best = o.at; }
       }
@@ -435,6 +501,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const plan = normalize(e.next);
     for (const f of plan.features) {
       if (!ids.has(f.id)) continue;
+      if (Array.isArray(f.path)) {
+        this.element.querySelector(`.as-pv-shape[data-id="${CSS.escape(f.id)}"] polyline`)?.setAttribute("points", f.path.map((p) => p.join(",")).join(" "));
+        continue;
+      }
       let poly = [];
       try { poly = shapeToPolygon(f.shape) ?? []; } catch { poly = []; }
       this.element.querySelector(`.as-pv-shape[data-id="${CSS.escape(f.id)}"] polygon`)?.setAttribute("points", poly.map((p) => p.join(",")).join(" "));
@@ -454,8 +524,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Keeps a reshaped plan and draws it, unless a shape it changed would cross itself (then it says so). */
   #reshape(next) {
-    const before = new Map((this.#plan.features ?? []).map((f) => [f.id, JSON.stringify(f.shape)]));
-    const changed = (next.features ?? []).filter((f) => before.get(f.id) !== JSON.stringify(f.shape));
+    const geo = (f) => JSON.stringify([f.shape, f.path, f.at]); // a district's shape, a road's path, a bridge's place
+    const before = new Map((this.#plan.features ?? []).map((f) => [f.id, geo(f)]));
+    const changed = (next.features ?? []).filter((f) => before.get(f.id) !== geo(f));
     if (!changed.length) return this.render();
     const problem = changed.map((f) => shapeProblem(next, f.id)).find(Boolean);
     if (problem) {
