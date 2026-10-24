@@ -14,8 +14,10 @@ import { seasonOf } from "../roles.mjs";
 import { fillFarmstead, fillWoods, hedgeBushes, groundPatches } from "./settlement.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
-import { lotsFor } from "../lots/index.mjs";
+import { lotsFor, lotTypeOf } from "../lots/index.mjs";
 import { buildOnLots } from "../lots/build.mjs";
+import { poissonInPolygon } from "../scatter.mjs";
+import { makeNoise } from "../noise.mjs";
 
 export const LAYOUT_VERSION = 1;
 
@@ -246,7 +248,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const waterItems = items.filter((i) => i.kind === "water" && i.path);
     const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
     const keepOff = [...blocked, ...gateClear];
-    const { lots } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
+    const { lots, back } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
     const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build") });
     filling = d.id;
     for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
@@ -259,8 +261,23 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     });
     built.crofts.forEach((poly, k) => items.push({ kind: "surface", id: `${d.id}/c${k + 1}`, from: d.id, class: "croft", poly }));
     built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
+    // Trees in the plots: orchards in rows and trees about the yards
+    built.trees.forEach((t, k) => items.push({ kind: "tree", id: `${d.id}/y${k + 1}`, from: d.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
+    // Ground no plot takes (beyond the back lanes, the middle of big blocks): trees scattered evenly (Poisson-disk),
+    // thinned in patches by a noise, so they gather in clumps with open ground between
+    const T = lotTypeOf(d);
+    const wr = r.fork("wild");
+    const patch = makeNoise(plan.seed, `${d.id}/wild`, { scale: 6, octaves: 2 });
+    let wild = 0;
+    back.forEach((poly, k) => {
+      const pts = poissonInPolygon(poly, T.wild ?? 1.5, wr.fork(k), { keep: (x, y) => patch(x, y) > -0.1 && free(x, y, 0.45), max: 400 });
+      for (const [x, y] of pts) {
+        wild++;
+        items.push({ kind: "tree", id: `${d.id}/w${wild}`, from: d.id, x, y, species: "bare", size: null, s: 0.4 + wr.next() * 0.25, rot: wr.next() * 360, variant: wr.int(8) });
+      }
+    });
     filling = null;
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
   }
 
   // Woods and hedgerows last: trees keep clear of every building

@@ -5,7 +5,7 @@
  */
 import { pointInPolygon, polygonsOverlap } from "../geom.mjs";
 import { lotTypeOf } from "./index.mjs";
-import { intersect, area } from "./poly.mjs";
+import { intersect, area, difference } from "./poly.mjs";
 import { ROOFS, ROOF_STYLES } from "../plan.mjs";
 
 /** A key from { key: weight } for a roll in [0, 1). */
@@ -75,7 +75,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   const spacious = Math.max(0, Math.min(1, district.spacious ?? 0));
   const density = district.density ?? 1;
   const gardenShare = district.gardens ?? 0.1;
-  const out = { houses: [], outbuildings: [], gardens: [], crofts: [], bounds: [] };
+  const out = { houses: [], outbuildings: [], gardens: [], crofts: [], bounds: [], trees: [] };
   const wayById = new Map(ways.map((w) => [w.id, w]));
   const boundClass = (lr) => (district.profile === "hamlet" || district.profile === "roadside" ? (lr.next() < 0.5 ? "hedge" : "wall") : lr.next() < 0.8 ? "fence" : "wall");
 
@@ -97,6 +97,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   const row = { key: null, roof: null, style: null, left: 0 };
   lots.forEach((lot, i) => {
     const lr = r.fork("lot", lot.block, i);
+    const firstHouse = out.houses.length, firstOut = out.outbuildings.length;
     // Every choice drawn first, so a plot's dice never depend on what fitted
     const vacant = lr.next() < (1 - Math.min(1, density)) * 0.6;
     const cover = (T.cover[0] + lr.next() * (T.cover[1] - T.cover[0])) * (1 - 0.35 * spacious);
@@ -314,12 +315,15 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       }
     }
     // On a long plot, a range at the far end: the stable, workshop or warehouse that the back lane served
+    let rearAt = null; // how far back the far-end range starts
     if (house && wantRear && lot.depth - behind > sq(45)) {
       const rw = Math.min(lot.frontage * 0.85, sq(16 + dr.next() * 12)), rd = sq(14 + dr.next() * 8);
       const back = lot.depth - rd / 2 - sq(2);
       const cx = mx + nx * back, cy = my + ny * back;
-      if (fits(corners(cx, cy, rw, rd, [ux, uy]), lot.poly))
+      if (fits(corners(cx, cy, rw, rd, [ux, uy]), lot.poly)) {
+        rearAt = back - rd / 2;
         out.outbuildings.push({ id: `l${lot.block}-${i}r`, lot: i, r: lr.fork("rear"), building: { shape: { rect: [cx - rw / 2, cy - rd / 2, cx + rw / 2, cy + rd / 2] }, rot: ang, roof, variant, roofStyle: "gable", height: 18, chimney: false } });
+      }
     }
     // The yard behind the house ends here; a croft, if any, starts exactly here, so they share one fence
     const reachBack = Math.max(houseBack, behind) + yard;
@@ -331,6 +335,58 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       const slab = [[mx + nx * near - ux * 99, my + ny * near - uy * 99], [mx + nx * near + ux * 99, my + ny * near + uy * 99], [mx + nx * far + ux * 99, my + ny * far + uy * 99], [mx + nx * far - ux * 99, my + ny * far - uy * 99]];
       const piece = intersect([lot.poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
       if (piece && area(piece) > 0.5) { out.crofts.push(piece); croftOf = i; }
+    }
+    // The rest of the plot, behind the yard (Patrick, 24 Oct: fill the open ground; the burgage plots of real towns
+    // held gardens, orchards and trees): a strip garden, an orchard in rows, a few trees, or open ground, by type
+    if (house && croftOf !== i) {
+      const fr = lr.fork("fill");
+      const use = pickWeighted(fr.next(), T.fill ?? { open: 1 });
+      const start = reachBack, end = (rearAt ?? lot.depth) - sq(4);
+      const span = end - start;
+      // What this plot already holds, for trees to keep clear of
+      const rects = [...out.houses.slice(firstHouse), ...out.outbuildings.slice(firstOut)].map((h) => {
+        const b = h.building, a = ((b.rot ?? 0) * Math.PI) / 180;
+        if (b.shape.circle) { const [x, y, rad] = b.shape.circle; return corners(x, y, rad * 2, rad * 2, [Math.cos(a), Math.sin(a)]); }
+        const [x0, y0, x1, y1] = b.shape.rect;
+        return corners((x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0, [Math.cos(a), Math.sin(a)]);
+      });
+      const clearOf = (x, y, rad) => !rects.some((q) => pointInPolygon([x, y], q) || q.some((c, k) => distToSeg([x, y], c, q[(k + 1) % 4]) < rad));
+      const inPlot = (x, y, rad) => pointInPolygon([x, y], lot.poly) && lot.poly.every((c, k) => distToSeg([x, y], c, lot.poly[(k + 1) % lot.poly.length]) > rad * 0.6);
+      const tree = (x, y, crown) => out.trees.push({ x, y, s: crown / 2.2, rot: fr.next() * 360, variant: fr.int(8) });
+      if (use === "garden" && span > sq(20)) {
+        // Beds in rows across the plot, as wide as the plot allows
+        const d = Math.min(span * (0.5 + fr.next() * 0.3), sq(70)), w = lot.frontage * 0.8;
+        const cx = mx + nx * (start + d / 2), cy = my + ny * (start + d / 2);
+        if (fits(corners(cx, cy, w, d, [ux, uy]), lot.poly)) out.gardens.push({ cx, cy, w, d, rot: ang, strip: true });
+      } else if (use === "orchard" && span > sq(25)) {
+        // Fruit trees in rows square to the plot, 16 to 20 ft apart
+        const sp = sq(16 + fr.next() * 4), crown = sp * 0.85;
+        const cols = Math.max(1, Math.floor((lot.frontage * 0.85) / sp));
+        for (let t = start + sp / 2; t <= end - sp / 2 + 1e-9; t += sp)
+          for (let c = 0; c < cols; c++) {
+            const off = (c - (cols - 1) / 2) * sp + (fr.next() - 0.5) * sp * 0.15;
+            const x = mx + nx * t + ux * off, y = my + ny * t + uy * off;
+            if (inPlot(x, y, crown / 2) && clearOf(x, y, crown * 0.4)) tree(x, y, crown);
+          }
+      } else if (use === "trees" && span > sq(10)) {
+        // A few trees about the yard and the plot behind it
+        const n = 1 + Math.floor(fr.next() * Math.min(3, span / sq(30) + 1));
+        const placed = [];
+        for (let k = 0; k < n * 4 && placed.length < n; k++) {
+          const t = start + fr.next() * span, off = (fr.next() - 0.5) * lot.frontage * 0.8, crown = sq(18 + fr.next() * 14);
+          const x = mx + nx * t + ux * off, y = my + ny * t + uy * off;
+          if (!inPlot(x, y, crown / 2) || !clearOf(x, y, crown * 0.35) || placed.some(([px, py]) => Math.hypot(px - x, py - y) < crown * 0.8)) continue;
+          placed.push([x, y]);
+          tree(x, y, crown);
+        }
+      }
+      // Faint lines between long town plots, behind the yard only, where neighbours' backs meet (decision 24)
+      if (T.backBounds && span > sq(20)) {
+        const behindYard = difference([lot.poly], [clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack) ?? []]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
+        const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
+        // Not across the plot where the yard ends: only its sides and its far end
+        if (behindYard) addBounds(behindYard, wayById.get(lot.way), "wall", (a, b) => Math.abs(depthOf(a) - reachBack) < 0.05 && Math.abs(depthOf(b) - reachBack) < 0.05);
+      }
     }
     // Boundaries near the house only (Patrick, 24 Oct): the yard round the house and outbuilding, fenced on its
     // sides and back but not along the street, and the fence round a croft. The long back lines aren't drawn.
@@ -432,6 +488,12 @@ function joinBounds(segs) {
     out.push({ path, class: segs[i].class });
   }
   return out;
+}
+
+function distToSeg([x, y], [ax, ay], [bx, by]) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+  return Math.hypot(ax + t * dx - x, ay + t * dy - y);
 }
 
 function distToPath([x, y], path) {
