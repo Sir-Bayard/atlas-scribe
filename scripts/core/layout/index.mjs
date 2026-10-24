@@ -7,6 +7,7 @@
  * Every random choice is made here, never in the painter, so the same plan always paints the same map, whatever
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
+import { roadWaterCrossings, snapCrossing } from "./crossings.mjs";
 import { normalize } from "../plan.mjs";
 import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
@@ -65,6 +66,11 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   };
 
   progress(0.05, "Fixed features");
+  // Where the plan's roads cross its water, for its bridges and fords to sit on
+  const overWater = roadWaterCrossings(
+    plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })),
+    plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })),
+  );
   const ways = [];
   const parks = [];
   for (const f of plan.features) {
@@ -83,9 +89,12 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
           space.water.push({ path: f.path, clear: ft(f.width) / 2 + 0.225 });
         } else notes.push({ level: "warning", id: f.id, message: `"${f.id}": water drawn as an area isn't painted yet; only rivers and streams along a path are.` });
         break;
-      case "crossing":
-        items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width), frozen: !!f.frozen });
+      case "crossing": {
+        const c = snapCrossing({ class: f.class, at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width) }, overWater);
+        if (!c.snappedTo) notes.push({ level: "warning", id: f.id, message: `"${f.id}": there's no road over water near it, so it's drawn where the plan puts it.` });
+        items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, at: c.at, angle: c.angle, length: c.length, width: c.width, frozen: !!f.frozen });
         break;
+      }
       case "square": {
         const poly = shapeToPolygon(f.shape);
         items.push({ kind: "surface", id: f.id, from: f.id, class: "square", poly, surface: f.surface });
