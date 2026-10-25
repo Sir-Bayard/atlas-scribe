@@ -2,22 +2,26 @@
  * Field systems: an area of class "fields" filled with fields, from a Voronoi diagram of points scattered over it
  * (d3-delaunay, bundled in vendor/). Two systems:
  *
- * - patchwork: enclosed fields, each a Voronoi cell (a few merged with a neighbour into one bigger field), with a hedge
- *   or a drystone wall round each, and a tree in the hedgerow here and there. The cells are stretched along the
+ * - patchwork: enclosed fields, each a Voronoi cell (a few merged with a neighbour into one bigger field), hedged or
+ *   walled along the roads, round the system's edge and on about a quarter of the sides between them (the rest a faint
+ *   grass edge), with a tree in the hedgerow here and there. The cells are stretched along the
  *   system's grain (the area's long axis), so fields run long and their sides fall roughly parallel, as old enclosures do.
  * - strips: open fields. The cells are furlongs, each ploughed in long narrow strips running one way or the other
  *   across the grain, with grass balks between the strips and headlands between the furlongs. No hedges inside.
  *
  * Every field takes a crop for the season (ploughed, growing, ripe, stubble, hay, pasture, fallow) and the way its
- * rows run. The cells come from the area's own shape and stream, never from what's round it, so moving a road clips the
- * fields differently but never reshuffles them; the land a system fills is its shape less the roads, water,
- * districts, squares, yards, other areas, buildings and the fields systems listed before it. Pure: runs anywhere.
+ * rows run; about a third of the fields (or furlongs) are left as grass, by the area's coverage, so the land isn't
+ * cultivated wall to wall. The cells come from the area's own shape and stream, never from what's round it, so moving
+ * a road clips the fields differently but never reshuffles them; the land a system fills is its shape less the roads,
+ * water, districts and a ragged margin of grass round each, squares, yards, other areas, buildings and the fields
+ * systems listed before it. Pure: runs anywhere.
  * Numbers are in squares.
  */
 import { Delaunay } from "../../../vendor/d3-delaunay.mjs";
 import { bands, difference, intersect, union, offset, shapes, area as areaOf, centroid } from "../lots/poly.mjs";
 import { shapeToPolygon, pointInPolygon, bbox, distanceToPath } from "../geom.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
+import { makeNoise } from "../noise.mjs";
 
 export const SYSTEMS = ["patchwork", "strips"];
 export const CROPS = ["ploughed", "growing", "ripe", "stubble", "hay", "pasture", "fallow"];
@@ -38,11 +42,17 @@ export const ROWS = { ploughed: 0.3, growing: 0.26, ripe: 0.26, stubble: 0.3, ha
 const FIELD_FT = { patchwork: 300, strips: 450 };
 const STRIP_FT = 60;
 /** How far fields keep from things, in squares (beyond a road's or river's half width). */
-const KEEP = { road: 0.5, water: 0.7, district: 0.8, square: 0.3, building: 0.6, farmstead: 0.6, area: 0.15, wall: 0.4 };
+const KEEP = { road: 0.5, water: 0.7, square: 0.3, building: 0.6, farmstead: 0.6, area: 0.15, wall: 0.4 };
+/** The grass round a district before the fields start, in feet: at least the first, up to the second, varying round it. */
+const MARGIN_FT = [75, 200];
+/** The share of a system's fields (or furlongs) that are cultivated when the plan gives no coverage; the rest is grass. */
+const COVERAGE = 0.65;
+/** The share of the sides between enclosed fields that carry a hedge or wall (roadsides and a system's own edge always do). */
+const HEDGED = 0.25;
 
 /**
  * What a field system keeps out of: polygons, from the plan alone (roads and water at their widths, walls and hedges,
- * districts, squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
+ * districts with a ragged margin of grass round them (marginRound), squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
  * smoothed (as the layout has it).
  */
 export function fieldKeepOut(plan, self) {
@@ -64,7 +74,7 @@ export function fieldKeepOut(plan, self) {
         if (Array.isArray(f.path)) paths.push({ path: f.path, half: KEEP.wall });
         break;
       case "district":
-        polys.push(...grown(shapeToPolygon(f.shape), KEEP.district));
+        polys.push(...marginRound(plan, f));
         break;
       case "square":
         polys.push(...grown(shapeToPolygon(f.shape), KEEP.square));
@@ -88,6 +98,41 @@ export function fieldKeepOut(plan, self) {
   return [...bands(paths), ...polys.filter((p) => p.length >= 3).flatMap((p) => union([p]))];
 }
 
+/**
+ * A district and the grass round it, where fields don't come: the outline pushed out by 75 to 200 feet, the distance
+ * wandering round it by a noise from the plan's seed and the district's id (not its own seed, so rerolling a district
+ * never moves the fields). The district's box is lost in plain grass instead of standing out against the crops.
+ */
+export function marginRound(plan, district) {
+  const sq = plan.size.ftPerSquare;
+  const [lo, hi] = MARGIN_FT.map((v) => v / sq);
+  const rings = offset([shapeToPolygon(district.shape)], lo);
+  if (!rings.length) return [];
+  const ring = rings.reduce((a, b) => (areaOf(b) > areaOf(a) ? b : a));
+  const noise = makeNoise(plan.seed, `${district.id}/margin`, { scale: 7, octaves: 2 });
+  // A point every square or so, each pushed outward by its share of the extra
+  const pts = [];
+  ring.forEach((p, i) => {
+    const q = ring[(i + 1) % ring.length], n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1])));
+    for (let k = 0; k < n; k++) pts.push([p[0] + ((q[0] - p[0]) * k) / n, p[1] + ((q[1] - p[1]) * k) / n]);
+  });
+  const ragged = pts.map((p, i) => {
+    const a = pts[(i + pts.length - 1) % pts.length], b = pts[(i + 1) % pts.length];
+    let nx = b[1] - a[1], ny = -(b[0] - a[0]);
+    const l = Math.hypot(nx, ny) || 1;
+    nx /= l; ny /= l;
+    if (pointInPolygon([p[0] + nx * 0.3, p[1] + ny * 0.3], ring)) { nx = -nx; ny = -ny; } // outward
+    const t = Math.max(0, Math.min(1, (noise(p[0], p[1]) + 0.6) / 1.2));
+    return [p[0] + nx * (hi - lo) * t, p[1] + ny * (hi - lo) * t];
+  });
+  return union([ring, ragged]);
+}
+
+/** The plan's roads as fields see them: { path, half }, half being how far the fields keep from the road's middle. */
+export function fieldRoads(plan) {
+  return plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ path: f.path, half: (f.width ?? 0) / plan.size.ftPerSquare / 2 + KEEP.road }));
+}
+
 /** The shapes of the field systems listed before this one: the edge this one takes from them already has a border. */
 export function earlierFields(plan, self) {
   const out = [];
@@ -100,13 +145,15 @@ export function earlierFields(plan, self) {
 
 /**
  * Fills one field system. area: the plan's area; r: its stream; keepOut: from fieldKeepOut; earlier: from earlierFields
- * (no border is drawn along their edges, which have their own); W, H: the map, in squares; ftPerSquare; season. Returns { system, fields, hedges, walls, balks, trees,
+ * (no border is drawn along their edges, which have their own); along: the roads ([{ path, half }], fieldRoads), whose
+ * sides are always hedged; W, H: the map, in squares; ftPerSquare; season. Returns { system, fields, hedges, walls, balks, trees,
  * notes }: fields [{ poly, holes, crop, angle, shade, variant, rows }] (angle: the way its rows run, in degrees; rows: their
  * spacing in squares, 0 for none; shade: -1 to 1, a little darker or lighter than its crop), hedges and walls
- * (paths: the border, by its class), balks (segments, [a, b]: grass lines between strips and between furlongs), trees (hedgerow
+ * (paths: the border, by its class), balks (segments, [a, b]: grass lines between strips, between furlongs, and the
+ * faint edges between enclosed fields that carry no hedge), trees (hedgerow
  * trees for the caller to place where there's room: [{ x, y, s, rot, variant }]).
  */
-export function fillFields({ area, r, keepOut, earlier = [], W, H, ftPerSquare, season = "summer" }) {
+export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, ftPerSquare, season = "summer" }) {
   const notes = [];
   const out = { system: null, fields: [], hedges: [], walls: [], balks: [], trees: [], notes };
   const shape = shapeToPolygon(area.shape, area.rot ?? 0, 48);
@@ -116,6 +163,7 @@ export function fillFields({ area, r, keepOut, earlier = [], W, H, ftPerSquare, 
   out.system = system;
   if (shape.length < 3) return out;
   const border = area.border ?? (system === "strips" ? "none" : borderDraw < 0.65 ? "hedge" : "drystone");
+  const coverage = Number.isFinite(area.coverage) ? Math.max(0, Math.min(1, area.coverage)) : COVERAGE;
 
   // The land: the shape on the map, less what it keeps out of, with slivers under a square across opened away
   const mapRect = [[0, 0], [W, 0], [W, H], [0, H]];
@@ -216,32 +264,47 @@ export function fillFields({ area, r, keepOut, earlier = [], W, H, ftPerSquare, 
       group[j] = i;
       count[i] += count[j];
     }
-    const groups = new Map();
+    const groups = new Map(), open = new Set();
     cells.forEach((c, i) => { const g = find(i); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(c); });
     for (const [g, list] of [...groups].sort((x, y) => x[0] - y[0])) {
       const fr = r.fork("field", g);
       const crop = pickCrop(fr);
       const angle = grain + (fr.chance(0.6) ? 0 : 90) + fr.range(-8, 8);
       const shade = fr.range(-1, 1), variant = fr.int(8);
+      // Some fields left as grass (pasture, common, rough ground), so the land isn't cultivated wall to wall
+      if (fr.next() >= coverage) { open.add(g); continue; }
       const whole = list.length > 1 ? union(list) : list;
       for (const piece of shapes(intersect(whole, landFlat))) {
         if (areaOf(piece.outer) < 1) continue;
         out.fields.push({ poly: piece.outer, holes: piece.holes, crop, angle, shade, variant, rows: ROWS[crop] ?? 0 });
       }
     }
-    // Borders: every side between two fields, and round the land, except along the map's edge and along an earlier
-    // field system (whose own border runs there)
-    const edges = [];
-    for (const s of inner) if (find(s.cells[0]) !== find(s.cells[1])) edges.push(...clipSegment(s.a, s.b, land));
-    edges.push(...outlineOf(land, W, H, earlier));
+    // Borders: every side between two fields (or a field and grass), and round the fields at the land's edge, except
+    // along the map's edge and along an earlier field system (whose own border runs there). Grass meets grass unbounded
+    const bordered = (s) => { const [i, j] = s.cells.map(find); return i !== j && !(open.has(i) && open.has(j)); };
+    const openAt = (p) => { const i = cells.findIndex((c) => pointInPolygon(p, c)); return i >= 0 && open.has(find(i)); };
+    // Not every border is a hedge or wall, or every field is ringed by one: those along a road and round the system's
+    // own edge are, and about a quarter of the sides between fields (each side's own draw); the rest are a faint grass
+    // edge, as are the edges facing a village, water or a wood
+    const walled = (s) => border !== "none" && r.fork("side", s.id).chance(HEDGED);
+    const shapeRing = [...shape, shape[0]];
+    const onRoad = (m) => along.some((w) => distanceToPath(m, w.path) < w.half + 0.3);
+    const edges = [], faint = [];
+    for (const s of inner) if (bordered(s)) (walled(s) ? edges : faint).push(...clipSegment(s.a, s.b, land));
+    for (const [p, q] of outlineOf(land, W, H, earlier)) {
+      const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+      if (openAt(m)) continue;
+      (border !== "none" && (onRoad(m) || distanceToPath(m, shapeRing) < 0.3) ? edges : faint).push([p, q]);
+    }
     const paths = joinSegments(edges).filter((p) => pathLen(p) >= 0.6);
     if (border === "hedge") out.hedges.push(...paths);
     else if (border === "drystone") out.walls.push(...paths);
-    // A tree in the hedgerow every so often: laid along each side between two fields from that side's own stream, so
-    // moving a road or a district never moves the trees on sides it doesn't reach
+    out.balks.push(...faint);
+    // A tree in the hedgerow every so often: laid along each hedged side between two fields from that side's own
+    // stream, so moving a road or a district never moves the trees on sides it doesn't reach
     if (border === "hedge") {
       for (const s of inner) {
-        if (find(s.cells[0]) === find(s.cells[1])) continue;
+        if (!bordered(s) || !walled(s)) continue;
         const tr = r.fork("hedgerow tree", s.id);
         const len = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]);
         for (let d = tr.range(2, 8); d < len - 1; d += tr.range(5, 11)) {
@@ -256,11 +319,14 @@ export function fillFields({ area, r, keepOut, earlier = [], W, H, ftPerSquare, 
     // whole cell, each drawing its choices whether or not any of it is left, and only then trimmed to the land, so a
     // road taking a corner of a furlong never moves the strips in the rest of it
     const stripW = STRIP_FT / ftPerSquare;
+    const openF = new Set();
     cells.forEach((cell, i) => {
       const fr = r.fork("furlong", i);
       const turn = fr.chance(0.5) ? 0 : 90;
       const dir = grain + turn + fr.range(-6, 6);
       const furlongCrop = pickCrop(fr, STRIP_DAMP);
+      // Some furlongs left as common grazing
+      if (fr.next() >= coverage) { openF.add(i); return; }
       const sr = fr.fork("strips");
       const d = (dir * Math.PI) / 180, cd = Math.cos(d), sd = Math.sin(d);
       const toF = ([x, y]) => [x * cd + y * sd, -x * sd + y * cd];
@@ -285,9 +351,10 @@ export function fillFields({ area, r, keepOut, earlier = [], W, H, ftPerSquare, 
       }
     });
     // Headlands between furlongs, and the border (if any) round the land
-    for (const s of inner) out.balks.push(...clipSegment(s.a, s.b, land));
+    for (const s of inner) if (!(openF.has(s.cells[0]) && openF.has(s.cells[1]))) out.balks.push(...clipSegment(s.a, s.b, land));
     if (border !== "none") {
-      const paths = joinSegments(outlineOf(land, W, H, earlier)).filter((p) => pathLen(p) >= 0.6);
+      const inOpen = (p) => { const i = cells.findIndex((c) => pointInPolygon(p, c)); return i >= 0 && openF.has(i); };
+      const paths = joinSegments(outlineOf(land, W, H, earlier).filter(([p, q]) => !inOpen([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]))).filter((p) => pathLen(p) >= 0.6);
       (border === "hedge" ? out.hedges : out.walls).push(...paths);
     }
   }

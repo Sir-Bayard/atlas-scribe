@@ -300,7 +300,13 @@ export function paint(ctx) {
 
   // Roads and lanes: trodden verge, the surface, a darker core, ruts
   progress(0.35, "Roads");
-  const ways = items("way");
+  // Tracks out to the fields first: faint trodden paths with no verge, fading toward their far end
+  const tracks = items("way", "track");
+  if (tracks.length) {
+    soft((k) => { for (const t of tracks) strokeLine(k, t.path, t.width); }, tex(`surface.trodden.${s}`, 2.5), 0.15, 0.4);
+    soft((k) => { for (const t of tracks) strokeLine(k, t.path.slice(0, Math.max(2, Math.ceil(t.path.length * 0.55))), t.width * 0.85); }, tex(`surface.trodden.${s}`, 2.5), 0.15, 0.4);
+  }
+  const ways = items("way").filter((w) => w.class !== "track");
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, 1);
   for (const surf of new Set(ways.map((w) => w.surface)))
     soft((k) => { for (const w of ways.filter((w) => w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);

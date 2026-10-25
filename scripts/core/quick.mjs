@@ -345,9 +345,10 @@ export function quickPlan(options = {}) {
   }
   farms.forEach((f, n) => features.push({ id: `farm-${n + 1}`, type: "area", class: "farmstead", shape: { rect: [r1(f.c[0] - f.size / 2), r1(f.c[1] - f.size / 2), r1(f.c[0] + f.size / 2), r1(f.c[1] + f.size / 2)] }, rot: f.rot }));
 
-  // Field systems: a wedge of land between each pair of roads leaving the centre (a wide gap split in two), each
-  // filled with enclosed fields or open strips by the layout, which keeps them off the roads, water, districts and
-  // farmyards. Farmland runs to the map's edge; mixed country has fields round the village and rough ground beyond
+  // Field systems: in some of the wedges of land between the roads leaving the centre (a wide gap split in two), each
+  // filled with enclosed fields or open strips by the layout, which keeps them off the roads, water and farmyards and
+  // a ragged margin of grass round the districts. Farmland runs to the map's edge; mixed country has fields round the
+  // village and rough ground beyond
   const fields = [];
   if (choices.surroundings !== "open") {
     // The lines the wedges lie between: each road leaving the centre, and a wandering line through a wide gap
@@ -376,11 +377,16 @@ export function quickPlan(options = {}) {
       return out;
     };
     const used = new Set();
+    // Which wedges stay rough grass: in farmland one (when there are three or more), in mixed country about half (but
+    // never all), in woodland most
+    const rough = choices.surroundings === "farmland" ? (withSplits.length >= 3 ? r.int(withSplits.length) : -1) : -1;
+    const keepAtLeast = choices.surroundings === "mixed" ? r.int(withSplits.length) : -1;
     withSplits.forEach((l, i) => {
       const m = withSplits[(i + 1) % withSplits.length];
       const a = l.a, b = i + 1 < withSplits.length ? m.a : m.a + 2 * Math.PI;
       const keep = r.next(), reach = r.range(12, 22), small = r.range(8, 14);
-      const wanted = choices.surroundings === "farmland" ? true : choices.surroundings === "mixed" ? keep < 0.65 : keep < 0.25;
+      // Not every stretch: some stay rough grass, so the fields don't ring the village
+      const wanted = choices.surroundings === "farmland" ? i !== rough : choices.surroundings === "mixed" ? keep < 0.5 || i === keepAtLeast : keep < 0.25;
       if (!wanted) return;
       // Farmland runs to the map's edge; otherwise the fields stop a ragged way out from the village
       const R = choices.surroundings === "farmland" ? Math.hypot(W, H) : extent + (choices.surroundings === "mixed" ? reach : small);

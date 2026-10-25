@@ -102,7 +102,9 @@ export function paint(ctx) {
 
   // Roads: a trodden verge, then the surface
   progress(0.4, "Roads");
-  const ways = [...items("way")].sort((a, b) => b.width - a.width);
+  // Tracks out to the fields: faint, with no verge
+  for (const t of items("way", "track")) { g.globalAlpha = 0.5; stroke(t.path, t.width, winter ? mix(trodden, [150, 142, 132], 0.3) : trodden); g.globalAlpha = 1; }
+  const ways = [...items("way")].filter((w) => w.class !== "track").sort((a, b) => b.width - a.width);
   for (const w of ways) stroke(w.path, w.width + 0.7, mix(trodden, [120, 110, 98], 0.15));
   for (const w of ways) stroke(w.path, w.width, winter ? mix(col(`surface.${w.surface}.${s}`), [225, 228, 232], 0.3) : col(`surface.${w.surface}.${s}`));
   for (const sq of items("surface", "square")) fillPoly(sq.poly, mix(col(`surface.${sq.surface}.${s}`), [255, 255, 255], winter ? 0.35 : 0.05));

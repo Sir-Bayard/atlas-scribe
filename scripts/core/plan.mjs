@@ -120,6 +120,7 @@ export const TYPES = {
       system: oneOf(["patchwork", "strips"], null), // a fields area's: enclosed fields or open strips; else picked from its seed
       fieldSize: num(null, { unit: "ft", min: 50 }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
       border: oneOf(["hedge", "drystone", "none"], null), // a fields area's: what bounds its fields; else picked from its seed
+      coverage: num(null, { min: 0, max: 1 }), // a fields area's: the share of its fields that are cultivated (0.65 if left out); the rest is grass
     },
   },
   wall: {
