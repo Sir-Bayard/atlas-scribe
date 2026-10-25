@@ -42,7 +42,11 @@ export const ROWS = { ploughed: 0.3, growing: 0.26, ripe: 0.26, stubble: 0.3, ha
 const FIELD_FT = { patchwork: 300, strips: 450 };
 const STRIP_FT = 60;
 /** How far fields keep from things, in squares (beyond a road's or river's half width). */
-const KEEP = { road: 0.5, water: 0.7, square: 0.3, building: 0.6, farmstead: 0.6, area: 0.15, wall: 0.4 };
+const KEEP = { road: 0.5, water: 0.7, square: 0.3, building: 0.6, area: 0.15, wall: 0.4, lane: 0.35 };
+/** The grass round a farmyard before the fields start, in feet, varying round it as a district's does. */
+const FARM_MARGIN_FT = [30, 90];
+/** A farm lane: how wide, in feet, and the farthest a farmyard can be from a road and still get one, in squares. */
+const LANE_FT = 10, LANE_REACH = 12;
 /** The grass round a district before the fields start, in feet: at least the first, up to the second, varying round it. */
 const MARGIN_FT = [75, 200];
 /** The share of a system's fields (or furlongs) that are cultivated when the plan gives no coverage; the rest is grass. */
@@ -87,12 +91,15 @@ export function fieldKeepOut(plan, self) {
         break;
       case "area":
         if (f.class === "fields") { if (before) polys.push(shapeToPolygon(f.shape, f.rot ?? 0, 48)); }
-        else polys.push(...grown(shapeToPolygon(f.shape, f.rot ?? 0, 48), f.class === "farmstead" ? KEEP.farmstead : KEEP.area));
+        else if (f.class === "farmstead") polys.push(...marginRound(plan, f, FARM_MARGIN_FT));
+        else polys.push(...grown(shapeToPolygon(f.shape, f.rot ?? 0, 48), KEEP.area));
         break;
       default:
         break;
     }
   }
+  // A farm's lane out to the road
+  for (const lane of farmLanes(plan)) paths.push({ path: lane.path, half: lane.width / 2 + KEEP.lane });
   // Every polygon in Clipper's own winding (a union of one), so a shape drawn the other way round can't cancel another
   // where they overlap
   return [...bands(paths), ...polys.filter((p) => p.length >= 3).flatMap((p) => union([p]))];
@@ -103,10 +110,10 @@ export function fieldKeepOut(plan, self) {
  * wandering round it by a noise from the plan's seed and the district's id (not its own seed, so rerolling a district
  * never moves the fields). The district's box is lost in plain grass instead of standing out against the crops.
  */
-export function marginRound(plan, district) {
+export function marginRound(plan, district, feet = MARGIN_FT) {
   const sq = plan.size.ftPerSquare;
-  const [lo, hi] = MARGIN_FT.map((v) => v / sq);
-  const rings = offset([shapeToPolygon(district.shape)], lo);
+  const [lo, hi] = feet.map((v) => v / sq);
+  const rings = offset([shapeToPolygon(district.shape, district.rot ?? 0)], lo);
   if (!rings.length) return [];
   const ring = rings.reduce((a, b) => (areaOf(b) > areaOf(a) ? b : a));
   const noise = makeNoise(plan.seed, `${district.id}/margin`, { scale: 7, octaves: 2 });
@@ -126,6 +133,44 @@ export function marginRound(plan, district) {
     return [p[0] + nx * (hi - lo) * t, p[1] + ny * (hi - lo) * t];
   });
   return union([ring, ragged]);
+}
+
+/**
+ * Each farmstead's lane: a straight track from the middle of its yard to the nearest point of the nearest plan road,
+ * when one is within reach. From the plan alone, so the fields can keep off it and rerolling the farm never moves it.
+ * Returns [{ id, from, path, width }] (path from the yard's edge to the road; width in squares).
+ */
+export function farmLanes(plan) {
+  const sq = plan.size.ftPerSquare;
+  const roads = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path));
+  const out = [];
+  for (const f of plan.features) {
+    if (f.type !== "area" || f.class !== "farmstead") continue;
+    const yard = shapeToPolygon(f.shape, f.rot ?? 0);
+    if (yard.length < 3) continue;
+    const [x0, y0, x1, y1] = bbox(yard), c = [(x0 + x1) / 2, (y0 + y1) / 2];
+    let best = null;
+    for (const r of roads) for (let i = 1; i < r.path.length; i++) {
+      const q = nearestOn(c, r.path[i - 1], r.path[i]), d = Math.hypot(q[0] - c[0], q[1] - c[1]);
+      if (!best || d < best.d) best = { d, q, half: (r.width ?? 0) / sq / 2 };
+    }
+    if (!best || best.d > LANE_REACH || best.d < 0.5) continue;
+    // From where the line leaves the yard to the road's edge
+    const dir = [(best.q[0] - c[0]) / best.d, (best.q[1] - c[1]) / best.d];
+    let t = 0;
+    while (t < best.d && pointInPolygon([c[0] + dir[0] * t, c[1] + dir[1] * t], yard)) t += 0.05;
+    const end = Math.max(t, best.d - best.half * 0.5);
+    if (end - t < 0.3) continue; // the yard is on the road
+    out.push({ id: `${f.id}/lane`, from: f.id, path: [[c[0] + dir[0] * t, c[1] + dir[1] * t], [c[0] + dir[0] * end, c[1] + dir[1] * end]], width: LANE_FT / sq });
+  }
+  return out;
+}
+
+/** The point of segment a-b nearest p. */
+function nearestOn(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+  return [a[0] + dx * t, a[1] + dy * t];
 }
 
 /** The plan's roads as fields see them: { path, half }, half being how far the fields keep from the road's middle. */
@@ -149,7 +194,7 @@ export function earlierFields(plan, self) {
  * sides are always hedged; W, H: the map, in squares; ftPerSquare; season. Returns { system, fields, hedges, walls, balks, trees,
  * notes }: fields [{ poly, holes, crop, angle, shade, variant, rows }] (angle: the way its rows run, in degrees; rows: their
  * spacing in squares, 0 for none; shade: -1 to 1, a little darker or lighter than its crop), hedges and walls
- * (paths: the border, by its class), balks (segments, [a, b]: grass lines between strips, between furlongs, and the
+ * (paths: the border, by its class), balks (paths: grass lines between strips, between furlongs, and the
  * faint edges between enclosed fields that carry no hedge), trees (hedgerow
  * trees for the caller to place where there's room: [{ x, y, s, rot, variant }]).
  */
@@ -275,7 +320,7 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
       if (fr.next() >= coverage) { open.add(g); continue; }
       const whole = list.length > 1 ? union(list) : list;
       for (const piece of shapes(intersect(whole, landFlat))) {
-        if (areaOf(piece.outer) < 1) continue;
+        if (sliver(piece, 3)) continue; // a scrap the roads and margins cut off is left as grass
         out.fields.push({ poly: piece.outer, holes: piece.holes, crop, angle, shade, variant, rows: ROWS[crop] ?? 0 });
       }
     }
@@ -299,7 +344,7 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
     const paths = joinSegments(edges).filter((p) => pathLen(p) >= 0.6);
     if (border === "hedge") out.hedges.push(...paths);
     else if (border === "drystone") out.walls.push(...paths);
-    out.balks.push(...faint);
+    out.balks.push(...trimLines(faint, out.fields, false));
     // A tree in the hedgerow every so often: laid along each hedged side between two fields from that side's own
     // stream, so moving a road or a district never moves the trees on sides it doesn't reach
     if (border === "hedge") {
@@ -335,6 +380,7 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
       const piecesFlat = pieces.flatMap((pc) => [pc.outer, ...pc.holes]);
       const [u0, v0, u1, v1] = bbox(cell.map(toF));
       let v = v0 - sr.next() * stripW;
+      const kept = [], cuts = [];
       while (v < v1) {
         const w = stripW * sr.range(0.8, 1.25);
         const crop = sr.chance(0.7) ? furlongCrop : pickCrop(sr, STRIP_DAMP);
@@ -342,16 +388,22 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
         if (pieces.length) {
           const band = [[u0 - 1, v], [u1 + 1, v], [u1 + 1, v + w], [u0 - 1, v + w]].map(fromF);
           for (const strip of shapes(intersect([band], piecesFlat))) {
-            if (areaOf(strip.outer) < 0.3) continue;
-            out.fields.push({ poly: strip.outer, holes: strip.holes, crop, angle: dir, shade, variant, rows: ROWS[crop] ?? 0, strip: true });
+            if (sliver(strip, stripW * stripW * 1.5)) continue; // a stub of a strip, shorter than it is wide, is grass
+            const f = { poly: strip.outer, holes: strip.holes, crop, angle: dir, shade, variant, rows: ROWS[crop] ?? 0, strip: true };
+            out.fields.push(f);
+            kept.push(f);
           }
-          if (v + w < v1) out.balks.push(...clipSegment(fromF([u0 - 1, v + w]), fromF([u1 + 1, v + w]), pieces));
+          if (v + w < v1) cuts.push(...clipSegment(fromF([u0 - 1, v + w]), fromF([u1 + 1, v + w]), pieces));
         }
         v += w;
       }
+      // A balk only runs between two strips that are there (a stub left as grass takes its balk with it)
+      out.balks.push(...trimLines(cuts, kept, true));
     });
     // Headlands between furlongs, and the border (if any) round the land
-    for (const s of inner) if (!(openF.has(s.cells[0]) && openF.has(s.cells[1]))) out.balks.push(...clipSegment(s.a, s.b, land));
+    const headlands = [];
+    for (const s of inner) if (!(openF.has(s.cells[0]) && openF.has(s.cells[1]))) headlands.push(...clipSegment(s.a, s.b, land));
+    out.balks.push(...trimLines(headlands, out.fields, false));
     if (border !== "none") {
       const inOpen = (p) => { const i = cells.findIndex((c) => pointInPolygon(p, c)); return i >= 0 && openF.has(i); };
       const paths = joinSegments(outlineOf(land, W, H, earlier).filter(([p, q]) => !inOpen([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]))).filter((p) => pathLen(p) >= 0.6);
@@ -359,6 +411,34 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
     }
   }
   return out;
+}
+
+/**
+ * The parts of some lines that run beside fields: each line cut into pieces about a square long, a piece kept when there
+ * is a field on both sides of it (both) or on at least one, and the pieces joined back into paths.
+ */
+function trimLines(segs, fields, both) {
+  const inField = (p) => fields.some((f) => pointInPolygon(p, f.poly) && !(f.holes ?? []).some((h) => pointInPolygon(p, h)));
+  const keep = [];
+  for (const [a, b] of segs) {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!(len > 0)) continue;
+    const n = Math.max(1, Math.ceil(len)), nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
+    for (let k = 0; k < n; k++) {
+      const p = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n], q = [a[0] + ((b[0] - a[0]) * (k + 1)) / n, a[1] + ((b[1] - a[1]) * (k + 1)) / n];
+      const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+      const l = inField([m[0] + nx * 0.4, m[1] + ny * 0.4]), r = inField([m[0] - nx * 0.4, m[1] - ny * 0.4]);
+      if (both ? l && r : l || r) keep.push([p, q]);
+    }
+  }
+  return joinSegments(keep);
+}
+
+/** True for a piece too small (under min square squares) or too thin (under about a square across) to be a field. */
+function sliver({ outer, holes = [] }, min) {
+  const a = areaOf(outer) - holes.reduce((t, h) => t + areaOf(h), 0);
+  const perim = outer.reduce((t, p, i) => { const q = outer[(i + 1) % outer.length]; return t + Math.hypot(q[0] - p[0], q[1] - p[1]); }, 0);
+  return a < min || (2 * a) / (perim || 1) < 0.5;
 }
 
 /** The land's outline as segments, leaving out the stretches along the map's edge and along an earlier system's edge. */

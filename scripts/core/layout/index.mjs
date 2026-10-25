@@ -14,7 +14,7 @@ import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
 import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
-import { fillFields, fieldKeepOut, earlierFields, fieldRoads } from "./fields.mjs";
+import { fillFields, fieldKeepOut, earlierFields, fieldRoads, farmLanes } from "./fields.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
@@ -337,7 +337,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const made = fillFields({ area: f, r, keepOut: fieldKeepOut(plan, f), earlier: earlierFields(plan, f), along: fieldRoads(plan), W, H, ftPerSquare: sq, season: seasonOf(plan) });
     notes.push(...made.notes);
     made.fields.forEach((fd, k) => items.push({ kind: "field", id: `${f.id}/f${k + 1}`, from: f.id, system: made.system, ...fd }));
-    made.balks.forEach(([a, b], k) => items.push({ kind: "boundary", id: `${f.id}/k${k + 1}`, from: f.id, class: "balk", path: [a, b] }));
+    made.balks.forEach((path, k) => items.push({ kind: "boundary", id: `${f.id}/k${k + 1}`, from: f.id, class: "balk", path }));
     made.walls.forEach((path, k) => items.push({ kind: "wall", id: `${f.id}/w${k + 1}`, from: f.id, class: "drystone", path, height: 3 / sq }));
     made.hedges.forEach((path, k) => {
       items.push({ kind: "boundary", id: `${f.id}/h${k + 1}`, from: f.id, class: "hedge", path });
@@ -347,6 +347,13 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     let n = 0;
     for (const t of made.trees) if (free(t.x, t.y, 0.4)) items.push({ kind: "tree", id: `${f.id}/t${++n}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant });
     if (made.fields.length) notes.push({ level: "info", id: f.id, message: `"${f.id}": ${made.system === "strips" ? "open strips" : "enclosed fields"}, ${made.fields.length} ${made.system === "strips" ? "strips" : "fields"}.` });
+  }
+
+  // Farm lanes: a track from each farmyard to the road beside it (the fields keep off it)
+  for (const lane of farmLanes(plan)) {
+    const item = { kind: "way", id: lane.id, from: lane.from, class: "track", path: lane.path, width: lane.width, surface: "trodden", ruts: false };
+    items.push(item);
+    space.ways.push({ path: lane.path, clear: lane.width / 2 });
   }
 
   // Tracks: a district's street that stops at the district's edge carries on as a trodden track out into the land, as
