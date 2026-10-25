@@ -51,9 +51,11 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     return list?.length ? list[Math.abs(variant | 0) % list.length] : null;
   };
 
-  // Tiles: one when the map is small, else a grid with a margin for the blur
-  const single = W <= 4096 && H <= 4096;
-  const margin = single ? 0 : Math.ceil(3 * (style.MAX_BLUR ?? 4) * pp);
+  // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur, a single
+  // one too, so soft edges don't fade toward the map's border. The margin is capped, so a map at hundreds of pixels a
+  // square doesn't need tiles of many thousand pixels for the widest blur (the ground's soft patches) alone
+  const margin = Math.min(1024, Math.ceil(3 * (style.MAX_BLUR ?? 4) * pp));
+  const single = W + 2 * margin <= 4096 && H + 2 * margin <= 4096;
   const cols = single ? 1 : Math.ceil(W / tileSize), rows = single ? 1 : Math.ceil(H / tileSize);
   const coreW = single ? W : tileSize, coreH = single ? H : tileSize;
   const out = new OffscreenCanvas(W, H);

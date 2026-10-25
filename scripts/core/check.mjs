@@ -34,7 +34,9 @@ export function checkPlan(raw) {
   const plan = normalize(raw);
   const [w, h] = plan.size.squares;
   if (!(plan.size.squares.length === 2 && Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
-  if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number above 0.");
+  // Past 100 ft a square a district holds thousands of plots a square and takes minutes to lay out
+  if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square: 5 for a battle map, 25 for a town).");
+  if (!isNum(plan.seed) && !(typeof plan.seed === "string" && plan.seed)) err(null, "seed", "seed must be a number.");
   for (const [name, values] of [["season", SEASONS], ["style", STYLES], ["ground", SURFACES]])
     if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "textured" : "a plain fill"} will be used.`);
 
@@ -80,12 +82,12 @@ export function checkPlan(raw) {
     if (pts.length >= 3 && polygonCrossesItself(pts)) warn(f.id, "shape", `"${f.id}"'s outline crosses itself or repeats a corner, so what's inside it is unclear. Give its corners in order round the edge.`);
   }
 
-  // Districts that overlap: the shared part is filled twice, and reseeding one can move the other
+  // Districts that overlap: the shared part is filled by both, so their houses stand on each other's
   const dpolys = plan.features.filter((f) => f.type === "district").map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape) })).filter((d) => d.poly.length >= 3);
   for (let i = 0; i < dpolys.length; i++)
     for (let j = i + 1; j < dpolys.length; j++)
       if (polygonsOverlap(shrink(dpolys[i].poly), shrink(dpolys[j].poly)))
-        warn(dpolys[i].id, "shape", `Districts "${dpolys[i].id}" and "${dpolys[j].id}" overlap. They can share an edge, but where they overlap, reseeding one can move the other's houses.`);
+        warn(dpolys[i].id, "shape", `Districts "${dpolys[i].id}" and "${dpolys[j].id}" overlap. They can share an edge, but where they overlap both build, and their houses stand on each other's.`);
 
   // Buildings that overlap each other
   const footprints = [];
@@ -107,7 +109,10 @@ export function checkPlan(raw) {
   }
 
   // Seeds and locks must point at something
-  for (const id of Object.keys(plan.seeds ?? {})) if (!seen.has(id)) warn(id, "seeds", `There's a seed for "${id}", but no feature with that id.`);
+  for (const [id, v] of Object.entries(plan.seeds ?? {})) {
+    if (!seen.has(id)) warn(id, "seeds", `There's a seed for "${id}", but no feature with that id.`);
+    else if (!isNum(v)) warn(id, "seeds", `The seed for "${id}" isn't a number, so the plan's seed is used.`);
+  }
   for (const id of plan.locked ?? []) if (!seen.has(id)) warn(id, "locked", `"${id}" is locked, but there's no feature with that id.`);
 
   // The scene it's published to
@@ -158,12 +163,17 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   const known = new Set(["id", "type", "class", "at", "path", "shape", "buildings", "note", ...Object.keys(t.fields)]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(f.id, k, `"${where}" has a field "${k}" that AtlasScribe doesn't use.`);
 
-  // Far off the map
+  // Far off the map: wholly off it, it's left out; reaching far past it, laying it out would take too long
   const pts = f.at ? [f.at] : f.path ?? (f.shape ? shapeToPolygon(f.shape) : []);
   if (pts.length && pts.every(isPoint) && w > 0 && h > 0) {
     const [x0, y0, x1, y1] = bbox(pts);
+    // How far past the edge: a district fills all of its shape with streets and plots, so it's held close; an area
+    // less so; a road, river or wall just runs on (only one absurdly long would be too many points to curve)
+    const big = Math.max(w, h);
+    const far = f.type === "district" ? Math.ceil(Math.max(10, big / 4)) : f.type === "area" ? Math.max(20, big) : 10 * big;
     const mx = w * 0.1, my = h * 0.1;
     if (x1 < -mx || y1 < -my || x0 > w + mx || y0 > h + my) warn(f.id, "position", `"${where}" is entirely off the map.`);
+    else if (x0 < -far || y0 < -far || x1 > w + far || y1 > h + far) err(f.id, "position", `"${where}" reaches far past the edge of the map. Bring it within ${far} squares of the edge (only what's on the map is drawn).`);
   }
 }
 
@@ -197,7 +207,9 @@ function checkShape(shape, where, field, need) {
     let a = 0;
     for (let i = 0; i < shape.length; i++) { const [x1, y1] = shape[i], [x2, y2] = shape[(i + 1) % shape.length]; a += x1 * y2 - x2 * y1; }
     const xs = shape.map((p) => p[0]), ys = shape.map((p) => p[1]);
-    return big(Math.abs(a / 2) >= MIN_SHAPE * MIN_SHAPE && Math.max(...xs) - Math.min(...xs) >= MIN_SHAPE && Math.max(...ys) - Math.min(...ys) >= MIN_SHAPE);
+    // An outline that crosses itself has halves whose areas cancel: its size is judged by its extent alone (the
+    // crossing is warned about separately)
+    return big((polygonCrossesItself(shape) || Math.abs(a / 2) >= MIN_SHAPE * MIN_SHAPE) && Math.max(...xs) - Math.min(...xs) >= MIN_SHAPE && Math.max(...ys) - Math.min(...ys) >= MIN_SHAPE);
   }
   if (shape?.rect) {
     const r = shape.rect;

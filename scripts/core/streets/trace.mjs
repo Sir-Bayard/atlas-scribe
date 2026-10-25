@@ -5,7 +5,7 @@
  * too close alongside one. Each street seeds the next ones along its length. A later pass with a closer spacing
  * adds lanes between them. Everything in squares. Pure: runs anywhere.
  */
-import { pointInPolygon } from "../geom.mjs";
+import { pointInPolygon, pathTouchesPolygon } from "../geom.mjs";
 
 /** A spatial hash of street segments, for fast "what's near here" questions. */
 class SegmentGrid {
@@ -299,8 +299,19 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
           const back = Math.min(pathLen(path) * 0.3, 1);
           path = endIx ? cutPath(path, 0, pathLen(path) - back) : cutPath(path, back, pathLen(path));
           const e = endIx ? path[path.length - 1] : path[0];
-          const q = nearestOnPath(m.from.path, e);
-          const link = [e, [(e[0] + q[0]) / 2, (e[1] + q[1]) / 2], q];
+          // To the nearest point on the part of its street inside this district (a road can run on through others),
+          // and only when the link stays inside; else the lane just ends
+          const inPoly = ([x, y]) => pointInPolygon([x, y], poly);
+          let q = null;
+          for (let i = 1; i < m.from.path.length; i++) {
+            const a2 = m.from.path[i - 1], b2 = m.from.path[i];
+            if (!pathTouchesPolygon([a2, b2], poly)) continue; // a stretch outside the district (a road's ends often are)
+            const c = nearestOnPath([a2, b2], e);
+            if (!q || Math.hypot(c[0] - e[0], c[1] - e[1]) < Math.hypot(q[0] - e[0], q[1] - e[1])) q = c;
+          }
+          const lerp = (t) => [e[0] + (q[0] - e[0]) * t, e[1] + (q[1] - e[1]) * t];
+          if (!q || !inPoly(lerp(0.5)) || !inPoly(lerp(0.9))) continue;
+          const link = [e, lerp(0.5), q];
           if (endIx) path.push(...link.slice(1)); else path.unshift(...link.slice(1).reverse());
           ends[endIx] = m.from.fixed ? "road" : "junction";
           met.push({ line: m.from, pt: q });

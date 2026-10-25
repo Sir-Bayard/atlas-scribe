@@ -13,6 +13,7 @@ import { smoothPlanPaths } from "../smooth.mjs";
 import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
+import { seedOf } from "../seeds.mjs";
 import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
 import { fillFields, fieldKeepOut, earlierFields, fieldRoads, farmLanes } from "./fields.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
@@ -36,14 +37,14 @@ const GATE_WIDTH = {
 export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   // Roads, rivers and walls curve through their points (the plan itself is left as it is)
   const asGiven = normalize(rawPlan);
-  const plan = smoothPlanPaths(asGiven);
+  const plan = windAlike(smoothPlanPaths(asGiven));
   const sq = plan.size.ftPerSquare;
   const ft = (v) => (v == null ? null : v / sq);
   const [W, H] = plan.size.squares;
   const notes = [];
   const items = [];
   const labels = [];
-  const streamFor = (id) => rng(plan.seeds?.[id] ?? plan.seed, id);
+  const streamFor = (id) => rng(seedOf(plan, id), id); // as a reroll reads it: a seed that isn't a number is ignored
   const progress = (pct, label) => onProgress?.(pct, label);
 
   // Everything placed so far that new things must keep clear of. While a district fills, what other districts
@@ -52,7 +53,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   const owner = new WeakMap(); // a polygon or building item to the district that placed it
   const districts = plan.features.filter((f) => f.type === "district").map((f) => ({ id: f.id, poly: shapeToPolygon(f.shape) }));
   const districtIds = new Set(districts.map((d) => d.id));
-  const touching = new Set(); // "a|b" for districts that overlap: those do see each other's houses
+  const touching = new Set(); // "a|b" for districts that overlap: free() sees each other's things there (wild trees and tracks), though houses are built over each other
   for (const a of districts) for (const b of districts) if (a !== b && polygonsOverlap(shrink(a.poly, 0.01), shrink(b.poly, 0.01))) touching.add(`${a.id}|${b.id}`);
   let filling = null; // the district being filled
   const elsewhere = (o) => {
@@ -274,6 +275,9 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const { poly } = dlist.find((x) => x.id === d.id);
     const r = streamFor(d.id);
     const fixedHere = ways.filter((w) => pathTouchesPolygon(w.path, poly));
+    // Roads running just outside the edge too, so plots and houses keep off them
+    const ring = closed(poly);
+    const nearHere = [...fixedHere, ...ways.filter((w) => !fixedHere.includes(w) && (w.path.some((p) => distanceToPath(p, ring) < w.width / 2 + 0.5) || poly.some((p) => distanceToPath(p, w.path) < w.width / 2 + 0.5)))];
     const borders = dlist.filter((o) => o.id !== d.id && o.streetSpacing).flatMap((o) => sharedEdges(poly, o.poly));
     const made = streetsFor({
       district: d, poly, roads: fixedHere, water: space.water, radials, blocked, gates: gates.get(d.id) ?? [], borders,
@@ -298,8 +302,8 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const waterItems = items.filter((i) => i.kind === "water" && i.path);
     const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
     const keepOff = [...blocked, ...gateClear];
-    const { lots, back } = lotsFor({ district: d, poly, ways: [...fixedHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
-    const built = buildOnLots({ lots, district: d, ways: [...fixedHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build") });
+    const { lots, back } = lotsFor({ district: d, poly, ways: [...nearHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
+    const built = buildOnLots({ lots, district: d, ways: [...nearHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build") });
     filling = d.id;
     for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
     for (const o of built.outbuildings) addBuilding(o.building, `${d.id}/o-${o.id}`, o.r, d.id);
@@ -359,7 +363,8 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   // Tracks: a district's street that stops at the district's edge carries on as a trodden track out into the land, as
   // the lanes of a village run out to its fields, wandering a little, until it reaches a field (its gate), a road,
   // water, another district or area, something in the way or its length. Laid after the fields, which never depend on
-  // them, and from what the plan and this district placed only, so rerolling one district never changes another's
+  // them, and from what the plan, the field systems and this district placed, so rerolling one district never changes
+  // another's (rerolling a field system can move where a track meets its fields)
   const fieldItems = items.filter((i) => i.kind === "field");
   const areaPolys = plan.features.filter((f) => f.type === "area" && f.class !== "fields").map((f) => shapeToPolygon(f.shape, f.rot ?? 0, 32));
   for (const d of dfeats) {
@@ -409,10 +414,18 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   // Woods and hedgerows last: trees keep clear of every building
   progress(0.6, "Woods");
   for (const f of plan.features.filter((f) => f.type === "area" && f.class === "woods")) {
-    fillWoods({ area: f, r: streamFor(f.id), free, items });
+    notes.push(...fillWoods({ area: f, r: streamFor(f.id), free, items }));
   }
   for (const f of plan.features.filter((f) => f.type === "wall" && f.class === "hedge")) {
     hedgeBushes({ wall: f, r: streamFor(f.id), items });
+  }
+
+  // A tree laid before another feature's street (a green's, or one district's wild tree by the next one's lane) is
+  // dropped where that street runs over it, as a house crowding a wood removes the trees it stands on
+  const hard = items.filter((i) => i.kind === "way" && !i.faint).map((w) => { const [x0, y0, x1, y1] = bbox(w.path), m = w.width / 2 + 0.05; return { w, m, box: [x0 - m, y0 - m, x1 + m, y1 + m] }; });
+  for (let k = items.length - 1; k >= 0; k--) {
+    const t = items[k];
+    if (t.kind === "tree" && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) items.splice(k, 1);
   }
 
   progress(0.85, "Ground");
@@ -446,6 +459,16 @@ function grow(poly, by) {
 }
 
 const closed = (poly) => [...poly, poly[0]];
+
+/**
+ * The plan with every district's and area's corners given the same way round (the way a rect's run), so an outline
+ * saved the other way round lays out the same.
+ */
+function windAlike(plan) {
+  const signed = (p) => p.reduce((s, [x1, y1], i) => { const [x2, y2] = p[(i + 1) % p.length]; return s + x1 * y2 - x2 * y1; }, 0);
+  const turn = (f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape) && f.shape.length >= 3 && signed(f.shape) < 0;
+  return plan.features.some(turn) ? { ...plan, features: plan.features.map((f) => (turn(f) ? { ...f, shape: [...f.shape].reverse() } : f)) } : plan;
+}
 
 /** A polygon pulled in toward its centre by a fraction, so shapes that only touch don't count as overlapping. */
 function shrink(poly, by) {

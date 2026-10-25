@@ -7,6 +7,7 @@
     "ground.snow.rocky": ["Rocky_Snow_A1_01.jpg"],
     "surface.trodden.winter": ["Snow_Disturbed_A1_01.jpg"],
     "surface.slush": ["Slush_A1_01.jpg"],
+    "surface.gravel.winter": ["Slush_A1_01.jpg"],
     "surface.cobble.winter": ["Cobblestone_A_Snowy.webp"],
     "overlay.snow": ["Snow_Overlay_A1.webp"],
     "water.ice": ["Ice_A1_01.jpg"],

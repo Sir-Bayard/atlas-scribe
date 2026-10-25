@@ -49,6 +49,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asOutlines: AtlasScribeApp.#onOutlines,
       asFit: AtlasScribeApp.#onFit,
       asShapes: AtlasScribeApp.#onShapes,
+      asCancel: AtlasScribeApp.#onCancel,
     },
   };
 
@@ -122,6 +123,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
    * path: the file it came from; saved: it's as saved there (else it counts as unsaved).
    */
   async show(plan, run = null, { path = null, saved = false } = {}) {
+    // A scene is being painted from the plan here: swapping the plan under it would leave the window showing one plan
+    // while another is published
+    if (this.#publishing) throw new Error("AtlasScribe: the window is making a scene; try again when it's done");
     while (this.#drawing) await this.#drawing; // one draw at a time, however many are waiting
     if (run) this.#run = run;
     this.#plan = plan;
@@ -174,7 +178,12 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** True while anything that holds the job (a draw, or making the scene) is running. */
   get #working() {
-    return this.#busy || this.#publishing;
+    return this.#busy || this.#publishing || this.#saving; // a reroll while "Save over a plan?" is up would go unsaved
+  }
+
+  /** True while Make scene or Update scene is painting. */
+  get publishing() {
+    return this.#publishing;
   }
 
   /** The features a reroll can redraw, with their outlines (read with every default filled in, as the layout reads them). */
@@ -284,7 +293,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         </div>
         <div class="as-pv-tools as-pv-scene">
           <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip="${scene ? "Paint the map with your art and update the scene made from this plan (it's backed up first)" : "Paint the map with your art and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
-          ${scene ? `<button type="button" data-action="asView" data-tooltip="Go to the scene"><i class="fa-solid fa-eye"></i></button>` : ""}
+          ${this.#publishing ? `<button type="button" data-action="asCancel" data-tooltip="Stop painting (no scene is made or changed)"><i class="fa-solid fa-xmark"></i> Cancel</button>` : ""}
+          ${scene && !this.#publishing ? `<button type="button" data-action="asView" data-tooltip="Go to the scene"><i class="fa-solid fa-eye"></i></button>` : ""}
         </div>
         <p class="as-pv-hint">${esc(this.#hint())}</p>
       </aside>`;
@@ -700,7 +710,12 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Saves the plan in this world, by its id; asks before writing over another plan's file. */
   static async #onSave() {
-    if (!this.#plan || this.#saving) return;
+    await this.#save();
+  }
+
+  /** Saves the plan; resolves to true when it was saved. */
+  async #save() {
+    if (!this.#plan || this.#saving) return false;
     this.#withId();
     // What's saved is the plan as it is now: a reroll made while the dialog is up stays unsaved
     const json = JSON.stringify(this.#plan);
@@ -717,7 +732,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           content: `<p>A plan is already saved as ${esc(file)}. Save this one over it?</p>`,
           rejectClose: false,
         });
-        if (!ok) return;
+        if (!ok) return false;
       }
       const saved = await this.#host.plans.save(plan, file);
       this.#path = saved ?? path;
@@ -725,8 +740,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       this.#host.setLast(this.#path);
       ui.notifications.info(`AtlasScribe: saved ${plan.name ?? plan.id} as ${this.#path}.`);
       if (this.rendered) this.render();
+      return true;
     } catch (e) {
       ui.notifications.error(e.message);
+      return false;
     } finally {
       this.#saving = false;
     }
@@ -735,7 +752,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   /** The plan, given an id from its name if it has none (a scene and a file need one). */
   #withId() {
     if (!this.#plan.id) {
-      const id = String(this.#plan.name ?? "plan").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "plan";
+      // From its name, with a short random tail, so two plans of the same name never share a file or a scene
+      const id = `${String(this.#plan.name ?? "plan").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "plan"}-${Math.random().toString(36).slice(2, 6)}`;
       this.#plan = { ...this.#plan, id };
     }
     return this.#plan;
@@ -751,6 +769,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   /** Paints the map with the GM's art and makes it a scene, or updates the scene made from this plan before. */
   static async #onScene() {
     if (this.#working || !this.#plan) return;
+    // A plan made into a scene is saved first, so the scene can always be updated from it later (if it isn't saved,
+    // because the GM kept another plan's file, no scene is made)
+    this.#withId(); // a plan read with no id gets one now and so is saved with it, so the scene can find its plan again
+    if (this.dirty && !(await this.#save())) return;
+    if (this.#working || !this.#plan) return;
     const plan = this.#withId();
     const scene = this.#sceneFor();
     this.#publishing = true;
@@ -759,12 +782,20 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const res = await this.#host.publish(plan, { scene: scene?.id ?? null });
       const made = game.scenes.get(res?.scene?.sceneId);
       ui.notifications.info(`AtlasScribe: ${res?.scene?.created ? "made the scene" : "updated the scene"} ${made?.name ?? ""} in ${Math.round((res?.ms ?? 0) / 1000)} s.`);
+      // Why the map looks as it does, when it isn't as asked: art that couldn't be had, settings the scene didn't take
+      const why = [...(res?.artNotes ?? []), ...(res?.missingArt?.length ? [`${res.missingArt.length} kinds of art weren't found and are painted in plain colours (${res.missingArt.slice(0, 6).join(", ")}${res.missingArt.length > 6 ? ", ..." : ""}).`] : []), ...(res?.warnings ?? [])];
+      if (why.length) ui.notifications.warn(`AtlasScribe: ${why.join(" ")}`, { permanent: true });
     } catch (e) {
       if (!e.cancelled) ui.notifications.error(e.message, { permanent: true });
     } finally {
       this.#publishing = false;
       if (this.rendered) this.render();
     }
+  }
+
+  /** Stops the painting under way (nothing is saved or changed). */
+  static #onCancel() {
+    if (this.#publishing) this.#host.cancel();
   }
 
   /** Goes to the scene made from this plan. */

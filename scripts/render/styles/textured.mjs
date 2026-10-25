@@ -36,7 +36,7 @@ const FIELD_LIFT = {
 const TRODDEN_LIFT = "rgb(72,64,40)";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
-export const MAX_BLUR = 4;
+export const MAX_BLUR = 2;
 
 const ROOF_SCALE = 0.1; // roof texture scale at 50 px a square (0.05 is true scale and reads as noise)
 
@@ -53,7 +53,7 @@ export function rolesFor(layout) {
       if (i.basin) roles.add(`stone.rough.${s}`).add(s === "winter" ? "water.ice" : "water.pond");
       if (s !== "winter") roles.add("ground.grass.grassy");
     }
-    if (i.kind === "water") roles.add(`stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`).add("water.ice.cracked");
+    if (i.kind === "water") { roles.add(`stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`); if (i.frozen) roles.add("water.ice.cracked"); }
     if (i.kind === "crossing") roles.add(`surface.trodden.${s}`).add(`stone.rough.${s}`).add("water.ice.cracked");
     if (i.kind === "wall") roles.add(`stone.rough.${s}`);
     if (i.kind === "building") {
@@ -139,8 +139,18 @@ export function paint(ctx) {
     g.drawImage(out, rx, ry, rw, rh, rx, ry, rw, rh);
     g.restore();
   };
+  // The tile's window in squares, so a pass or a thing wholly outside it is skipped
+  const wx1 = x0 + W / pp, wy1 = y0 + H / pp;
+  const near = (x, y, r) => x > x0 - r && x < wx1 + r && y > y0 - r && y < wy1 + r;
+  /** The box round some point lists, grown by pad squares, for soft(); empty lists give a box no tile meets. */
+  const boxOf = (lists, pad = 0) => {
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+    for (const pts of lists) for (const [x, y] of pts) { if (x < a) a = x; if (y < b) b = y; if (x > c) c = x; if (y > d) d = y; }
+    return a === Infinity ? [-1e9, -1e9, -1e9, -1e9] : [a - pad, b - pad, c + pad, d + pad];
+  };
   /** An image (a tree, a cart) size squares wide, turned, with a sun shadow; a plain blob when there's no art. */
   const img = (role, variant, x, y, size, rot = 0, shadow = 0) => {
+    if (!near(x, y, size + shadow)) return;
     const im = art(role, variant);
     g.save();
     g.translate(X(x), Y(y));
@@ -162,10 +172,10 @@ export function paint(ctx) {
   soft((k) => { for (const [x, y, r, t] of blobs) if (t < 0.45) { k.beginPath(); k.arc(X(x), Y(y), r * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.light`, 4), 2, 0.7);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.7) { k.beginPath(); k.arc(X(x), Y(y), r * 0.7 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.grassy`, 4), 1.5, 0.4);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.93) { k.beginPath(); k.arc(X(x), Y(y), r * 0.4 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.rocky`, 3), 0.8, 0.6);
-  // FA's grass is dark for an overview: lift it toward a light green (Patrick chose this from four strengths)
+  // FA's grass is dark for an overview: lift it toward a light green
   const grassLift = gb === "grass" && !winter;
   if (grassLift) { g.save(); g.globalCompositeOperation = "screen"; g.globalAlpha = 0.55; g.fillStyle = "rgb(75,88,30)"; g.fillRect(0, 0, W, H); g.restore(); }
-  for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), MAX_BLUR, 0.5);
+  for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), 2, 0.5, "source-over", boxOf([a.poly]));
 
   // Fields: each crop's texture, a field a shade lighter or darker than the next, a worn margin round each, then the
   // rows (furrows, drills, the windrows of cut hay) and the grass balks between strips
@@ -185,13 +195,13 @@ export function paint(ctx) {
   for (const [key, list] of groups) {
     const [crop, v] = key.split("|");
     // Under snow a field is mostly the snow round it: its own art shows only faintly
-    soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), winter ? 0.3 : 0.06, winter ? 0.45 : 1);
+    soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), winter ? 0.3 : 0.06, winter ? 0.45 : 1, "source-over", boxOf(list.map((f) => f.poly)));
   }
   // The crop art is dark beside the grass: lift each crop toward its own colour (a screen), so a field reads as wheat,
   // hay or soil at a glance; snow needs none
   if (!winter) for (const [crop, [color, alpha, op]] of Object.entries(FIELD_LIFT)) {
     const these = fields.filter((f) => f.crop === crop);
-    if (these.length) soft((k) => { k.beginPath(); for (const f of these) fieldPath(k, f); k.fill("evenodd"); }, color, 0.06, alpha, op);
+    if (these.length) soft((k) => { k.beginPath(); for (const f of these) fieldPath(k, f); k.fill("evenodd"); }, color, 0.06, alpha, op, boxOf(these.map((f) => f.poly)));
   }
   for (const f of fields) {
     if (Math.abs(f.shade) < 0.15) continue;
@@ -236,29 +246,33 @@ export function paint(ctx) {
 
   // Yards, farmyards, gardens
   progress(0.12, "Yards and gardens");
-  const yards = items("surface", "yard");
-  soft((k) => { for (const y of yards) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.25, 0.95);
-  soft((k) => { for (const y of items("surface", "farmyard")) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.4, 0.8);
+  const yards = items("surface", "yard"), farmyards = items("surface", "farmyard");
+  if (yards.length) soft((k) => { for (const y of yards) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.25, 0.95, "source-over", boxOf(yards.map((y) => y.poly)));
+  if (farmyards.length) soft((k) => { for (const y of farmyards) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.4, 0.8, "source-over", boxOf(farmyards.map((y) => y.poly)));
   // Lifted as the grass is, so yards don't read as dark patches on it
-  if (grassLift) soft((k) => { for (const y of [...yards, ...items("surface", "farmyard")]) { poly(k, y.poly); k.fill(); } }, TRODDEN_LIFT, 0.4, 0.8, "screen");
+  const allYards = [...yards, ...farmyards];
+  if (grassLift && allYards.length) soft((k) => { for (const y of allYards) { poly(k, y.poly); k.fill(); } }, TRODDEN_LIFT, 0.4, 0.8, "screen", boxOf(allYards.map((y) => y.poly)));
   for (const y of yards.filter((y) => y.surface && y.surface !== "trodden")) {
-    soft((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.${y.surface}.${s}`, 2.5), 0.12, 0.55);
-    soft((k) => { poly(k, y.poly); k.fill(); }, "rgb(160,150,138)", 0.12, 0.35, "multiply");
+    const box = boxOf([y.poly]);
+    soft((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.${y.surface}.${s}`, 2.5), 0.12, 0.55, "source-over", box);
+    soft((k) => { poly(k, y.poly); k.fill(); }, "rgb(160,150,138)", 0.12, 0.35, "multiply", box);
   }
   for (const y of yards.filter((y) => y.fence)) {
     g.save(); g.strokeStyle = "rgba(88,66,46,0.9)"; g.lineWidth = Math.max(1.5, pp * 0.05); g.setLineDash([pp * 0.14, pp * 0.06]); poly(g, y.poly); g.stroke(); g.setLineDash([]); g.restore();
   }
   // Parks: grass where the season shows it, then their paths (trodden or gravel), then a formal garden's basin
   for (const pk of items("surface", "park")) {
-    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, 0.35);
+    const box = boxOf([pk.poly, ...(pk.paths ?? []).map((w) => w.path)], 1 + Math.max(0, ...(pk.paths ?? []).map((w) => w.width / 2)));
+    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, 0.35, "source-over", box);
     // Under snow every path is trodden snow
-    for (const w of pk.paths ?? []) soft((k) => strokeLine(k, w.path, w.width), tex(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`, 2.5), 0.06, w.surface === "gravel" ? 0.95 : 0.75);
+    for (const w of pk.paths ?? []) soft((k) => strokeLine(k, w.path, w.width), tex(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`, 2.5), 0.06, w.surface === "gravel" ? 0.95 : 0.75, "source-over", box);
     // A little darker, as a road's worn middle is, so a path shows on grass or snow alike
-    soft((k) => { for (const w of pk.paths ?? []) strokeLine(k, w.path, w.width * 0.8); }, "rgb(150,142,132)", 0.08, s === "winter" ? 0.45 : 0.3, "multiply");
+    if (pk.paths?.length) soft((k) => { for (const w of pk.paths) strokeLine(k, w.path, w.width * 0.8); }, "rgb(150,142,132)", 0.08, s === "winter" ? 0.45 : 0.3, "multiply", box);
     if (pk.basin) {
       const { at, radius } = pk.basin;
-      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); k.fill(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1);
-      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), radius * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), 0.01, 1);
+      const bb = [at[0] - radius - 0.2, at[1] - radius - 0.2, at[0] + radius + 0.2, at[1] + radius + 0.2];
+      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); k.fill(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", bb);
+      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), radius * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), 0.01, 1, "source-over", bb);
       g.save(); g.strokeStyle = "rgba(40,40,46,0.6)"; g.lineWidth = Math.max(1, pp * 0.025);
       g.beginPath(); g.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); g.stroke(); g.restore();
     }
@@ -308,11 +322,15 @@ export function paint(ctx) {
   // Walls and hedges
   progress(0.25, "Walls and hedges");
   const walls = items("wall");
-  soft((k) => { for (const w of walls) { k.save(); k.translate(pp * 0.03, -pp * 0.09); strokeLine(k, w.path, 0.2); k.restore(); } }, "rgb(30,40,58)", 0.08, 0.35);
-  soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.13); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1);
-  soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.13); }, "rgb(88,84,80)", 0.01, 0.85, "multiply");
-  if (s === "winter") soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.04); }, "rgb(236,239,243)", 0.02, 0.6);
-  for (const b of items("prop", "bush")) img(bushRole(s), b.variant, b.x, b.y, b.scale, b.rot, 0.18);
+  if (walls.length) {
+    const box = boxOf(walls.map((w) => w.path), 0.5);
+    soft((k) => { for (const w of walls) { k.save(); k.translate(pp * 0.03, -pp * 0.09); strokeLine(k, w.path, 0.2); k.restore(); } }, "rgb(30,40,58)", 0.08, 0.35, "source-over", box);
+    soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.13); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", box);
+    soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.13); }, "rgb(88,84,80)", 0.01, 0.85, "multiply", box);
+    if (s === "winter") soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.04); }, "rgb(236,239,243)", 0.02, 0.6, "source-over", box);
+  }
+  // A bush placed in a plan has no scale of its own
+  for (const b of items("prop", "bush")) img(bushRole(s), b.variant, b.x, b.y, b.scale ?? 0.5, b.rot, 0.18);
 
   // Roads and lanes: trodden verge, the surface, a darker core, ruts
   progress(0.35, "Roads");
@@ -326,7 +344,8 @@ export function paint(ctx) {
   const ways = items("way").filter((w) => !w.faint);
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, 1);
   if (grassLift) soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, TRODDEN_LIFT, 0.25, 0.45, "screen"); // no dark rim on the lifted grass
-  for (const surf of new Set(ways.map((w) => w.surface)))
+  // Widest roads' surfaces first, as the sketch lays them, so a lane's surface runs over the road it meets
+  for (const surf of new Set([...ways].sort((a, b) => b.width - a.width).map((w) => w.surface)))
     soft((k) => { for (const w of ways.filter((w) => w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);
   // A darker worn middle: strong on snow and slush, lighter on summer dirt, which is dark enough already
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width * (w.class === "highway" ? 0.85 : 0.7)); }, "rgb(118,108,96)", 0.2, s === "winter" ? 0.5 : 0.25, "multiply");
@@ -363,11 +382,12 @@ export function paint(ctx) {
   // Water: the bank, a dark edge, the water or ice, a cracked line, a darker core
   progress(0.5, "Water");
   for (const w of items("water")) {
-    soft((k) => strokeLine(k, w.path, w.width + 0.95), tex(`stone.rough.${s}`, 2), 0.35, 0.8);
-    soft((k) => strokeLine(k, w.path, w.width + 0.3), "rgb(48,62,80)", 0.12, 0.7);
-    soft((k) => strokeLine(k, w.path, w.width), tex(w.frozen ? "water.ice" : `water.${w.class}`, 2.5), 0.06, 1);
-    if (w.frozen) soft((k) => strokeLine(k, w.path, w.width * 0.48), tex("water.ice.cracked", 2), 0.2, 0.55);
-    soft((k) => strokeLine(k, w.path, 0.25), "rgb(40,60,82)", 0.15, 0.35, "multiply");
+    const box = boxOf([w.path], w.width / 2 + 0.5);
+    soft((k) => strokeLine(k, w.path, w.width + 0.95), tex(`stone.rough.${s}`, 2), 0.35, 0.8, "source-over", box);
+    soft((k) => strokeLine(k, w.path, w.width + 0.3), "rgb(48,62,80)", 0.12, 0.7, "source-over", box);
+    soft((k) => strokeLine(k, w.path, w.width), tex(w.frozen ? "water.ice" : `water.${w.class}`, 2.5), 0.06, 1, "source-over", box);
+    if (w.frozen) soft((k) => strokeLine(k, w.path, w.width * 0.48), tex("water.ice.cracked", 2), 0.2, 0.55, "source-over", box);
+    soft((k) => strokeLine(k, w.path, 0.25), "rgb(40,60,82)", 0.15, 0.35, "multiply", box);
   }
 
   // Crossings
@@ -383,13 +403,17 @@ export function paint(ctx) {
     const dir = wayDirectionAt(L, c.at); // the road running through the ford
     const along = (t) => [fx + dir[0] * t, fy + dir[1] * t];
     const el = (k, rx, ry) => { k.beginPath(); k.ellipse(X(fx), Y(fy), rx * pp, ry * pp, fa, 0, 7); k.fill(); };
-    const rx = (c.width ?? 2) * 1.15, ry = rx * 0.54; // a 50 ft ford at 25 ft a square: 2.3 by 1.25 squares
-    soft((k) => strokeLine(k, [along(-3.4), c.at, along(3.6)], 2.2), tex(`surface.trodden.${s}`, 2.5), 0.6, 0.35);
-    soft((k) => el(k, rx, ry), "rgb(46,64,84)", 0.25, 0.92);
-    soft((k) => el(k, rx * 0.83, ry * 0.76), tex("water.ice.cracked", 1.5), 0.3, 0.25);
-    soft((k) => strokeLine(k, [along(-1.7), c.at, along(1.7)], 1.25), tex(`stone.rough.${s}`, 1.2), 0.2, 0.75);
-    soft((k) => strokeLine(k, [along(-1.7), c.at, along(1.7)], 1.25), "rgb(120,104,86)", 0.2, 0.5, "multiply");
-    soft((k) => strokeLine(k, [along(-1.3), c.at, along(1.3)], 0.55), "rgb(58,74,90)", 0.15, 0.45);
+    // A 50 ft ford at 25 ft a square: an ellipse 4.6 by 2.5 squares (semi-axes 2.3 and 1.25)
+    const rx = (c.width ?? 2) * 1.15, ry = rx * 0.54;
+    const reach = Math.max(rx * 1.4, 4.8);
+    const box = [fx - reach, fy - reach, fx + reach, fy + reach];
+    if (!near(fx, fy, reach + 2)) return;
+    soft((k) => strokeLine(k, [along(-3.4), c.at, along(3.6)], 2.2), tex(`surface.trodden.${s}`, 2.5), 0.6, 0.35, "source-over", box);
+    soft((k) => el(k, rx, ry), "rgb(46,64,84)", 0.25, 0.92, "source-over", box);
+    soft((k) => el(k, rx * 0.83, ry * 0.76), tex("water.ice.cracked", 1.5), 0.3, 0.25, "source-over", box);
+    soft((k) => strokeLine(k, [along(-1.7), c.at, along(1.7)], 1.25), tex(`stone.rough.${s}`, 1.2), 0.2, 0.75, "source-over", box);
+    soft((k) => strokeLine(k, [along(-1.7), c.at, along(1.7)], 1.25), "rgb(120,104,86)", 0.2, 0.5, "multiply", box);
+    soft((k) => strokeLine(k, [along(-1.3), c.at, along(1.3)], 0.55), "rgb(58,74,90)", 0.15, 0.45, "source-over", box);
     const r = rng(c.id, "ford");
     if (c.frozen) for (let i = 0; i < 14; i++) {
       const t = r.next() * Math.PI * 2, rr = 1 + r.next() * 0.35;
@@ -436,7 +460,9 @@ export function paint(ctx) {
   // Buildings: shadows first, then roofs
   progress(0.6, "Roofs");
   const buildings = items("building");
-  soft((k) => {
+  // The box reaches the biggest building and the longest shadow (a tall tower's falls well north of it)
+  const reachB = 1 + Math.max(0, ...buildings.map((b) => Math.max(b.len, b.dep))) + 1.05 * Math.max(0, ...buildings.map((b) => 0.35 + 0.3 * (b.tall || 0)));
+  if (buildings.length) soft((k) => {
     for (const b of buildings) {
       const sh = 0.35 + 0.3 * (b.tall || 0);
       k.save(); k.translate(X(b.cx) + sh * 0.3 * pp, Y(b.cy) - sh * pp); k.rotate((b.rot * Math.PI) / 180);
@@ -444,10 +470,11 @@ export function paint(ctx) {
       else k.fillRect((-b.len * pp) / 2, (-b.dep * pp) / 2, b.len * pp, b.dep * pp);
       k.restore();
     }
-  }, "rgb(28,38,58)", 0.12, 0.45);
+  }, "rgb(28,38,58)", 0.12, 0.45, "source-over", boxOf([buildings.map((b) => [b.cx, b.cy])], reachB));
   const rs = (ROOF_SCALE * pp) / 50;
   const SUN = [0, 1]; // light from the south: slopes facing down the map are lit, those facing up are in shade
   for (const b of buildings) {
+    if (!near(b.cx, b.cy, Math.max(b.len, b.dep))) continue;
     const th = (b.rot * Math.PI) / 180, c = Math.cos(th), sn = Math.sin(th);
     const facets = roofFacets(b);
     g.save(); g.translate(X(b.cx), Y(b.cy)); g.rotate(th);

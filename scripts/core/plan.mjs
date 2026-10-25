@@ -81,6 +81,7 @@ export const TYPES = {
       rot: num(0, { unit: "deg" }),
       chimney: { kind: "boolean", default: null }, // null: the generator decides
       roofStyle: { ...oneOf(ROOF_STYLES, "gable"), fallback: "it's drawn as a gable" },
+      variant: num(null, { min: 0 }), // which of the roof art's pieces (else from the seed)
       name: str(),
     },
   },

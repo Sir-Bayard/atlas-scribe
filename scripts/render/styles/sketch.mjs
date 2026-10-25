@@ -66,7 +66,6 @@ export function paint(ctx) {
       g.restore();
     }
   }
-  for (const c of items("surface", "croft")) fillPoly(c.poly, winter ? "rgba(120,132,150,0.08)" : "rgba(110,135,60,0.15)"); // a tint, so what's under shows
   for (const y of [...items("surface", "yard"), ...items("surface", "farmyard")]) {
     fillPoly(y.poly, y.surface && y.surface !== "trodden" ? mix(col(`surface.${y.surface}.${s}`), [255, 255, 255], 0.15) : mix(trodden, rgbOf(base), 0.25));
     if (y.fence) { g.setLineDash([px(0.14, 2), px(0.06, 1)]); stroke(y.poly.concat([y.poly[0]]), 0.04, "rgb(110,84,58)"); g.setLineDash([]); }
@@ -92,6 +91,8 @@ export function paint(ctx) {
     g.strokeRect((-w / 2) * pp, (-d / 2) * pp, w * pp, d * pp);
     g.restore();
   }
+  // Crofts after gardens, as the textured style lays them: a tint, so what's under shows
+  for (const c of items("surface", "croft")) fillPoly(c.poly, winter ? "rgba(120,132,150,0.08)" : "rgba(110,135,60,0.15)");
   // Plot lines, walls, hedges and their bushes
   const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)", balk: winter ? "rgba(150,160,170,0.45)" : "rgba(118,140,78,0.75)" };
   const boundWidth = { hedge: 0.08, balk: 0.12 };
@@ -167,8 +168,11 @@ export function paint(ctx) {
     }
     if (facets.parapet) {
       const w = facets.parapet.w * pp;
-      g.strokeStyle = winter ? "rgb(226,230,235)" : "rgb(178,170,158)"; g.lineWidth = w;
-      g.strokeRect((-b.len / 2) * pp + w / 2, (-b.dep / 2) * pp + w / 2, b.len * pp - w, b.dep * pp - w);
+      const A = (b.len / 2) * pp, B = (b.dep / 2) * pp, { joined } = facets.parapet;
+      g.fillStyle = winter ? "rgb(226,230,235)" : "rgb(178,170,158)";
+      g.fillRect(-A, -B, 2 * A, w); g.fillRect(-A, B - w, 2 * A, w); // a wing's joined ends are left open
+      if (!joined.start) g.fillRect(-A, -B, w, 2 * B);
+      if (!joined.end) g.fillRect(A - w, -B, w, 2 * B);
     }
     if (facets.skylight) {
       const { cx, cy, len, dep } = facets.skylight;

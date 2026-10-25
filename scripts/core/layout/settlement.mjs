@@ -58,10 +58,11 @@ export function fillFarmstead({ area, r, free, addBuilding, items }) {
  * what another district places can remove trees but never moves the rest. mix gives the share of each species.
  */
 export function fillWoods({ area, r, free, items }) {
+  if (area.trees === 0) return []; // a wood with no trees asked for: open ground
   const poly = shapeToPolygon(area.shape, area.rot ?? 0);
-  if (poly.length < 3) return;
+  if (poly.length < 3) return [];
   const a = polyArea(poly);
-  if (!(a > 0)) return;
+  if (!(a > 0)) return [];
   const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a / 2.4);
   const spacing = 0.85; // squares between trees in a grove: crowns overlap a little
   const full = a / (spacing * spacing * 1.6); // about what a wood packed edge to edge would hold
@@ -78,6 +79,9 @@ export function fillWoods({ area, r, free, items }) {
     if (vals.length) level = vals[Math.min(vals.length - 1, Math.floor((1 - share) * vals.length))];
   }
   const pts = poissonInPolygon(poly, spacing, r.fork("points"), { keep: (x, y) => grove(x, y) >= level, max: MAX_TRIES });
+  // Too big an area to lay trees over (it would never finish): nothing, said so
+  const [bx0, by0, bx1, by1] = bbox(poly), cell = spacing / Math.SQRT2; // as poissonInPolygon measures it
+  if (!pts.length && Math.max(1, Math.ceil((bx1 - bx0) / cell)) * Math.max(1, Math.ceil((by1 - by0) / cell)) > 4e6) return [{ level: "warning", id: area.id, message: `"${area.id}" is too big to fill with trees, so it's left empty. Draw it as a few smaller woods.` }];
   const tr = r.fork("trees");
   const bareShare = area.mix?.bare ?? 0.15;
   const sizes = ["large", "medium", "small"];
@@ -90,6 +94,7 @@ export function fillWoods({ area, r, free, items }) {
       ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.55 + u * 0.3, rot, variant }
       : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: 0.9 + u * 0.6, rot, variant });
   }
+  return [];
 }
 
 function polyArea(poly) {

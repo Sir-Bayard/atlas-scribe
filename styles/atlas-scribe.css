@@ -146,6 +146,7 @@
 .atlas-scribe .as-pv-list li {
   display: flex;
   align-items: center;
+  cursor: pointer;
   gap: 0.3rem;
   padding: 0.25rem 0.3rem;
   border-radius: 4px;
@@ -273,9 +274,6 @@
   stroke-width: 2.5px;
   stroke-dasharray: none;
   fill: rgba(255, 220, 120, 0.1);
-}
-.atlas-scribe .as-pv-list li {
-  cursor: pointer;
 }
 .atlas-scribe .as-pv-list li.as-selected {
   box-shadow: inset 3px 0 0 rgb(200, 120, 20);

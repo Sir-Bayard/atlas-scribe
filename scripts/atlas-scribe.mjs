@@ -166,9 +166,11 @@ const api = {
     planOrThrow(plan);
     previewPx = px;
     const app = theWindow();
+    if (app.publishing) throw new Error("AtlasScribe: the window is making a scene; try again when it's done");
     if (app.minimized) await app.maximize();
     if (app.rendered) app.bringToFront();
-    // The window may hold unsaved work: ask before putting another plan in its place
+    // The window may hold unsaved work: show it, and ask before putting another plan in its place
+    else if (app.dirty) await app.render({ force: true });
     if (!(await app.confirmDiscard())) throw new Error("AtlasScribe: kept the window's unsaved plan; save it, then preview again");
     await app.show(plan);
     return app;
@@ -206,7 +208,8 @@ const api = {
    * are painted in plain colours and listed in missingArt), paint, save.
    * With publish: true the map is then published (see publish; scene and force as there). If publishing fails,
    * the error carries the saved map's result as error.result.
-   * Returns { path, width, height, tiles, ms, layout, missingArt, notes, warnings }, and scene when published.
+   * Returns { path, width, height, tiles, ms, layout, missingArt, notes, artNotes, warnings }, and scene when
+   * published.
    */
   async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
     requireGM();
@@ -238,6 +241,7 @@ const api = {
           path, width: img.width, height: img.height, tiles: img.tiles, ms, layout,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           notes: [...layout.notes.map((n) => n.message), ...notes],
+          artNotes: notes, // why art is missing (FA Nexus not active, say)
           warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
         };
         Object.defineProperty(result, "thumb", { value: img.thumb ?? null, enumerable: false }); // for publish
@@ -314,6 +318,7 @@ const host = {
     fileFor,
   },
   publish: (plan, { scene = null } = {}) => api.render(plan, { publish: true, scene }),
+  cancel: () => api.cancel(),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
     try {

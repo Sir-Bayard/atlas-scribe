@@ -49,7 +49,7 @@ export async function resolve(roles, progress = () => {}) {
     return await resolveWith(nexus.app, roles, progress);
   } catch (e) {
     // FA Nexus changed, or failed: every role falls back to a plain colour, and the render goes on
-    console.warn(`${MOD} | FA Nexus couldn't be used`, e);
+    console.warn(`${MOD} | FA Nexus couldn't be used: ${e?.message ?? e}`); // the message only: FA Nexus's own error may carry a signed URL
     return { art: {}, missing: [...roles], downloaded: 0, why: `FA Nexus couldn't be used (${e?.message ?? e}), so the map is painted in plain colours` };
   } finally {
     if (nexus.opened) {
@@ -116,7 +116,7 @@ async function resolveWith(app, roles, progress) {
         }
         if (local) paths.push(local);
       } catch (e) {
-        console.warn(`${MOD} | couldn't get ${name} through FA Nexus`, e);
+        console.warn(`${MOD} | couldn't get ${name} through FA Nexus: ${e?.message ?? e}`);
       }
     }
     if (paths.length) art[role] = paths;

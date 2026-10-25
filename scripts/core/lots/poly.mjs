@@ -13,12 +13,13 @@ const many = (polys) => polys.filter((p) => p.length >= 3 && area(p) > 1e-6).map
 
 /** The shapes covered by each path, buffered to its own half width (open paths, round ends). */
 export function bands(paths) {
-  let out = [];
+  // Every path buffered, then one union at the end (a union per path grows slow with a town's thousand streets)
+  const all = [];
   for (const { path, half } of paths) {
     if (path.length < 2 || !(half > 0)) continue;
-    out = C.unionD(out, C.inflatePathsD([toC(path)], half, C.JoinType.Round, C.EndType.Round, 2, PREC), C.FillRule.NonZero, PREC);
+    all.push(...C.inflatePathsD([toC(path)], half, C.JoinType.Round, C.EndType.Round, 2, PREC));
   }
-  return out.map(fromC);
+  return all.length ? C.unionD(all, [], C.FillRule.NonZero, PREC).map(fromC) : [];
 }
 
 /** a minus b (both lists of polygons). Returns the pieces, outer rings and holes, as [x, y] polygons. */

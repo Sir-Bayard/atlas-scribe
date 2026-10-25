@@ -23,6 +23,7 @@ export function roofFacets(b) {
   return slopedFacets(b, style === "mansard" ? "hip" : style);
 }
 
+/** Drops empty facets and sets each slope's eaveAngle from its downslope (the builders leave it 0). */
 function finish(out, extra) {
   const kept = out.filter((f) => f.poly.length || f.eaves.length);
   // The texture's rows run along the eave, its lower edge (a tile's or thatch's ragged end) downslope
@@ -46,7 +47,6 @@ function slopedFacets(b, style) {
   const swap = clip === 1 && !b.join && b.dep > b.len;
   const A = (swap ? b.dep : b.len) / 2, B = (swap ? b.len : b.dep) / 2;
   const map = ([u, v]) => (swap ? [v, u] : [u, v]);
-  const deg = (u, v) => { const [x, y] = map([u, v]); return (Math.atan2(y, x) * 180) / Math.PI; };
   // A joined end may be set into the other building a little (join.inset): its valleys start where the other
   // roof's eave really is, so they land true
   const inset = Math.max(0, Math.min(A, join.inset ?? 0));
@@ -57,13 +57,13 @@ function slopedFacets(b, style) {
   if (h0 > h1) h0 = h1 = (h0 + h1) / 2; // a short hipped roof comes to a point
   const r0 = [h0, 0], r1 = [h1, 0];
   const out = [], creases = [];
-  const facet = (poly, down, eaveDir, eaves) => out.push({ poly: clean(poly).map(map), down: map(down), eaveAngle: deg(...eaveDir), eaves: eaves.map((e) => e.map(map)), flat: false });
+  const facet = (poly, down, eaves) => out.push({ poly: clean(poly).map(map), down: map(down), eaveAngle: 0, eaves: eaves.map((e) => e.map(map)), flat: false });
   for (const sgn of [-1, 1]) {
     const e0 = [s0, sgn * B], e1 = [s1, sgn * B];
     // Where this slope's edge leaves each end wall: at the eave for a hip, partway up for a half-hip, at the ridge for a gable
     const k0 = join.start ? null : [-A, sgn * clip * B];
     const k1 = join.end ? null : [A, sgn * clip * B];
-    facet([e0, e1, ...(k1 ? [k1] : []), r1, r0, ...(k0 ? [k0] : [])], [0, sgn], [1, 0], [[e0, e1]]);
+    facet([e0, e1, ...(k1 ? [k1] : []), r1, r0, ...(k0 ? [k0] : [])], [0, sgn], [[e0, e1]]);
     // A side flush with a hipped roof's end (join.flush) lies in the same plane as that hip: no valley there
     const valley = join.flush !== sgn;
     if (join.start) { if (valley) creases.push({ seg: [e0, r0], kind: "valley" }); }
@@ -75,7 +75,7 @@ function slopedFacets(b, style) {
   for (const [e, hx, joined] of [[-1, h0, join.start], [1, h1, join.end]]) {
     if (joined) continue;
     const c0 = [e * A, -B], c1 = [e * A, B];
-    if (clip > 0) facet([[e * A, -clip * B], [e * A, clip * B], [hx, 0]], [e, 0], [0, 1], [[c0, c1]]);
+    if (clip > 0) facet([[e * A, -clip * B], [e * A, clip * B], [hx, 0]], [e, 0], [[c0, c1]]);
     else out.push({ poly: [], down: [0, 0], eaveAngle: 0, eaves: [[c0, c1].map(map)], flat: false });
   }
   const ridge = h1 > h0 ? [map(r0), map(r1)] : null;
@@ -113,11 +113,11 @@ function mansardFacets(b) {
   const m = Math.min(A, B) * 0.38; // the steep slopes' width in plan
   const a = A - m, c = B - m;
   const out = [];
-  const facet = (poly, down, eaveAngle, eaves) => out.push({ poly, down, eaveAngle, eaves, flat: false });
-  facet([[-A, -B], [A, -B], [a, -c], [-a, -c]], [0, -1], 0, [[[-A, -B], [A, -B]]]);
-  facet([[-A, B], [A, B], [a, c], [-a, c]], [0, 1], 0, [[[-A, B], [A, B]]]);
-  facet([[-A, -B], [-A, B], [-a, c], [-a, -c]], [-1, 0], 90, [[[-A, -B], [-A, B]]]);
-  facet([[A, -B], [A, B], [a, c], [a, -c]], [1, 0], 90, [[[A, -B], [A, B]]]);
+  const facet = (poly, down, eaves) => out.push({ poly, down, eaveAngle: 0, eaves, flat: false });
+  facet([[-A, -B], [A, -B], [a, -c], [-a, -c]], [0, -1], [[[-A, -B], [A, -B]]]);
+  facet([[-A, B], [A, B], [a, c], [-a, c]], [0, 1], [[[-A, B], [A, B]]]);
+  facet([[-A, -B], [-A, B], [-a, c], [-a, -c]], [-1, 0], [[[-A, -B], [-A, B]]]);
+  facet([[A, -B], [A, B], [a, c], [a, -c]], [1, 0], [[[A, -B], [A, B]]]);
   const top = [[-a, -c], [a, -c], [a, c], [-a, c]];
   out.push({ poly: top, down: [0, 0], eaveAngle: 0, eaves: [[top[0], top[1]], [top[1], top[2]], [top[2], top[3]], [top[3], top[0]]], flat: true });
   const hips = [[[-A, -B], [-a, -c]], [[A, -B], [a, -c]], [[A, B], [a, c]], [[-A, B], [-a, c]]];
@@ -135,7 +135,7 @@ function coneFacets(b) {
   for (let k = 0; k < n; k++) {
     const t0 = (k / n) * 2 * Math.PI, t1 = ((k + 1) / n) * 2 * Math.PI, tm = (t0 + t1) / 2;
     const p0 = [R * Math.cos(t0), R * Math.sin(t0)], p1 = [R * Math.cos(t1), R * Math.sin(t1)];
-    out.push({ poly: [[0, 0], p0, p1], down: [Math.cos(tm), Math.sin(tm)], eaveAngle: (tm * 180) / Math.PI + 90, eaves: [[p0, p1]], flat: false });
+    out.push({ poly: [[0, 0], p0, p1], down: [Math.cos(tm), Math.sin(tm)], eaveAngle: 0, eaves: [[p0, p1]], flat: false });
   }
   return finish(out, { finial: true });
 }
