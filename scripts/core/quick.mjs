@@ -1,6 +1,6 @@
 /**
  * Quick Start: a few choices in, a plan out. The plan is an ordinary plan (roads, water, crossings, a square or a
- * green, districts, farmsteads, woods, field walls and a label), so everything after it (the preview, rerolls,
+ * green, districts, farmsteads, woods, field systems and a label), so everything after it (the preview, rerolls,
  * reshaping, render and publish) works on it as on any other. Every choice left out is picked from the seed, and the
  * same choices and seed always give the same plan. Pure: runs anywhere. Numbers are in squares (25 ft).
  */
@@ -157,14 +157,17 @@ export function quickPlan(options = {}) {
   const hold = S.square + 3; // straight near the centre, so the roads meet the square squarely
   const roads = [];
   const mainA = arm(theta, hold), mainB = arm(theta + 180 + r.range(-8, 8), hold);
+  const arms = [mainA, mainB]; // every road leaving the centre
   if (choices.roads === "fork") {
     const branch = arm(theta + 180 + r.range(35, 55) * (r.chance(0.5) ? 1 : -1), hold);
+    arms.push(branch);
     roads.push({ id: "main-road", class: S.main, path: join(mainA, mainB) });
     roads.push({ id: "branch-road", class: S.cross, path: [...branch].reverse() });
   } else {
     roads.push({ id: "main-road", class: S.main, path: join(mainA, mainB) });
     if (choices.roads === "crossroads") {
       const c1 = arm(theta + 90 + r.range(-20, 20), hold), c2 = arm(theta - 90 + r.range(-20, 20), hold);
+      arms.push(c1, c2);
       roads.push({ id: "cross-road", class: S.cross, path: join(c1, c2) });
     }
   }
@@ -342,62 +345,61 @@ export function quickPlan(options = {}) {
   }
   farms.forEach((f, n) => features.push({ id: `farm-${n + 1}`, type: "area", class: "farmstead", shape: { rect: [r1(f.c[0] - f.size / 2), r1(f.c[1] - f.size / 2), r1(f.c[0] + f.size / 2), r1(f.c[1] + f.size / 2)] }, rot: f.rot }));
 
-  const walls = []; // field wall paths
-  // Field walls through the farmland, beyond the districts: walls square to each road every few chains, each running
-  // back until it meets something, and back walls joining neighbours, so the land reads as fields along the road
-  if (farmish) {
-    const nearFarm = (p) => farms.some((f) => Math.hypot(p[0] - f.c[0], p[1] - f.c[1]) < f.size * 0.85);
-    for (const rd of roads) {
-      const path = rd.path;
-      const lens = path.map((q, i) => (i ? Math.hypot(q[0] - path[i - 1][0], q[1] - path[i - 1][1]) : 0));
-      const total = lens.reduce((a, b) => a + b, 0);
-      const along = (t) => {
-        let k = 1, acc = 0;
-        while (k < path.length - 1 && acc + lens[k] < t) acc += lens[k++];
-        const a = path[k - 1], b = path[k], f = Math.min(1, Math.max(0, (t - acc) / (lens[k] || 1)));
-        const d = [(b[0] - a[0]) / (lens[k] || 1), (b[1] - a[1]) / (lens[k] || 1)];
-        return { p: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], d };
-      };
-      for (const s of [1, -1]) {
-        let last = null;
-        for (let t = r.range(3, 8); t < total - 2; t += r.range(9, 14)) {
-          const { p, d } = along(t);
-          const side = [-d[1] * s, d[0] * s];
-          const start = add(p, mul(side, roadHalf(rd) + 0.6));
-          if (!clearOf(add(start, mul(side, 1)), 0.4) || nearCluster(p, 3)) { last = null; continue; }
-          // Back from the road until something is in the way, or the field is deep enough
-          const want = r.range(10, 20);
-          let depth = 0;
-          for (let x = 0.5; x <= want; x += 0.5) {
-            const q = add(start, mul(side, x));
-            if (!clearOf(q, 0.6) || nearFarm(q)) break;
-            depth = x;
-          }
-          if (depth < 5) { last = null; continue; }
-          const end = add(start, mul(side, depth));
-          const rail = { path: [pt(start), pt(add(start, mul(side, depth / 2))), pt(end)], end, kept: false };
-          // A field is two walls from the road joined at the back: a wall with no neighbour to close it is left out
-          if (last) {
-            const span = Math.hypot(end[0] - last.end[0], end[1] - last.end[1]);
-            const steps = Math.ceil(span / 0.5); // every half square, so nothing narrow slips between samples
-            const ok = span < 20 && Array.from({ length: steps - 1 }, (_, i) => (i + 1) / steps).every((k) => {
-              const q = add(last.end, mul([end[0] - last.end[0], end[1] - last.end[1]], k));
-              return clearOf(q, 0.6) && !nearFarm(q);
-            });
-            if (ok) {
-              for (const w of [last, rail]) if (!w.kept) { w.kept = true; walls.push(w.path); }
-              walls.push([pt(last.end), pt(end)]);
-            }
-          }
-          last = rail;
-        }
+  // Field systems: a wedge of land between each pair of roads leaving the centre (a wide gap split in two), each
+  // filled with enclosed fields or open strips by the layout, which keeps them off the roads, water, districts and
+  // farmyards. Farmland runs to the map's edge; mixed country has fields round the village and rough ground beyond
+  const fields = [];
+  if (choices.surroundings !== "open") {
+    // The lines the wedges lie between: each road leaving the centre, and a wandering line through a wide gap
+    const angleOf = (path) => { const e = path[path.length - 1]; return Math.atan2(e[1] - C[1], e[0] - C[0]); };
+    const lines = arms.map((path) => ({ path, a: angleOf(path) })).sort((x, y) => x.a - y.a);
+    const withSplits = [];
+    lines.forEach((l, i) => {
+      withSplits.push(l);
+      const next = i + 1 < lines.length ? lines[i + 1].a : lines[0].a + 2 * Math.PI;
+      if (next - l.a > (140 * Math.PI) / 180) {
+        const mid = (l.a + next) / 2;
+        withSplits.push({ path: wander(r, C, [Math.cos(mid), Math.sin(mid)], W, H, { step: r.range(6, 9), amp: r.range(1.5, 3) }), a: mid });
       }
-    }
+    });
+    const extent = Math.max(...cluster.flat().map((p) => Math.hypot(p[0] - C[0], p[1] - C[1])));
+    /** A line from the centre cut off at distance R. */
+    const upTo = (path, R) => {
+      const out = [path[0]];
+      for (let i = 1; i < path.length; i++) {
+        const p = path[i], q = path[i - 1], d = Math.hypot(p[0] - C[0], p[1] - C[1]);
+        if (d <= R) { out.push(p); continue; }
+        const dq = Math.hypot(q[0] - C[0], q[1] - C[1]), t = (R - dq) / (d - dq || 1);
+        out.push([q[0] + (p[0] - q[0]) * t, q[1] + (p[1] - q[1]) * t]);
+        break;
+      }
+      return out;
+    };
+    const used = new Set();
+    withSplits.forEach((l, i) => {
+      const m = withSplits[(i + 1) % withSplits.length];
+      const a = l.a, b = i + 1 < withSplits.length ? m.a : m.a + 2 * Math.PI;
+      const keep = r.next(), reach = r.range(12, 22), small = r.range(8, 14);
+      const wanted = choices.surroundings === "farmland" ? true : choices.surroundings === "mixed" ? keep < 0.65 : keep < 0.25;
+      if (!wanted) return;
+      // Farmland runs to the map's edge; otherwise the fields stop a ragged way out from the village
+      const R = choices.surroundings === "farmland" ? Math.hypot(W, H) : extent + (choices.surroundings === "mixed" ? reach : small);
+      const n = Math.max(3, Math.ceil((b - a) / ((12 * Math.PI) / 180)));
+      const arc = Array.from({ length: n - 1 }, (_, k) => {
+        const t = a + ((b - a) * (k + 1)) / n, rr = R * r.range(0.88, 1.12);
+        return add(C, [Math.cos(t) * rr, Math.sin(t) * rr]);
+      });
+      const out = choices.surroundings === "farmland" ? (path) => path : (path) => upTo(path, R);
+      const shape = outline(clipToMap([...out(l.path), ...arc, ...[...out(m.path)].reverse().slice(0, -1)], W, H, 0));
+      if (shape.length < 3) return;
+      const side = compass(dirOf((((a + b) / 2) * 180) / Math.PI));
+      let id = `fields-${side}`;
+      for (let k = 2; used.has(id); k++) id = `fields-${side}-${k}`;
+      used.add(id);
+      fields.push({ id, type: "area", class: "fields", shape });
+    });
   }
-
-  const wallClass = winter || choices.season === "autumn" ? "drystone" : r.pick(["drystone", "hedge"]);
-  walls.forEach((path, k) => features.push({ id: `field-wall-${k + 1}`, type: "wall", class: wallClass, path }));
-  const nearWall = (p, m) => walls.some((w) => distToPath(p, w) < m);
+  features.push(...fields);
 
   // Woods toward the edges, clear of everything
   const [w0, w1] = S.woods;
@@ -413,8 +415,7 @@ export function quickPlan(options = {}) {
       blob.push([Math.max(0, Math.min(W, c[0] + Math.cos(a) * rr * 1.2)), Math.max(0, Math.min(H, c[1] + Math.sin(a) * rr))]);
     }
     // A point pushed onto the map's edge may sit on the edge, but never on a road, the water or a district there
-    if (![c, ...blob].every((p) => clearOfThings(p, 1) && !nearWall(p, 1))) continue;
-    if (walls.some((w) => w.some((q) => inside(q, blob)))) continue; // nor a field wall running through it
+    if (![c, ...blob].every((p) => clearOfThings(p, 1))) continue;
     // nor a road or the water running through its middle, between the points tested above
     if ([...roads.map((rd) => rd.path), ...(water ? [water.path] : [])].some((path) => densify(path, 0.5).some((q) => inside(q, blob)))) continue;
     if (!clearOf(c, rad * 0.8)) continue;

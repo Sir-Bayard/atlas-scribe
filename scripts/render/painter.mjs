@@ -66,15 +66,16 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
       const cw = Math.min(coreW, W - cx0), ch = Math.min(coreH, H - cy0);
       const tw = cw + 2 * margin, th = ch + 2 * margin;
       const tile = new OffscreenCanvas(tw, th);
-      const mask = new OffscreenCanvas(tw, th);
+      const mask = new OffscreenCanvas(tw, th), blur = new OffscreenCanvas(tw, th);
       style.paint({
-        g: tile.getContext("2d"), mask, W: tw, H: th, pp,
+        g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp,
         x0: (cx0 - margin) / pp, y0: (cy0 - margin) / pp,
         layout, art: getArt,
         progress: (p, label) => progress(0.1 + (0.8 * (i + p)) / n, n > 1 ? `${label} (part ${i + 1} of ${n})` : label),
       });
       og.drawImage(tile, margin, margin, cw, ch, cx0, cy0, cw, ch);
       mask.width = mask.height = 1;
+      blur.width = blur.height = 1;
       tile.width = tile.height = 1;
     }
   }

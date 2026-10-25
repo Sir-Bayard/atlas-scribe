@@ -58,6 +58,18 @@ const COLORS = {
   bush: "#5f6b4f",
   chimney: "#6e655c",
   prop: "#7a6450",
+  field: "#8d9a5c",
+  "field.ploughed": "#7a5f42",
+  "field.growing": "#6f8a3e",
+  "field.ripe": "#c4a24e",
+  "field.stubble": "#b39c6a",
+  "field.hay": "#b8ab72",
+  "field.pasture": "#86a457",
+  "field.fallow": "#8d9a5c",
+  "field.ploughed.winter": "#d9dde2",
+  "field.stubble.winter": "#d8d6cf",
+  "field.pasture.winter": "#e4e8ed",
+  "field.fallow.winter": "#dde2e2",
 };
 
 /** The colour that stands in for a role. */

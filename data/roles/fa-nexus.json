@@ -66,6 +66,17 @@
     "tree.conifer.medium": ["Fir_Tree_Green_Medium_A1_3x3.webp", "Fir_Tree_Green_Medium_A2_3x3.webp", "Fir_Tree_Green_Medium_A3_3x3.webp", "Fir_Tree_Green_Medium_A4_3x3.webp", "Fir_Tree_Green_Medium_A5_3x3.webp"],
     "tree.conifer.small": ["Fir_Tree_Green_Small_A1_2x2.webp", "Fir_Tree_Green_Small_A2_2x2.webp", "Fir_Tree_Green_Small_A3_2x2.webp", "Fir_Tree_Green_Small_A4_2x2.webp", "Fir_Tree_Green_Small_A5_2x2.webp"],
     "bush.leafy": ["Bush_Green_A4_2x2.webp", "Bush_Green_A5_2x2.webp", "Bush_Green_A6_2x2.webp", "Bush_Green_B4_2x2.webp", "Bush_Green_B5_2x2.webp", "Bush_Green_B6_2x2.webp", "Bush_Green_C4_2x2.webp", "Bush_Green_C5_2x2.webp", "Bush_Green_C6_2x2.webp", "Bush_Green_D4_2x2.webp", "Bush_Green_D5_2x2.webp", "Bush_Green_D6_2x2.webp"],
-    "bush.leafy.autumn": ["Bush_Yellow_A4_2x2.webp", "Bush_Yellow_A5_2x2.webp", "Bush_Yellow_A6_2x2.webp", "Bush_Red_A4_2x2.webp", "Bush_Red_A5_2x2.webp", "Bush_Red_A6_2x2.webp"]
+    "bush.leafy.autumn": ["Bush_Yellow_A4_2x2.webp", "Bush_Yellow_A5_2x2.webp", "Bush_Yellow_A6_2x2.webp", "Bush_Red_A4_2x2.webp", "Bush_Red_A5_2x2.webp", "Bush_Red_A6_2x2.webp"],
+    "field.ploughed": ["Dirt_C_01.jpg", "Dirt_C_02.jpg", "Dirt_C_03.jpg", "Dirt_D_01.jpg", "Dirt_D_02.jpg", "Dirt_D_03.jpg"],
+    "field.growing": ["Crops_Wheat_Green_A.jpg", "Crops_Wheat_Green_B.jpg", "Crops_Wheat_Green_C.jpg", "Crops_Wheat_Green_D.jpg", "Crops_Wheat_Green_E.webp"],
+    "field.ripe": ["Crops_Wheat_Yellow_A.jpg", "Crops_Wheat_Yellow_B.jpg", "Crops_Wheat_Yellow_C.jpg", "Crops_Wheat_Yellow_D.jpg", "Crops_Wheat_Yellow_E.webp"],
+    "field.stubble": ["Crops_Wheat_Dry_A.jpg", "Crops_Wheat_Dry_B.jpg", "Crops_Wheat_Dry_C.jpg", "Crops_Wheat_Dry_D.jpg", "Crops_Wheat_Dry_E.webp"],
+    "field.hay": ["Hay_A_01.jpg", "Hay_A_02.jpg", "Hay_A_03.jpg", "Hay_A_04.jpg", "Hay_A_05.jpg"],
+    "field.pasture": ["Clover_A_01.jpg", "Clover_A_02.jpg", "Clover_A_03.jpg", "Clover_A_04.jpg", "Clover_A_05.jpg", "Clover_A_06.jpg", "Clover_A_07.jpg"],
+    "field.fallow": ["Grass_Rough_A_01.jpg", "Grass_Rough_A_02.jpg", "Grass_Rough_A_03.jpg", "Grass_Wild_A_01.jpg", "Grass_Wild_A_02.jpg", "Grass_Wild_A_03.jpg"],
+    "field.ploughed.winter": ["Snow_A1_01.jpg"],
+    "field.stubble.winter": ["Grassy_Snow_B1_01.jpg"],
+    "field.pasture.winter": ["Snow_D1_01.jpg"],
+    "field.fallow.winter": ["Grassy_Snow_A1_01.jpg"]
   }
 }

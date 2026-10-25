@@ -21,6 +21,17 @@ const treeSize = (t, s) => (t.species === "bare" ? (s === "winter" ? 2.0 : 2.2) 
 const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
 const hasFlat = (b) => !b.round && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 
+/** A colour each crop's art is lifted toward outside winter: [colour, strength, how]. */
+const FIELD_LIFT = {
+  growing: ["rgb(70,88,22)", 0.55, "screen"],
+  ripe: ["rgb(130,100,30)", 0.5, "screen"],
+  stubble: ["rgb(120,100,62)", 0.3, "screen"],
+  ploughed: ["rgb(92,64,40)", 0.4, "screen"],
+  fallow: ["rgb(52,66,22)", 0.45, "screen"],
+  pasture: ["rgb(24,34,10)", 0.25, "screen"],
+  hay: ["rgb(80,68,30)", 0.35, "screen"],
+};
+
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 4;
 
@@ -48,6 +59,7 @@ export function rolesFor(layout) {
       if (s === "winter" && (!SNOWY_IN_WINTER.has(i.roof) || hasFlat(i))) roles.add("overlay.snow");
       if (i.chimney) roles.add("chimney.stone");
     }
+    if (i.kind === "field") roles.add(`field.${i.crop}.${s}`);
     if (i.kind === "tree") roles.add(treeRole(i, s));
     if (i.kind === "prop") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
   }
@@ -56,7 +68,7 @@ export function rolesFor(layout) {
 
 /**
  * Paints the window [x0, y0] .. [x0 + W/pp, y0 + H/pp] of the map.
- * ctx: { g: the tile's 2d context, mask: a same-size scratch canvas, W, H (px), x0, y0 (squares), pp (px a square),
+ * ctx: { g: the tile's 2d context, mask and blur: same-size scratch canvases, W, H (px), x0, y0 (squares), pp (px a square),
  *        layout, art(role, variant) -> ImageBitmap | null, progress(pct, label) }
  */
 export function paint(ctx) {
@@ -67,6 +79,7 @@ export function paint(ctx) {
   const [MW, MH] = L.size.squares;
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
   const items = (kind, cls) => L.items.filter((i) => i.kind === kind && (cls === undefined || i.class === cls));
+  const winter = s === "winter";
 
   /** A fill for a role: its texture as a map-anchored pattern (sqPerTile squares to one repeat), or its plain colour. */
   const tex = (role, sqPerTile, variant = 0) => {
@@ -79,22 +92,39 @@ export function paint(ctx) {
   const path = (k, pts) => { k.beginPath(); pts.forEach(([x, y], i) => (i ? k.lineTo(X(x), Y(y)) : k.moveTo(X(x), Y(y)))); };
   const poly = (k, pts) => { path(k, pts); k.closePath(); };
   const strokeLine = (k, pts, w) => { k.lineWidth = w * pp; path(k, pts); k.stroke(); };
-  /** Draw shapes blurred into the mask, fill the mask with a fill, lay it on the map. */
+  /**
+   * Draw shapes into the mask, blur it, fill it with a fill, lay it on the map. The shapes are drawn sharp and the
+   * mask blurred once (on a second canvas, ctx.blur): a canvas blur filter costs a whole-tile blur per drawing call,
+   * so a hundred house shadows drawn under the filter cost a hundred blurs. Without ctx.blur, each call is blurred.
+   */
+  const bq = ctx.blur?.getContext("2d") ?? null;
   const soft = (shape, fill, blur, alpha = 1, op = "source-over") => {
     q.setTransform(1, 0, 0, 1, 0, 0);
     q.globalCompositeOperation = "source-over";
     q.clearRect(0, 0, W, H);
-    q.filter = blur ? `blur(${blur * pp}px)` : "none";
-    q.fillStyle = "#000"; q.strokeStyle = "#000"; q.lineCap = "round"; q.lineJoin = "round";
+    q.filter = blur && !bq ? `blur(${blur * pp}px)` : "none";
+    q.fillStyle = "#000"; q.strokeStyle = "#000"; q.lineCap = "round"; q.lineJoin = "round"; q.lineWidth = 1;
     shape(q);
     q.filter = "none";
-    q.globalCompositeOperation = "source-in";
-    q.fillStyle = fill;
-    q.fillRect(0, 0, W, H);
+    q.setTransform(1, 0, 0, 1, 0, 0);
+    let k = q, out = mask;
+    if (blur && bq) {
+      bq.setTransform(1, 0, 0, 1, 0, 0);
+      bq.globalCompositeOperation = "source-over";
+      bq.clearRect(0, 0, W, H);
+      bq.filter = `blur(${blur * pp}px)`;
+      bq.drawImage(mask, 0, 0);
+      bq.filter = "none";
+      k = bq; out = ctx.blur;
+    }
+    k.globalCompositeOperation = "source-in";
+    k.fillStyle = fill;
+    k.fillRect(0, 0, W, H);
+    k.globalCompositeOperation = "source-over";
     g.save();
     g.globalAlpha = alpha;
     g.globalCompositeOperation = op;
-    g.drawImage(mask, 0, 0);
+    g.drawImage(out, 0, 0);
     g.restore();
   };
   /** An image (a tree, a cart) size squares wide, turned, with a sun shadow; a plain blob when there's no art. */
@@ -121,6 +151,74 @@ export function paint(ctx) {
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.7) { k.beginPath(); k.arc(X(x), Y(y), r * 0.7 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.grassy`, 4), 1.5, 0.4);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.93) { k.beginPath(); k.arc(X(x), Y(y), r * 0.4 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.rocky`, 3), 0.8, 0.6);
   for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), MAX_BLUR, 0.5);
+
+  // Fields: each crop's texture, a field a shade lighter or darker than the next, a worn margin round each, then the
+  // rows (furrows, drills, the windrows of cut hay) and the grass balks between strips
+  progress(0.08, "Fields");
+  const fields = items("field");
+  const fieldPath = (k, f) => {
+    const ring = (pts) => { pts.forEach(([x, y], i) => (i ? k.lineTo(X(x), Y(y)) : k.moveTo(X(x), Y(y)))); k.closePath(); };
+    ring(f.poly);
+    for (const h of f.holes ?? []) ring(h);
+  };
+  const groups = new Map();
+  for (const f of fields) {
+    const key = `${f.crop}|${f.variant ?? 0}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  for (const [key, list] of groups) {
+    const [crop, v] = key.split("|");
+    soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), 0.06, 1);
+  }
+  // The crop art is dark beside the grass: lift each crop toward its own colour (a screen), so a field reads as wheat,
+  // hay or soil at a glance; snow needs none
+  if (!winter) for (const [crop, [color, alpha, op]] of Object.entries(FIELD_LIFT)) {
+    const these = fields.filter((f) => f.crop === crop);
+    if (these.length) soft((k) => { k.beginPath(); for (const f of these) fieldPath(k, f); k.fill("evenodd"); }, color, 0.06, alpha, op);
+  }
+  for (const f of fields) {
+    if (Math.abs(f.shade) < 0.15) continue;
+    g.save();
+    g.globalCompositeOperation = f.shade < 0 ? "multiply" : "screen";
+    g.globalAlpha = Math.abs(f.shade) * (f.shade < 0 ? 0.22 : 0.12);
+    g.fillStyle = f.shade < 0 ? "rgb(150,138,118)" : "rgb(120,118,96)";
+    g.beginPath(); fieldPath(g, f); g.fill("evenodd");
+    g.restore();
+  }
+  if (fields.length) soft((k) => { k.lineWidth = 0.3 * pp; for (const f of fields.filter((f) => !f.strip)) { k.beginPath(); fieldPath(k, f); k.stroke(); } }, "rgb(120,112,92)", 0.2, winter ? 0.12 : 0.2, "multiply");
+  const rowColor = {
+    ploughed: winter ? ["rgba(70,78,92,0.24)", 0.07] : ["rgba(42,30,18,0.38)", 0.07],
+    growing: ["rgba(36,48,18,0.24)", 0.05], ripe: ["rgba(90,66,24,0.24)", 0.05],
+    stubble: winter ? ["rgba(110,100,84,0.2)", 0.04] : ["rgba(70,54,32,0.22)", 0.04],
+  };
+  // Cut hay lies in soft pale windrows, each with a little shadow on its north side
+  const hay = fields.filter((f) => f.crop === "hay" && f.rows * pp >= 3);
+  // One path for every windrow and one fill to trim them to their fields: a blurred mask costs a blur per drawing call
+  const windrows = (dx, dy) => (k) => {
+    k.beginPath();
+    for (const f of hay) fieldPath(k, f);
+    k.fill("evenodd");
+    k.globalCompositeOperation = "source-in";
+    k.lineWidth = 0.2 * pp; k.lineCap = "butt";
+    k.beginPath();
+    for (const f of hay) rowLines(k, f, (x) => X(x) + dx * pp, (y) => Y(y) + dy * pp);
+    k.stroke();
+    k.globalCompositeOperation = "source-over";
+  };
+  if (hay.length && !winter) {
+    soft(windrows(0.03, -0.07), "rgb(70,60,40)", 0.06, 0.3, "multiply");
+    soft(windrows(0, 0), "rgb(232,216,160)", 0.05, 0.5);
+  }
+  for (const f of fields) {
+    const rc = rowColor[f.crop];
+    if (!rc || !(f.rows > 0) || f.rows * pp < 3) continue;
+    g.save(); g.beginPath(); fieldPath(g, f); g.clip("evenodd");
+    paintRows(g, f, X, Y, pp, rc[0], Math.max(1, rc[1] * pp));
+    g.restore();
+  }
+  const balks = items("boundary", "balk");
+  if (balks.length) soft((k) => { for (const b of balks) strokeLine(k, b.path, 0.16); }, tex(`ground.${gb}.grassy`, 4), 0.05, 0.95);
 
   // Yards, farmyards, gardens
   progress(0.12, "Yards and gardens");
@@ -151,7 +249,6 @@ export function paint(ctx) {
   }
   // Gardens are quiet: the ground shows through, rows barely show (winter) or softly (other seasons), and the fence
   // is a thin line, never a bright box
-  const winter = s === "winter";
   for (const gd of items("surface", "garden")) {
     const { cx, cy, w: gw, d: gdp, rot } = gd.garden;
     g.save(); g.translate(X(cx), Y(cy)); g.rotate((rot * Math.PI) / 180);
@@ -406,6 +503,33 @@ function offsetPath(pts, d) {
     const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
     return [p[0] - (dy / l) * d, p[1] + (dx / l) * d];
   });
+}
+
+/**
+ * A field's rows: lines rows squares apart, running at its angle, across the whole field (the caller clips to it).
+ * Shared by both styles. X, Y: map squares to tile pixels.
+ */
+export function paintRows(g, f, X, Y, pp, color, width) {
+  g.strokeStyle = color; g.lineWidth = width; g.lineCap = "butt";
+  g.beginPath();
+  rowLines(g, f, X, Y);
+  g.stroke();
+  g.lineCap = "round";
+}
+
+/** Adds a field's rows to the path being built (no beginPath, no stroke). */
+export function rowLines(g, f, X, Y) {
+  const [x0, y0, x1, y1] = f.poly.reduce(([a, b, c, d], [x, y]) => [Math.min(a, x), Math.min(b, y), Math.max(c, x), Math.max(d, y)], [Infinity, Infinity, -Infinity, -Infinity]);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, reach = Math.hypot(x1 - x0, y1 - y0) / 2 + 1;
+  const a = (f.angle * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+  // Anchored to the map, not the field's box, so rows sit the same in every tile
+  const mid = cx * vx + cy * vy;
+  const start = Math.floor((mid - reach) / f.rows) * f.rows;
+  for (let t = start; t <= mid + reach; t += f.rows) {
+    const px = cx + vx * (t - mid), py = cy + vy * (t - mid);
+    g.moveTo(X(px - ux * reach), Y(py - uy * reach));
+    g.lineTo(X(px + ux * reach), Y(py + uy * reach));
+  }
 }
 
 /** The unit direction of the way passing closest to a point (for a ford), or straight down. */

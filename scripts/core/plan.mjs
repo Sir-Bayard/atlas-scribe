@@ -117,6 +117,9 @@ export const TYPES = {
       trees: num(null, { min: 0 }),
       mix: { kind: "object", default: null },
       style: oneOf(["green", "formal"], null), // a park's: a village green (the default) or a formal garden
+      system: oneOf(["patchwork", "strips"], null), // a fields area's: enclosed fields or open strips; else picked from its seed
+      fieldSize: num(null, { unit: "ft", min: 50 }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
+      border: oneOf(["hedge", "drystone", "none"], null), // a fields area's: what bounds its fields; else picked from its seed
     },
   },
   wall: {
@@ -163,7 +166,7 @@ export const SCENE = {
 export const PROFILES = ["hamlet", "village", "town", "core", "roadside"];
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
-export const NOT_DRAWN_YET = { area: ["fields", "cemetery"] };
+export const NOT_DRAWN_YET = { area: ["cemetery"] };
 
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];

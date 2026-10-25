@@ -8,7 +8,7 @@
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets } from "../roofs.mjs";
-import { wayDirectionAt } from "./textured.mjs";
+import { wayDirectionAt, paintRows } from "./textured.mjs";
 
 /** No blur, so no tile margin. */
 export const MAX_BLUR = 0;
@@ -49,10 +49,23 @@ export function paint(ctx) {
     else if (t > 0.7) dot(x, y, r * 0.7, dark);
   }
 
-  // Surfaces: trodden ground, yards, crofts, gardens, parks
+  // Surfaces: trodden ground, fields, yards, crofts, gardens, parks
   progress(0.2, "Yards and gardens");
   const trodden = col(`surface.trodden.${s}`);
   for (const a of items("surface", "trodden")) { g.globalAlpha = 0.5; fillPoly(a.poly, trodden); g.globalAlpha = 1; }
+  // Fields: each in its crop's colour, a shade lighter or darker, with its rows
+  for (const f of items("field")) {
+    const c = col(`field.${f.crop}.${s}`);
+    const ring = (pts) => { pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); };
+    const outline = () => { g.beginPath(); ring(f.poly); for (const h of f.holes ?? []) ring(h); };
+    g.fillStyle = f.shade >= 0 ? mix(c, [255, 255, 255], 0.07 * f.shade) : mix(c, [30, 30, 20], -0.1 * f.shade);
+    outline(); g.fill("evenodd");
+    if (f.rows > 0 && f.rows * pp >= 3) {
+      g.save(); outline(); g.clip("evenodd");
+      paintRows(g, f, X, Y, pp, f.crop === "hay" ? "rgba(235,222,170,0.5)" : winter ? "rgba(90,96,104,0.28)" : "rgba(40,32,20,0.16)", Math.max(1, pp * (f.crop === "hay" ? 0.12 : 0.05)));
+      g.restore();
+    }
+  }
   for (const c of items("surface", "croft")) fillPoly(c.poly, winter ? "rgba(120,132,150,0.08)" : "rgba(110,135,60,0.15)"); // a tint, so what's under shows
   for (const y of [...items("surface", "yard"), ...items("surface", "farmyard")]) {
     fillPoly(y.poly, y.surface && y.surface !== "trodden" ? mix(col(`surface.${y.surface}.${s}`), [255, 255, 255], 0.15) : mix(trodden, rgbOf(base), 0.25));
@@ -80,8 +93,9 @@ export function paint(ctx) {
     g.restore();
   }
   // Plot lines, walls, hedges and their bushes
-  const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)" };
-  for (const b of items("boundary")) stroke(b.path, b.class === "hedge" ? 0.08 : 0.04, boundColor[b.class] ?? boundColor.fence);
+  const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)", balk: winter ? "rgba(150,160,170,0.45)" : "rgba(118,140,78,0.75)" };
+  const boundWidth = { hedge: 0.08, balk: 0.12 };
+  for (const b of items("boundary")) stroke(b.path, boundWidth[b.class] ?? 0.04, boundColor[b.class] ?? boundColor.fence);
   for (const w of items("wall")) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
   const bush = winter ? "rgb(104,98,90)" : mix(col("bush"), [30, 50, 25], 0.1);
   for (const b of items("prop", "bush")) dot(b.x, b.y, (b.scale ?? 0.5) * 0.45, bush);

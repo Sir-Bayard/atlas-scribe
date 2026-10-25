@@ -14,6 +14,7 @@ import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
 import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
+import { fillFields, fieldKeepOut, earlierFields } from "./fields.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
@@ -137,7 +138,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
           items.push({ kind: "surface", id: f.id, from: f.id, class: "trodden", poly: shapeToPolygon(f.shape, f.rot, 48), surface: "trodden" });
         } else if (f.class === "park") {
           parks.push(f); // laid out once every road is known, so its paths can meet them
-        } else if (f.class !== "farmstead" && f.class !== "woods") {
+        } else if (f.class !== "farmstead" && f.class !== "woods" && f.class !== "fields") {
           notes.push({ level: "warning", id: f.id, message: `"${f.id}": areas of class "${f.class}" aren't drawn yet.` });
         }
         break;
@@ -327,6 +328,25 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     });
     filling = null;
     notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
+  }
+
+  // Field systems: open ground, so nothing keeps out of them; their hedgerow trees keep clear of every building
+  progress(0.55, "Fields");
+  for (const f of plan.features.filter((f) => f.type === "area" && f.class === "fields")) {
+    const r = streamFor(f.id);
+    const made = fillFields({ area: f, r, keepOut: fieldKeepOut(plan, f), earlier: earlierFields(plan, f), W, H, ftPerSquare: sq, season: seasonOf(plan) });
+    notes.push(...made.notes);
+    made.fields.forEach((fd, k) => items.push({ kind: "field", id: `${f.id}/f${k + 1}`, from: f.id, system: made.system, ...fd }));
+    made.balks.forEach(([a, b], k) => items.push({ kind: "boundary", id: `${f.id}/k${k + 1}`, from: f.id, class: "balk", path: [a, b] }));
+    made.walls.forEach((path, k) => items.push({ kind: "wall", id: `${f.id}/w${k + 1}`, from: f.id, class: "drystone", path, height: 3 / sq }));
+    made.hedges.forEach((path, k) => {
+      items.push({ kind: "boundary", id: `${f.id}/h${k + 1}`, from: f.id, class: "hedge", path });
+      // Each hedge's bushes from a stream keyed by where it runs, so a hedge nothing touched keeps its bushes
+      hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: r.fork("hedge", ...path[0].map((v) => v.toFixed(2)), ...path[path.length - 1].map((v) => v.toFixed(2))), items, step: 0.45, scale: [0.55, 0.25] });
+    });
+    let n = 0;
+    for (const t of made.trees) if (free(t.x, t.y, 0.4)) items.push({ kind: "tree", id: `${f.id}/t${++n}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant });
+    if (made.fields.length) notes.push({ level: "info", id: f.id, message: `"${f.id}": ${made.system === "strips" ? "open strips" : "enclosed fields"}, ${made.fields.length} ${made.system === "strips" ? "strips" : "fields"}.` });
   }
 
   // Woods and hedgerows last: trees keep clear of every building

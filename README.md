@@ -24,8 +24,8 @@ What's planned, in order:
 
 As the GM, open the Scenes tab and click **AtlasScribe**.
 
-1. **Quick Start** asks a few things: a hamlet, village or town; the season; a river, a stream or no water; a crossroads, a road through or a fork; a market square, a village green or neither; and what's around it (farms and woods, farmland, woodland or open ground). Leave any of them on "Any" and the seed picks. It writes a plan and draws it in about a second.
-2. **Change it in the preview.** Each district, farm and wood has a button to reroll it and one to lock it; Reroll all rerolls everything that isn't locked; Undo steps back. Click a district, a wood or a road (or a name in the list) to reshape it by dragging its corners or points; Shapes shows every handle at once. Scroll to zoom, drag to move.
+1. **Quick Start** asks a few things: a hamlet, village or town; the season; a river, a stream or no water; a crossroads, a road through or a fork; a market square, a village green or neither; and what's around it (farms and woods, farmland, woodland or open ground; farmland is laid out in fields, hedged patchwork or open strips). Leave any of them on "Any" and the seed picks. It writes a plan and draws it in about a second.
+2. **Change it in the preview.** Each district, field system, farm and wood has a button to reroll it and one to lock it; Reroll all rerolls everything that isn't locked; Undo steps back. Click a district, a wood or a road (or a name in the list) to reshape it by dragging its corners or points; Shapes shows every handle at once. Scroll to zoom, drag to move.
 3. **Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and exported.
 4. **Make scene** paints the map with your art and makes it a scene, with the plan's labels hidden from players. After changes, **Update scene** repaints that scene (it's backed up first).
 
