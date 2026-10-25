@@ -176,8 +176,9 @@ export function paint(ctx) {
   const crown = winter ? "rgb(88,104,84)" : col("tree"), leafy = winter ? crown : mix(col("tree"), [120, 150, 60], 0.25), bare = col("tree.bare");
   for (const t of [...items("tree")].sort((a, b) => a.y - b.y)) {
     const deciduous = t.species === "bare";
-    const size = (deciduous ? 2.0 : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0) * (t.s ?? 1) * 1.1;
-    const r = size * (deciduous ? 0.3 : 0.4);
+    // Sized as the textured style draws them: a bare winter tree's art spreads wider than one in leaf
+    const size = (deciduous ? (winter ? 2.0 : 2.2) : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0) * (t.s ?? 1) * 1.1;
+    const r = size * (deciduous ? (winter ? 0.3 : 0.36) : 0.4);
     dot(t.x + r * 0.3, t.y - r * 0.3, r, "rgba(28,38,58,0.25)"); // shadow
     if (deciduous && winter) {
       g.strokeStyle = bare; g.lineWidth = Math.max(1, pp * 0.05);

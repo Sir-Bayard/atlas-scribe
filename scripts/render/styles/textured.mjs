@@ -13,6 +13,12 @@ export { roofFacets };
 
 /** Roof materials whose winter art already has snow on it; every other roof gets the snow overlay in winter. */
 const SNOWY_IN_WINTER = new Set(["slate", "wood-shingle"]);
+/** A tree's art: a deciduous tree is bare in winter and in leaf in the other seasons; conifers by size. */
+const treeRole = (t, s) => (t.species === "bare" ? (s === "winter" ? "tree.bare.winter" : `tree.deciduous.${s}`) : `tree.conifer.${t.size ?? "large"}.${s}`);
+/** How wide a tree's art is drawn, before its own scale: a bare winter tree's art spreads wider than one in leaf. */
+const treeSize = (t, s) => (t.species === "bare" ? (s === "winter" ? 2.0 : 2.2) : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0);
+/** A hedge's bushes: bare in winter, in leaf otherwise. */
+const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
 const hasFlat = (b) => !b.round && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
@@ -42,8 +48,8 @@ export function rolesFor(layout) {
       if (s === "winter" && (!SNOWY_IN_WINTER.has(i.roof) || hasFlat(i))) roles.add("overlay.snow");
       if (i.chimney) roles.add("chimney.stone");
     }
-    if (i.kind === "tree") roles.add(i.species === "bare" ? `tree.bare.${s}` : `tree.conifer.${i.size ?? "large"}.${s}`);
-    if (i.kind === "prop") roles.add(i.class === "bush" ? `bush.bare.${s}` : `prop.${i.class}`);
+    if (i.kind === "tree") roles.add(treeRole(i, s));
+    if (i.kind === "prop") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
   }
   return [...roles];
 }
@@ -193,7 +199,7 @@ export function paint(ctx) {
   soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.13); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1);
   soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.13); }, "rgb(88,84,80)", 0.01, 0.85, "multiply");
   if (s === "winter") soft((k) => { for (const w of walls) strokeLine(k, w.path, 0.04); }, "rgb(236,239,243)", 0.02, 0.6);
-  for (const b of items("prop", "bush")) img(`bush.bare.${s}`, b.variant, b.x, b.y, b.scale, b.rot, 0.18);
+  for (const b of items("prop", "bush")) img(bushRole(s), b.variant, b.x, b.y, b.scale, b.rot, 0.18);
 
   // Roads and lanes: trodden verge, the surface, a darker core, ruts
   progress(0.35, "Roads");
@@ -201,7 +207,8 @@ export function paint(ctx) {
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, 1);
   for (const surf of new Set(ways.map((w) => w.surface)))
     soft((k) => { for (const w of ways.filter((w) => w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);
-  soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width * (w.class === "highway" ? 0.85 : 0.7)); }, "rgb(118,108,96)", 0.2, 0.5, "multiply");
+  // A darker worn middle: strong on snow and slush, lighter on summer dirt, which is dark enough already
+  soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width * (w.class === "highway" ? 0.85 : 0.7)); }, "rgb(118,108,96)", 0.2, s === "winter" ? 0.5 : 0.25, "multiply");
   soft((k) => {
     for (const w of ways) {
       if (w.ruts) for (const d of [-0.22, 0.22]) strokeLine(k, offsetPath(w.path, d), 0.07);
@@ -381,9 +388,8 @@ export function paint(ctx) {
     img(`prop.${p.class}`, p.variant, p.x, p.y, size * (p.scale ?? 1), p.rot, shadow);
   }
   for (const t of [...items("tree")].sort((a, b) => a.y - b.y)) {
-    const big = t.species === "bare" ? 2.0 : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0;
-    const sz = big * t.s * 1.1;
-    img(t.species === "bare" ? `tree.bare.${s}` : `tree.conifer.${t.size}.${s}`, t.variant, t.x, t.y, sz, t.rot, sz * 0.35);
+    const sz = treeSize(t, s) * t.s * 1.1;
+    img(treeRole(t, s), t.variant, t.x, t.y, sz, t.rot, sz * 0.35);
   }
 
   // A light vignette over the whole map

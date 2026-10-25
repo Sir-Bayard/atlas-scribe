@@ -1,5 +1,5 @@
 {
-  "about": "Art roles for the FA Nexus provider: each role lists Forgotten Adventures file names (found in the user's own FA Nexus catalog and downloaded through it). Several files for one role are variants. A role is looked up with its season first (roof.slate.winter), then without (roof.slate).",
+  "about": "Art roles for the FA Nexus provider: each role lists Forgotten Adventures file names (found in the user's own FA Nexus catalog and downloaded through it). Several files for one role are variants. A role is looked up with its season first (roof.slate.winter), then without (roof.slate). Roles without a season (ground.grass, tree.deciduous) are the summer art, used in spring and autumn too unless a season has its own.",
   "roles": {
     "ground.snow": ["Snow_B1_01.jpg"],
     "ground.snow.light": ["Snow_C1_01.jpg"],
@@ -45,6 +45,27 @@
     "chimney.stone": ["Chimney_Stone_Earthy_A_1x1.webp", "Chimney_Stone_Earthy_B_1x1.webp", "Chimney_Stone_Earthy_C_1x1.webp", "Chimney_Stone_Earthy_D_1x1.webp", "Chimney_Stone_Redrock_A_1x1.webp", "Chimney_Stone_Redrock_B_1x1.webp"],
     "prop.cart": ["Cart_Wood_Dark_A1_2x3.webp"],
     "prop.wagon": ["Wagon_Wood_Ashen_B3_3x6.webp"],
-    "prop.well": ["Well_Stone_Earthy_C1_2x2.webp"]
+    "prop.well": ["Well_Stone_Earthy_C1_2x2.webp"],
+    "ground.grass": ["Grass_E_01.webp"],
+    "ground.grass.light": ["Grass_G_01.webp"],
+    "ground.grass.grassy": ["Grass_D_01.webp"],
+    "ground.grass.rocky": ["Patchy_Grass_A_01.webp"],
+    "surface.trodden": ["Grassy_Dirt_B_01.webp"],
+    "surface.dirt": ["Dirt_A_01.webp"],
+    "surface.dirt.winter": ["Slush_A1_01.jpg"],
+    "surface.gravel": ["Gravel_02_B.webp"],
+    "surface.cobble": ["Cobblestone_A_01.webp"],
+    "stone.rough": ["Rock_Ground_C_06.webp"],
+    "water.river": ["Water_Still_A_01.webp"],
+    "water.stream": ["Water_Still_A_01.webp"],
+    "water.canal": ["Water_Still_A_01.webp"],
+    "water.pond": ["Water_Still_B_01.webp"],
+    "tree.deciduous": ["Tree_Green_B1_5x5.webp", "Tree_Green_B2_5x5.webp", "Tree_Green_B3_5x5.webp", "Tree_Green_B4_5x5.webp", "Tree_Green_B5_5x5.webp", "Tree_Green_C1_5x5.webp", "Tree_Green_C2_5x5.webp", "Tree_Green_C3_5x5.webp", "Tree_Green_C4_5x5.webp", "Tree_Green_C5_5x5.webp", "Tree_Green_D1_5x5.webp", "Tree_Green_D2_5x5.webp", "Tree_Green_D3_5x5.webp", "Tree_Green_D4_5x5.webp", "Tree_Green_D5_5x5.webp"],
+    "tree.deciduous.autumn": ["Tree_Yellow_B1_5x5.webp", "Tree_Yellow_B2_5x5.webp", "Tree_Yellow_B3_5x5.webp", "Tree_Red_B1_5x5.webp", "Tree_Red_B2_5x5.webp", "Tree_Red_B3_5x5.webp", "Tree_Multicolor1_B1_5x5.webp", "Tree_Multicolor1_B2_5x5.webp", "Tree_Multicolor1_B3_5x5.webp"],
+    "tree.conifer.large": ["Fir_Tree_Green_Large_A1_4x4.webp", "Fir_Tree_Green_Large_A2_4x4.webp", "Fir_Tree_Green_Large_A3_4x4.webp", "Fir_Tree_Green_Large_A4_4x4.webp", "Fir_Tree_Green_Large_A5_4x4.webp"],
+    "tree.conifer.medium": ["Fir_Tree_Green_Medium_A1_3x3.webp", "Fir_Tree_Green_Medium_A2_3x3.webp", "Fir_Tree_Green_Medium_A3_3x3.webp", "Fir_Tree_Green_Medium_A4_3x3.webp", "Fir_Tree_Green_Medium_A5_3x3.webp"],
+    "tree.conifer.small": ["Fir_Tree_Green_Small_A1_2x2.webp", "Fir_Tree_Green_Small_A2_2x2.webp", "Fir_Tree_Green_Small_A3_2x2.webp", "Fir_Tree_Green_Small_A4_2x2.webp", "Fir_Tree_Green_Small_A5_2x2.webp"],
+    "bush.leafy": ["Bush_Green_A4_2x2.webp", "Bush_Green_A5_2x2.webp", "Bush_Green_A6_2x2.webp", "Bush_Green_B4_2x2.webp", "Bush_Green_B5_2x2.webp", "Bush_Green_B6_2x2.webp", "Bush_Green_C4_2x2.webp", "Bush_Green_C5_2x2.webp", "Bush_Green_C6_2x2.webp", "Bush_Green_D4_2x2.webp", "Bush_Green_D5_2x2.webp", "Bush_Green_D6_2x2.webp"],
+    "bush.leafy.autumn": ["Bush_Yellow_A4_2x2.webp", "Bush_Yellow_A5_2x2.webp", "Bush_Yellow_A6_2x2.webp", "Bush_Red_A4_2x2.webp", "Bush_Red_A5_2x2.webp", "Bush_Red_A6_2x2.webp"]
   }
 }
