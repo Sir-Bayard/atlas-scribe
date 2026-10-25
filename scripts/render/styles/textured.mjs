@@ -175,7 +175,8 @@ export function paint(ctx) {
   }
   for (const [key, list] of groups) {
     const [crop, v] = key.split("|");
-    soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), 0.06, 1);
+    // Under snow a field is mostly the snow round it: its own art shows only faintly
+    soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), winter ? 0.3 : 0.06, winter ? 0.45 : 1);
   }
   // The crop art is dark beside the grass: lift each crop toward its own colour (a screen), so a field reads as wheat,
   // hay or soil at a glance; snow needs none
@@ -309,13 +310,13 @@ export function paint(ctx) {
   // Roads and lanes: trodden verge, the surface, a darker core, ruts
   progress(0.35, "Roads");
   // Tracks out to the fields first: faint trodden paths with no verge, fading toward their far end
-  const tracks = items("way", "track");
+  const tracks = items("way").filter((w) => w.faint); // the generated ones; a plan's own track is drawn as a road
   if (tracks.length) {
     soft((k) => { for (const t of tracks) strokeLine(k, t.path, t.width); }, tex(`surface.trodden.${s}`, 2.5), 0.15, 0.4);
     soft((k) => { for (const t of tracks) strokeLine(k, t.path.slice(0, Math.max(2, Math.ceil(t.path.length * 0.55))), t.width * 0.85); }, tex(`surface.trodden.${s}`, 2.5), 0.15, 0.4);
     if (grassLift) soft((k) => { for (const t of tracks) strokeLine(k, t.path, t.width); }, TRODDEN_LIFT, 0.15, 0.6, "screen");
   }
-  const ways = items("way").filter((w) => w.class !== "track");
+  const ways = items("way").filter((w) => !w.faint);
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, 1);
   if (grassLift) soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, TRODDEN_LIFT, 0.25, 0.45, "screen"); // no dark rim on the lifted grass
   for (const surf of new Set(ways.map((w) => w.surface)))

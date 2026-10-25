@@ -351,7 +351,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
 
   // Farm lanes: a track from each farmyard to the road beside it (the fields keep off it)
   for (const lane of farmLanes(plan)) {
-    const item = { kind: "way", id: lane.id, from: lane.from, class: "track", path: lane.path, width: lane.width, surface: "trodden", ruts: false };
+    const item = { kind: "way", id: lane.id, from: lane.from, class: "track", path: lane.path, width: lane.width, surface: "trodden", ruts: false, faint: true };
     items.push(item);
     space.ways.push({ path: lane.path, clear: lane.width / 2 });
   }
@@ -368,7 +368,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const ring = closed(poly);
     const tr = streamFor(d.id).fork("tracks");
     let n = 0;
-    for (const st of items.filter((i) => i.kind === "way" && i.from === d.id && i.class !== "track")) {
+    for (const st of items.filter((i) => i.kind === "way" && i.from === d.id && !i.faint)) {
       for (const end of [0, st.path.length - 1]) {
         const want = tr.range(4, 10), wobble = tr.range(-6, 6), some = tr.chance(0.6); // drawn for every end, so the stream stays the same
         if (!some) continue; // not every lane runs on out to the fields
@@ -396,7 +396,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
           at = next;
         }
         if (path.length < (joined ? 2 : 3)) continue;
-        const item = { kind: "way", id: `${d.id}/t${++n}`, from: d.id, class: "track", path, width: 10 / sq, surface: "trodden", ruts: false };
+        const item = { kind: "way", id: `${d.id}/t${++n}`, from: d.id, class: "track", path, width: 10 / sq, surface: "trodden", ruts: false, faint: true };
         items.push(item);
         const entry = { path, clear: item.width / 2 };
         owner.set(entry, d.id);
