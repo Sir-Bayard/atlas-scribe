@@ -275,6 +275,27 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
         // Towards a neighbouring district with no street to meet: it turns back to its own street instead, a short
         // cross lane closing the loop (back lanes joined their high street at the ends of the town)
         if (!best || best.sg.line.edge === "edge" && nearBorder(pt, 0.3) || !inside(ex + (fx - ex) * best.t * 0.5, ey + (fy - ey) * best.t * 0.5)) {
+          // Unless it has just crossed a street: then it ends there, rather than running on past it and laying a
+          // link back to its own street alongside that one
+          const total = pathLen(path);
+          let cross = null;
+          for (let i = 1; i < path.length; i++) {
+            const [ax, ay] = path[i - 1], [bx, by] = path[i];
+            for (const sg of grid.near((ax + bx) / 2, (ay + by) / 2, Math.hypot(bx - ax, by - ay))) {
+              if (sg.line.edge || sg.line === m.from) continue;
+              const t = crossAt(ax, ay, bx, by, sg);
+              if (t === null) continue;
+              const cp = [ax + (bx - ax) * t, ay + (by - ay) * t], at = posOn(path, cp);
+              const fromEnd = endIx ? total - at : at;
+              if (fromEnd > 0.3 && fromEnd < D * 1.5 && (!cross || fromEnd < cross.fromEnd)) cross = { fromEnd, at, cp, line: sg.line };
+            }
+          }
+          if (cross) {
+            path = endIx ? cutPath(path, 0, cross.at) : cutPath(path, cross.at, total);
+            ends[endIx] = cross.line.fixed ? "road" : "junction";
+            met.push({ line: cross.line, pt: cross.cp });
+            continue;
+          }
           const back = Math.min(pathLen(path) * 0.3, 1);
           path = endIx ? cutPath(path, 0, pathLen(path) - back) : cutPath(path, back, pathLen(path));
           const e = endIx ? path[path.length - 1] : path[0];

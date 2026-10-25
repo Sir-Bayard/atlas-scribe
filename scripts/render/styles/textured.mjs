@@ -101,10 +101,19 @@ export function paint(ctx) {
    * so a hundred house shadows drawn under the filter cost a hundred blurs. Without ctx.blur, each call is blurred.
    */
   const bq = ctx.blur?.getContext("2d") ?? null;
-  const soft = (shape, fill, blur, alpha = 1, op = "source-over") => {
+  // box: [x0, y0, x1, y1] in squares, when the shapes lie within it: only that part of the tile (with room for the
+  // blur) is cleared, blurred, filled and laid down, which is much cheaper than the whole tile for a small thing
+  const soft = (shape, fill, blur, alpha = 1, op = "source-over", box = null) => {
+    let rx = 0, ry = 0, rw = W, rh = H;
+    if (box) {
+      const m = (blur || 0) * pp * 3 + 2;
+      rx = Math.max(0, Math.floor(X(box[0]) - m)); ry = Math.max(0, Math.floor(Y(box[1]) - m));
+      rw = Math.min(W, Math.ceil(X(box[2]) + m)) - rx; rh = Math.min(H, Math.ceil(Y(box[3]) + m)) - ry;
+      if (rw <= 0 || rh <= 0) return; // not in this tile
+    }
     q.setTransform(1, 0, 0, 1, 0, 0);
     q.globalCompositeOperation = "source-over";
-    q.clearRect(0, 0, W, H);
+    q.clearRect(rx, ry, rw, rh);
     q.filter = blur && !bq ? `blur(${blur * pp}px)` : "none";
     q.fillStyle = "#000"; q.strokeStyle = "#000"; q.lineCap = "round"; q.lineJoin = "round"; q.lineWidth = 1;
     shape(q);
@@ -114,20 +123,20 @@ export function paint(ctx) {
     if (blur && bq) {
       bq.setTransform(1, 0, 0, 1, 0, 0);
       bq.globalCompositeOperation = "source-over";
-      bq.clearRect(0, 0, W, H);
+      bq.clearRect(rx, ry, rw, rh);
       bq.filter = `blur(${blur * pp}px)`;
-      bq.drawImage(mask, 0, 0);
+      bq.drawImage(mask, rx, ry, rw, rh, rx, ry, rw, rh);
       bq.filter = "none";
       k = bq; out = ctx.blur;
     }
     k.globalCompositeOperation = "source-in";
     k.fillStyle = fill;
-    k.fillRect(0, 0, W, H);
+    k.fillRect(rx, ry, rw, rh);
     k.globalCompositeOperation = "source-over";
     g.save();
     g.globalAlpha = alpha;
     g.globalCompositeOperation = op;
-    g.drawImage(out, 0, 0);
+    g.drawImage(out, rx, ry, rw, rh, rx, ry, rw, rh);
     g.restore();
   };
   /** An image (a tree, a cart) size squares wide, turned, with a sun shadow; a plain blob when there's no art. */
@@ -332,9 +341,25 @@ export function paint(ctx) {
 
   // Squares
   progress(0.45, "Squares");
+  // A square sits in the roads rather than on them: a worn apron round it that the roads and streets run into, the
+  // paving laid with a soft, slightly ragged edge, then the roads' worn lines carried on faintly across it
   for (const sq of items("surface", "square")) {
-    soft((k) => { poly(k, sq.poly); k.fill(); }, tex(`surface.${sq.surface}.${s}`, 1.2), 0.12, 1);
-    if (s === "winter") soft((k) => { poly(k, sq.poly); k.fill(); }, tex("overlay.snow", 2), 0.3, 0.35);
+    const shape = (k, grow) => { poly(k, sq.poly); k.fill(); if (grow) { k.lineWidth = grow * 2 * pp; k.lineJoin = "round"; k.stroke(); } };
+    const [bx0, by0, bx1, by1] = sq.poly.reduce(([a, b, c, d], [x, y]) => [Math.min(a, x), Math.min(b, y), Math.max(c, x), Math.max(d, y)], [Infinity, Infinity, -Infinity, -Infinity]);
+    const box = [bx0 - 1, by0 - 1, bx1 + 1, by1 + 1];
+    soft((k) => shape(k, 0.9), tex(`surface.trodden.${s}`, 2.5), 0.6, 0.85, "source-over", box);
+    if (grassLift) soft((k) => shape(k, 0.9), TRODDEN_LIFT, 0.6, 0.45, "screen", box);
+    soft((k) => shape(k, 0.15), tex(`surface.${sq.surface}.${s}`, 1.2), 0.3, 1, "source-over", box);
+    // Paving worn and drifted at its edge: the ground's own patches over the rim
+    soft((k) => { k.lineWidth = 0.5 * pp; poly(k, sq.poly); k.stroke(); }, tex(`surface.trodden.${s}`, 2.5), 0.35, 0.45, "source-over", box);
+    const through = ways.filter((w) => w.path.some(([x, y]) => pointIn([x, y], sq.poly)));
+    if (through.length) soft((k) => {
+      poly(k, sq.poly); k.fill();
+      k.globalCompositeOperation = "source-in";
+      for (const w of through) strokeLine(k, w.path, w.width * 0.7);
+      k.globalCompositeOperation = "source-over";
+    }, "rgb(128,118,104)", 0.4, s === "winter" ? 0.3 : 0.2, "multiply", box);
+    if (s === "winter") soft((k) => shape(k, 0.15), tex("overlay.snow", 2), 0.4, 0.35, "source-over", box);
   }
 
   // Water: the bank, a dark edge, the water or ice, a cracked line, a darker core
@@ -511,6 +536,16 @@ export function paint(ctx) {
   const vg = g.createRadialGradient(X(MW / 2), Y(MH / 2), Math.min(MW, MH) * pp * 0.35, X(MW / 2), Y(MH / 2), Math.max(MW, MH) * pp * 0.75);
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(20,28,40,${winter ? 0.25 : 0.12})`);
   g.fillStyle = vg; g.fillRect(0, 0, W, H);
+}
+
+/** True when a point is inside a polygon (even-odd). */
+function pointIn([x, y], poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
 }
 
 /** A path moved sideways by d squares (left of its direction), for ruts. */
