@@ -210,17 +210,15 @@ export function paint(ctx) {
   };
   // Cut hay lies in soft pale windrows, each with a little shadow on its north side
   const hay = fields.filter((f) => f.crop === "hay" && f.rows * pp >= 3);
-  // One path for every windrow and one fill to trim them to their fields: a blurred mask costs a blur per drawing call
+  // Each field's rows clipped to that field (two hay fields side by side would otherwise cross-hatch); the mask is
+  // blurred once afterwards, so the clips cost nothing extra
   const windrows = (dx, dy) => (k) => {
-    k.beginPath();
-    for (const f of hay) fieldPath(k, f);
-    k.fill("evenodd");
-    k.globalCompositeOperation = "source-in";
     k.lineWidth = 0.2 * pp; k.lineCap = "butt";
-    k.beginPath();
-    for (const f of hay) rowLines(k, f, (x) => X(x) + dx * pp, (y) => Y(y) + dy * pp);
-    k.stroke();
-    k.globalCompositeOperation = "source-over";
+    for (const f of hay) {
+      k.save(); k.beginPath(); fieldPath(k, f); k.clip("evenodd");
+      k.beginPath(); rowLines(k, f, (x) => X(x) + dx * pp, (y) => Y(y) + dy * pp); k.stroke();
+      k.restore();
+    }
   };
   if (hay.length && !winter) {
     soft(windrows(0.03, -0.07), "rgb(70,60,40)", 0.06, 0.3, "multiply");
