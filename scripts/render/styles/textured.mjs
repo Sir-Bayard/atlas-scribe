@@ -32,6 +32,9 @@ const FIELD_LIFT = {
   hay: ["rgb(80,68,30)", 0.35, "screen"],
 };
 
+/** What trodden ground (verges, yards) is lifted toward where the grass is lifted, so it doesn't rim the roads dark. */
+const TRODDEN_LIFT = "rgb(72,64,40)";
+
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 4;
 
@@ -150,6 +153,9 @@ export function paint(ctx) {
   soft((k) => { for (const [x, y, r, t] of blobs) if (t < 0.45) { k.beginPath(); k.arc(X(x), Y(y), r * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.light`, 4), 2, 0.7);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.7) { k.beginPath(); k.arc(X(x), Y(y), r * 0.7 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.grassy`, 4), 1.5, 0.4);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.93) { k.beginPath(); k.arc(X(x), Y(y), r * 0.4 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.rocky`, 3), 0.8, 0.6);
+  // FA's grass is dark for an overview: lift it toward a light green (Patrick chose this from four strengths)
+  const grassLift = gb === "grass" && !winter;
+  if (grassLift) { g.save(); g.globalCompositeOperation = "screen"; g.globalAlpha = 0.55; g.fillStyle = "rgb(75,88,30)"; g.fillRect(0, 0, W, H); g.restore(); }
   for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), MAX_BLUR, 0.5);
 
   // Fields: each crop's texture, a field a shade lighter or darker than the next, a worn margin round each, then the
@@ -225,6 +231,8 @@ export function paint(ctx) {
   const yards = items("surface", "yard");
   soft((k) => { for (const y of yards) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.25, 0.95);
   soft((k) => { for (const y of items("surface", "farmyard")) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.4, 0.8);
+  // Lifted as the grass is, so yards don't read as dark patches on it
+  if (grassLift) soft((k) => { for (const y of [...yards, ...items("surface", "farmyard")]) { poly(k, y.poly); k.fill(); } }, TRODDEN_LIFT, 0.4, 0.8, "screen");
   for (const y of yards.filter((y) => y.surface && y.surface !== "trodden")) {
     soft((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.${y.surface}.${s}`, 2.5), 0.12, 0.55);
     soft((k) => { poly(k, y.poly); k.fill(); }, "rgb(160,150,138)", 0.12, 0.35, "multiply");
@@ -308,6 +316,7 @@ export function paint(ctx) {
   }
   const ways = items("way").filter((w) => w.class !== "track");
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, 1);
+  if (grassLift) soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, TRODDEN_LIFT, 0.25, 0.45, "screen"); // no dark rim on the lifted grass
   for (const surf of new Set(ways.map((w) => w.surface)))
     soft((k) => { for (const w of ways.filter((w) => w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);
   // A darker worn middle: strong on snow and slush, lighter on summer dirt, which is dark enough already
@@ -495,10 +504,10 @@ export function paint(ctx) {
     img(treeRole(t, s), t.variant, t.x, t.y, sz, t.rot, sz * 0.35);
   }
 
-  // A light vignette over the whole map
+  // A light vignette over the whole map (lighter outside winter, so summer grass doesn't darken at the edges)
   progress(0.95, "Finishing");
   const vg = g.createRadialGradient(X(MW / 2), Y(MH / 2), Math.min(MW, MH) * pp * 0.35, X(MW / 2), Y(MH / 2), Math.max(MW, MH) * pp * 0.75);
-  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(20,28,40,0.25)");
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(20,28,40,${winter ? 0.25 : 0.12})`);
   g.fillStyle = vg; g.fillRect(0, 0, W, H);
 }
 
