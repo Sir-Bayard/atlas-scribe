@@ -4,12 +4,15 @@
  * areas' corners and sides, and onto the map's edge, and a corner put on another shape's side adds that corner to
  * the other shape too, so the two share the side (their streets meet at gates there, and the shared corner moves for
  * both). A road, river or wall is drawn point by point; its points snap onto another of its kind (a road onto a
- * road, water onto water, a wall onto a wall) or onto the map's edge. Bridges, fords, props and labels are a single click. Every function
+ * road, water onto water, a wall onto a wall) or onto the map's edge. Where a new road crosses water (or a new river
+ * or stream crosses a road) with no bridge or ford there yet, one is added: a bridge, or a ford where a track or
+ * path crosses a stream. Bridges, fords, props and labels are a single click. Every function
  * returns a new plan and leaves the one given alone. Pure: runs anywhere. Numbers are in squares.
  */
 import { isObj, normalize } from "./plan.mjs";
 import { editableShape, shapeProblem, SAME } from "./reshape.mjs";
 import { checkPlan } from "./check.mjs";
+import { roadWaterCrossings } from "./layout/crossings.mjs";
 
 /**
  * The drawing tools. geometry: "shape" (corners or a box), "box" (a box, or a click for a default size), "path"
@@ -168,9 +171,33 @@ function shareSides(plan, id) {
   if (own !== mine) me.shape = own;
 }
 
+/** How near an existing bridge or ford must be for a crossing to count as having one, in squares. */
+const HAS_CROSSING = 3;
+
+/**
+ * Bridges and fords for a new road or water (in the copy it's given): one at each place it crosses the other kind,
+ * unless the plan already has a crossing within HAS_CROSSING. Returns the ids added.
+ */
+function addCrossings(plan, f) {
+  if ((f.type !== "road" && f.type !== "water") || !Array.isArray(f.path)) return [];
+  const others = plan.features.filter((g) => isObj(g) && g !== f && g.type === (f.type === "road" ? "water" : "road") && Array.isArray(g.path));
+  const hits = f.type === "road" ? roadWaterCrossings([f], others) : roadWaterCrossings(others, [f]);
+  const added = [];
+  for (const h of hits) {
+    const have = plan.features.filter((g) => isObj(g) && g.type === "crossing" && Array.isArray(g.at));
+    if (have.some((g) => dist(g.at, h.at) <= HAS_CROSSING)) continue;
+    const ford = h.water.class === "stream" && (h.road.class === "track" || h.road.class === "path");
+    const id = freeId(plan, ford ? "ford" : "bridge");
+    plan.features.push({ id, type: "crossing", class: ford ? "ford" : "bridge", at: [r1(h.at[0]), r1(h.at[1])] });
+    added.push(id);
+  }
+  return added;
+}
+
 /**
  * The plan with a new feature made by a tool from what was drawn: points (corners, a path's points, or one point),
- * or box: [x0, y0, x1, y1]. Returns { plan, id } or { error } (too few points, a shape that crosses itself, one too
+ * or box: [x0, y0, x1, y1]. A new road or water gets bridges and fords where it crosses the other (crossings: their
+ * ids). Returns { plan, id, crossings } or { error } (too few points, a shape that crosses itself, one too
  * small, or anything else the checker would refuse about the new feature).
  */
 export function addFeature(plan, toolId, { points = [], box = null } = {}) {
@@ -210,9 +237,10 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   const problem = SHAPED.has(f.type) && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
   if (problem) return { error: problem };
   if (SHAPED.has(f.type) && f.type !== "square") shareSides(next, id);
+  const crossings = addCrossings(next, f);
   // Only what the new feature brings: a plan that already had problems can still be drawn on
   const had = new Set(checkPlan(plan).filter((p) => p.level === "error").map((p) => p.message));
   const errors = checkPlan(next).filter((p) => p.level === "error" && !had.has(p.message));
   if (errors.length) return { error: errors.map((p) => p.message).join(" ") };
-  return { plan: next, id };
+  return { plan: next, id, crossings };
 }
