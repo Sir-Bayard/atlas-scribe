@@ -5,6 +5,7 @@
  */
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself } from "./geom.mjs";
+import { districtGates, gateSpacing } from "./streets/index.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
@@ -67,13 +68,27 @@ export function checkPlan(raw) {
     checkFeature(f, where, raw.features?.[i] ?? {}, { err, warn, w, h });
   });
 
-  // Districts: a known profile, and a way in
+  // Districts: a known profile, and a way in: a road into it, or a street from a neighbouring district through a gate
+  // on the side they share (a hamlet makes no streets of its own, so it needs a road)
   const ways = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path));
-  for (const d of plan.features.filter((f) => f.type === "district")) {
+  const dfeats = plan.features.filter((f) => f.type === "district" && f.id);
+  let gates = null;
+  const gatesOf = (id) => {
+    if (!gates) {
+      const sq = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
+      const list = dfeats.map((d) => { try { return { id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }; } catch { return null; } }).filter((d) => d && d.poly.length >= 3);
+      try { gates = districtGates(list, { roads: ways, seed: isNum(plan.seed) ? plan.seed : 1 }); } catch { gates = new Map(); }
+    }
+    return gates.get(id) ?? [];
+  };
+  for (const d of dfeats) {
     if (!PROFILES.includes(d.profile)) err(d.id, "profile", `District "${d.id}" uses the profile "${d.profile}", which this version doesn't know (it knows: ${PROFILES.join(", ")}).`);
     const poly = shapeToPolygon(d.shape);
-    if (poly.length >= 3 && !ways.some((r) => pathTouchesPolygon(r.path, poly)))
-      warn(d.id, "shape", `District "${d.id}" has no road or lane running into it, so nothing will be built along streets there.`);
+    if (poly.length < 3 || ways.some((r) => pathTouchesPolygon(r.path, poly)) || gatesOf(d.id).length) continue;
+    const hamlet = d.profile === "hamlet" || d.profile === "roadside";
+    warn(d.id, "shape", hamlet
+      ? `District "${d.id}" is a hamlet with no road or lane running into it, and a hamlet builds only along roads, so nothing will be built there.`
+      : `District "${d.id}" has no road or lane running into it and shares no side with another district's streets, so nothing will be built along streets there.`);
   }
 
   // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)
