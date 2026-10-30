@@ -13,7 +13,8 @@ import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs
 import { normalize } from "../core/plan.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
-import { featureHTML, planHTML, readInput } from "./inspector.mjs";
+import { featureHTML, planHTML, paletteHTML, howText, readInput } from "./inspector.mjs";
+import { addFeature, snapCorner, snapEnd, toolOf } from "../core/draw.mjs";
 
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -60,6 +61,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asReset: AtlasScribeApp.#onReset,
       asDelete: AtlasScribeApp.#onDelete,
       asPlan: AtlasScribeApp.#onPlan,
+      asDraw: AtlasScribeApp.#onDraw,
+      asTool: AtlasScribeApp.#onTool,
+      asFinish: AtlasScribeApp.#onFinish,
+      asStopTool: AtlasScribeApp.#onStopTool,
     },
   };
 
@@ -80,6 +85,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #shapes = false; // every corner handle shown
   #selected = null; // the feature clicked: its handles are shown even with Shapes off, and its settings in the side panel
   #inspect = null; // what the side panel shows instead of the list: a feature's id, "@plan", or null
+  #palette = false; // the side panel shows the drawing tools
+  #tool = null; // the drawing under way: { id, points, box, cursor, snap, down }
+  #keys = null; // the keyboard listener while drawing (Enter, Esc, Backspace)
+  #finishedAt = 0; // when a drawing last finished, so the double-click that finished it doesn't also fit the map
   #queue = []; // inspector changes made while the map was drawing: (plan) => { plan } | { error }, applied when it's done
   #corners = []; // every corner in the plan, for a dragged corner to snap to
   #handles = []; // handlesOf(plan) as drawn
@@ -144,6 +153,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#path = path;
     this.#selected = null;
     this.#inspect = null; // a new plan opens on its list (ids repeat between plans)
+    this.#endTool();
+    this.#palette = false;
     this.#queue = [];
     this.#saved = saved ? canon(plan) : null;
     this.#error = null;
@@ -303,7 +314,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${lines}${points}${labels}${handles}</svg>
+          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${lines}${points}${labels}${this.#tool ? "" : handles}<g class="as-pv-draft"></g></svg>
         </div>`
       : "";
     const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""} ${f.id === this.#selected ? "as-selected" : ""}" data-tooltip="Click for its settings and to reshape it">
@@ -318,7 +329,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const file = this.#path ? this.#path.split("/").pop() : null;
     const status = this.dirty ? (file ? `Unsaved changes to ${file}` : "Not saved yet") : file ? `Saved as ${file}` : "";
     el.innerHTML = `
-      <div class="as-pv-map ${this.#busy ? "as-busy" : ""} ${this.#stale ? "as-stale" : ""}">
+      <div class="as-pv-map ${this.#busy ? "as-busy" : ""} ${this.#stale ? "as-stale" : ""} ${this.#tool ? "as-drawing" : ""}">
         ${map}
         <div class="as-pv-wait"><i class="fa-solid fa-spinner fa-spin"></i> Drawing</div>
         ${this.#error ? `<p class="as-pv-error">${esc(this.#error)}</p>` : ""}
@@ -340,10 +351,12 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         </div>
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
+          <button type="button" data-action="asDraw" class="${this.#palette ? "as-on" : ""}" data-tooltip="Draw a new district, area, road, river, wall, bridge, prop or label" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-pen"></i> Draw</button>
           <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll all</button>
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip="Back to the plan before the last change"><i class="fa-solid fa-rotate-left"></i> Undo</button>
         </div>
-        ${this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working })
+        ${this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
+          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working })
           : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working })
           : `<ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
@@ -392,6 +405,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       }
     }
     this.#applyView();
+    this.#drawDraft();
     requestAnimationFrame(() => this.#applyView()); // the first time, the window has its size only after layout
   }
 
@@ -416,7 +430,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const box = ev.target.closest?.(".as-pv-map");
       if (!box || !this.#result) return;
       const handle = ev.target.closest?.(".as-pv-handle");
-      if (handle && !this.#working) {
+      if (this.#tool && ev.button === 0) this.#tool.down = { x: ev.clientX, y: ev.clientY, at: this.#toSquares(ev) };
+      if (handle && !this.#working && !this.#tool) {
         const h = this.#handles[Number(handle.dataset.h)];
         if (!h) return;
         ev.stopPropagation();
@@ -434,6 +449,17 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
     el.addEventListener("pointermove", (ev) => {
       if (this.#edit) return this.#editMove(ev);
+      if (this.#tool && this.#result && ev.target.closest?.(".as-pv-map")) {
+        const t = this.#tool, geo = toolOf(t.id).geometry;
+        // A drag from an empty start makes a box (a shape or a building); otherwise it moves the map
+        if (t.down && ev.buttons === 1 && (geo === "shape" || geo === "box") && !t.points.length && (t.box || Math.hypot(ev.clientX - t.down.x, ev.clientY - t.down.y) >= 4)) {
+          t.box = [...t.down.at, ...this.#toSquares(ev)];
+          this.#drag = null;
+          this.element.querySelector(".as-pv-map")?.classList.remove("as-dragging");
+          return this.#drawDraft();
+        }
+        this.#cursor(ev);
+      }
       if (!this.#drag) return;
       if (ev.buttons === 0) return stop(); // released where we couldn't see it (the map was redrawn mid-drag)
       const d = this.#drag;
@@ -442,6 +468,17 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
     el.addEventListener("pointerup", (ev) => {
       if (this.#edit) return this.#editEnd(ev);
+      if (this.#tool) {
+        const t = this.#tool, d = this.#drag, down = t.down;
+        t.down = null;
+        if (t.box) { stop(); return this.#finish(); }
+        const click = down && d && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) < 4 && ev.target.closest?.(".as-pv-map");
+        // The second click of a double-click finishes a shape or a line (its first click already placed the point)
+        if (click && ev.detail >= 2 && t.points.length && toolOf(t.id).geometry !== "point" && toolOf(t.id).geometry !== "box") { stop(); return this.#finish(); }
+        if (click) this.#toolClick(ev);
+        stop();
+        return;
+      }
       // A press that didn't move is a click: pick the district or area under it (or none)
       const d = this.#drag;
       if (d && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 4 && ev.target.closest?.(".as-pv-map")) this.#pick(ev);
@@ -475,6 +512,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     el.addEventListener("contextmenu", (ev) => { if (ev.target.closest?.(".as-pv-handle")) ev.preventDefault(); });
     el.addEventListener("dblclick", (ev) => {
       if (!ev.target.closest?.(".as-pv-map")) return;
+      if (this.#tool) return this.#finish();
+      if (Date.now() - this.#finishedAt < 800) return; // the double-click that finished a drawing
       this.#view = null;
       this.#applyView();
     });
@@ -489,6 +528,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   }
 
   _onClose() {
+    this.#endTool();
+    this.#palette = false;
     this.#resize?.disconnect();
     this.#resize = null;
     if (this.#url) URL.revokeObjectURL(this.#url);
@@ -551,7 +592,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Picks a feature (or none): its handles show and its settings open in the side panel. */
   #select(id) {
-    if (id === this.#selected && (id === null || this.#inspect === id)) return;
+    if (id === this.#selected && (id === null || this.#inspect === id) && !this.#palette) return;
+    this.#palette = false;
     this.#selected = id;
     this.#inspect = id;
     this.render();
@@ -749,6 +791,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Back from the inspector to the list (nothing is picked). */
   static #onBack() {
+    this.#endTool();
+    this.#palette = false;
     this.#inspect = null;
     this.#selected = null;
     this.render();
@@ -772,8 +816,169 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** The plan's own settings in the side panel (again to close them). */
   static #onPlan() {
+    this.#endTool();
+    this.#palette = false;
     this.#inspect = this.#inspect === "@plan" ? null : "@plan";
     if (this.#inspect) this.#selected = null;
+    this.render();
+  }
+
+  /** How near a click must be to snap, in squares (10 pixels at the zoom now). */
+  #tolerance() {
+    const r = this.#result;
+    return r ? 10 / ((r.width / r.squares[0]) * this.#currentView().k) : 0.5;
+  }
+
+  /** Where a click with the current tool lands, snapped: { at, kind }. */
+  #snapped(at) {
+    const t = this.#tool, make = toolOf(t.id).make, geo = toolOf(t.id).geometry;
+    if (geo === "shape") return snapCorner(this.#plan, at, this.#tolerance());
+    if (geo === "path") return snapEnd(this.#plan, make.type, at, this.#tolerance());
+    return { at: [Math.round(at[0] * 10) / 10, Math.round(at[1] * 10) / 10], kind: null };
+  }
+
+  /** The cursor while drawing: where the next point would land, shown on the draft. */
+  #cursor(ev) {
+    if (!this.#tool) return;
+    const s = this.#snapped(this.#toSquares(ev));
+    this.#tool.cursor = s.at;
+    this.#tool.snap = s.kind;
+    this.#drawDraft();
+  }
+
+  /** A click while drawing: a point tool places its feature; others add a point (a shape closes on its first corner). */
+  #toolClick(ev) {
+    const t = this.#tool;
+    if (!t || this.#working) return;
+    const tool = toolOf(t.id);
+    const { at } = this.#snapped(this.#toSquares(ev));
+    if (tool.geometry === "point" || tool.geometry === "box") {
+      t.points = [at];
+      return this.#finish();
+    }
+    if (tool.geometry === "shape" && t.points.length >= 3 && Math.hypot(at[0] - t.points[0][0], at[1] - t.points[0][1]) <= this.#tolerance()) return this.#finish();
+    t.points.push(at);
+    // Only the drawing and the palette's count change: a full render would replace the map under the pointer, and
+    // the browser would then send no double-click
+    if (this.#error) { this.#error = null; this.element.querySelector(".as-pv-map > .as-pv-error")?.remove(); }
+    this.#refreshPalette();
+    this.#drawDraft();
+  }
+
+  /** The palette's count of points and its Finish button, brought up to date without a render. */
+  #refreshPalette() {
+    const t = this.#tool;
+    const how = this.element?.querySelector(".as-pv-how");
+    if (!t || !how) return;
+    const tool = toolOf(t.id);
+    how.textContent = howText(tool, t.points.length);
+    const fin = this.element.querySelector('[data-action="asFinish"]');
+    if (fin) fin.disabled = t.points.length < (tool.geometry === "path" ? 2 : 3) || this.#working;
+  }
+
+  /** Makes the feature drawn and opens its settings; a drawing that can't be kept says why and carries on. */
+  async #finish() {
+    const t = this.#tool;
+    if (!t) return;
+    if (this.#working) { t.box = null; return this.#drawDraft(); } // a box let go while the map draws is dropped, not kept for later
+    // A box's two corners snap as a shape's corners do
+    const box = t.box && [...this.#snapped(t.box.slice(0, 2)).at, ...this.#snapped(t.box.slice(2)).at];
+    const res = addFeature(this.#plan, t.id, box ? { box } : { points: t.points });
+    if (res.error) {
+      t.box = null;
+      this.#error = `${res.error} Nothing was added.`;
+      return this.render();
+    }
+    const kept = { id: t.id, points: t.points };
+    this.#endTool();
+    this.#palette = false;
+    this.#error = null;
+    this.#selected = res.id;
+    this.#inspect = res.id;
+    this.#finishedAt = Date.now();
+    const drawn = await this.#change(res.plan);
+    // It couldn't be drawn (the change was taken back): the drawing comes back too, to fix or cancel
+    if (!drawn && this.rendered) {
+      this.#selected = this.#inspect = null;
+      this.#palette = true;
+      this.#startTool(kept.id);
+      this.#tool.points = kept.points;
+      this.render();
+    }
+  }
+
+  /** Starts drawing with a tool, listening for Enter (finish), Esc (cancel) and Backspace (the last point off). */
+  #startTool(id) {
+    this.#endTool();
+    this.#tool = { id, points: [], box: null, cursor: null, snap: null, down: null };
+    this.#selected = null;
+    this.#keys = (ev) => {
+      // Only keys meant for the window: not typing anywhere (a text box, a rich editor such as chat or a journal),
+      // not another window or dialog, and not while this one is minimized
+      const target = ev.target;
+      if (!this.#tool || this.minimized || target?.isContentEditable || target?.closest?.("input, select, textarea, [contenteditable]")) return;
+      if (target !== document.body && !this.element?.contains(target)) return;
+      if (ev.key === "Enter") this.#finish();
+      else if (ev.key === "Escape") { this.#endTool(); this.render(); }
+      else if (ev.key === "Backspace" || ev.key === "Delete") { this.#tool.points.pop(); this.render(); }
+      else return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation(); // Foundry would close the window on Esc
+    };
+    window.addEventListener("keydown", this.#keys, true);
+  }
+
+  #endTool() {
+    if (this.#keys) window.removeEventListener("keydown", this.#keys, true);
+    this.#keys = null;
+    this.#tool = null;
+  }
+
+  /** The drawing under way on the overlay: its points, the line to the cursor, a box, and a ring where it snaps. */
+  #drawDraft() {
+    const g = this.element?.querySelector(".as-pv-draft");
+    if (!g) return;
+    const t = this.#tool;
+    if (!t) { g.innerHTML = ""; return; }
+    const tool = toolOf(t.id);
+    const [MW, MH] = this.#result?.squares ?? [1, 1];
+    const r = Math.max(MW, MH) / 160;
+    const pts = t.cursor && tool.geometry !== "point" ? [...t.points, t.cursor] : [...t.points];
+    let html = "";
+    if (t.box) {
+      const [x0, y0, x1, y1] = t.box;
+      html += `<rect x="${Math.min(x0, x1)}" y="${Math.min(y0, y1)}" width="${Math.abs(x1 - x0)}" height="${Math.abs(y1 - y0)}" vector-effect="non-scaling-stroke"></rect>`;
+    } else if (pts.length >= 2) {
+      const tag = tool.geometry === "shape" && pts.length >= 3 ? "polygon" : "polyline";
+      html += `<${tag} points="${pts.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></${tag}>`;
+    }
+    for (const p of t.points) html += `<circle class="as-pv-draft-pt" cx="${p[0]}" cy="${p[1]}" r="${r}"></circle>`;
+    if (t.cursor && !t.box) html += `<circle class="as-pv-draft-cursor ${t.snap ? "as-snap" : ""}" cx="${t.cursor[0]}" cy="${t.cursor[1]}" r="${r * (t.snap ? 1.8 : 1)}"></circle>`;
+    g.innerHTML = html;
+  }
+
+  /** The drawing tools in the side panel (again to close them). */
+  static #onDraw() {
+    if (this.#palette) { this.#endTool(); this.#palette = false; }
+    else { this.#palette = true; this.#inspect = null; this.#selected = null; }
+    this.render();
+  }
+
+  /** Picks a tool (again to put it down). */
+  static #onTool(event, target) {
+    if (this.#working) return;
+    if (this.#tool?.id === target.dataset.tool) this.#endTool();
+    else this.#startTool(target.dataset.tool);
+    this.#error = null;
+    this.render();
+  }
+
+  static async #onFinish() {
+    await this.#finish();
+  }
+
+  static #onStopTool() {
+    this.#endTool();
     this.render();
   }
 
