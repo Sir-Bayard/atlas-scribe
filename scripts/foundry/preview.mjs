@@ -5,12 +5,18 @@
  * keeps the plan they make (app.plan), and Copy plan puts it on the clipboard. With Shapes on, districts and areas
  * show handles on their corners: drag one to reshape (corners two shapes share move together, and a corner dropped
  * on another snaps to it), drag the dot in the middle of a side to add a corner, alt-click or right-click a corner to
- * remove it. Scroll to zoom, drag to pan, double-click to fit.
+ * remove it. Scroll to zoom, drag to pan, double-click to fit. Clicking a feature (on the map or in the list) opens
+ * its settings in the side panel (the inspector), and the gear opens the plan's own; each change redraws the map.
  */
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs";
 import { normalize } from "../core/plan.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
+import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
+import { featureHTML, planHTML, readInput } from "./inspector.mjs";
+
+/** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -50,6 +56,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asFit: AtlasScribeApp.#onFit,
       asShapes: AtlasScribeApp.#onShapes,
       asCancel: AtlasScribeApp.#onCancel,
+      asBack: AtlasScribeApp.#onBack,
+      asReset: AtlasScribeApp.#onReset,
+      asDelete: AtlasScribeApp.#onDelete,
+      asPlan: AtlasScribeApp.#onPlan,
     },
   };
 
@@ -68,7 +78,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #resize = null;
   #drawing = null; // the draw in flight, so a new plan waits for it
   #shapes = false; // every corner handle shown
-  #selected = null; // the district or area clicked: its handles are shown even with Shapes off
+  #selected = null; // the feature clicked: its handles are shown even with Shapes off, and its settings in the side panel
+  #inspect = null; // what the side panel shows instead of the list: a feature's id, "@plan", or null
+  #queue = []; // inspector changes made while the map was drawing: (plan) => { plan } | { error }, applied when it's done
   #corners = []; // every corner in the plan, for a dragged corner to snap to
   #handles = []; // handlesOf(plan) as drawn
   #edit = null; // the handle being dragged: { h, partners, plan, x, y, moved, next }
@@ -88,7 +100,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** True when the plan has changes that aren't saved. */
   get dirty() {
-    return !!this.#plan && JSON.stringify(this.#plan) !== this.#saved;
+    return !!this.#plan && canon(this.#plan) !== this.#saved;
   }
 
   /** Opens the window (again): draws the plan it had, else the plan last opened here, else shows Quick Start's welcome. */
@@ -131,7 +143,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#plan = plan;
     this.#path = path;
     this.#selected = null;
-    this.#saved = saved ? JSON.stringify(plan) : null;
+    this.#inspect = null; // a new plan opens on its list (ids repeat between plans)
+    this.#queue = [];
+    this.#saved = saved ? canon(plan) : null;
     this.#error = null;
     this.#result = null;
     if (path) this.#host.setLast(path);
@@ -167,13 +181,17 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       await this.render();
       return result;
     };
-    this.#drawing = go().finally(() => { this.#drawing = null; });
+    this.#drawing = go().finally(() => {
+      this.#drawing = null;
+      if (this.#queue.length) setTimeout(() => this.#flush(), 0);
+    });
     return this.#drawing;
   }
 
   #markBusy() {
     this.element?.querySelector(".as-pv-map")?.classList.add("as-busy");
     for (const b of this.element?.querySelectorAll("[data-action^='asRe'], [data-action='asLock'], [data-action='asUndo'], [data-action='asScene'], [data-action='asQuick'], [data-action='asOpen'], [data-action='asImport']") ?? []) b.disabled = true;
+    // The inspector stays usable: what's changed meanwhile is queued (#flush) rather than lost
   }
 
   /** True while anything that holds the job (a draw, or making the scene) is running. */
@@ -207,6 +225,42 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       .map((f) => ({ id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : (Number(f.width) || 10) / sq / 2 }));
   }
 
+  /**
+   * Squares, plan buildings, a landmark's buildings and water drawn as a shape (a pond, a lake), outlined faintly so
+   * they can be clicked: [{ id, type, poly }].
+   */
+  #minor() {
+    const plan = normalize(this.#plan);
+    const out = [];
+    const add = (id, type, shape, rot = 0) => {
+      let poly = [];
+      try { poly = shapeToPolygon(shape, rot) ?? []; } catch { poly = []; }
+      if (poly.length >= 3) out.push({ id, type, poly });
+    };
+    for (const f of plan.features) {
+      if (f.type === "square") add(f.id, f.type, f.shape);
+      else if (f.type === "building") add(f.id, f.type, f.shape, f.rot ?? 0);
+      else if (f.type === "water" && !Array.isArray(f.path) && f.shape) add(f.id, f.type, f.shape);
+      else if (f.type === "landmark") for (const b of f.buildings ?? []) add(f.id, "landmark", b.shape, b.rot ?? 0);
+    }
+    return out;
+  }
+
+  /** Bridges, fords and props: points that can be clicked, [{ id, type, at }]. A bridge is where it was drawn (moved onto its road). */
+  #points() {
+    const drawn = new Map((this.#result?.crossings ?? []).map((c) => [c.id, c.at]));
+    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop") && Array.isArray(f.at))
+      .map((f) => ({ id: f.id, type: f.type, at: drawn.get(f.id) ?? f.at }));
+  }
+
+  /** The plan's labels with the box their text takes on the overlay (squares), for clicking: [{ id, at, hw, hh }]. */
+  #labelBoxes() {
+    const [MW, MH] = this.#result?.squares ?? this.#plan?.size?.squares ?? [1, 1];
+    const fs = (Math.max(MW, MH) / 55) * 0.85; // as the overlay draws them
+    return (this.#plan?.features ?? []).filter((f) => f?.type === "label" && Array.isArray(f.at))
+      .map((f) => ({ id: f.id, at: f.at, hw: Math.max(fs, String(f.text ?? "").length * fs * 0.3), hh: fs * 0.6 }));
+  }
+
   async _renderHTML() {
     const el = document.createElement("div");
     el.className = "as-pv";
@@ -237,18 +291,22 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     }).join("");
     const every = r ? handlesOf(this.#plan) : [];
     this.#corners = every.filter((h) => h.kind === "corner");
-    if (this.#selected && !feats.some((f) => f.id === this.#selected) && !this.#paths().some((p) => p.id === this.#selected)) this.#selected = null;
+    // A feature that's gone (deleted, or undone away) is no longer picked or shown
+    if (this.#selected && !featureOf(this.#plan, this.#selected)) this.#selected = null;
+    if (this.#inspect && this.#inspect !== "@plan" && !featureOf(this.#plan, this.#inspect)) this.#inspect = null;
+    const minor = this.#minor().map((f) => `<g class="as-pv-shape as-minor as-${f.type} ${f.id === this.#selected ? "as-selected" : ""}" data-id="${esc(f.id)}"><polygon points="${f.poly.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polygon></g>`).join("");
+    const points = this.#points().map((p) => `<circle class="as-pv-shape as-point as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}" cx="${p.at[0]}" cy="${p.at[1]}" r="${fs * 0.35}"></circle>`).join("");
     this.#handles = every.filter((h) => this.#shapes || h.id === this.#selected);
     const handles = this.#handles.map((h, n) => `<circle class="as-pv-handle as-${h.kind}" data-h="${n}" data-id="${esc(h.id)}" cx="${h.at[0]}" cy="${h.at[1]}" r="0.3"></circle>`).join("");
     const lines = this.#paths().map((p) => `<g class="as-pv-shape as-path as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}"><polyline points="${p.pts.map((q) => q.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polyline></g>`).join("");
-    const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => `<text class="as-pv-label" x="${l.at[0]}" y="${l.at[1]}" data-fs="${fs * 0.85}">${esc(l.text)}</text>`).join("");
+    const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => `<text class="as-pv-label ${l.id === this.#selected ? "as-selected" : ""}" data-id="${esc(l.id)}" x="${l.at[0]}" y="${l.at[1]}" data-fs="${fs * 0.85}">${esc(l.text)}</text>`).join("");
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${lines}${labels}${handles}</svg>
+          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${lines}${points}${labels}${handles}</svg>
         </div>`
       : "";
-    const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""} ${f.id === this.#selected ? "as-selected" : ""}" data-tooltip="Click to reshape it">
+    const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""} ${f.id === this.#selected ? "as-selected" : ""}" data-tooltip="Click for its settings and to reshape it">
         <span class="as-pv-name"><strong>${esc(f.name ?? f.id)}</strong><em>${esc(f.type === "district" ? `${f.kind} district` : f.kind)}</em></span>
         <button type="button" data-action="asReroll" data-id="${esc(f.id)}" data-tooltip="Reroll" ${f.locked || this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i></button>
         <button type="button" data-action="asLock" data-id="${esc(f.id)}" data-tooltip="${f.locked ? "Locked: rerolls leave it alone. Click to unlock." : "Lock, so rerolls leave it alone"}" class="${f.locked ? "as-on" : ""}" ${this.#working ? "disabled" : ""}><i class="fa-solid ${f.locked ? "fa-lock" : "fa-lock-open"}"></i></button>
@@ -278,13 +336,16 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <button type="button" data-action="asSave" data-tooltip="Save the plan in this world" class="${this.dirty ? "as-on" : ""}"><i class="fa-solid fa-floppy-disk"></i></button>
           <button type="button" data-action="asExport" data-tooltip="Download the plan as a file"><i class="fa-solid fa-file-export"></i></button>
           <button type="button" data-action="asCopy" data-tooltip="Copy the plan as JSON"><i class="fa-solid fa-copy"></i></button>
+          <button type="button" data-action="asPlan" data-tooltip="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
         </div>
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll all</button>
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip="Back to the plan before the last change"><i class="fa-solid fa-rotate-left"></i> Undo</button>
         </div>
-        <ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>
+        ${this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working })
+          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working })
+          : `<ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asOutlines" class="${this.#outlines ? "as-on" : ""}"><i class="fa-solid fa-draw-polygon"></i> Outlines</button>
@@ -303,9 +364,33 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   _replaceHTML(result, content) {
     const top = content.querySelector(".as-pv-list")?.scrollTop ?? 0;
+    // The inspector as it was: where it was scrolled, which sections were open, which setting had focus
+    const insp = content.querySelector(".as-pv-insp");
+    const was = insp && {
+      id: insp.dataset.id,
+      top: insp.querySelector(".as-pv-fields")?.scrollTop ?? 0,
+      open: [...insp.querySelectorAll("details")].map((d) => d.open),
+      focus: document.activeElement?.closest?.(".as-pv-insp [data-field]")?.dataset.field ?? null,
+      value: document.activeElement?.matches?.("input[type=text], input[type=number]") ? document.activeElement.value : null,
+    };
     content.replaceChildren(result);
     const list = content.querySelector(".as-pv-list");
     if (list) list.scrollTop = top;
+    const now = content.querySelector(".as-pv-insp");
+    if (was && now && now.dataset.id === was.id) {
+      [...now.querySelectorAll("details")].forEach((d, i) => { if (was.open[i]) d.open = true; });
+      const fields = now.querySelector(".as-pv-fields");
+      if (fields) fields.scrollTop = was.top;
+      if (was.focus) {
+        const el = now.querySelector(`[data-field="${CSS.escape(was.focus)}"]`);
+        const input = el?.matches("input, select") ? el : el?.querySelector("input");
+        if (input && !input.disabled) {
+          input.focus({ preventScroll: true });
+          // Something typed while the map redrew is kept, not wiped by the redraw
+          if (was.value !== null && input.matches("input[type=text], input[type=number]") && input.value !== was.value) input.value = was.value;
+        }
+      }
+    }
     this.#applyView();
     requestAnimationFrame(() => this.#applyView()); // the first time, the window has its size only after layout
   }
@@ -368,6 +453,20 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (!li || ev.target.closest("button")) return;
       this.#select(this.#selected === li.dataset.id ? null : li.dataset.id);
     });
+    // A setting changed in the inspector: applied at once, and the map redrawn
+    el.addEventListener("change", (ev) => {
+      const box = ev.target.closest?.(".as-pv-insp [data-field]");
+      if (!box || !this.#plan) return;
+      const id = box.closest(".as-pv-insp").dataset.id, field = box.dataset.field;
+      // A number box with text it can't read ("-", "1e") reports itself as empty: that's not a request to clear it
+      if (box.validity?.badInput) {
+        this.#error = `${box.closest(".as-pv-field")?.querySelector("label")?.textContent ?? field} should be a number. Nothing was changed.`;
+        return this.#working ? undefined : this.render();
+      }
+      const value = readInput(box);
+      if (this.#publishing || this.#saving) return this.render(); // put the input back: nothing changes while a scene is made
+      this.#apply((plan) => (id === "@plan" ? setPlanField(plan, field, value) : setField(plan, id, field, value)));
+    });
     el.addEventListener("pointercancel", () => {
       if (this.#edit) { this.#edit = null; this.render(); } // put the outline back
       stop();
@@ -403,21 +502,38 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const has = this.#handles.some((h) => h.id === this.#selected);
       if (has && this.#handles.some((h) => h.id === this.#selected && h.path))
         return `Drag ${this.#selected}'s points to move it (the dot in a stretch's middle adds a point; right-click a point to remove it). It's drawn as a smooth curve through them. Click elsewhere to finish.`;
-      return has
-        ? `Drag ${this.#selected}'s corners to reshape it (the dot in a side's middle adds a corner; right-click a corner to remove it). Click elsewhere to finish.`
-        : `${this.#selected} is turned (it has a rot), and can't be reshaped here yet.`;
+      if (has) return `Drag ${this.#selected}'s corners to reshape it (the dot in a side's middle adds a corner; right-click a corner to remove it). Click elsewhere to finish.`;
+      const f = featureOf(this.#plan, this.#selected);
+      return (f?.type === "district" || f?.type === "area") && Number(f.rot)
+        ? `${this.#selected} is turned (it has a rot), and can't be reshaped here yet. Its settings are in the panel.`
+        : `${this.#selected}'s settings are in the panel. Click elsewhere to finish.`;
     }
     if (this.#shapes) return "Drag a corner or a road's point to reshape; points shared by two districts or two roads move together. A turned area can't be reshaped here yet.";
-    return "A quick sketch in plain colours. Click a district, area, road or river to reshape it; scroll to zoom, drag to move.";
+    return "A quick sketch in plain colours. Click anything to see its settings and reshape it; scroll to zoom, drag to move.";
   }
 
-  /** Picks the district or area under a click: the smallest one there, so a wood inside a district can be picked. */
+  /**
+   * Picks what's under a click: a bridge, ford or prop first, then a label, then a road, river or wall, then the
+   * smallest shape there (a building, square, pond, wood or district), so a wood inside a district can be picked.
+   */
   #pick(ev) {
     if (!this.#result || this.#working) return;
     const at = this.#toSquares(ev);
-    // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area round it
     const r = this.#result;
     const px = (r.width / r.squares[0]) * this.#currentView().k;
+    // Within the drawn circle (it scales with the map) or 10 pixels of it, whichever is more
+    const [MW, MH] = r.squares;
+    let point = null, pointD = Math.max(10 / px, (Math.max(MW, MH) / 55) * 0.35);
+    for (const p of this.#points()) {
+      const d = Math.hypot(p.at[0] - at[0], p.at[1] - at[1]);
+      if (d <= pointD) { pointD = d; point = p.id; }
+    }
+    if (point) return this.#select(point);
+    // A label, by the box its text takes
+    const near = 8 / px; // at least 8 pixels round the text, however far out the map is zoomed
+    const label = this.#labelBoxes().find((l) => Math.abs(at[0] - l.at[0]) <= Math.max(l.hw, near) && Math.abs(at[1] - l.at[1]) <= Math.max(l.hh, near));
+    if (label) return this.#select(label.id);
+    // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area round it
     let road = null, roadD = Infinity;
     for (const p of this.#paths()) {
       const d = distanceToPath(at, p.pts);
@@ -425,7 +541,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     }
     if (road) return this.#select(road);
     let best = null, bestArea = Infinity;
-    for (const f of this.#features()) {
+    for (const f of [...this.#features(), ...this.#minor()]) {
       if (f.poly.length < 3 || !pointInPolygon(at, f.poly)) continue;
       const area = Math.abs(f.poly.reduce((a, p, i) => { const q = f.poly[(i + 1) % f.poly.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
       if (area < bestArea) { bestArea = area; best = f.id; }
@@ -433,9 +549,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#select(best);
   }
 
+  /** Picks a feature (or none): its handles show and its settings open in the side panel. */
   #select(id) {
-    if (id === this.#selected) return;
+    if (id === this.#selected && (id === null || this.#inspect === id)) return;
     this.#selected = id;
+    this.#inspect = id;
     this.render();
   }
 
@@ -601,6 +719,64 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   }
 
   /** The scene this plan was made into last, if any. */
+  /**
+   * Applies an inspector change ((plan) => { plan } | { error }) and redraws; while the map is drawing it waits its
+   * turn, so a change made then isn't lost. An error leaves the plan as it was.
+   */
+  async #apply(op) {
+    this.#queue.push(op);
+    if (!this.#working) await this.#flush();
+  }
+
+  /** Applies every waiting inspector change as one step (one Undo), then redraws once. */
+  async #flush() {
+    if (this.#working || !this.#queue.length || !this.#plan) return;
+    const ops = this.#queue;
+    this.#queue = [];
+    let plan = this.#plan;
+    const errors = [];
+    for (const op of ops) {
+      const res = op(plan);
+      if (res.error) errors.push(res.error);
+      else plan = res.plan;
+    }
+    this.#error = errors.length ? `${errors.join(" ")} Nothing else was changed by ${errors.length === 1 ? "it" : "them"}.` : null;
+    if (canon(plan) === canon(this.#plan)) return this.render();
+    const err = this.#error;
+    await this.#change(plan);
+    if (err && !this.#error) { this.#error = err; this.render(); }
+  }
+
+  /** Back from the inspector to the list (nothing is picked). */
+  static #onBack() {
+    this.#inspect = null;
+    this.#selected = null;
+    this.render();
+  }
+
+  /** A setting back to its default: left out of the plan. */
+  static async #onReset(event, target) {
+    const id = target.closest(".as-pv-insp")?.dataset.id, field = target.dataset.field;
+    if (id) await this.#apply((plan) => (id === "@plan" ? setPlanField(plan, field, undefined) : setField(plan, id, field, undefined)));
+  }
+
+  /** Takes a feature out of the plan (its seed and lock too); Undo brings it back. */
+  static async #onDelete(event, target) {
+    if (this.#publishing || this.#saving || !this.#plan) return;
+    const id = target.dataset.id;
+    if (!featureOf(this.#plan, id)) return;
+    this.#selected = null;
+    this.#inspect = null;
+    await this.#apply((plan) => (featureOf(plan, id) ? { plan: deleteFeature(plan, id) } : { error: `"${id}" is already gone.` }));
+  }
+
+  /** The plan's own settings in the side panel (again to close them). */
+  static #onPlan() {
+    this.#inspect = this.#inspect === "@plan" ? null : "@plan";
+    if (this.#inspect) this.#selected = null;
+    this.render();
+  }
+
   #sceneFor() {
     const id = this.#plan?.id;
     if (!id) return null;
@@ -718,7 +894,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (!this.#plan || this.#saving) return false;
     this.#withId();
     // What's saved is the plan as it is now: a reroll made while the dialog is up stays unsaved
-    const json = JSON.stringify(this.#plan);
+    const json = canon(this.#plan);
     const plan = JSON.parse(json);
     const file = this.#host.plans.fileFor(plan.id);
     const path = `${this.#host.folder()}/${file}`;

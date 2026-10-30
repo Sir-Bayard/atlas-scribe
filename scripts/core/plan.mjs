@@ -9,7 +9,10 @@
 
 export const PLAN_VERSION = 1;
 
-/** Field kinds: number, string, boolean, enum (one of values), object, list. `byClass` defaults depend on the feature's class. */
+/**
+ * Field kinds: number, string, boolean, enum (one of values), object, list. `byClass` defaults depend on the feature's
+ * class; `only` lists the classes a field means anything for (the window shows it only for those).
+ */
 const num = (dflt, extra = {}) => ({ kind: "number", default: dflt, ...extra });
 const str = (dflt = null, extra = {}) => ({ kind: "string", default: dflt, ...extra });
 const bool = (dflt) => ({ kind: "boolean", default: dflt });
@@ -92,6 +95,7 @@ export const TYPES = {
   district: {
     geometry: "shape",
     fields: {
+      name: str(), // what the window and the outlines call it; else its id
       profile: str("village"),
       gardens: num(0.1, { min: 0, max: 1 }), // the share of houses with a tended garden (true and false still read)
       density: num(1, { min: 0, max: 2 }),
@@ -112,16 +116,17 @@ export const TYPES = {
     geometry: "shape",
     classes: ["yard", "farmstead", "woods", "trodden", "fields", "park", "cemetery"],
     fields: {
-      surface: oneOf(SURFACES, null),
-      fence: oneOf(["wattle", "wood", "stone"], null),
+      name: str(), // what the window and the outlines call it; else its id
+      surface: { ...oneOf(SURFACES, null), only: ["yard"] },
+      fence: { ...oneOf(["wattle", "wood", "stone"], null), only: ["yard"] },
       rot: num(0, { unit: "deg" }),
-      trees: num(null, { min: 0 }),
-      mix: { kind: "object", default: null },
-      style: oneOf(["green", "formal"], null), // a park's: a village green (the default) or a formal garden
-      system: oneOf(["patchwork", "strips"], null), // a fields area's: enclosed fields or open strips; else picked from its seed
-      fieldSize: num(null, { unit: "ft", min: 50 }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
-      border: oneOf(["hedge", "drystone", "none"], null), // a fields area's: what bounds its fields; else picked from its seed
-      coverage: num(null, { min: 0, max: 1 }), // a fields area's: the share of its fields that are cultivated (0.65 if left out); the rest is grass
+      trees: num(null, { min: 0, only: ["woods"] }),
+      mix: { kind: "object", default: null, only: ["woods"] }, // a wood's species shares, { bare: 0.15 } (the rest are firs)
+      style: { ...oneOf(["green", "formal"], null), only: ["park"] }, // a park's: a village green (the default) or a formal garden
+      system: { ...oneOf(["patchwork", "strips"], null), only: ["fields"] }, // a fields area's: enclosed fields or open strips; else picked from its seed
+      fieldSize: num(null, { unit: "ft", min: 50, only: ["fields"] }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
+      border: { ...oneOf(["hedge", "drystone", "none"], null), only: ["fields"] }, // a fields area's: what bounds its fields; else picked from its seed
+      coverage: num(null, { min: 0, max: 1, only: ["fields"] }), // a fields area's: the share of its fields that are cultivated (0.65 if left out); the rest is grass
     },
   },
   wall: {
@@ -135,7 +140,7 @@ export const TYPES = {
   prop: {
     geometry: "point",
     classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue"],
-    fields: { rot: num(0, { unit: "deg" }), species: str(null), size: num(null, { unit: "ft", min: 0 }) },
+    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0 }) },
   },
   label: {
     geometry: "point",

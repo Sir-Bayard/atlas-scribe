@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Settings in the window: click anything on the map (a district, wood, field system, farm, road, river, wall, square, building, pond, bridge, prop or label) or a name in the list, and its settings open in the side panel in place of the list. Only the settings it uses are shown, each with what applies when it's left empty; a change redraws the map at once (a change made while it's still drawing waits its turn), and a setting the plan sets can be put back to its default. Less used settings are under More. Delete takes a feature out of the plan, with its seed and lock (Undo brings it back). The gear opens the plan's own settings: name, season, ground, the map's size, feet and pixels a square, and the scene's weather, darkness, light and fog.
+- Districts and areas can have a `name`, shown in the window and on the outlines in place of their id.
+- A bridge or ford can be clicked in the window where it's drawn (moved onto its road), not only where the plan first put it.
+
 ## 0.3.0
 
 Quick Start: a hamlet, village or town from a few choices in the AtlasScribe window (a button in the Scenes tab), changed in a quick preview and made into a scene, with generated streets, plots, houses, fields and woods.
