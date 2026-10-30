@@ -230,7 +230,7 @@ function addAccess(plan, f) {
   if (f.type === "square") {
     home = full.features.find((g) => g.type === "district" && pointInPolygon(target, shape(g)));
     if (!home) return [];
-    if (home.profile === "town" || home.profile === "core") cls = "street";
+    if (home.profile === "town" || home.profile === "city") cls = "street";
   } else if (f.type === "district") {
     const sq = full.size.ftPerSquare || 25;
     const list = full.features.filter((g) => g.type === "district").map((g) => ({ id: g.id, poly: shape(g), ...gateSpacing(g, sq) })).filter((g) => g.poly.length >= 3);

@@ -169,8 +169,11 @@ export const SCENE = {
   labelFont: str("Signika"),
 };
 
-/** District profiles this version knows. */
-export const PROFILES = ["hamlet", "village", "town", "core", "roadside"];
+/** District profiles this version knows: how built up a district is. */
+export const PROFILES = ["hamlet", "village", "town", "city"];
+
+/** Older names for profiles, read as their new ones: "roadside" (M1) is a hamlet, "core" (to 0.3.0) a city. */
+export const OLD_PROFILES = { roadside: "hamlet", core: "city" };
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
 export const NOT_DRAWN_YET = { area: ["cemetery"] };
@@ -259,6 +262,7 @@ function normalizeFeature(f) {
   const out = { ...f };
   if (t.classes && !t.classes.includes(out.class)) out.class = t.classes[0]; // unknown classes are drawn as the default (the checker says so)
   for (const [name, spec] of Object.entries(t.fields)) if (out[name] === undefined) out[name] = fieldDefault(spec, out.class);
+  if (f.type === "district" && Object.hasOwn(OLD_PROFILES, out.profile)) out.profile = OLD_PROFILES[out.profile];
   if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? 0.1 : 0; // M1 plans said true or false
   if (f.type === "landmark") out.buildings = (Array.isArray(f.buildings) ? f.buildings : []).map((b) => normalizeFeature({ ...(isObj(b) ? b : {}), type: "building" }));
   return out;

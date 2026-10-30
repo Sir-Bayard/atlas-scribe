@@ -211,7 +211,7 @@ export function quickPlan(options = {}) {
   } else {
     const core = r.range(10, 12), mid = core + r.range(14, 17);
     const end = r.chance(0.6) ? (r.chance(0.5) ? 1 : -1) : 0; // a village beyond one of the towns
-    districts.push({ id: "core", profile: "core", poly: box(-core, core, -11, 11, "") });
+    districts.push({ id: "core", profile: "city", poly: box(-core, core, -11, 11, "") });
     districts.push({ id: `town-${fwd}`, profile: "town", poly: box(core, mid, -15, 15, end === 1 ? "ns" : "nse") });
     districts.push({ id: `town-${back}`, profile: "town", poly: box(-mid, -core, -15, 15, end === -1 ? "ns" : "nsw") });
     if (end) {

@@ -3,6 +3,7 @@
  * squares, and the tracer. Pure: runs anywhere.
  */
 import { makeField } from "./field.mjs";
+import { OLD_PROFILES } from "../plan.mjs";
 import { traceStreets } from "./trace.mjs";
 export { districtGates } from "./borders.mjs";
 
@@ -18,12 +19,12 @@ export const DISTRICT_TYPES = {
   hamlet: { streets: null, lanes: null, bend: 0, trim: false },
   village: { streets: { spacing: [220, 320], width: 15, bridge: "footbridge" }, lanes: null, bend: 40, trim: false },
   town: { streets: { spacing: [350, 450], width: 20, bridge: "bridge" }, back: { depth: [150, 200], width: 10 }, lanes: { spacing: 250, width: 10, bridge: "footbridge", only: "minor" }, bend: 18, trim: true },
-  core: { streets: { spacing: [125, 175], width: 15, bridge: "bridge" }, lanes: { spacing: 60, width: 8, bridge: null }, bend: 8, trim: true },
+  city: { streets: { spacing: [125, 175], width: 15, bridge: "bridge" }, lanes: { spacing: 60, width: 8, bridge: null }, bend: 8, trim: true },
 };
 
-/** A district's type, by its profile ("roadside", from M1 plans, is a hamlet). */
+/** A district's type, by its profile (older names read as their new ones: "roadside" a hamlet, "core" a city). */
 export function typeOf(district) {
-  return DISTRICT_TYPES[district.profile === "roadside" ? "hamlet" : district.profile] ?? DISTRICT_TYPES.hamlet;
+  return DISTRICT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? DISTRICT_TYPES.hamlet;
 }
 
 /**

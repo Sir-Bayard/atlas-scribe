@@ -6,13 +6,14 @@
 import { fieldsOf, planFieldsOf, featureOf, wordsFor } from "../core/edit.mjs";
 import { rerollable } from "../core/seeds.mjs";
 import { TOOLS } from "../core/draw.mjs";
+import { OLD_PROFILES } from "../core/plan.mjs";
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 /** Words for a feature in the inspector's heading: "village district", "woods", "lane". */
 export function kindOf(f) {
   if (!f) return "";
-  if (f.type === "district") return `${f.profile === "roadside" ? "hamlet" : f.profile ?? "village"} district`;
+  if (f.type === "district") return `${OLD_PROFILES[f.profile] ?? f.profile ?? "village"} district`;
   if (f.type === "area") return f.class ?? "area";
   if (f.type === "water") return f.class ?? "stream";
   if (f.type === "road") return f.class ?? "street";

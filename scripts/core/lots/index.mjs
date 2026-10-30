@@ -9,6 +9,7 @@
  * Everything in squares. Pure: runs anywhere.
  */
 import { pointInPolygon } from "../geom.mjs";
+import { OLD_PROFILES } from "../plan.mjs";
 import { bands, difference, intersect, union, offset, area, shapes, centroid } from "./poly.mjs";
 
 /**
@@ -34,12 +35,12 @@ export const LOT_TYPES = {
     roofs: { slate: 4, "wood-shingle": 2, thatch: 2, "slate-blue": 1, "tile-red": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 3, styles: { hip: 0.4, "half-hip": 0.2, gable: 0.4 }, fill: { orchard: 0.25, trees: 0.45, open: 0.3 }, wild: 1.4 },
   town: { frontage: [25, 40], depth: [200, 240], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false, merge: 0.12, shapes: { L: 0.35, T: 0.1, U: 0.1, court: 0.08 }, extras: { bay: 0, dormers: 0.25, turret: 0.08, steps: 0.5, roundShed: 0.05, rear: 0.45 },
     roofs: { slate: 3, "slate-blue": 2, "slate-purple": 1, "tile-red": 2, "tile-orange": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 4, styles: { gable: 0.7, hip: 0.2, "half-hip": 0.05, flat: 0.05 }, fill: { garden: 0.3, orchard: 0.25, trees: 0.3, open: 0.15 }, wild: 1.8 },
-  core: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.45, T: 0.1, U: 0.1, court: 0.05 }, extras: { bay: 0, dormers: 0.2, turret: 0.1, steps: 0.6, roundShed: 0 },
+  city: { frontage: [18, 30], depth: [60, 100], cover: [1, 1], houseDepth: [30, 50], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.45, T: 0.1, U: 0.1, court: 0.05 }, extras: { bay: 0, dormers: 0.2, turret: 0.1, steps: 0.6, roundShed: 0 },
     roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 }, fill: { trees: 0.35, open: 0.65 }, wild: 2.5 },
 };
 
 export function lotTypeOf(district) {
-  return LOT_TYPES[district.profile === "roadside" ? "hamlet" : district.profile] ?? LOT_TYPES.village;
+  return LOT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? LOT_TYPES.village;
 }
 
 const dist2seg = ([x, y], [ax, ay], [bx, by]) => {

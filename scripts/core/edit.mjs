@@ -4,10 +4,10 @@
  * come from TYPES in plan.mjs, so a field added there shows up here; FIELD_TEXT gives each its words.
  * Pure: runs in the worker, on the page and under node.
  */
-import { TYPES, SURFACES, SEASONS, fieldDefault, isObj, normalize } from "./plan.mjs";
+import { TYPES, SURFACES, SEASONS, OLD_PROFILES, fieldDefault, isObj, normalize } from "./plan.mjs";
 
-/** The district types the window offers (an old plan's "roadside" still reads as a hamlet). */
-export const PROFILE_CHOICES = ["hamlet", "village", "town", "core"];
+/** The district types the window offers (an old plan's "roadside" reads as a hamlet, "core" as a city). */
+export const PROFILE_CHOICES = ["hamlet", "village", "town", "city"];
 
 /**
  * Each field's words: label, help (a tooltip), auto (what happens when it's left empty, when that isn't a plain
@@ -43,7 +43,7 @@ export const FIELD_TEXT = {
   "building.rot": { label: "Turned", help: "Degrees clockwise", more: true },
   "building.variant": { label: "Art piece", help: "Which of the roof art's pieces it uses; else picked from the seed", more: true },
 
-  "district.profile": { label: "Type", kind: "enum", values: PROFILE_CHOICES, help: "Hamlet: houses on the roads only. Village: a few lanes, deep plots. Town: long plots with back lanes. Core: dense rows and alleys." },
+  "district.profile": { label: "Type", kind: "enum", values: PROFILE_CHOICES, help: "Hamlet: houses on the roads only. Village: a few lanes, deep plots. Town: long plots with back lanes. City: dense rows and alleys." },
   "district.gardens": { label: "Gardens", help: "The share of houses with a tended garden (0 to 1)" },
   "district.density": { label: "Built up", help: "Below 1, some plots are left empty (0 to 1)", more: true },
   "district.surface": { label: "Street surface", help: "Else the surface of a road through it", auto: "its road's" },
@@ -134,7 +134,7 @@ export function fieldsOf(plan, id) {
     let value = f[name];
     if (kind === "share") value = isObj(f[name]) ? f[name][txt.key] : undefined;
     if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? 0.1 : 0; // an M1 plan's
-    if (f.type === "district" && name === "profile" && value === "roadside") value = "hamlet"; // an M1 plan's, read as a hamlet
+    if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
     out.push({
       name, label: txt.label ?? name, help: txt.help ?? null, kind, values: values ?? null, names: txt.names ?? null,
       unit: spec.unit ?? null, min: spec.min ?? null, max: spec.max ?? null,
