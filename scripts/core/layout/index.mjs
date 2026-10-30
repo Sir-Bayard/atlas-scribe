@@ -15,7 +15,7 @@ import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygo
 import { seasonOf } from "../roles.mjs";
 import { seedOf } from "../seeds.mjs";
 import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
-import { fillFields, fieldKeepOut, earlierFields, fieldRoads, farmLanes } from "./fields.mjs";
+import { fillFields, fieldKeepOut, earlierFields, fieldRoads, accessLanes } from "./fields.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
@@ -232,16 +232,11 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
 
 
 
-  // Parks: open ground that streets and plots keep out of; everything in them comes from fillPark
+  // Parks: open ground that streets and plots keep out of (filled later, once the streets round them are known)
   for (const f of parks) {
-    const park = fillPark({ area: f, r: streamFor(f.id), roads: ways, ftPerSquare: sq });
-    items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin });
-    park.trees.forEach((t, k) => items.push({ kind: "tree", id: `${f.id}/t${k + 1}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
-    park.beds.forEach((garden, k) => items.push({ kind: "surface", id: `${f.id}/g${k + 1}`, from: f.id, class: "garden", garden }));
-    // Clipped hedges round the beds: small bushes close together
-    park.hedges.forEach((path, k) => hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: streamFor(f.id).fork("hedge", k), items, step: 0.22, scale: [0.32, 0.08] }));
-    space.reserved.push(grow(park.surface.poly, 0.2));
-    space.zones.push(park.surface.poly);
+    const poly = shapeToPolygon(f.shape, f.rot ?? 0);
+    space.reserved.push(grow(poly, 0.2));
+    space.zones.push(poly);
   }
 
   // Farmsteads first, so district houses keep out of the farmyards
@@ -353,11 +348,25 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     if (made.fields.length) notes.push({ level: "info", id: f.id, message: `"${f.id}": ${made.system === "strips" ? "open strips" : "enclosed fields"}, ${made.fields.length} ${made.system === "strips" ? "strips" : "fields"}.` });
   }
 
-  // Farm lanes: a track from each farmyard to the road beside it (the fields keep off it)
-  for (const lane of farmLanes(plan)) {
+  // Lanes out to the roads: a track from each farmyard, and from a yard, park or square out in the country, to the
+  // road nearest it (the fields keep off them)
+  const lanes = [];
+  for (const lane of accessLanes(plan)) {
     const item = { kind: "way", id: lane.id, from: lane.from, class: "track", path: lane.path, width: lane.width, surface: "trodden", ruts: false, faint: true };
     items.push(item);
+    lanes.push(item);
     space.ways.push({ path: lane.path, clear: lane.width / 2 });
+  }
+
+  // Parks, filled now: their paths start where the roads, the districts' streets and their own lanes meet them
+  const streets = items.filter((i) => i.kind === "way" && !i.faint && !ways.includes(i));
+  for (const f of parks) {
+    const park = fillPark({ area: f, r: streamFor(f.id), roads: [...ways, ...lanes.filter((l) => l.from === f.id), ...streets], ftPerSquare: sq });
+    items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin });
+    park.trees.forEach((t, k) => items.push({ kind: "tree", id: `${f.id}/t${k + 1}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
+    park.beds.forEach((garden, k) => items.push({ kind: "surface", id: `${f.id}/g${k + 1}`, from: f.id, class: "garden", garden }));
+    // Clipped hedges round the beds: small bushes close together
+    park.hedges.forEach((path, k) => hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: streamFor(f.id).fork("hedge", k), items, step: 0.22, scale: [0.32, 0.08] }));
   }
 
   // Tracks: a district's street that stops at the district's edge carries on as a trodden track out into the land, as
@@ -422,10 +431,11 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
 
   // A tree laid before another feature's street (a green's, or one district's wild tree by the next one's lane) is
   // dropped where that street runs over it, as a house crowding a wood removes the trees it stands on
-  const hard = items.filter((i) => i.kind === "way" && !i.faint).map((w) => { const [x0, y0, x1, y1] = bbox(w.path), m = w.width / 2 + 0.05; return { w, m, box: [x0 - m, y0 - m, x1 + m, y1 + m] }; });
+  // (and a hedge's bushes where a farm's or a park's lane goes through it)
+  const hard = items.filter((i) => i.kind === "way" && (!i.faint || lanes.includes(i))).map((w) => { const [x0, y0, x1, y1] = bbox(w.path), m = w.width / 2 + 0.05; return { w, m, box: [x0 - m, y0 - m, x1 + m, y1 + m] }; });
   for (let k = items.length - 1; k >= 0; k--) {
     const t = items[k];
-    if (t.kind === "tree" && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) items.splice(k, 1);
+    if ((t.kind === "tree" || (t.kind === "prop" && t.class === "bush")) && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) items.splice(k, 1);
   }
 
   progress(0.85, "Ground");

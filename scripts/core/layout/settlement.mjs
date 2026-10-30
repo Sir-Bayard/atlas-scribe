@@ -139,6 +139,8 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
   if (poly.length < 3) return out;
   const inside = (p) => pointInPolygon(p, poly);
   const edgeDist = (p) => Math.min(...poly.map((q, i) => distSeg(p, q, poly[(i + 1) % poly.length])));
+  // A point on the edge moved a hair inside, so a path from it counts as in the park
+  const nudgeIn = (p) => { const d = [c[0] - p[0], c[1] - p[1]], l = Math.hypot(...d) || 1; return [p[0] + (d[0] / l) * 0.05, p[1] + (d[1] / l) * 0.05]; };
   const nearPath = (p, d) => out.surface.paths.some((w) => w.path.some((q, i) => i && distSeg(p, w.path[i - 1], q) < d + w.width / 2));
   const tr = r.fork("trees");
   const tree = (x, y, s) => out.trees.push({ x, y, s, rot: tr.next() * 360, variant: tr.int(8) });
@@ -146,9 +148,21 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
   const c = [(bx0 + bx1) / 2, (by0 + by1) / 2];
 
   if (style === "green") {
-    // Where the roads meet it: the middle of the side that runs closest along each road passing near
-    const entries = [];
-    for (const road of roads) {
+    // Where the roads meet it: at most one entry a side, four in all. A road or lane that ends at its edge gives its
+    // end, exactly; else the road that runs closest along a side (within 2.5 squares, on average) gives that side's
+    // middle, shifted a little. Every draw comes from a fork keyed by what it's for (the side, the entry), so a street
+    // appearing or going near one side (a district rerolled) moves nothing else in the park.
+    const [px0, py0, px1, py1] = [bx0 - 3, by0 - 3, bx1 + 3, by1 + 3];
+    const near = roads.filter((road) => road.path.some((q, k) => k && Math.max(q[0], road.path[k - 1][0]) >= px0 && Math.min(q[0], road.path[k - 1][0]) <= px1 && Math.max(q[1], road.path[k - 1][1]) >= py0 && Math.min(q[1], road.path[k - 1][1]) <= py1));
+    const sideOf = (p) => { let bi = 0, bd = Infinity; poly.forEach((a, i) => { const d = distSeg(p, a, poly[(i + 1) % poly.length]); if (d < bd) { bd = d; bi = i; } }); return bi; };
+    const bySide = new Map(); // side -> { p, score }: an end scores below any side a road runs along
+    const offer = (i, p, score) => { const had = bySide.get(i); if (!had || score < had.score) bySide.set(i, { p, score }); };
+    for (const road of near) {
+      const ends = [road.path[0], road.path[road.path.length - 1]].filter((e) => edgeDist(e) < 0.6);
+      if (ends.length) {
+        for (const e of ends) offer(sideOf(e), inside(e) ? e : nudgeIn(e), -1);
+        continue;
+      }
       let best = null;
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i], b = poly[(i + 1) % poly.length];
@@ -158,33 +172,46 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
           sum += Math.min(...road.path.map((q, k) => (k ? distSeg(p, road.path[k - 1], q) : Infinity)));
         }
         const avg = sum / 11;
-        if (!best || avg < best.avg) best = { avg, a, b };
+        if (!best || avg < best.avg) best = { avg, a, b, i };
       }
       if (!best || best.avg > 2.5) continue;
-      const t = 0.5 + (r.next() - 0.5) * 0.3;
-      const p = [best.a[0] + (best.b[0] - best.a[0]) * t, best.a[1] + (best.b[1] - best.a[1]) * t];
-      if (!entries.some((e) => Math.hypot(e[0] - p[0], e[1] - p[1]) < 3)) entries.push(p);
+      const t = 0.5 + (r.fork("entry", best.i).next() - 0.5) * 0.3;
+      offer(best.i, [best.a[0] + (best.b[0] - best.a[0]) * t, best.a[1] + (best.b[1] - best.a[1]) * t], best.avg);
     }
-    // With fewer than two, the ends of the shape's long axis
+    const entries = [];
+    for (const { p } of [...bySide.values()].sort((a, b) => a.score - b.score))
+      if (entries.length < 4 && !entries.some((e) => Math.hypot(e[0] - p[0], e[1] - p[1]) < 3)) entries.push(p);
+    // With one, a second from the far side (a path across, not two from the same side); with none, the ends of the
+    // shape's long axis
+    if (entries.length === 1) {
+      const e = entries[0], mids = poly.map((q, i) => [(q[0] + poly[(i + 1) % poly.length][0]) / 2, (q[1] + poly[(i + 1) % poly.length][1]) / 2]);
+      entries.push(nudgeIn(mids.reduce((a, b) => (Math.hypot(b[0] - e[0], b[1] - e[1]) > Math.hypot(a[0] - e[0], a[1] - e[1]) ? b : a))));
+    }
     if (entries.length < 2) {
       const far = poly.reduce((a, b) => (Math.hypot(b[0] - c[0], b[1] - c[1]) > Math.hypot(a[0] - c[0], a[1] - c[1]) ? b : a));
       const opp = poly.reduce((a, b) => (Math.hypot(b[0] - far[0], b[1] - far[1]) > Math.hypot(a[0] - far[0], a[1] - far[1]) ? b : a));
-      for (const p of [far, opp]) if (!entries.some((e) => Math.hypot(e[0] - p[0], e[1] - p[1]) < 3)) entries.push(p);
+      for (const p of [far, opp]) if (entries.length < 2 && !entries.some((e) => Math.hypot(e[0] - p[0], e[1] - p[1]) < 3)) entries.push(p);
     }
     // Desire lines: each entry curves gently in to a hub near the middle
-    const hub = [c[0] + (r.next() - 0.5) * (bx1 - bx0) * 0.2, c[1] + (r.next() - 0.5) * (by1 - by0) * 0.2];
+    const hr = r.fork("hub");
+    const hub = [c[0] + (hr.next() - 0.5) * (bx1 - bx0) * 0.2, c[1] + (hr.next() - 0.5) * (by1 - by0) * 0.2];
     const hubIn = inside(hub) ? hub : c;
     for (const e of entries) {
-      const bend = (r.next() - 0.5) * 0.5;
+      const bend = (r.fork("bend", e[0].toFixed(1), e[1].toFixed(1)).next() - 0.5) * 0.5;
       const m = [(e[0] + hubIn[0]) / 2 - (hubIn[1] - e[1]) * bend, (e[1] + hubIn[1]) / 2 + (hubIn[0] - e[0]) * bend];
       const path = [];
       for (let t = 0; t <= 1.0001; t += 0.1) path.push([(1 - t) ** 2 * e[0] + 2 * (1 - t) * t * m[0] + t * t * hubIn[0], (1 - t) ** 2 * e[1] + 2 * (1 - t) * t * m[1] + t * t * hubIn[1]]);
       if (path.every(inside) || path.slice(1).every(inside)) out.surface.paths.push({ path, width: sq(5), surface: "trodden" });
     }
-    // Big trees in groups round the edge, a few out in the open
-    const groups = makeNoise(r.int(2 ** 31), `${area.id}/groups`, { scale: 4, octaves: 2 });
+    // Big trees in groups round the edge, a few out in the open; each tree's looks from its own place, so a path that
+    // clears one tree changes no other
+    const groups = makeNoise(r.fork("groups").int(2 ** 31), `${area.id}/groups`, { scale: 4, octaves: 2 });
     const pts = poissonInPolygon(poly, 1.3, r.fork("points"), { keep: (x, y) => { const e = edgeDist([x, y]); return (e < 3 && groups(x, y) > -0.2) || groups(x, y) > 0.45; }, max: 2000 });
-    for (const [x, y] of pts) if (edgeDist([x, y]) > 0.4 && !nearPath([x, y], 0.5)) tree(x, y, 0.6 + tr.next() * 0.25);
+    for (const [x, y] of pts) {
+      if (edgeDist([x, y]) <= 0.4 || nearPath([x, y], 0.5)) continue;
+      const tt = r.fork("tree", x.toFixed(2), y.toFixed(2));
+      out.trees.push({ x, y, s: 0.6 + tt.next() * 0.25, rot: tt.next() * 360, variant: tt.int(8) });
+    }
     return out;
   }
 

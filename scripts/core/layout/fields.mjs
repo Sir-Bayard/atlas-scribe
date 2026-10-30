@@ -19,7 +19,7 @@
  */
 import { Delaunay } from "../../../vendor/d3-delaunay.mjs";
 import { bands, difference, intersect, union, offset, shapes, area as areaOf, centroid } from "../lots/poly.mjs";
-import { shapeToPolygon, pointInPolygon, bbox, distanceToPath } from "../geom.mjs";
+import { shapeToPolygon, pointInPolygon, bbox, distanceToPath, pathTouchesPolygon, insidePoint, segmentNearPath, pointsAlong } from "../geom.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
 
@@ -45,8 +45,8 @@ const STRIP_FT = 60;
 const KEEP = { road: 0.5, water: 0.7, square: 0.3, building: 0.6, area: 0.15, wall: 0.4, lane: 0.35 };
 /** The grass round a farmyard before the fields start, in feet, varying round it as a district's does. */
 const FARM_MARGIN_FT = [30, 90];
-/** A farm lane: how wide, in feet, and the farthest a farmyard can be from a road and still get one, in squares. */
-const LANE_FT = 10, LANE_REACH = 12;
+/** An access lane: how wide, in feet, and the farthest a farm, yard, park or square can be from a road and still get one, in squares. */
+const LANE_FT = 10, LANE_REACH = 40;
 /** The grass round a district before the fields start, in feet: at least the first, up to the second, varying round it. */
 const MARGIN_FT = [75, 200];
 /** The share of a system's fields (or furlongs) that are cultivated when the plan gives no coverage; the rest is grass. */
@@ -98,8 +98,8 @@ export function fieldKeepOut(plan, self) {
         break;
     }
   }
-  // A farm's lane out to the road
-  for (const lane of farmLanes(plan)) paths.push({ path: lane.path, half: lane.width / 2 + KEEP.lane });
+  // A farm's (or a yard's, park's or square's) lane out to the road
+  for (const lane of accessLanes(plan)) paths.push({ path: lane.path, half: lane.width / 2 + KEEP.lane });
   // Every polygon in Clipper's own winding (a union of one), so a shape drawn the other way round can't cancel another
   // where they overlap
   return [...bands(paths), ...polys.filter((p) => p.length >= 3).flatMap((p) => union([p]))];
@@ -135,43 +135,128 @@ export function marginRound(plan, district, feet = MARGIN_FT) {
   return union([ring, ragged]);
 }
 
+/** True when segment a-b crosses segment c-d. */
+function crosses(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+}
+
 /**
- * Each farmstead's lane: a straight track from the middle of its yard to the nearest point of the nearest plan road,
- * when one is within reach. From the plan alone, so the fields can keep off it and rerolling the farm never moves it.
- * Returns [{ id, from, path, width }] (path from the yard's edge to the road; width in squares).
+ * Lanes out to the roads: a straight track from each farmstead, and from each yard, park or square that stands
+ * outside every district with no road along or through it (and isn't beside a farm, whose lane serves it), to the
+ * nearest place on a plan road within LANE_REACH (a farm's from the middle of its yard; a park's from the middle of
+ * one of its sides, where its paths begin). A lane doesn't run through water (across it or along its banks), a
+ * district, another yard, park, farm or square, a plan building or a pond (what stands in or beside the feature
+ * itself doesn't count), end off the map or at the water's edge, or go the long way round: when the nearest road can
+ * only be reached by a detour of more than a third again (and 3 squares), there's no lane. Woods and fields it may
+ * cross (hedges crossed lose their bushes there). From the plan alone, so the fields can keep off them and rerolling
+ * never moves them; worked out once per plan. Returns [{ id, from, path, width }] (path from the feature's edge to the
+ * road; width in squares). The ids end in /lane (a farm's) or /access.
  */
-export function farmLanes(plan) {
+const laneCache = new WeakMap();
+export function accessLanes(plan) {
+  if (laneCache.has(plan)) return laneCache.get(plan);
   const sq = plan.size.ftPerSquare;
-  const roads = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path));
+  const [W, H] = plan.size.squares;
+  const roads = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path) && f.path.length >= 2);
+  const waters = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path) && f.path.length >= 2).map((f) => ({ path: f.path, half: (f.width ?? 0) / sq / 2, box: bbox(f.path) }));
+  const byWater = (q, w, d) => q[0] >= w.box[0] - d && q[0] <= w.box[2] + d && q[1] >= w.box[1] - d && q[1] <= w.box[3] + d && distanceToPath(q, w.path) < d;
+  // Places a lane may meet a road: on the map, and not at the water's edge (a ford)
+  const roadPts = roads.flatMap((r) => pointsAlong(r.path).map((q) => ({ q, half: (r.width ?? 0) / sq / 2 })))
+    .filter(({ q }) => q[0] >= 0 && q[1] >= 0 && q[0] <= W && q[1] <= H && !waters.some((w) => byWater(q, w, w.half + 1)));
+  const poly = (f) => { try { return shapeToPolygon(f.shape, f.type === "area" || f.type === "building" || f.type === "water" ? f.rot ?? 0 : 0); } catch { return []; } };
+  const roadBox = new Map(roads.map((r) => [r, bbox(r.path)]));
+  const districts = plan.features.filter((f) => f.type === "district").map(poly).filter((d) => d.length >= 3);
+  const farms = plan.features.filter((f) => f.type === "area" && f.class === "farmstead").map((f) => ({ id: f.id, pts: poly(f) })).filter((x) => x.pts.length >= 3).map((x) => ({ ...x, ring: [...x.pts, x.pts[0]] }));
+  // Through water, or along it inside its banks
+  const wet = (a, b) => waters.some((w) => w.path.some((q, i) => i && crosses(a, b, w.path[i - 1], q)) || segmentNearPath(a, b, w.path, w.half));
+  // What a lane mustn't run through: districts (their houses), the other yards, parks, farms and squares, plan
+  // buildings (a landmark's too) and ponds
+  const solid = [];
+  for (const f of plan.features) {
+    if (f.type === "district" || f.type === "square" || (f.type === "area" && f.class !== "fields" && f.class !== "woods") || f.type === "building" || (f.type === "water" && !Array.isArray(f.path) && f.shape))
+      solid.push({ id: f.id, poly: poly(f) });
+    if (f.type === "landmark") for (const b of f.buildings ?? []) solid.push({ id: f.id, poly: poly({ ...b, type: "building" }) });
+  }
+  const walls = solid.filter((x) => x.poly.length >= 3).map((x) => ({ ...x, box: bbox(x.poly), ring: [...x.poly, x.poly[0]] }));
   const out = [];
   for (const f of plan.features) {
-    if (f.type !== "area" || f.class !== "farmstead") continue;
-    const yard = shapeToPolygon(f.shape, f.rot ?? 0);
-    if (yard.length < 3) continue;
-    const [x0, y0, x1, y1] = bbox(yard), c = [(x0 + x1) / 2, (y0 + y1) / 2];
-    let best = null;
-    for (const r of roads) for (let i = 1; i < r.path.length; i++) {
-      const q = nearestOn(c, r.path[i - 1], r.path[i]), d = Math.hypot(q[0] - c[0], q[1] - c[1]);
-      if (!best || d < best.d) best = { d, q, half: (r.width ?? 0) / sq / 2 };
+    const farm = f.type === "area" && f.class === "farmstead";
+    const other = (f.type === "area" && (f.class === "yard" || f.class === "park")) || f.type === "square";
+    if (!farm && !other) continue;
+    const pts = poly(f);
+    if (pts.length < 3) continue;
+    const ring = [...pts, pts[0]];
+    const [x0, y0, x1, y1] = bbox(pts), c = insidePoint(pts);
+    if (!farm && districts.some((d) => pointInPolygon(c, d))) continue; // the district's streets reach it
+    if (!farm && farms.some((x) => pts.some((q) => distanceToPath(q, x.ring) < 1) || x.ring.some((q) => distanceToPath(q, ring) < 1))) continue; // a farm's yard: the farm's lane serves it
+    // Already on a road: one runs through it or along it (a park's paths meet a road whose side averages within 2.5
+    // squares of a side of it, as fillPark finds them)
+    const meets = (b, m) => b[2] >= x0 - m && b[0] <= x1 + m && b[3] >= y0 - m && b[1] <= y1 + m;
+    if (roads.some((r) => meets(roadBox.get(r), f.class === "park" ? 27.5 : 0.6) && (pathTouchesPolygon(r.path, pts) || (f.class === "park" ? sideAlong(pts, r.path) : r.path.some((q) => distanceToPath(q, ring) < 0.6) || pts.some((q) => distanceToPath(q, r.path) < 0.6))))) continue;
+    // What it mustn't run through: anything apart from what stands in it or beside it (a farm's own yard and barns)
+    const own = (x) => x.id === f.id || (meets(x.box, 1) && x.poly.some((q) => pointInPolygon(q, pts) || distanceToPath(q, ring) < 1));
+    const blockers = walls.filter((x) => !own(x));
+    const blocked = (a, b) => blockers.some((x) => Math.max(a[0], b[0]) >= x.box[0] && Math.min(a[0], b[0]) <= x.box[2] && Math.max(a[1], b[1]) >= x.box[1] && Math.min(a[1], b[1]) <= x.box[3] && pathTouchesPolygon([a, b], x.poly));
+    // Where it leaves from: the middle of the yard (the lane starts at its edge), or a park's side middles
+    const starts = f.class === "park" ? pts.map((q, i) => { const n = pts[(i + 1) % pts.length]; return { from: [(q[0] + n[0]) / 2, (q[1] + n[1]) / 2], edge: true }; }) : [{ from: c, edge: false }];
+    // Every road point in reach, then those within the detour allowed of the nearest
+    const near = roadPts.filter(({ q }) => q[0] >= x0 - LANE_REACH && q[0] <= x1 + LANE_REACH && q[1] >= y0 - LANE_REACH && q[1] <= y1 + LANE_REACH);
+    const cands = [];
+    for (const st of starts) for (const { q, half } of near) {
+      const d = Math.hypot(q[0] - st.from[0], q[1] - st.from[1]);
+      if (d > LANE_REACH || d === 0) continue;
+      cands.push({ d, q, st, half });
     }
-    if (!best || best.d > LANE_REACH || best.d < 0.5) continue;
-    // From where the line leaves the yard to the road's edge
-    const dir = [(best.q[0] - c[0]) / best.d, (best.q[1] - c[1]) / best.d];
+    if (!cands.length) continue;
+    // the road behind a park (reached through it) doesn't count
+    const behind = (x) => x.st.edge && pointInPolygon([x.st.from[0] + ((x.q[0] - x.st.from[0]) / x.d) * 0.3, x.st.from[1] + ((x.q[1] - x.st.from[1]) / x.d) * 0.3], pts);
+    const order = (a, b) => a.d - b.d || a.q[0] - b.q[0] || a.q[1] - b.q[1];
+    const within = (lim) => cands.filter((x) => x.d <= lim).sort(order);
+    // Sorting only what's near enough to matter (a round park has many sides, each its own start)
+    const least = cands.reduce((m, x) => Math.min(m, x.d), Infinity);
+    let list = within(least + Math.max(3, least / 3));
+    let first = list.find((x) => !behind(x));
+    if (!first) { list = within(LANE_REACH); first = list.find((x) => !behind(x)); }
+    if (!first) continue;
+    const cap = first.d + Math.max(3, first.d / 3); // no lane rather than a long way round
+    if (cap > list.at(-1).d) list = within(cap);
+    const best = list.find((x) => x.d >= first.d && x.d <= cap && !behind(x) && !wet(x.st.from, x.q) && !blocked(x.st.from, x.q));
+    if (!best) continue;
+    const { st, q } = best;
+    const dir = [(q[0] - st.from[0]) / best.d, (q[1] - st.from[1]) / best.d];
     let t = 0;
-    while (t < best.d && pointInPolygon([c[0] + dir[0] * t, c[1] + dir[1] * t], yard)) t += 0.05;
+    if (!st.edge) while (t < best.d && pointInPolygon([st.from[0] + dir[0] * t, st.from[1] + dir[1] * t], pts)) t += 0.05;
     const end = Math.max(t, best.d - best.half * 0.5);
-    if (end - t < 0.3) continue; // the yard is on the road
-    out.push({ id: `${f.id}/lane`, from: f.id, path: [[c[0] + dir[0] * t, c[1] + dir[1] * t], [c[0] + dir[0] * end, c[1] + dir[1] * end]], width: LANE_FT / sq });
+    if (end - t < 0.3) continue; // it's on the road
+    out.push({ id: `${f.id}/${farm ? "lane" : "access"}`, from: f.id, path: [[st.from[0] + dir[0] * t, st.from[1] + dir[1] * t], [st.from[0] + dir[0] * end, st.from[1] + dir[1] * end]], width: LANE_FT / sq });
   }
+  laneCache.set(plan, out);
   return out;
 }
 
-/** The point of segment a-b nearest p. */
-function nearestOn(p, a, b) {
-  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
-  const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
-  return [a[0] + dx * t, a[1] + dy * t];
+/** True when a road runs along a side of a polygon: within 2.5 squares of it, on average (fillPark's test). */
+export function sideAlong(poly, path) {
+  // Only the stretch of road near enough to matter: a side averaging within 2.5 has no point more than 27.5 off
+  const [x0, y0, x1, y1] = bbox(poly), m = 27.5;
+  const segs = [];
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    if (Math.max(a[0], b[0]) >= x0 - m && Math.min(a[0], b[0]) <= x1 + m && Math.max(a[1], b[1]) >= y0 - m && Math.min(a[1], b[1]) <= y1 + m) segs.push([a, b]);
+  }
+  if (!segs.length) return false;
+  const far = (p) => Math.min(...segs.map((s) => distanceToPath(p, s)));
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    let sum = 0;
+    for (let k = 0; k <= 10; k++) sum += far([a[0] + ((b[0] - a[0]) * k) / 10, a[1] + ((b[1] - a[1]) * k) / 10]);
+    if (sum / 11 <= 2.5) return true;
+  }
+  return false;
 }
+
+/** The farm lanes alone. */
+export const farmLanes = (plan) => accessLanes(plan).filter((l) => l.id.endsWith("/lane"));
 
 /** The plan's roads as fields see them: { path, half }, half being how far the fields keep from the road's middle. */
 export function fieldRoads(plan) {

@@ -4,7 +4,7 @@
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize } from "./plan.mjs";
-import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself } from "./geom.mjs";
+import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -77,7 +77,11 @@ export function checkPlan(raw) {
     if (!gates) {
       const sq = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
       const list = dfeats.map((d) => { try { return { id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }; } catch { return null; } }).filter((d) => d && d.poly.length >= 3);
-      try { gates = districtGates(list, { roads: ways, seed: isNum(plan.seed) ? plan.seed : 1 }); } catch { gates = new Map(); }
+      // As the layout places them: none on a side that lies in water
+      const sqw = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
+      const ws = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path) && f.path.every(isPoint)).map((f) => ({ path: f.path, clear: (isNum(f.width) ? f.width : 0) / sqw / 2 + 0.225 }));
+      const inWater = (x, y) => ws.some((w) => distanceToPath([x, y], w.path) < w.clear);
+      try { gates = districtGates(list, { roads: ways, inWater, seed: isNum(plan.seed) ? plan.seed : 1 }); } catch { gates = new Map(); }
     }
     return gates.get(id) ?? [];
   };

@@ -127,3 +127,41 @@ export function pathLength(path) {
   for (let i = 0; i < path.length - 1; i++) n += Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]);
   return n;
 }
+
+/** A point well inside a polygon: its middle if that's inside, else the inside point farthest from its edge (on a grid). */
+export function insidePoint(poly) {
+  const c = poly.reduce((a, q) => [a[0] + q[0] / poly.length, a[1] + q[1] / poly.length], [0, 0]);
+  if (pointInPolygon(c, poly)) return c;
+  const [x0, y0, x1, y1] = bbox(poly);
+  const ring = [...poly, poly[0]];
+  let best = null;
+  for (let i = 1; i < 12; i++) for (let j = 1; j < 12; j++) {
+    const p = [x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * j) / 12];
+    if (!pointInPolygon(p, poly)) continue;
+    const d = distanceToPath(p, ring);
+    if (!best || d > best.d) best = { p, d };
+  }
+  return best?.p ?? c;
+}
+
+/** True when segment a-b comes within d of a path anywhere along it. */
+export function segmentNearPath(a, b, path, d) {
+  const lo = [Math.min(a[0], b[0]) - d, Math.min(a[1], b[1]) - d], hi = [Math.max(a[0], b[0]) + d, Math.max(a[1], b[1]) + d];
+  for (let i = 1; i < path.length; i++) {
+    const c = path[i - 1], e = path[i];
+    if (Math.max(c[0], e[0]) < lo[0] || Math.min(c[0], e[0]) > hi[0] || Math.max(c[1], e[1]) < lo[1] || Math.min(c[1], e[1]) > hi[1]) continue;
+    if (segmentsIntersect(a, b, c, e)) return true;
+    if (distanceToPath(a, [c, e]) < d || distanceToPath(b, [c, e]) < d || distanceToPath(c, [a, b]) < d || distanceToPath(e, [a, b]) < d) return true;
+  }
+  return false;
+}
+
+/** Points along a path every step (each point given, and between), for finding the nearest place on it to go. */
+export function pointsAlong(path, step = 0.5) {
+  const out = [];
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let k = i === 1 ? 0 : 1; k <= n; k++) out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+  }
+  return out;
+}

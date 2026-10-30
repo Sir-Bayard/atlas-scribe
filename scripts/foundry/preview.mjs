@@ -898,6 +898,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#finishedAt = Date.now();
     const drawn = await this.#change(res.plan);
     if (drawn && res.crossings?.length) ui.notifications.info(`AtlasScribe: added ${res.crossings.join(" and ")} where it crosses ${toolOf(kept.id).make.type === "road" ? "the water" : "a road"}. Click one to make it a ford or footbridge, or delete it.`);
+    if (drawn && res.access?.length) ui.notifications.info(`AtlasScribe: ${res.id} had no road ${toolOf(kept.id).make.type === "square" ? "to" : "into"} it, so ${res.access[0]} runs to it from the nearest road${res.access.length > 1 ? ` (with ${res.access.slice(1).join(" and ")} over the water)` : ""}. Move or delete it as you like.`);
     // It couldn't be drawn (the change was taken back): the drawing comes back too, to fix or cancel
     if (!drawn && this.rendered) {
       this.#selected = this.#inspect = null;

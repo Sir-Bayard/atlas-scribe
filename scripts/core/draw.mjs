@@ -13,6 +13,8 @@ import { isObj, normalize } from "./plan.mjs";
 import { editableShape, shapeProblem, SAME } from "./reshape.mjs";
 import { checkPlan } from "./check.mjs";
 import { roadWaterCrossings } from "./layout/crossings.mjs";
+import { shapeToPolygon, pointInPolygon, pathTouchesPolygon, distanceToPath, insidePoint, segmentNearPath, pointsAlong, bbox } from "./geom.mjs";
+import { districtGates, gateSpacing } from "./streets/index.mjs";
 
 /**
  * The drawing tools. geometry: "shape" (corners or a box), "box" (a box, or a click for a default size), "path"
@@ -194,10 +196,83 @@ function addCrossings(plan, f) {
   return added;
 }
 
+/** Is a point in the plan's water, as the layout tests it for gates (half the width and a little)? */
+export function waterTest(plan) {
+  const full = normalize(plan);
+  const sq = full.size.ftPerSquare || 25;
+  const ws = full.features.filter((g) => g.type === "water" && Array.isArray(g.path)).map((g) => ({ path: g.path, clear: (g.width ?? 0) / sq / 2 + 0.225 }));
+  return (x, y) => ws.some((w) => distanceToPath([x, y], w.path) < w.clear);
+}
+
+/**
+ * A way in for a new district or square (in the copy it's given), so what's drawn away from the roads is reached. A
+ * district with no road into it and no street from a neighbour gets a lane from the nearest road to a point well
+ * inside it, so its streets have somewhere to start (a hamlet builds along it). A square inside a district with no
+ * road at it gets a street from the nearest road into it (a lane in a village or hamlet), so houses line the way to
+ * it. Either runs from a road point it can reach without running through another district, a yard, park, farm,
+ * square, plan building or pond, nor along a river inside its banks, nor (if a dry way is near enough) crossing
+ * water, and not from off the map or the water's edge; with none, nothing is added and
+ * the plan's problems say so. (Farms, yards, parks and squares out in the country get a lane in the layout.) Returns
+ * the ids of anything added.
+ */
+function addAccess(plan, f) {
+  const full = normalize(plan);
+  const roads = full.features.filter((g) => g.type === "road" && Array.isArray(g.path));
+  const shape = (g) => { try { return shapeToPolygon(g.shape, g.type === "area" || g.type === "building" || g.type === "water" ? g.rot ?? 0 : 0); } catch { return []; } };
+  const poly = shape(f);
+  if (poly.length < 3) return [];
+  const ring = [...poly, poly[0]];
+  // A road into it (for a district, one crossing its outline, as the plan's problems ask; a square's apron takes in
+  // a road passing within a few feet)
+  if (roads.some((r) => pathTouchesPolygon(r.path, poly) || (f.type === "square" && (r.path.some((q) => distanceToPath(q, ring) < 0.3) || poly.some((q) => distanceToPath(q, r.path) < 0.3))))) return [];
+  const target = insidePoint(poly);
+  let home = null, cls = "lane";
+  if (f.type === "square") {
+    home = full.features.find((g) => g.type === "district" && pointInPolygon(target, shape(g)));
+    if (!home) return [];
+    if (home.profile === "town" || home.profile === "core") cls = "street";
+  } else if (f.type === "district") {
+    const sq = full.size.ftPerSquare || 25;
+    const list = full.features.filter((g) => g.type === "district").map((g) => ({ id: g.id, poly: shape(g), ...gateSpacing(g, sq) })).filter((g) => g.poly.length >= 3);
+    let gates = [];
+    try { gates = districtGates(list, { roads, inWater: waterTest(plan), seed: Number.isFinite(full.seed) ? full.seed : 1 }).get(f.id) ?? []; } catch { gates = []; }
+    if (gates.length) return [];
+  } else return [];
+  // The route: from the nearest road point it can reach without running through anything, dry if one is near enough
+  const solid = full.features.filter((g) => g.id !== f.id && g.id !== home?.id && (g.type === "district" || g.type === "square" || g.type === "building" || (g.type === "area" && g.class !== "fields" && g.class !== "woods") || (g.type === "water" && !Array.isArray(g.path) && g.shape))).map(shape).filter((p) => p.length >= 3).map((p) => ({ p, box: bbox(p) }));
+  const blocked = (a, b) => solid.some(({ p, box }) => Math.max(a[0], b[0]) >= box[0] && Math.min(a[0], b[0]) <= box[2] && Math.max(a[1], b[1]) >= box[1] && Math.min(a[1], b[1]) <= box[3] && pathTouchesPolygon([a, b], p));
+  const sq = full.size.ftPerSquare || 25;
+  const waters = full.features.filter((g) => g.type === "water" && Array.isArray(g.path) && g.path.length >= 2).map((g) => ({ path: g.path, half: (g.width ?? 0) / sq / 2 }));
+  const crossesWater = (a, b) => waters.some((w) => w.path.some((q, i) => i && segCross(a, b, w.path[i - 1], q)));
+  // Along a river inside its banks without crossing it: no bridge would go there, so no lane either
+  const skirts = (a, b) => waters.some((w) => !w.path.some((q, i) => i && segCross(a, b, w.path[i - 1], q)) && segmentNearPath(a, b, w.path, w.half));
+  const [W, H] = full.size.squares;
+  const cands = roads.flatMap((r) => [...pointsAlong(r.path), ...r.path.slice(1).map((b, i) => onSegment(target, r.path[i], b).at)])
+    .filter((q) => q[0] >= 0 && q[1] >= 0 && q[0] <= W && q[1] <= H && !waters.some((w) => distanceToPath(q, w.path) < w.half + 1))
+    .map((q) => ({ q, d: dist(q, target) })).filter((x) => x.d <= 60)
+    .sort((x, y) => x.d - y.d || x.q[0] - y.q[0] || x.q[1] - y.q[1]);
+  // The nearest clear one, and the nearest that's dry too if it's not much farther
+  const ok = (x) => !blocked(x.q, target) && !skirts(x.q, target);
+  const first = cands.find(ok);
+  if (!first) return [];
+  const dry = crossesWater(first.q, target) ? cands.find((x) => x.d <= first.d * 1.5 + 3 && !crossesWater(x.q, target) && ok(x)) : first;
+  const pick = dry ?? first;
+  const id = freeId(plan, cls);
+  plan.features.push({ id, type: "road", class: cls, path: [r3(pick.q), [r1(target[0]), r1(target[1])]] });
+  return [id, ...addCrossings(plan, plan.features[plan.features.length - 1])];
+}
+
+/** True when segment a-b crosses segment c-d. */
+function segCross(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+}
+
 /**
  * The plan with a new feature made by a tool from what was drawn: points (corners, a path's points, or one point),
  * or box: [x0, y0, x1, y1]. A new road or water gets bridges and fords where it crosses the other (crossings: their
- * ids). Returns { plan, id, crossings } or { error } (too few points, a shape that crosses itself, one too
+ * ids); a district with no way in gets a lane from the nearest road, and a square in a district off the roads gets
+ * streets round it (access: what was added). Returns { plan, id, crossings, access } or { error } (too few points, a shape that crosses itself, one too
  * small, or anything else the checker would refuse about the new feature).
  */
 export function addFeature(plan, toolId, { points = [], box = null } = {}) {
@@ -238,9 +313,10 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   if (problem) return { error: problem };
   if (SHAPED.has(f.type) && f.type !== "square") shareSides(next, id);
   const crossings = addCrossings(next, f);
+  const access = f.type === "district" || f.type === "square" ? addAccess(next, f) : [];
   // Only what the new feature brings: a plan that already had problems can still be drawn on
   const had = new Set(checkPlan(plan).filter((p) => p.level === "error").map((p) => p.message));
   const errors = checkPlan(next).filter((p) => p.level === "error" && !had.has(p.message));
   if (errors.length) return { error: errors.map((p) => p.message).join(" ") };
-  return { plan: next, id, crossings };
+  return { plan: next, id, crossings, access };
 }
