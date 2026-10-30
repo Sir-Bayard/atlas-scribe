@@ -5,6 +5,7 @@
  * Pure: runs in the worker, on the page and under node.
  */
 import { TYPES, SURFACES, SEASONS, OLD_PROFILES, fieldDefault, isObj, normalize } from "./plan.mjs";
+import { nameLabelsOf, cleanFont } from "./labels.mjs";
 
 /** The district types the window offers (an old plan's "roadside" reads as a hamlet, "core" as a city). */
 export const PROFILE_CHOICES = ["hamlet", "village", "town", "city"];
@@ -79,6 +80,12 @@ export const FIELD_TEXT = {
   "label.text": { label: "Text" },
   "label.show": { label: "Shown to", names: { gm: "the GM only", all: "everyone" } },
   "label.size": { label: "Size" },
+  "label.angle": { label: "Turn", help: "Degrees clockwise. A label dropped on a road or water turns along it; drag the dot beside a picked label to turn it by hand" },
+  "label.color": { label: "Colour", kind: "color", help: "Left as the plan's label colour unless set" },
+  "label.font": { label: "Font", kind: "font", help: "Left as the plan's label font unless set" },
+  "label.alpha": { label: "Opacity", help: "Lower for quiet labels, like a wood's or a field's name" },
+  "label.of": { hidden: true },
+  "label.offset": { hidden: true },
 };
 
 /** The plan-wide settings, by path: what the "Plan" panel shows. */
@@ -91,6 +98,8 @@ export const PLAN_FIELDS = [
   { path: "size.ftPerSquare", label: "Feet a square", kind: "number", min: 1, max: 100, help: "25 for a town; 5 for a battle map" },
   { path: "output.pxPerSquare", label: "Pixels a square", kind: "number", min: 20, step: 1, whole: true, help: "The finished image's grid size, and so its size" },
   { path: "seed", label: "Seed", kind: "number", step: 1, whole: true, help: "Changing it redraws everything that has no seed of its own", more: true },
+  { path: "output.scene.labelColor", label: "Label colour", kind: "color", more: true, help: "Every label's colour, unless a label sets its own" },
+  { path: "output.scene.labelFont", label: "Label font", kind: "font", more: true, help: "Every label's font, unless a label sets its own" },
   { path: "output.scene.name", label: "Scene name", kind: "string", group: "scene" },
   { path: "output.scene.weather", label: "Weather", kind: "string", group: "scene", help: "A Foundry weather effect (snow, rain, fog...), or empty for none" },
   { path: "output.scene.darkness", label: "Darkness", kind: "number", min: 0, max: 1, group: "scene" },
@@ -135,11 +144,19 @@ export function fieldsOf(plan, id) {
     if (kind === "share") value = isObj(f[name]) ? f[name][txt.key] : undefined;
     if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? 0.1 : 0; // an M1 plan's
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
+    let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);
+    // A label's colour and font fall back to the plan's; a name label's text to its feature's name
+    if (f.type === "label" && name === "color") { const c = normalize(plan).output.scene.labelColor; auto = /^#[0-9a-f]{6}$/i.test(c ?? "") ? c : "#13202e"; }
+    if (f.type === "label" && name === "font") auto = cleanFont(normalize(plan).output.scene.labelFont) ?? "Signika";
+    if (f.type === "label" && name === "text" && f.of) { const o = featureOf(plan, f.of); auto = o ? `the name of ${o.name ?? o.id}` : null; }
     out.push({
       name, label: txt.label ?? name, help: txt.help ?? null, kind, values: values ?? null, names: txt.names ?? null,
       unit: spec.unit ?? null, min: spec.min ?? null, max: spec.max ?? null,
-      value, auto: txt.auto ?? (dflt === null || dflt === undefined ? null : dflt), more: !!txt.more,
+      value, auto, more: !!txt.more,
     });
+    // A district's or area's name on the map: a label that follows it (after its name)
+    if (name === "name" && (f.type === "district" || f.type === "area"))
+      out.push({ name: NAME_LABEL, label: "Name on the map", help: "A label with its name that sits inside it and moves with it. Click the label to move it, turn it or change its look", kind: "boolean", values: null, names: null, unit: null, min: null, max: null, value: nameLabelsOf(plan, id).length > 0, auto: false, more: false, required: true });
   }
   return out;
 }
@@ -173,6 +190,11 @@ export function readValue(field, raw) {
     }
     case "string":
       return { value: String(raw).trim() || undefined };
+    case "font":
+      if (!String(raw).trim()) return { value: undefined };
+      return cleanFont(String(raw)) ? { value: cleanFont(String(raw)) } : { error: `${field.label} should be a font's name (letters, numbers, spaces, dots and dashes).` };
+    case "color":
+      return /^#[0-9a-f]{6}$/i.test(String(raw).trim()) ? { value: String(raw).trim().toLowerCase() } : { error: `${field.label} should be a colour like #13202e.` };
     default:
       return { error: `${field.label} can't be changed here.` };
   }
@@ -189,6 +211,9 @@ export function setField(plan, id, name, raw) {
   if (!field) return { error: `"${id}" has no setting "${name}".` };
   const { value, error } = readValue(field, raw);
   if (error) return { error };
+  if (name === NAME_LABEL) return { plan: withNameLabel(plan, id, value) };
+  // A placed label with no text couldn't be seen or picked again: it keeps its words (Delete takes it out)
+  if (f.type === "label" && name === "text" && value === undefined && !f.of) return { error: "A label needs some text (Delete takes it out)." };
   const next = structuredClone(plan);
   const g = featureOf(next, id);
   if (field.kind === "share") {
@@ -207,10 +232,27 @@ export function setField(plan, id, name, raw) {
   return { plan: next };
 }
 
-/** The plan without a feature: its seed and its lock go with it. */
+/** The inspector's setting for a district's or area's name on the map (not a plan field: it adds or takes out a label). */
+export const NAME_LABEL = "@nameLabel";
+
+/** The plan with a feature's name label added (on) or taken out (off). */
+function withNameLabel(plan, id, on) {
+  const had = nameLabelsOf(plan, id);
+  if (!!on === had.length > 0) return plan;
+  if (!on) return { ...structuredClone(plan), features: plan.features.filter((f) => !(isObj(f) && f.type === "label" && f.of === id)).map((f) => structuredClone(f)) };
+  const next = structuredClone(plan);
+  const f = featureOf(next, id);
+  const taken = new Set(next.features.map((x) => x?.id));
+  let lid = `${id}-name`;
+  for (let n = 2; taken.has(lid); n++) lid = `${id}-name-${n}`;
+  next.features.push({ id: lid, type: "label", of: id, size: f.type === "district" ? "large" : "normal" });
+  return next;
+}
+
+/** The plan without a feature: its seed and its lock go with it, and so do the name labels following it. */
 export function deleteFeature(plan, id) {
   const next = structuredClone(plan);
-  next.features = (Array.isArray(next.features) ? next.features : []).filter((f) => !(isObj(f) && f.id === id));
+  next.features = (Array.isArray(next.features) ? next.features : []).filter((f) => !(isObj(f) && (f.id === id || (f.type === "label" && f.of === id))));
   if (isObj(next.seeds)) delete next.seeds[id];
   if (Array.isArray(next.locked)) next.locked = next.locked.filter((x) => x !== id);
   return next;

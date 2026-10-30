@@ -14,6 +14,7 @@ import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
 import { seedOf } from "../seeds.mjs";
+import { labelsOf } from "../labels.mjs";
 import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
 import { fillFields, fieldKeepOut, earlierFields, fieldRoads, accessLanes } from "./fields.mjs";
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
@@ -43,7 +44,8 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   const [W, H] = plan.size.squares;
   const notes = [];
   const items = [];
-  const labels = [];
+  // Labels: placed, or following their district or area (as the window and the scene place them)
+  const labels = labelsOf(asGiven);
   const streamFor = (id) => rng(seedOf(plan, id), id); // as a reroll reads it: a seed that isn't a number is ignored
   const progress = (pct, label) => onProgress?.(pct, label);
 
@@ -125,9 +127,6 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
         break;
       case "prop":
         addProp(f, streamFor(f.id));
-        break;
-      case "label":
-        labels.push({ id: f.id, text: f.text, at: f.at, show: f.show, size: f.size });
         break;
       case "area":
         if (f.class === "yard") {

@@ -10,7 +10,8 @@
  */
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs";
-import { normalize } from "../core/plan.mjs";
+import { normalize, LABEL_SIZES } from "../core/plan.mjs";
+import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle, cleanFont } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
 import { featureHTML, planHTML, paletteHTML, howText, readInput } from "./inspector.mjs";
@@ -19,6 +20,23 @@ import { addFeature, snapCorner, snapEnd, toolOf } from "../core/draw.mjs";
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
 
+/** The fonts a label can use: the ones Foundry offers for drawings (its own and any the GM added). */
+function fontChoices() {
+  try {
+    const FC = foundry.applications?.settings?.menus?.FontConfig ?? globalThis.FontConfig;
+    const list = FC?.getAvailableFonts?.() ?? Object.keys(CONFIG.fontDefinitions ?? {});
+    return [...list].sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+/** The plan as the map sees it: labels (and the plan's label colour and font) don't change the picture. */
+const mapKey = (p) => {
+  const q = { ...p, locked: null, features: (p?.features ?? []).filter((f) => f?.type !== "label") };
+  if (q.output?.scene) q.output = { ...q.output, scene: { ...q.output.scene, labelColor: null, labelFont: null } };
+  return canon(q);
+};
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 /** The middle of a polygon (its area centroid; the mean of its points if it has no area). */
@@ -264,12 +282,18 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       .map((f) => ({ id: f.id, type: f.type, at: drawn.get(f.id) ?? f.at }));
   }
 
-  /** The plan's labels with the box their text takes on the overlay (squares), for clicking: [{ id, at, hw, hh }]. */
+  /**
+   * The labels as drawn on the overlay with the box their text takes (squares, in the label's own frame, which is
+   * turned by its angle): [{ id, at, angle, hw, hh }]. The width is measured from the drawn text when it's there.
+   */
   #labelBoxes() {
-    const [MW, MH] = this.#result?.squares ?? this.#plan?.size?.squares ?? [1, 1];
-    const fs = (Math.max(MW, MH) / 55) * 0.85; // as the overlay draws them
-    return (this.#plan?.features ?? []).filter((f) => f?.type === "label" && Array.isArray(f.at))
-      .map((f) => ({ id: f.id, at: f.at, hw: Math.max(fs, String(f.text ?? "").length * fs * 0.3), hh: fs * 0.6 }));
+    return (this.#result?.labels ?? []).map((l) => {
+      const em = LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
+      const t = this.element?.querySelector(`text.as-pv-label[data-id="${CSS.escape(l.id)}"]`);
+      let w = 0;
+      try { w = t?.getComputedTextLength?.() ?? 0; } catch { w = 0; }
+      return { id: l.id, at: l.at, angle: l.angle ?? 0, hw: (w || String(l.text).length * em * 0.55) / 2 + em * 0.15, hh: em * 0.62 };
+    });
   }
 
   async _renderHTML() {
@@ -310,7 +334,18 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#handles = every.filter((h) => this.#shapes || h.id === this.#selected);
     const handles = this.#handles.map((h, n) => `<circle class="as-pv-handle as-${h.kind}" data-h="${n}" data-id="${esc(h.id)}" cx="${h.at[0]}" cy="${h.at[1]}" r="0.3"></circle>`).join("");
     const lines = this.#paths().map((p) => `<g class="as-pv-shape as-path as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}"><polyline points="${p.pts.map((q) => q.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polyline></g>`).join("");
-    const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => `<text class="as-pv-label ${l.id === this.#selected ? "as-selected" : ""}" data-id="${esc(l.id)}" x="${l.at[0]}" y="${l.at[1]}" data-fs="${fs * 0.85}">${esc(l.text)}</text>`).join("");
+    // Labels at their true size, turned, in their colour, font and opacity; a picked one has a box to drag it by and
+    // a dot to turn it by
+    const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => {
+      const em = LABEL_SIZES[l.size] ?? LABEL_SIZES.normal, sel = l.id === this.#selected;
+      const hw = (String(l.text).length * em * 0.55) / 2 + em * 0.15, hh = em * 0.62;
+      const dark = /^#[0-9a-f]{6}$/i.test(l.color) && [1, 3, 5].reduce((a, i) => a + parseInt(l.color.slice(i, i + 2), 16), 0) < 384;
+      return `<g class="as-pv-label-g ${sel ? "as-selected" : ""}" data-id="${esc(l.id)}" transform="translate(${l.at[0]} ${l.at[1]}) rotate(${l.angle ?? 0})">
+          ${sel ? `<rect class="as-pv-label-box" data-id="${esc(l.id)}" x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" vector-effect="non-scaling-stroke"></rect>` : ""}
+          <text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.7)"}; stroke-width: ${em * 0.1}">${esc(l.text)}</text>
+          ${sel && !this.#tool ? `<circle class="as-pv-handle as-turn" data-id="${esc(l.id)}" cx="${hw + em * 0.6}" cy="0" r="0.3"></circle>` : ""}
+        </g>`;
+    }).join("");
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
@@ -356,8 +391,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip="Back to the plan before the last change"><i class="fa-solid fa-rotate-left"></i> Undo</button>
         </div>
         ${this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
-          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working })
-          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working })
+          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
+          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices() })
           : `<ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
@@ -406,7 +441,21 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     }
     this.#applyView();
     this.#drawDraft();
+    this.#fitLabelBox();
     requestAnimationFrame(() => this.#applyView()); // the first time, the window has its size only after layout
+  }
+
+  /** The picked label's box and turning dot, fitted to its text as the browser drew it. */
+  #fitLabelBox() {
+    const g = this.element?.querySelector(".as-pv-label-g.as-selected");
+    const t = g?.querySelector("text.as-pv-label"), rect = g?.querySelector(".as-pv-label-box"), dot = g?.querySelector(".as-turn");
+    if (!t) return;
+    let w = 0;
+    try { w = t.getComputedTextLength(); } catch { w = 0; }
+    if (!w) return;
+    const em = Number(t.getAttribute("font-size")) || 0.7, hw = w / 2 + em * 0.15;
+    rect?.setAttribute("x", -hw); rect?.setAttribute("width", hw * 2);
+    dot?.setAttribute("cx", hw + em * 0.6);
   }
 
   _onFirstRender() {
@@ -431,6 +480,17 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (!box || !this.#result) return;
       const handle = ev.target.closest?.(".as-pv-handle");
       if (this.#tool && ev.button === 0) this.#tool.down = { x: ev.clientX, y: ev.clientY, at: this.#toSquares(ev) };
+      // A picked label: drag its box to move it, or the dot beside it to turn it
+      const grip = ev.target.closest?.(".as-pv-label-box, .as-pv-handle.as-turn");
+      if (grip && !this.#working && !this.#tool && ev.button === 0) {
+        const l = (this.#result?.labels ?? []).find((x) => x.id === grip.dataset.id);
+        if (!l) return;
+        ev.stopPropagation();
+        const kind = grip.classList.contains("as-turn") ? "turn" : "move";
+        this.#edit = { label: { id: l.id, kind, at: l.at, angle: l.angle ?? 0, from: this.#toSquares(ev), lines: kind === "move" ? linesOf(this.#plan) : null }, plan: this.#plan, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        box.setPointerCapture(ev.pointerId);
+        return;
+      }
       if (handle && !this.#working && !this.#tool) {
         const h = this.#handles[Number(handle.dataset.h)];
         if (!h) return;
@@ -572,7 +632,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (point) return this.#select(point);
     // A label, by the box its text takes
     const near = 8 / px; // at least 8 pixels round the text, however far out the map is zoomed
-    const label = this.#labelBoxes().find((l) => Math.abs(at[0] - l.at[0]) <= Math.max(l.hw, near) && Math.abs(at[1] - l.at[1]) <= Math.max(l.hh, near));
+    const label = this.#labelBoxes().find((l) => {
+      const a = (-l.angle * Math.PI) / 180, dx = at[0] - l.at[0], dy = at[1] - l.at[1];
+      const x = dx * Math.cos(a) - dy * Math.sin(a), y = dx * Math.sin(a) + dy * Math.cos(a); // into the label's frame
+      return Math.abs(x) <= Math.max(l.hw, near) && Math.abs(y) <= Math.max(l.hh, near);
+    });
     if (label) return this.#select(label.id);
     // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area round it
     let road = null, roadD = Infinity;
@@ -648,6 +712,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (ev.buttons === 0) { this.#edit = null; this.render(); return; } // let go where we couldn't see it: put it back
     if (!e.moved && Math.hypot(ev.clientX - e.x, ev.clientY - e.y) < 3) return;
     e.moved = true;
+    if (e.label) return this.#labelMove(ev, e);
     let to = this.#toSquares(ev);
     const r = this.#result;
     const [MW, MH] = r.squares;
@@ -683,18 +748,43 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     c?.setAttribute("cx", to[0]); c?.setAttribute("cy", to[1]);
   }
 
+  /**
+   * A label being dragged: moved (taking the angle of a road or water it's over, as it will when let go) or turned
+   * (Shift for steps of 15 degrees). The overlay follows; the plan changes when it's let go.
+   */
+  #labelMove(ev, e) {
+    const l = e.label, now = this.#toSquares(ev);
+    let at = l.at, angle = l.angle;
+    if (l.kind === "move") {
+      at = [l.at[0] + now[0] - l.from[0], l.at[1] + now[1] - l.from[1]];
+      angle = angleNear(l.lines, at) ?? l.angle;
+      e.next = moveLabel(e.plan, l.id, at);
+      l.to = at;
+    } else {
+      angle = wrapAngle((Math.atan2(now[1] - l.at[1], now[0] - l.at[0]) * 180) / Math.PI);
+      if (ev.shiftKey) angle = wrapAngle(Math.round(angle / 15) * 15);
+      e.next = turnLabel(e.plan, l.id, angle);
+      l.to = angle;
+    }
+    this.element.querySelector(`.as-pv-label-g[data-id="${CSS.escape(l.id)}"]`)?.setAttribute("transform", `translate(${at[0]} ${at[1]}) rotate(${angle})`);
+  }
+
   /** A handle let go: the reshaped plan is drawn (a click that didn't move does nothing). */
   #editEnd() {
     const e = this.#edit;
     this.#edit = null;
     if (!e?.moved || !e.next) return;
+    // A label moved or turned while the plan changed under it (a setting typed and left as the drag began): the move
+    // is made on the plan as it is now
+    if (e.label && e.plan !== this.#plan && featureOf(this.#plan, e.label.id) && !this.#working)
+      return this.#reshape(e.label.kind === "move" ? moveLabel(this.#plan, e.label.id, e.label.to) : turnLabel(this.#plan, e.label.id, e.label.to));
     if (e.plan !== this.#plan) return this.render(); // the plan was replaced mid-drag: drop the drag
     return this.#reshape(e.next);
   }
 
   /** Keeps a reshaped plan and draws it, unless a shape it changed would cross itself (then it says so). */
   #reshape(next) {
-    const geo = (f) => JSON.stringify([f.shape, f.path, f.at]); // a district's shape, a road's path, a bridge's place
+    const geo = (f) => JSON.stringify([f.shape, f.path, f.at, f.offset, f.angle]); // a district's shape, a road's path, a bridge's or label's place
     const before = new Map((this.#plan.features ?? []).map((f) => [f.id, geo(f)]));
     const changed = (next.features ?? []).filter((f) => before.get(f.id) !== geo(f));
     if (!changed.length) return this.render();
@@ -716,6 +806,13 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   /** Changes the plan (keeping the old one for Undo) and draws it again. */
   async #change(plan) {
     this.#remember();
+    // Only labels changed: the picture stands, and only the labels on it are worked out again
+    if (this.#result && !this.#stale && mapKey(plan) === mapKey(this.#plan)) {
+      this.#plan = plan;
+      this.#result = { ...this.#result, labels: labelsOf(plan) };
+      await this.render();
+      return this.#result;
+    }
     this.#plan = plan;
     const result = await this.#draw();
     // If it couldn't be drawn, take the change back, so the plan always matches the picture (the error stays up)
@@ -753,11 +850,12 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   static async #onUndo() {
     if (this.#working || !this.#history.length) return;
     const before = this.#history.pop();
-    const map = (p) => JSON.stringify({ ...p, locked: null }); // everything but the locks changes the map
-    const sameMap = map(before) === map(this.#plan);
+    const sameMap = mapKey(before) === mapKey(this.#plan); // locks and labels don't change the picture
     this.#plan = before;
-    if (sameMap) this.render();
-    else await this.#draw();
+    if (sameMap && this.#result && !this.#stale) {
+      this.#result = { ...this.#result, labels: labelsOf(before) };
+      this.render();
+    } else await this.#draw();
   }
 
   /** The scene this plan was made into last, if any. */

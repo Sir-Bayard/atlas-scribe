@@ -18,6 +18,7 @@ const str = (dflt = null, extra = {}) => ({ kind: "string", default: dflt, ...ex
 const bool = (dflt) => ({ kind: "boolean", default: dflt });
 const oneOf = (values, dflt) => ({ kind: "enum", values, default: dflt });
 const listOf = (values, dflt = null) => ({ kind: "list", values, default: dflt });
+const pointOf = () => ({ kind: "point", default: null });
 
 /**
  * Roof materials. The plain words ("slate", "wood-shingle") are the old defaults; the rest name a colour. Tile
@@ -144,7 +145,13 @@ export const TYPES = {
   },
   label: {
     geometry: "point",
-    fields: { text: str(""), show: oneOf(["gm", "all"], "gm"), size: oneOf(["small", "normal", "large", "huge"], "normal") },
+    // A label is placed (at), or follows a district or area (of), sitting inside it plus its offset and showing its
+    // name unless it has text of its own (labels.mjs)
+    fields: {
+      text: str(""), show: oneOf(["gm", "all"], "gm"), size: oneOf(["small", "normal", "large", "huge"], "normal"),
+      angle: num(0, { unit: "deg", min: -180, max: 180 }), color: str(null), font: str(null), alpha: num(1, { min: 0.1, max: 1 }),
+      of: str(null), offset: pointOf(),
+    },
   },
 };
 

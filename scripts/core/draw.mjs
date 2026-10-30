@@ -15,6 +15,7 @@ import { checkPlan } from "./check.mjs";
 import { roadWaterCrossings } from "./layout/crossings.mjs";
 import { shapeToPolygon, pointInPolygon, pathTouchesPolygon, distanceToPath, insidePoint, segmentNearPath, pointsAlong, bbox } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
+import { lineAngleAt } from "./labels.mjs";
 
 /**
  * The drawing tools. geometry: "shape" (corners or a box), "box" (a box, or a click for a default size), "path"
@@ -287,6 +288,7 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   if (tool.geometry === "point") {
     if (!pts[0]) return { error: "Click where it goes." };
     f.at = [r1(pts[0][0]), r1(pts[0][1])];
+    if (f.type === "label") { const angle = lineAngleAt(plan, f.at); if (angle) f.angle = angle; } // along a road or river it's on
   } else if (tool.geometry === "path") {
     // Points too close to the one before are one point
     const path = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > SAME);

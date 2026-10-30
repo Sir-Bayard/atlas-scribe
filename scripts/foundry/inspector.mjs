@@ -7,6 +7,7 @@ import { fieldsOf, planFieldsOf, featureOf, wordsFor } from "../core/edit.mjs";
 import { rerollable } from "../core/seeds.mjs";
 import { TOOLS } from "../core/draw.mjs";
 import { OLD_PROFILES } from "../core/plan.mjs";
+import { cleanFont } from "../core/labels.mjs";
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -23,7 +24,7 @@ export function kindOf(f) {
 }
 
 /** One setting as a labelled input. */
-function fieldHTML(field, disabled) {
+function fieldHTML(field, disabled, fonts = []) {
   const id = `as-f-${field.name.replace(/[^a-z0-9]/gi, "-")}`;
   const set = field.value !== undefined && field.value !== null;
   // What applies when it's left empty: words, or the default value (bare in a number box, which shows its unit beside it)
@@ -58,6 +59,18 @@ function fieldHTML(field, disabled) {
       if (!set && auto) input += `<p class="as-pv-auto">None ticked: ${esc(auto)}</p>`;
       break;
     }
+    case "color": {
+      // A colour box shows the colour in use: the label's own, or the plan's when it's left as the default
+      const shown = /^#[0-9a-f]{6}$/i.test(field.value ?? "") ? field.value : /^#[0-9a-f]{6}$/i.test(field.auto ?? "") ? field.auto : "#13202e";
+      input = `<input type="color" id="${id}" ${data} value="${esc(shown)}" ${dis}>${set ? "" : `<span class="as-pv-auto-inline">${esc(`Default (${field.auto ?? "plan's"})`)}</span>`}`;
+      break;
+    }
+    case "font": {
+      const list = [...new Set([...fonts, ...(set && !fonts.includes(field.value) ? [field.value] : [])])];
+      const opts = list.map((v) => `<option value="${esc(v)}" ${set && field.value === v ? "selected" : ""} style="font-family: '${esc(cleanFont(v) ?? "")}'">${esc(v)}</option>`).join("");
+      input = `<select id="${id}" ${data} ${dis}><option value="" ${set ? "" : "selected"}>${esc(field.auto ? `Default (${field.auto})` : "Default")}</option>${opts}</select>`;
+      break;
+    }
     case "number":
     case "share": {
       const min = field.kind === "share" ? 0 : field.min, max = field.kind === "share" ? 1 : field.max;
@@ -82,14 +95,14 @@ function fieldHTML(field, disabled) {
 }
 
 /** Settings in two groups: the usual ones, then the rest under "More". */
-function groupsHTML(fields, disabled) {
+function groupsHTML(fields, disabled, fonts) {
   const main = fields.filter((f) => !f.more), more = fields.filter((f) => f.more);
-  return `${main.map((f) => fieldHTML(f, disabled)).join("")}
-    ${more.length ? `<details class="as-pv-more" ${more.some((f) => f.value !== undefined) ? "open" : ""}><summary>More</summary>${more.map((f) => fieldHTML(f, disabled)).join("")}</details>` : ""}`;
+  return `${main.map((f) => fieldHTML(f, disabled, fonts)).join("")}
+    ${more.length ? `<details class="as-pv-more" ${more.some((f) => f.value !== undefined) ? "open" : ""}><summary>More</summary>${more.map((f) => fieldHTML(f, disabled, fonts)).join("")}</details>` : ""}`;
 }
 
 /** The inspector for one feature: its kind, reroll and lock (districts and areas), its settings, Delete. */
-export function featureHTML(plan, id, { working = false } = {}) {
+export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
   const f = featureOf(plan, id);
   if (!f) return "";
   const fields = fieldsOf(plan, id);
@@ -105,7 +118,7 @@ export function featureHTML(plan, id, { working = false } = {}) {
         <span class="as-pv-name"><strong>${esc(f.name ?? f.text ?? id)}</strong><em>${esc(kindOf(f))}${f.name || f.text ? ` · ${esc(id)}` : ""}</em></span>
         ${roll}
       </header>
-      <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
+      <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
       <div class="as-pv-tools">
         <button type="button" data-action="asDelete" data-id="${esc(id)}" class="as-danger" data-tooltip="Take it out of the plan (Undo brings it back)" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Delete</button>
       </div>
@@ -113,7 +126,7 @@ export function featureHTML(plan, id, { working = false } = {}) {
 }
 
 /** The plan's own settings: name, season, ground, size and scale, then the scene it's made into. */
-export function planHTML(plan, { working = false } = {}) {
+export function planHTML(plan, { working = false, fonts = [] } = {}) {
   const fields = planFieldsOf(plan);
   const main = fields.filter((f) => f.group !== "scene");
   const scene = fields.filter((f) => f.group === "scene");
@@ -123,8 +136,8 @@ export function planHTML(plan, { working = false } = {}) {
         <span class="as-pv-name"><strong>Plan settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
       </header>
       <div class="as-pv-fields">
-        ${groupsHTML(main, working)}
-        <details class="as-pv-more" ${scene.some((f) => f.value !== undefined) ? "open" : ""}><summary>Scene</summary>${scene.map((f) => fieldHTML(f, working)).join("")}</details>
+        ${groupsHTML(main, working, fonts)}
+        <details class="as-pv-more" ${scene.some((f) => f.value !== undefined) ? "open" : ""}><summary>Scene</summary>${scene.map((f) => fieldHTML(f, working, fonts)).join("")}</details>
       </div>
     </section>`;
 }

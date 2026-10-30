@@ -133,6 +133,13 @@ export function checkPlan(raw) {
     else if (!isNum(v)) warn(id, "seeds", `The seed for "${id}" isn't a number, so the plan's seed is used.`);
   }
   for (const id of plan.locked ?? []) if (!seen.has(id)) warn(id, "locked", `"${id}" is locked, but there's no feature with that id.`);
+  // A name label must follow a district or area that's there
+  for (const f of plan.features) {
+    if (f?.type !== "label" || !f.of) continue;
+    const owner = plan.features.find((g) => g?.id === f.of);
+    if (!owner) warn(f.id, "of", `Label "${f.id}" names "${f.of}", but there's no feature with that id, so it isn't shown.`);
+    else if (owner.type !== "district" && owner.type !== "area") warn(f.id, "of", `Label "${f.id}" names "${f.of}", a ${owner.type}; only districts and areas can carry their name, so it isn't shown.`);
+  }
 
   // The scene it's published to
   const scene = raw.output?.scene;
@@ -164,7 +171,7 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   // Geometry
   const g = t.geometry;
   const need = (ok, field, message) => (ok ? true : (err(f.id, field, message), false));
-  if (g === "point") need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y].`);
+  if (g === "point" && !(f.type === "label" && typeof f.of === "string" && f.of)) need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y]${f.type === "label" ? " (or of: the id of the district or area it names)" : ""}.`);
   if (g === "path") need(isPath(f.path), "path", `"${where}" needs a path of two or more points: path: [[x, y], [x, y], ...].`);
   if (g === "shape") checkShape(f.shape, where, "shape", need);
   if (g === "path|shape") {
@@ -178,7 +185,9 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
 
   // Fields: numbers in range, values from their lists, nothing unknown
   for (const [name, spec] of Object.entries(t.fields)) checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
-  if (f.type === "label" && !String(f.text ?? "").trim()) warn(f.id, "text", `Label "${where}" has no text.`);
+  if (f.type === "label" && !String(f.text ?? "").trim() && !f.of) warn(f.id, "text", `Label "${where}" has no text.`);
+  if (f.type === "label" && typeof f.font === "string" && f.font.trim() && !/^[\p{L}\p{N} _.-]+$/u.test(f.font.trim())) warn(f.id, "font", `Label "${where}": the font "${f.font}" isn't a plain font name; the plan's will be used.`);
+  if (f.type === "label" && typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id, "color", `Label "${where}": color "${f.color}" should be a colour like #13202e; the plan's will be used.`);
   const known = new Set(["id", "type", "class", "at", "path", "shape", "buildings", "note", ...Object.keys(t.fields)]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(f.id, k, `"${where}" has a field "${k}" that AtlasScribe doesn't use.`);
 
@@ -203,7 +212,8 @@ function checkField(id, field, where, name, spec, v, { err, warn }, fallback = "
     if (!isNum(v)) err(id, field, `${where}: ${name} should be a number${spec.unit ? ` (${spec.unit})` : ""}.`);
     else if ((spec.min !== undefined && v < spec.min) || (spec.max !== undefined && v > spec.max))
       err(id, field, `${where}: ${name} is ${v}; it should be ${spec.max !== undefined ? `${spec.min} to ${spec.max}` : `at least ${spec.min}`}.`);
-  } else if (spec.kind === "boolean" && typeof v !== "boolean") err(id, field, `${where}: ${name} should be true or false.`);
+  } else if (spec.kind === "point" && !isPoint(v)) err(id, field, `${where}: ${name} should be a point, [x, y].`);
+  else if (spec.kind === "boolean" && typeof v !== "boolean") err(id, field, `${where}: ${name} should be true or false.`);
   else if (spec.kind === "string" && typeof v !== "string") err(id, field, `${where}: ${name} should be text.`);
   else if (spec.kind === "list") {
     if (!Array.isArray(v)) err(id, field, `${where}: ${name} should be a list, like ["${spec.values[0]}", "${spec.values[1]}"].`);

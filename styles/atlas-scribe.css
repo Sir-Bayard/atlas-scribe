@@ -44,7 +44,7 @@
   height: 100%;
   overflow: visible;
 }
-.atlas-scribe .as-pv-overlay.as-off > :not(.as-pv-draft) {
+.atlas-scribe .as-pv-overlay.as-off > :not(.as-pv-draft):not(.as-pv-label-g) {
   display: none;
 }
 .atlas-scribe .as-pv-shape polygon {
@@ -75,8 +75,21 @@
   pointer-events: none;
 }
 .atlas-scribe .as-pv-overlay text.as-pv-label {
-  font-style: italic;
+  font-style: normal;
   font-weight: 400;
+}
+/* A picked label: a box to drag it by, and a dot beside it to turn it */
+.atlas-scribe .as-pv-label-box {
+  fill: rgba(255, 220, 120, 0.12);
+  stroke: rgb(200, 120, 20);
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 3;
+  cursor: move;
+  pointer-events: all;
+}
+.atlas-scribe .as-pv-handle.as-turn {
+  fill: rgb(255, 220, 120);
+  cursor: grab;
 }
 .atlas-scribe .as-pv-wait {
   display: none;
@@ -409,6 +422,17 @@
 .atlas-scribe .as-pv-checks input {
   margin: 0;
 }
+.atlas-scribe .as-pv-input input[type="color"] {
+  flex: 0 0 2.2rem;
+  height: 1.6rem;
+  padding: 0 2px;
+}
+.atlas-scribe .as-pv-auto-inline {
+  font-size: 0.8em;
+  font-style: italic;
+  opacity: 0.65;
+  white-space: nowrap;
+}
 .atlas-scribe .as-pv-auto {
   margin: 0;
   font-size: 0.8em;
@@ -433,10 +457,6 @@
   stroke-width: 2.5px;
   stroke-dasharray: none;
   fill: rgba(255, 220, 120, 0.15);
-}
-.atlas-scribe .as-pv-overlay text.as-pv-label.as-selected {
-  fill: rgb(200, 120, 20);
-  font-weight: 700;
 }
 /* Drawing: the palette of tools, and the drawing under way on the map */
 .atlas-scribe .as-pv-map.as-drawing {

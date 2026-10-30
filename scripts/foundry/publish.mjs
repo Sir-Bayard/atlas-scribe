@@ -7,6 +7,7 @@
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES } from "../core/plan.mjs";
+import { labelsOf } from "../core/labels.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -122,41 +123,43 @@ async function makeThumb(image, dir, id) {
   return upload(dir, `${id}.webp`, blob);
 }
 
-/** The plan's labels as text drawings, centred on their point. Hidden from players unless show is "all". */
+/**
+ * The plan's labels as text drawings, centred on their point and turned by their angle (labels.mjs works out where
+ * each sits, including a name label following its district or area, and its colour, font and opacity). Hidden from
+ * players unless show is "all".
+ */
 async function labelDrawings(plan, scene, warnings) {
-  const opts = plan.output.scene;
   const pps = plan.output.pxPerSquare;
-  const font = typeof opts.labelFont === "string" && opts.labelFont.trim() ? opts.labelFont.trim() : "Signika";
-  const color = /^#[0-9a-f]{6}$/i.test(opts.labelColor ?? "") ? opts.labelColor : "#13202e";
   const { sceneX, sceneY } = scene.dimensions;
   const ctx = new OffscreenCanvas(8, 8).getContext("2d");
-  const out = [];
-  for (const f of plan.features) {
-    if (f.type !== "label" || !Array.isArray(f.at)) continue;
-    const text = String(f.text ?? "").trim();
-    if (!text) continue;
-    const size = Math.min(FONT.max, Math.max(FONT.min, Math.round(pps * (LABEL_SIZES[f.size] ?? LABEL_SIZES.normal))));
+  const out = [], fonts = new Set();
+  for (const l of labelsOf(plan)) {
+    const size = Math.min(FONT.max, Math.max(FONT.min, Math.round(pps * (LABEL_SIZES[l.size] ?? LABEL_SIZES.normal))));
     try {
-      await document.fonts.load(`${size}px "${font}"`);
+      await document.fonts.load(`${size}px "${l.font}"`);
     } catch {
       /* the browser falls back to another font */
     }
-    ctx.font = `${size}px "${font}"`;
-    const w = Math.ceil(ctx.measureText(text).width * 1.15 + size * 0.6);
+    fonts.add(l.font);
+    ctx.font = `${size}px "${l.font}"`;
+    const w = Math.ceil(ctx.measureText(l.text).width * 1.15 + size * 0.6);
     const h = Math.ceil(size * 1.6);
     out.push({
-      x: Math.round(sceneX + f.at[0] * pps - w / 2),
-      y: Math.round(sceneY + f.at[1] * pps - h / 2),
+      x: Math.round(sceneX + l.at[0] * pps - w / 2),
+      y: Math.round(sceneY + l.at[1] * pps - h / 2),
       shape: { type: "r", width: w, height: h },
-      text, fontSize: size, fontFamily: font, textColor: color, textAlpha: 1,
+      rotation: l.angle,
+      text: l.text, fontSize: size, fontFamily: l.font, textColor: l.color, textAlpha: l.alpha,
       fillType: CONST.DRAWING_FILL_TYPES.NONE, strokeWidth: 0, strokeAlpha: 0,
-      hidden: f.show !== "all",
+      hidden: l.show !== "all",
       locked: true,
-      flags: { [MOD]: { batch: plan.id ?? null, feature: f.id } },
+      flags: { [MOD]: { batch: plan.id ?? null, feature: l.id } },
     });
   }
-  const known = font in (CONFIG.fontDefinitions ?? {}) || [...document.fonts].some((f) => f.family.replace(/["']/g, "") === font);
-  if (out.length && !known) warnings.push(`The font "${font}" isn't one Foundry knows, so the labels may show in another.`);
+  for (const font of fonts) {
+    const known = font in (CONFIG.fontDefinitions ?? {}) || [...document.fonts].some((f) => f.family.replace(/["']/g, "") === font);
+    if (!known) warnings.push(`The font "${font}" isn't one Foundry knows, so labels in it may show in another.`);
+  }
   return out;
 }
 
