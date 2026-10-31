@@ -54,11 +54,11 @@ export const FIELD_TEXT = {
   "district.bend": { label: "Bend", help: "How much its streets wander, in degrees", auto: "its type's", more: true },
   "district.spacing": { label: "Street spacing", help: "How far apart its main streets run, in feet", auto: "its type's", more: true },
   "district.axis": { label: "Street direction", help: "Degrees; its main streets run this way where no road steers them", auto: "from its roads", more: true },
-  "district.spacious": { label: "Spacious", help: "Wider plots, houses further apart (0 to 1)" },
+  "district.spacious": { label: "Spacious", help: "Wider plots, houses farther apart (0 to 1)" },
   "district.crofts": { label: "Crofts", help: "The share of plots with a small field behind (0 to 1)", auto: "its type's" },
   "district.croftDepth": { label: "Croft depth", help: "How far back a croft runs, as a share of the plot behind the yard", auto: "its type's" },
-  "district.croftFence": { label: "Croft fence", names: { all: "all round", sides: "sides only", none: "none" }, auto: "its type's" },
-  "district.plotLines": { label: "Plot lines", help: "Fences round yards and crofts in hamlets and villages, faint walls between long plots elsewhere" },
+  "district.croftFence": { label: "Croft fence", names: { all: "all around", sides: "sides only", none: "none" }, auto: "its type's" },
+  "district.plotLines": { label: "Plot lines", help: "Fences around yards and crofts in hamlets and villages, faint walls between long plots elsewhere" },
   "district.roofs": { label: "Roofs", help: "The roof materials its houses choose from", auto: "a mix for its type" },
   "district.roofStyles": { label: "Roof forms", help: "The roof forms its houses choose from", auto: "its type's mix" },
 
@@ -66,8 +66,8 @@ export const FIELD_TEXT = {
   "area.fence": { label: "Fence", auto: "none" },
   "area.rot": { label: "Turned", help: "Degrees; a turned area can't be reshaped by its corners yet", more: true },
   "area.density": { label: "Density", help: "Sparse: lone trees and small clumps. Open: big trees standing apart, like wood pasture. Thick: groves with clearings. Dense: crowns touching, a few gaps. A wood drawn bigger or smaller keeps its look", auto: "thick", names: { sparse: "sparse", open: "open", thick: "thick", dense: "dense" } },
-  "area.trees": { label: "Tree count", help: "A set number of trees, in place of the density", auto: "from its density and size", more: true },
-  "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "by density and season: mostly leafy (0.5 sparse, 0.75 open, 0.7 thick, 0.6 dense), in winter mostly firs" },
+  "area.trees": { label: "Tree count", help: "A set number of trees, in place of the density (setting one clears the other)", auto: "from its density and size", more: true },
+  "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "by density and season: outside winter half to three quarters leafy (0.5 sparse, 0.75 open, 0.7 thick, 0.6 dense), in winter mostly firs" },
   "area.style": { label: "Style", names: { green: "village green", formal: "formal garden" }, auto: "village green" },
   "area.system": { label: "Field system", names: { patchwork: "hedged patchwork", strips: "open strips" }, help: "Else picked from its seed", auto: "by seed" },
   "area.fieldSize": { label: "Field size", help: "About how big a field (or a furlong of strips) is, in feet", auto: "by system" },
@@ -99,7 +99,7 @@ export const PLAN_FIELDS = [
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },
-  { path: "size.ftPerSquare", label: "Feet a square", kind: "number", min: 1, max: 100, help: "25 for a town; 5 for a battle map" },
+  { path: "size.ftPerSquare", label: "Feet a square", kind: "number", min: 1, max: 100, help: "25 suits a village or town" },
   { path: "output.pxPerSquare", label: "Pixels a square", kind: "number", min: 20, step: 1, whole: true, help: "The finished image's grid size, and so its size" },
   { path: "seed", label: "Seed", kind: "number", step: 1, whole: true, help: "Changing it redraws everything that has no seed of its own", more: true },
   { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own" },
@@ -133,7 +133,9 @@ export function fieldsOf(plan, id) {
   const out = [];
   // An unknown class is drawn as the type's first, so the window shows that
   const cls = t.classes ? (t.classes.includes(f.class) ? f.class : t.classes[0]) : undefined;
-  if (t.classes) out.push({ name: "class", label: "Kind", kind: "enum", values: t.classes, value: cls, auto: t.classes[0] });
+  // Water drawn along a path is a stream, river or canal (a pond, lake or sea is drawn as a shape)
+  const kinds = f.type === "water" && Array.isArray(f.path) ? t.classes.filter((c) => c === "stream" || c === "river" || c === "canal") : t.classes;
+  if (t.classes) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0] });
   // Water drawn as a shape (a pond, a lake) has no width and nothing to straighten
   const shaped = f.type === "water" && !Array.isArray(f.path);
   for (const [name, spec] of Object.entries(t.fields)) {
@@ -240,6 +242,12 @@ export function setField(plan, id, name, raw) {
     else delete g[name];
   } else if (value === undefined) delete g[name];
   else g[name] = value;
+  // A wood's character and its tree count are two ways to say how thick it is: the one set last wins (the count used
+  // to win whatever the density said, so an older wood's density did nothing)
+  if (g.type === "area" && g.class === "woods" && value !== undefined) {
+    if (name === "density") delete g.trees;
+    if (name === "trees") delete g.density;
+  }
   if (name === "class") {
     const t = TYPES[g.type];
     for (const [k, spec] of Object.entries(t.fields)) if (spec.only && !spec.only.includes(g.class ?? t.classes[0])) delete g[k];

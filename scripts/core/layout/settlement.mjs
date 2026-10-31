@@ -9,6 +9,7 @@ import { makeNoise } from "../noise.mjs";
 
 /** Cap on random tries for one area, so a huge or odd shape can't run on for ever. */
 const MAX_TRIES = 20000;
+const MAX_CHARACTER = 60000; // a sparse, open or dense wood's ceiling, however big
 
 /** True when every corner of a polygon is inside another. */
 const inside = (pts, poly) => pts.every((p) => pointInPolygon(p, poly));
@@ -126,7 +127,9 @@ function fillCharacter({ area, poly, r, free, items, winter }) {
     const level = vals.length ? vals[Math.floor(vals.length / 10)] : -Infinity;
     keep = (x, y) => gaps(x, y) >= level;
   }
-  const base = poissonInPolygon(poly, spacing, r.fork("points"), { keep, max: MAX_TRIES });
+  // As many tries as the wood can hold (a fixed budget ran out partway across a big wood, leaving bare swathes)
+  const room = Math.ceil((1.3 * polyArea(poly)) / (spacing * spacing)) + 100;
+  const base = poissonInPolygon(poly, spacing, r.fork("points"), { keep, max: Math.min(MAX_CHARACTER, Math.max(MAX_TRIES, room)) });
   const [bx0, by0, bx1, by1] = bbox(poly), cell = spacing / Math.SQRT2;
   if (!base.length && Math.max(1, Math.ceil((bx1 - bx0) / cell)) * Math.max(1, Math.ceil((by1 - by0) / cell)) > 4e6) return [{ level: "warning", id: area.id, message: `"${area.id}" is too big to fill with trees, so it's left empty. Draw it as a few smaller woods.` }];
   // Sparse: about half the lone trees grow a clump of one or two more beside them
@@ -197,9 +200,9 @@ export function groundPatches(r, W, H) {
 }
 
 /**
- * A park, by its style. "green" (the default): a village green of open grass, big trees in groups round its edges and
+ * A park, by its style. "green" (the default): a village green of open grass, big trees in groups around its edges and
  * a few in the open, and trodden paths from where the roads meet it to a point near the middle. "formal": a garden laid
- * out square to the area's rot: gravel paths round it and across it, a round basin where they cross, four hedged
+ * out square to the area's rot: gravel paths around it and across it, a round basin where they cross, four hedged
  * beds, and avenues of trees along the long walk. Everything is clipped to the area's shape. Returns
  * { surface, trees, beds, hedges }: surface { poly, style, paths: [{ path, width }], basin }, trees [{ x, y, s, ... }],
  * beds (gardens), hedges (paths). Squares throughout; ftPerSquare for widths in feet.
@@ -276,7 +279,7 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
       for (let t = 0; t <= 1.0001; t += 0.1) path.push([(1 - t) ** 2 * e[0] + 2 * (1 - t) * t * m[0] + t * t * hubIn[0], (1 - t) ** 2 * e[1] + 2 * (1 - t) * t * m[1] + t * t * hubIn[1]]);
       if (path.every(inside) || path.slice(1).every(inside)) out.surface.paths.push({ path, width: sq(5), surface: "trodden" });
     }
-    // Big trees in groups round the edge, a few out in the open; each tree's looks from its own place, so a path that
+    // Big trees in groups around the edge, a few out in the open; each tree's looks from its own place, so a path that
     // clears one tree changes no other
     const groups = makeNoise(r.fork("groups").int(2 ** 31), `${area.id}/groups`, { scale: 4, octaves: 2 });
     const pts = poissonInPolygon(poly, 1.3, r.fork("points"), { keep: (x, y) => { const e = edgeDist([x, y]); return (e < 3 && groups(x, y) > -0.2) || groups(x, y) > 0.45; }, max: 2000 });

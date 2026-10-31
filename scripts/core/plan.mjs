@@ -33,7 +33,7 @@ export const ROOFS = [
 
 /**
  * Roof forms. gable: two slopes, upright ends. hip: four slopes. half-hip: a gable with its peak clipped into a small
- * hip. pyramid: four slopes to one point. flat: a flat roof behind a low parapet. mansard: steep slopes round a flat
+ * hip. pyramid: four slopes to one point. flat: a flat roof behind a low parapet. mansard: steep slopes around a flat
  * top with a skylight. A round building always gets a cone.
  */
 export const ROOF_STYLES = ["gable", "hip", "half-hip", "pyramid", "flat", "mansard"];
@@ -104,7 +104,7 @@ export const TYPES = {
       name: str(), // what the window and the outlines call it; else its id
       profile: str("village"),
       gardens: num(0.1, { min: 0, max: 1 }), // the share of houses with a tended garden (true and false still read)
-      density: num(1, { min: 0, max: 2 }),
+      density: num(1, { min: 0, max: 1 }),
       surface: oneOf(SURFACES, null), // its streets' surface; else the surface of a road through it
       bend: num(null, { unit: "deg", min: 0, max: 90 }),
       spacing: num(null, { unit: "ft", min: 25 }),
@@ -112,7 +112,7 @@ export const TYPES = {
       spacious: num(0, { min: 0, max: 1 }),
       crofts: num(null, { min: 0, max: 1 }), // the share of plots with a croft behind; else the type's
       croftDepth: num(null, { min: 0.1, max: 1 }), // how far back a croft runs, as a share of the plot behind the yard; else the type's
-      croftFence: oneOf(["all", "sides", "none"], null), // the croft's fence: all round, sides only (open at the back), none; else the type's
+      croftFence: oneOf(["all", "sides", "none"], null), // the croft's fence: all around, sides only (open at the back), none; else the type's
       plotLines: bool(false), // draw plot lines: yard and croft fences in hamlets and villages, faint walls between long plots elsewhere
       roofs: listOf(ROOFS), // the roof materials its houses choose from, equally; else a mix picked for its type from its seed
       roofStyles: listOf(ROOF_STYLES), // the roof forms its houses choose from, equally; else its type's mix

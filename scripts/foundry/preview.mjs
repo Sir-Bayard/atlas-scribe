@@ -119,12 +119,15 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #palette = false; // the side panel shows the drawing tools
   #tool = null; // the drawing under way: { id, points, box, cursor, snap, down }
   #keys = null; // the keyboard listener while drawing (Enter, Esc, Backspace)
+  #presses = null; // while drawing: notes whether the last press was in the window
+  #pressedHere = false;
   #finishedAt = 0; // when a drawing last finished, so the double-click that finished it doesn't also fit the map
   #picking = false; // the file picker for the underlay is open
   #queue = []; // inspector changes made while the map was drawing: (plan) => { plan } | { error }, applied when it's done
   #corners = []; // every corner in the plan, for a dragged corner to snap to
   #handles = []; // handlesOf(plan) as drawn
-  #edit = null; // the handle being dragged: { h, partners, plan, x, y, moved, next }
+  #edit = null; // the handle being dragged: { h, partners, plan, gen, x, y, moved, next }
+  #gen = 0; // bumped each time show() puts in a new plan, so a drag can tell an edited plan from a replaced one
 
   #host; // what the window asks of the module: check, quick, plans, publish, folder, last
   #saved = null; // the plan as last saved or opened (JSON), to tell when there are changes to save
@@ -157,7 +160,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       }
       return null;
     }
-    if (!this.#result && !this.#drawing) return this.#draw();
+    if (!this.#result && !this.#drawing && !this.#publishing) return this.#draw(); // after a scene is made, if painting
     return this.#result;
   }
 
@@ -192,6 +195,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#error = null;
     this.#result = null;
     if (path) this.#host.setLast(path);
+    this.#gen++;
     this.#history = [];
     this.#view = null;
     return this.#draw();
@@ -236,7 +240,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   #markBusy() {
     this.element?.querySelector(".as-pv-map")?.classList.add("as-busy");
-    for (const b of this.element?.querySelectorAll("[data-action^='asRe'], [data-action='asLock'], [data-action='asUndo'], [data-action='asScene'], [data-action='asQuick'], [data-action='asOpen'], [data-action='asImport']") ?? []) b.disabled = true;
+    for (const b of this.element?.querySelectorAll("[data-action='asReroll'], [data-action='asRerollAll'], [data-action='asLock'], [data-action='asUndo'], [data-action='asScene'], [data-action='asQuick'], [data-action='asOpen'], [data-action='asImport']") ?? []) b.disabled = true;
     // The inspector stays usable: what's changed meanwhile is queued (#flush) rather than lost
   }
 
@@ -349,7 +353,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       el.innerHTML = `<div class="as-pv-welcome">
           <i class="fa-solid fa-map-location-dot"></i>
           <h2>Make a map</h2>
-          <p>Quick Start makes a hamlet, village or town from a few choices. Then reroll, lock and reshape it here, and make it into a scene.</p>
+          <p>Quick Start makes a hamlet, village or town from a few choices. Then change anything on the map here (reroll, reshape, change settings, draw new things) and make it into a scene.</p>
           <div class="as-pv-tools">
             <button type="button" data-action="asQuick"><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Start</button>
             <button type="button" data-action="asOpen"><i class="fa-solid fa-folder-open"></i> Open a saved plan</button>
@@ -444,7 +448,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         </div>
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
-          <button type="button" data-action="asDraw" class="${this.#palette ? "as-on" : ""}" data-tooltip="Draw a new district, area, road, river, wall, bridge, prop or label" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-pen"></i> Draw</button>
+          <button type="button" data-action="asDraw" class="${this.#palette ? "as-on" : ""}" data-tooltip="Draw something new: a district, area, square, building, road, river, wall, bridge, prop or label" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-pen"></i> Draw</button>
           <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll all</button>
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip="Back to the plan before the last change"><i class="fa-solid fa-rotate-left"></i> Undo</button>
         </div>
@@ -457,7 +461,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asOutlines" class="${this.#outlines ? "as-on" : ""}"><i class="fa-solid fa-draw-polygon"></i> Outlines</button>
-          <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip="Drag corners to reshape districts and areas; drag a side's middle dot to add a corner; alt-click or right-click a corner to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
+          <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip="Drag corners and points to reshape districts, areas, roads, rivers and walls; drag the dot in a side's middle to add one; alt-click or right-click one to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
           <button type="button" data-action="asFit" data-tooltip="Fit the map to the window (or double-click it)"><i class="fa-solid fa-expand"></i> Fit</button>
           <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
@@ -496,7 +500,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         if (input && !input.disabled) {
           input.focus({ preventScroll: true });
           // Something typed while the map redrew is kept, not wiped by the redraw
-          if (was.value !== null && input.matches("input[type=text], input[type=number]") && input.value !== was.value) input.value = was.value;
+          // (not after a refusal: the box then shows what the plan has)
+          if (!this.#error && was.value !== null && input.matches("input[type=text], input[type=number]") && input.value !== was.value) input.value = was.value;
         }
       }
     }
@@ -547,7 +552,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         const u = underlayOf(this.#plan);
         if (!u) return;
         ev.stopPropagation();
-        this.#edit = { under: { corner: ug.classList.contains("as-under") ? Number(ug.dataset.corner) : null, rect: u.rect, from: this.#toSquares(ev) }, plan: this.#plan, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        this.#edit = { under: { corner: ug.classList.contains("as-under") ? Number(ug.dataset.corner) : null, rect: u.rect, from: this.#toSquares(ev) }, plan: this.#plan, gen: this.#gen, x: ev.clientX, y: ev.clientY, moved: false, next: null };
         box.setPointerCapture(ev.pointerId);
         return;
       }
@@ -558,7 +563,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         if (!l) return;
         ev.stopPropagation();
         const kind = grip.classList.contains("as-turn") ? "turn" : "move";
-        this.#edit = { label: { id: l.id, kind, at: l.at, angle: l.angle ?? 0, from: this.#toSquares(ev), lines: kind === "move" ? linesOf(this.#plan) : null }, plan: this.#plan, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        this.#edit = { label: { id: l.id, kind, at: l.at, angle: l.angle ?? 0, from: this.#toSquares(ev), lines: kind === "move" ? linesOf(this.#plan) : null }, plan: this.#plan, gen: this.#gen, x: ev.clientX, y: ev.clientY, moved: false, next: null };
         box.setPointerCapture(ev.pointerId);
         return;
       }
@@ -568,7 +573,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         ev.stopPropagation();
         if (h.kind === "corner" && (ev.button === 2 || ev.altKey)) return this.#reshape(removeCorner(this.#plan, h.id, h.i));
         if (ev.button !== 0) return;
-        this.#edit = { h, partners: h.kind === "corner" ? partnersOf(this.#plan, h.id, h.i) : [], plan: this.#plan, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        this.#edit = { h, partners: h.kind === "corner" ? partnersOf(this.#plan, h.id, h.i) : [], plan: this.#plan, gen: this.#gen, x: ev.clientX, y: ev.clientY, moved: false, next: null };
         box.setPointerCapture(ev.pointerId);
         return;
       }
@@ -682,6 +687,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   }
 
   _onClose() {
+    this.#queue = []; // a change waiting for a draw would otherwise open the window again
     this.#endTool();
     this.#palette = false;
     this.#resize?.disconnect();
@@ -727,14 +733,14 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     }
     if (point) return this.#select(point);
     // A label, by the box its text takes
-    const near = 8 / px; // at least 8 pixels round the text, however far out the map is zoomed
+    const near = 8 / px; // at least 8 pixels around the text, however far out the map is zoomed
     const label = this.#labelBoxes().find((l) => {
       const a = (-l.angle * Math.PI) / 180, dx = at[0] - l.at[0], dy = at[1] - l.at[1];
       const x = dx * Math.cos(a) - dy * Math.sin(a), y = dx * Math.sin(a) + dy * Math.cos(a); // into the label's frame
       return Math.abs(x) <= Math.max(l.hw, near) && Math.abs(y) <= Math.max(l.hh, near);
     });
     if (label) return this.#select(label.id);
-    // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area round it
+    // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area around it
     let road = null, roadD = Infinity;
     for (const p of this.#paths()) {
       const d = distanceToPath(at, p.pts);
@@ -837,12 +843,15 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const moving = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
       let best = null, bestD = 10 / px; // within 10 screen pixels
       for (const o of this.#corners) {
-        if (moving.has(o.id) || !!o.path !== !!e.h.path) continue; // roads snap to roads, districts to districts
+        // Roads snap to roads (rivers to rivers, walls to walls), districts and areas to districts and areas
+        if (moving.has(o.id) || !!o.path !== !!e.h.path || (e.h.path && o.type !== e.h.type)) continue;
         const d = Math.hypot(o.at[0] - to[0], o.at[1] - to[1]);
         if (d < bestD) { bestD = d; best = o.at; }
       }
       if (best) { to = [...best]; snapped = true; }
     }
+    e.to = to;
+    e.snapped = snapped;
     e.next = moveHandle(e.plan, e.h, to, e.partners, { exact: snapped });
     // Redraw the outlines that moved, and the handle, without redrawing the map
     const ids = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
@@ -898,22 +907,29 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   }
 
   /** A handle let go: the reshaped plan is drawn (a click that didn't move does nothing). */
-  #editEnd() {
+  async #editEnd() {
     const e = this.#edit;
     this.#edit = null;
     if (!e?.moved || !e.next) return;
+    // Another plan was put in mid-drag (opened, imported, Quick Start): the drag was on a plan that's gone
+    if (e.gen !== this.#gen) return this.render();
     // The underlay moved or scaled: kept on the plan as it is now (it changes nothing in the picture)
     if (e.under) {
-      if (e.plan !== this.#plan) return this.render(); // the plan was replaced mid-drag: drop the drag
       const rect = e.under.to;
       return this.#apply((plan) => ({ plan: setUnderlay(plan, { rect }) })); // waits its turn if the map is drawing
     }
-    // A label moved or turned while the plan changed under it (a setting typed and left as the drag began): the move
-    // is made on the plan as it is now
-    if (e.label && e.plan !== this.#plan && featureOf(this.#plan, e.label.id) && !this.#working)
+    if (e.plan === this.#plan) return this.#reshape(e.next);
+    // The plan changed under the drag (a setting typed and left as the drag began): the move is made again on the plan
+    // as it is now, once its drawing is in
+    await this.settled();
+    if (e.gen !== this.#gen || this.#working || !this.rendered) return this.rendered ? this.render() : undefined;
+    if (e.label) {
+      if (!featureOf(this.#plan, e.label.id)) return this.render();
       return this.#reshape(e.label.kind === "move" ? moveLabel(this.#plan, e.label.id, e.label.to) : turnLabel(this.#plan, e.label.id, e.label.to));
-    if (e.plan !== this.#plan) return this.render(); // the plan was replaced mid-drag: drop the drag
-    return this.#reshape(e.next);
+    }
+    if (!featureOf(this.#plan, e.h.id) || !e.to) return this.render();
+    const partners = e.h.kind === "corner" ? partnersOf(this.#plan, e.h.id, e.h.i) : [];
+    return this.#reshape(moveHandle(this.#plan, e.h, e.to, partners, { exact: e.snapped }));
   }
 
   /** Keeps a reshaped plan and draws it, unless a shape it changed would cross itself (then it says so). */
@@ -977,6 +993,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const id = target.dataset.id;
     const on = !(Array.isArray(this.#plan?.locked) && this.#plan.locked.includes(id));
     this.#remember();
+    this.#error = null;
     this.#plan = setLocked(this.#plan, id, on);
     this.render(); // locking changes nothing on the map
   }
@@ -984,6 +1001,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   static async #onUndo() {
     if (this.#working || !this.#history.length) return;
     const before = this.#history.pop();
+    this.#error = null;
     const sameMap = mapKey(before) === mapKey(this.#plan); // locks and labels don't change the picture
     this.#plan = before;
     if (sameMap && this.#result && !this.#stale) {
@@ -1004,6 +1022,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Applies every waiting inspector change as one step (one Undo), then redraws once. */
   async #flush() {
+    if (!this.rendered) { this.#queue = []; return; }
     if (this.#working || !this.#queue.length || !this.#plan) return;
     const ops = this.#queue;
     this.#queue = [];
@@ -1014,7 +1033,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (res.error) errors.push(res.error);
       else plan = res.plan;
     }
-    this.#error = errors.length ? `${errors.join(" ")} Nothing else was changed by ${errors.length === 1 ? "it" : "them"}.` : null;
+    this.#error = !errors.length ? null
+      : errors.length === ops.length ? `${errors.join(" ")} Nothing was changed.`
+      : `${errors.join(" ")} The other changes were made.`;
     if (canon(plan) === canon(this.#plan)) return this.render();
     const err = this.#error;
     await this.#change(plan);
@@ -1032,6 +1053,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** A setting back to its default: left out of the plan. */
   static async #onReset(event, target) {
+    if (this.#publishing || this.#saving) return; // nothing changes while a scene is made or a plan saved
     const id = target.closest(".as-pv-insp")?.dataset.id, field = target.dataset.field;
     if (id) await this.#apply((plan) => (id === "@plan" ? setPlanField(plan, field, undefined) : setField(plan, id, field, undefined)));
   }
@@ -1231,7 +1253,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       // not another window or dialog, and not while this one is minimized
       const target = ev.target;
       if (!this.#tool || this.minimized || target?.isContentEditable || target?.closest?.("input, select, textarea, [contenteditable]")) return;
-      if (target !== document.body && !this.element?.contains(target)) return;
+      // A key sent to the page itself counts only when the window had the last press: after a click on the canvas,
+      // Delete and Esc are Foundry's
+      if (target !== document.body ? !this.element?.contains(target) : !this.#pressedHere) return;
       if (ev.key === "Enter") this.#finish();
       else if (ev.key === "Escape") { this.#endTool(); this.render(); }
       else if (ev.key === "Backspace" || ev.key === "Delete") { this.#tool.points.pop(); this.render(); }
@@ -1240,11 +1264,17 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       ev.stopImmediatePropagation(); // Foundry would close the window on Esc
     };
     window.addEventListener("keydown", this.#keys, true);
+    // Which was pressed last, the window or the rest of the page
+    this.#pressedHere = true;
+    this.#presses = (ev) => { this.#pressedHere = !!this.element?.contains(ev.target); };
+    document.addEventListener("pointerdown", this.#presses, true);
   }
 
   #endTool() {
     if (this.#keys) window.removeEventListener("keydown", this.#keys, true);
+    if (this.#presses) document.removeEventListener("pointerdown", this.#presses, true);
     this.#keys = null;
+    this.#presses = null;
     this.#tool = null;
   }
 
@@ -1318,9 +1348,22 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
   }
 
+  /**
+   * After a dialog that will put a new plan in: true if it still may. Not while a scene is made or the plan saved, and
+   * a plan changed while the dialog was up is asked about again.
+   */
+  async #mayReplace(before) {
+    if (this.#publishing || this.#saving) {
+      ui.notifications.warn("AtlasScribe: the window is making a scene or saving the plan. Try again when it's done.");
+      return false;
+    }
+    return this.#plan === before || this.#mayDiscard();
+  }
+
   /** Quick Start: a few choices in a dialog, then a new plan in the window (not saved until Save). */
   static async #onQuick() {
     if (this.#working || !(await this.#mayDiscard())) return;
+    const before = this.#plan;
     const { QUICK, LABELS } = this.#host.quickChoices;
     const select = (key, title) => `<div class="form-group"><label>${title}</label><select name="${key}">${QUICK[key].map((v) => `<option value="${v}">${esc(LABELS[key]?.[v] ?? v)}</option>`).join("")}<option value="">Any (picked from the seed)</option></select></div>`;
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
@@ -1328,7 +1371,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Leave empty for a made-up name"></div>
         ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}
         <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
-        <p class="hint">Every choice can be rerolled, locked and reshaped afterwards.</p>
+        <p class="hint">Everything it makes can be changed afterwards.</p>
       </div>`;
     const chosen = await foundry.applications.api.DialogV2.wait({
       window: { title: "AtlasScribe: Quick Start", icon: "fa-solid fa-wand-magic-sparkles" },
@@ -1342,13 +1385,19 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (!chosen || chosen === "cancel") return;
     const opts = { ...chosen, seed: Number(chosen.seed) || seed };
     for (const k of Object.keys(QUICK)) if (!opts[k]) delete opts[k];
+    if (!(await this.#mayReplace(before))) return;
     const { plan } = this.#host.quick(opts);
-    await this.show(plan);
+    try {
+      await this.show(plan);
+    } catch (e) {
+      ui.notifications.error(e.message);
+    }
   }
 
   /** Open a plan saved in this world. */
   static async #onOpen() {
     if (this.#working || !(await this.#mayDiscard())) return;
+    const before = this.#plan;
     const plans = await this.#host.plans.list();
     if (!plans.length) return ui.notifications.info(`AtlasScribe: no plans are saved in ${this.#host.folder()} yet.`);
     const twice = new Set(plans.map((p) => p.name).filter((n, i, all) => all.indexOf(n) !== i)); // names saved more than once show their file
@@ -1364,7 +1413,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
     if (pick === null || pick === undefined || pick === "cancel" || pick === "") return; // closed, or nothing picked
     const chosen = plans[Number(pick)];
-    if (!chosen) return;
+    if (!chosen || !(await this.#mayReplace(before))) return;
     try {
       const plan = await this.#host.plans.load(chosen.path);
       // A plan with errors can't be drawn: say why, as Import does, rather than open a window that can't show it
@@ -1379,6 +1428,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   /** Import a plan from pasted text or a file; one with errors is refused, with them listed. */
   static async #onImport() {
     if (this.#working || !(await this.#mayDiscard())) return;
+    const before = this.#plan;
     const text = await foundry.applications.api.DialogV2.wait({
       window: { title: "AtlasScribe: Import a plan", icon: "fa-solid fa-file-import" },
       content: `<div class="atlas-scribe as-import">
@@ -1399,8 +1449,13 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (!checked.plan) return ui.notifications.error(checked.problems[0]?.message ?? "AtlasScribe: that isn't a plan.");
     const errors = checked.problems.filter((p) => p.level === "error");
     if (errors.length) return ui.notifications.error(`AtlasScribe: the plan has ${errors.length} error(s): ${errors.map((e) => e.message).join(" ")}`, { permanent: true });
+    if (!(await this.#mayReplace(before))) return;
     const { plan } = this.#host.read(text);
-    await this.show(plan);
+    try {
+      await this.show(plan);
+    } catch (e) {
+      ui.notifications.error(e.message);
+    }
   }
 
   /** Saves the plan in this world, by its id; asks before writing over another plan's file. */
@@ -1410,6 +1465,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Saves the plan; resolves to true when it was saved. */
   async #save() {
+    if (!this.#plan || this.#saving) return false;
+    // Settings changed while the map draws are applied first, so what's saved is what the window shows
+    await this.settled();
+    if (this.#queue.length) { await this.#flush(); await this.settled(); }
     if (!this.#plan || this.#saving) return false;
     this.#withId();
     // What's saved is the plan as it is now: a reroll made while the dialog is up stays unsaved
@@ -1441,6 +1500,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       return false;
     } finally {
       this.#saving = false;
+      if (this.#queue.length && this.rendered) setTimeout(() => this.#flush(), 0); // a change made while the dialog was up
     }
   }
 
@@ -1450,6 +1510,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       // From its name, with a short random tail, so two plans of the same name never share a file or a scene
       const id = `${String(this.#plan.name ?? "plan").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "plan"}-${Math.random().toString(36).slice(2, 6)}`;
       this.#plan = { ...this.#plan, id };
+      // Undo must not take the id away again: a second Make scene would make a second file and scene
+      this.#history = this.#history.map((p) => (p && !p.id ? { ...p, id } : p));
     }
     return this.#plan;
   }
@@ -1478,13 +1540,22 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const made = game.scenes.get(res?.scene?.sceneId);
       ui.notifications.info(`AtlasScribe: ${res?.scene?.created ? "made the scene" : "updated the scene"} ${made?.name ?? ""} in ${Math.round((res?.ms ?? 0) / 1000)} s.`);
       // Why the map looks as it does, when it isn't as asked: art that couldn't be had, settings the scene didn't take
-      const why = [...(res?.artNotes ?? []), ...(res?.missingArt?.length ? [`${res.missingArt.length} kinds of art weren't found and are painted in plain colors (${res.missingArt.slice(0, 6).join(", ")}${res.missingArt.length > 6 ? ", ..." : ""}).`] : []), ...(res?.warnings ?? [])];
+      // (when no art could be had at all, the note says so, and listing every kind would add nothing)
+      const n = res?.missingArt?.length ?? 0;
+      const none = (res?.artNotes ?? []).some((t) => /plain colors\.?$/.test(t));
+      const sentence = (t) => (/[.!?)]$/.test(t) ? t : `${t}.`);
+      const why = [...(res?.artNotes ?? []).map(sentence), ...(n && !none ? [`${n} ${n === 1 ? "kind of art wasn't" : "kinds of art weren't"} found and ${n === 1 ? "is" : "are"} painted in plain colors (${res.missingArt.slice(0, 6).join(", ")}${n > 6 ? ", ..." : ""}).`] : []), ...(res?.warnings ?? []).map(sentence)];
       if (why.length) ui.notifications.warn(`AtlasScribe: ${why.join(" ")}`, { permanent: true });
     } catch (e) {
       if (!e.cancelled) ui.notifications.error(e.message, { permanent: true });
     } finally {
       this.#publishing = false;
-      if (this.rendered) this.render();
+      if (this.rendered) {
+        // A window reopened while it painted has no picture yet; changes made meanwhile wait in the queue
+        if (!this.#result && !this.#drawing) this.#draw();
+        else if (this.#queue.length) setTimeout(() => this.#flush(), 0);
+        else this.render();
+      }
     }
   }
 

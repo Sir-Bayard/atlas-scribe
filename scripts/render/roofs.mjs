@@ -107,7 +107,7 @@ function flatFacets(b) {
   return finish([{ poly, down: [0, 0], eaveAngle: 0, eaves: [], flat: true }], { parapet: { w, joined: { start: js, end: je } } });
 }
 
-/** A mansard: four steep slopes round a flat top, with a skylight along it when there's room. */
+/** A mansard: four steep slopes around a flat top, with a skylight along it when there's room. */
 function mansardFacets(b) {
   const A = b.len / 2, B = b.dep / 2;
   const m = Math.min(A, B) * 0.38; // the steep slopes' width in plan
@@ -127,7 +127,7 @@ function mansardFacets(b) {
   return finish(out, { creases: hips.map((seg) => ({ seg, kind: "hip" })), caps: hips, skylight });
 }
 
-/** A round building's cone: wedges round the center, each lit by the way it faces. */
+/** A round building's cone: wedges around the center, each lit by the way it faces. */
 function coneFacets(b) {
   const R = Math.min(b.len, b.dep) / 2;
   const n = 16;

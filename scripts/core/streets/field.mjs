@@ -53,7 +53,7 @@ export function makeField({ lines = [], radials = [], axis = 0, bend = 0, seed =
       const out = Math.max(0, dist - r.radius);
       const w = Math.exp(-((out / r.reach) ** 2)) * 1.2;
       if (w < 1e-4 || dist < 1e-6) continue;
-      // Rings round the square: the direction square to the line from its center
+      // Rings around the square: the direction square to the line from its center
       const ang = Math.atan2(dy, dx) + Math.PI / 2;
       a += Math.cos(2 * ang) * w;
       b += Math.sin(2 * ang) * w;

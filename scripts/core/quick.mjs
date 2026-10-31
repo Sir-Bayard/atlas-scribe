@@ -318,7 +318,7 @@ export function quickPlan(options = {}) {
     }
   }
 
-  // Keep-outs for what goes round the edge: the districts, the green, the roads, the water
+  // Keep-outs for what goes around the edge: the districts, the green, the roads, the water
   const clearOfThings = (p, m) => !nearCluster(p, m) && !(green && distToPoly(p, green) < m)
     && roads.every((rd) => distToPath(p, rd.path) > roadHalf(rd) + m)
     && !(water && distToPath(p, water.path) < water.width / 25 / 2 + m);
@@ -348,7 +348,7 @@ export function quickPlan(options = {}) {
 
   // Field systems: in some of the wedges of land between the roads leaving the center (a wide gap split in two), each
   // filled with enclosed fields or open strips by the layout, which keeps them off the roads, water and farmyards and
-  // a ragged margin of grass round the districts. Farmland runs to the map's edge; mixed country has fields round the
+  // a ragged margin of grass around the districts. Farmland runs to the map's edge; mixed country has fields around the
   // village and rough ground beyond
   const fields = [];
   if (choices.surroundings !== "open") {

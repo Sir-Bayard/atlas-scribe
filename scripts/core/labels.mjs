@@ -103,12 +103,17 @@ export function labelsOf(plan) {
   return out;
 }
 
-/** The roads and water as the map draws them (curved), for angleNear: [{ path, half }]. */
+/**
+ * The roads and water as the map draws them (curved), for angleNear: [{ path, half }], with the squares' outlines as
+ * .squares (a label in a square names the square, so it isn't turned along a road running through it).
+ */
 export function linesOf(plan) {
   try {
     const p = smoothPlanPaths(normalize(plan));
     const sq = p.size?.ftPerSquare || 25;
-    return p.features.filter((f) => (f.type === "road" || f.type === "water") && Array.isArray(f.path) && f.path.length >= 2).map((f) => ({ path: f.path, half: (f.width ?? 0) / sq / 2 }));
+    const out = p.features.filter((f) => (f.type === "road" || f.type === "water") && Array.isArray(f.path) && f.path.length >= 2).map((f) => ({ path: f.path, half: (f.width ?? 0) / sq / 2 }));
+    out.squares = p.features.filter((f) => f.type === "square").map((f) => { try { return shapeToPolygon(f.shape); } catch { return []; } }).filter((q) => q.length >= 3);
+    return out;
   } catch {
     return [];
   }
@@ -117,6 +122,7 @@ export function linesOf(plan) {
 /** The readable angle of the line (from linesOf) nearest p, if one runs within tol squares of its edge; else null. */
 export function angleNear(lines, p, tol = 1) {
   if (!isPt(p)) return null;
+  if (lines?.squares?.some((q) => pointInPolygon(p, q))) return null;
   let best = null;
   for (const { path, half } of lines ?? []) {
     for (let i = 1; i < path.length; i++) {

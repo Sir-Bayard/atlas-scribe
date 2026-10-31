@@ -60,7 +60,7 @@ export function shapes(polys) {
   if (!polys.length) return [];
   const sign = Math.sign(signedArea(polys.reduce((a, b) => (area(b) > area(a) ? b : a))));
   const outers = polys.filter((p) => Math.sign(signedArea(p)) === sign).map((outer) => ({ outer, holes: [] }));
-  // Each hole goes with the smallest outer ring round it (an island inside a hole has its own outer ring, and a hole
+  // Each hole goes with the smallest outer ring around it (an island inside a hole has its own outer ring, and a hole
   // in that island is the island's, not the bigger ring's)
   for (const h of polys.filter((p) => Math.sign(signedArea(p)) !== sign)) {
     const homes = outers.filter((o) => C.pointInPolygonD({ x: h[0][0], y: h[0][1] }, toC(o.outer), PREC) !== C.PointInPolygonResult.IsOutside);

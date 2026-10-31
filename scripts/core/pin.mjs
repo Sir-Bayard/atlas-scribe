@@ -2,7 +2,7 @@
  * Pinning: copying something the generator made into the plan as a fixed feature, so rerolls keep it. A house (with
  * its wings, bay, dormers, stepped sections and turret) becomes a landmark whose buildings are drawn exactly as
  * they were; a district's street or lane becomes a plan road along the same line. Everything around it is still the
- * generator's: the district fills round a pinned house, and its other streets flow round a pinned street.
+ * generator's: the district fills around a pinned house, and its other streets flow around a pinned street.
  * Pure: runs in the worker, on the page and under node.
  */
 import { freeId } from "./draw.mjs";

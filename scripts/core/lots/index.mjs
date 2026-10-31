@@ -18,7 +18,7 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
  * chance the back of the plot is a small fenced field, croftDepth how far back it runs (a share of the plot behind
  * the yard) and croftFence how it's fenced (Patrick, 24 Oct: a quarter of village plots, half depth, open at the
  * back); bounds: the plot-line style when a district turns plotLines on (yards and crofts; else faint strips);
- * shapes: the chance a house has one rear wing (L), two (U) or wings and a back range round a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
+ * shapes: the chance a house has one rear wing (L), two (U) or wings and a back range around a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
  * merge: the chance a plot is joined to the one before it (a double plot); roofs: roof materials and their weights,
  * of which each district keeps `palette` (picked from its seed), so neighboring districts can differ; styles: the
  * share of each roof form (a terrace row shares its material and form, so it reads as a row); shapes also take T (a
@@ -68,7 +68,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
     ...ways.map((w) => ({ path: w.path, half: w.width / 2 })),
     ...water.map((w) => ({ path: w.path, half: w.width / 2 + 0.2 })),
   ]);
-  // Squares, yards and named buildings keep a little clear ground round them
+  // Squares, yards and named buildings keep a little clear ground around them
   const raw = difference([poly], [...cut, ...offset(blocked, 0.12)]);
   const blocks = shapes(raw).filter((b) => area(b.outer) - b.holes.reduce((s, h) => s + area(h), 0) > 0.5);
   // A fixed order, by position, so the same plan always cuts the same lots
@@ -214,7 +214,7 @@ function frontageRuns(outer, ways) {
     }
     tag.push(best);
   }
-  // Start where the tag changes, so a run that wraps round the first corner stays whole
+  // Start where the tag changes, so a run that wraps around the first corner stays whole
   let start = tag.findIndex((t, i) => t !== tag[(i - 1 + n) % n]);
   if (start < 0) start = 0;
   const runs = [];

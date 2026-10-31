@@ -136,7 +136,12 @@ export function snapEnd(plan, type, p, tol) {
 
 /** An id not yet in the plan: the tool's word and a number ("woods-3"). */
 export function freeId(plan, base) {
+  // Not one the plan still names either (a leftover seed, lock or label from an imported plan), so a new feature
+  // doesn't take over another's seed, lock or label
   const ids = new Set((plan?.features ?? []).filter(isObj).map((f) => f.id));
+  for (const k of Object.keys(isObj(plan?.seeds) ? plan.seeds : {})) ids.add(k);
+  for (const k of Array.isArray(plan?.locked) ? plan.locked : []) ids.add(k);
+  for (const f of plan?.features ?? []) if (isObj(f) && f.type === "label" && typeof f.of === "string") ids.add(f.of);
   for (let n = 1; ; n++) if (!ids.has(`${base}-${n}`)) return `${base}-${n}`;
 }
 
@@ -179,16 +184,22 @@ const HAS_CROSSING = 3;
 
 /**
  * Bridges and fords for a new road or water (in the copy it's given): one at each place it crosses the other kind,
- * unless the plan already has a crossing within HAS_CROSSING. Returns the ids added.
+ * unless a crossing the plan has already belongs there (within HAS_CROSSING, and nearer that place than any other
+ * place a road crosses the water, as the layout pairs them). Returns the ids added.
  */
 function addCrossings(plan, f) {
   if ((f.type !== "road" && f.type !== "water") || !Array.isArray(f.path)) return [];
   const others = plan.features.filter((g) => isObj(g) && g !== f && g.type === (f.type === "road" ? "water" : "road") && Array.isArray(g.path));
   const hits = f.type === "road" ? roadWaterCrossings([f], others) : roadWaterCrossings(others, [f]);
   const added = [];
+  const ok = (g) => Array.isArray(g.path) && g.path.length >= 2 && g.path.every((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]));
+  const allRoads = plan.features.filter((g) => isObj(g) && g.type === "road" && ok(g));
+  const allWater = plan.features.filter((g) => isObj(g) && g.type === "water" && ok(g));
+  const spots = roadWaterCrossings(allRoads, allWater).map((x) => x.at);
+  const nearestSpot = (p) => spots.reduce((b, s) => (!b || dist(s, p) < dist(b, p) ? s : b), null);
   for (const h of hits) {
     const have = plan.features.filter((g) => isObj(g) && g.type === "crossing" && Array.isArray(g.at));
-    if (have.some((g) => dist(g.at, h.at) <= HAS_CROSSING)) continue;
+    if (have.some((g) => dist(g.at, h.at) <= HAS_CROSSING && dist(nearestSpot(g.at) ?? g.at, h.at) <= SAME * 4)) continue;
     const ford = h.water.class === "stream" && (h.road.class === "track" || h.road.class === "path");
     const id = freeId(plan, ford ? "ford" : "bridge");
     plan.features.push({ id, type: "crossing", class: ford ? "ford" : "bridge", at: [r1(h.at[0]), r1(h.at[1])] });
@@ -218,7 +229,7 @@ export function waterTest(plan) {
  */
 function addAccess(plan, f) {
   const full = normalize(plan);
-  const roads = full.features.filter((g) => g.type === "road" && Array.isArray(g.path));
+  const roads = full.features.filter((g) => g.type === "road" && Array.isArray(g.path) && g.path.length >= 2 && g.path.every((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1])));
   const shape = (g) => { try { return shapeToPolygon(g.shape, g.type === "area" || g.type === "building" || g.type === "water" ? g.rot ?? 0 : 0); } catch { return []; } };
   const poly = shape(f);
   if (poly.length < 3) return [];
@@ -273,7 +284,7 @@ function segCross(a, b, c, d) {
  * The plan with a new feature made by a tool from what was drawn: points (corners, a path's points, or one point),
  * or box: [x0, y0, x1, y1]. A new road or water gets bridges and fords where it crosses the other (crossings: their
  * ids); a district with no way in gets a lane from the nearest road, and a square in a district off the roads gets
- * streets round it (access: what was added). Returns { plan, id, crossings, access } or { error } (too few points, a shape that crosses itself, one too
+ * streets around it (access: what was added). Returns { plan, id, crossings, access } or { error } (too few points, a shape that crosses itself, one too
  * small, or anything else the checker would refuse about the new feature).
  */
 export function addFeature(plan, toolId, { points = [], box = null } = {}) {

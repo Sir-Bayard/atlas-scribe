@@ -63,10 +63,10 @@ export function handlesOf(plan) {
     if (!e) continue;
     if (e.kind === "poly" || e.kind === "path") {
       e.pts.forEach((p, i) => {
-        out.push({ id: f.id, kind: "corner", i, at: p, path: e.kind === "path" });
+        out.push({ id: f.id, kind: "corner", i, at: p, path: e.kind === "path", type: f.type });
         if (e.kind === "path" && i === e.pts.length - 1) return; // a path's last point has no stretch after it
         const q = e.pts[(i + 1) % e.pts.length];
-        out.push({ id: f.id, kind: "mid", i, at: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], path: e.kind === "path" });
+        out.push({ id: f.id, kind: "mid", i, at: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], path: e.kind === "path", type: f.type });
       });
     } else if (e.kind === "circle") out.push({ id: f.id, kind: "radius", i: 0, at: [e.c[0] + e.r, e.c[1]] });
     else {
@@ -86,8 +86,9 @@ export function partnersOf(plan, id, i) {
   const me = all.find((x) => x.f.id === id);
   if (!me?.pts[i]) return [];
   const out = [];
-  // Paths share points with paths, shapes with shapes: a district corner on a road's point doesn't drag the road
-  for (const o of all) if (o !== me && o.path === me.path) o.pts.forEach((p, j) => { if (near(p, me.pts[i])) out.push({ id: o.f.id, i: j }); });
+  // Paths share points with paths of their own type (a road with roads, never with a river or a wall), shapes with
+  // shapes: a district corner on a road's point doesn't drag the road
+  for (const o of all) if (o !== me && o.path === me.path && (!me.path || o.f.type === me.f.type)) o.pts.forEach((p, j) => { if (near(p, me.pts[i])) out.push({ id: o.f.id, i: j }); });
   // A ring's first and last points are one point
   if (me.path) me.pts.forEach((p, j) => { if (j !== i && near(p, me.pts[i])) out.push({ id: me.f.id, i: j }); });
   return out;
@@ -105,7 +106,7 @@ function withPoints(plan, ids, fn) {
     const pts = fn(e.pts, f.id);
     if (!pts) continue;
     if (e.kind === "path") f.path = pts;
-    else f.shape = pts;
+    else f.shape = clean(pts); // a corner dropped on its neighbor becomes one corner, not two in the same place
   }
   return out;
 }
@@ -120,7 +121,7 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
   const at = exact ? [to[0], to[1]] : [round(to[0]), round(to[1])];
   if (kind === "corner") {
     const where = [{ id, i }, ...partners];
-    return refit(withPoints(plan, [...new Set(where.map((w) => w.id))], (pts, fid) => {
+    return refitAfter(plan, where.map((w) => w.id), withPoints(plan, [...new Set(where.map((w) => w.id))], (pts, fid) => {
       for (const w of where) if (w.id === fid) pts[w.i] = [...at];
       return pts;
     }));
@@ -129,7 +130,7 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
     const me = polys(plan).find((x) => x.f.id === id);
     if (!me) return structuredClone(plan);
     const a = me.pts[i], b = me.pts[(i + 1) % me.pts.length];
-    // Every shape with a side from a to b (either way round) gets the new corner on it
+    // Every shape with a side from a to b (either way around) gets the new corner on it
     const sides = new Map();
     for (const o of polys(plan)) {
       for (let j = 0; j < (o.path ? o.pts.length - 1 : o.pts.length); j++) {
@@ -137,7 +138,7 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
         if ((near(p, a) && near(q, b)) || (near(p, b) && near(q, a))) { sides.set(o.f.id, j); break; }
       }
     }
-    return refit(withPoints(plan, [...sides.keys()], (pts, fid) => { pts.splice(sides.get(fid) + 1, 0, [...at]); return pts; }));
+    return refitAfter(plan, [...sides.keys()], withPoints(plan, [...sides.keys()], (pts, fid) => { pts.splice(sides.get(fid) + 1, 0, [...at]); return pts; }));
   }
   const out = structuredClone(plan);
   const f = out.features.find((x) => isObj(x) && x.id === id);
@@ -159,7 +160,7 @@ export function removeCorner(plan, id, i) {
   const isPath = (fid) => !!all.find((x) => x.f.id === fid)?.path;
   const where = new Map([[id, i]]);
   if (!isPath(id)) for (const p of partnersOf(plan, id, i)) if (!isPath(p.id)) where.set(p.id, p.i);
-  return refit(withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? pts.filter((_, j) => j !== where.get(fid)) : null)));
+  return refitAfter(plan, [...where.keys()], withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? pts.filter((_, j) => j !== where.get(fid)) : null)));
 }
 
 /** Where segment a-b crosses c-d, or null. */
@@ -172,30 +173,55 @@ function cross(a, b, c, d) {
   return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + rx * t, a[1] + ry * t] : null;
 }
 
-/**
- * After a road or the water moves (in a plan copy, changed in place): each of the plan's bridges and fords moves to the
- * nearest place a road now crosses the water (one each, nearest first), so they follow the road and the river. One
- * with no crossing left for it stays put.
- */
-export function refit(plan) {
+/** refit, when one of the features moved (ids, in the plan before) is a road or water: districts and woods move no bridge. */
+function refitAfter(before, ids, plan) {
+  const moved = new Set(ids);
+  return (before?.features ?? []).some((f) => isObj(f) && moved.has(f.id) && (f.type === "road" || f.type === "water")) ? refit(plan, before) : plan;
+}
+
+/** Every place a road crosses the water: [{ at, road, water }], one per place (a road point on the water's line is one). */
+function crossingSpots(plan) {
   const feats = plan?.features ?? [];
-  const list = feats.filter((f) => isObj(f) && f.type === "crossing" && Array.isArray(f.at));
-  if (!list.length) return plan;
   const roads = feats.filter((f) => isObj(f) && f.type === "road" && Array.isArray(f.path));
   const waters = feats.filter((f) => isObj(f) && f.type === "water" && Array.isArray(f.path));
   const spots = [];
   for (const r of roads) for (let i = 1; i < r.path.length; i++) for (const w of waters) for (let j = 1; j < w.path.length; j++) {
     const x = cross(r.path[i - 1], r.path[i], w.path[j - 1], w.path[j]);
-    if (x) spots.push(x);
+    if (x && !spots.some((s) => near(s.at, x))) spots.push({ at: x, road: r.id, water: w.id });
   }
+  return spots;
+}
+
+/**
+ * After a road or the water moves (in a plan copy, changed in place): each of the plan's bridges and fords moves to the
+ * nearest place a road now crosses the water (one each, nearest first), so they follow the road and the river. A
+ * crossing that sat where a road crossed the water (in the plan before, when given) follows that same road over that
+ * same water however far it moved; any other only moves within a few squares (or its own length), so a footbridge
+ * placed off the roads, or one left after its road was deleted, doesn't jump across the map. One with no place left
+ * for it stays put.
+ */
+export function refit(plan, before = null) {
+  const feats = plan?.features ?? [];
+  const list = feats.filter((f) => isObj(f) && f.type === "crossing" && Array.isArray(f.at));
+  if (!list.length) return plan;
+  const sq = Number(plan?.size?.ftPerSquare) || 25;
+  const spots = crossingSpots(plan).map((s) => ({ ...s, key: `${s.road}|${s.water}` }));
+  const old = before ? crossingSpots(before) : [];
   const pairs = [];
-  list.forEach((c, n) => spots.forEach((x, m) => pairs.push({ n, m, d: Math.hypot(x[0] - c.at[0], x[1] - c.at[1]) })));
+  list.forEach((c, n) => {
+    const on = old.find((s) => Math.hypot(s.at[0] - c.at[0], s.at[1] - c.at[1]) <= 0.5);
+    const reach = Math.max(3, (Number(c.length) || 0) / sq);
+    spots.forEach((x, m) => {
+      const d = Math.hypot(x.at[0] - c.at[0], x.at[1] - c.at[1]);
+      if (d <= reach || (on && x.key === `${on.road}|${on.water}`)) pairs.push({ n, m, d });
+    });
+  });
   pairs.sort((a, b) => a.d - b.d);
   const usedC = new Set(), usedX = new Set();
   for (const { n, m } of pairs) {
     if (usedC.has(n) || usedX.has(m)) continue;
     usedC.add(n); usedX.add(m);
-    list[n].at = [round(spots[m][0]), round(spots[m][1])];
+    list[n].at = [round(spots[m].at[0]), round(spots[m].at[1])];
   }
   return plan;
 }

@@ -62,7 +62,7 @@ const fitsIn = (pts, poly) => {
  * crofts polygons; bounds [{ path, class }].
  */
 export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r }) {
-  // In the plot, and clear of anything the plot was cut round (a named building inside a block is a hole in it)
+  // In the plot, and clear of anything the plot was cut around (a named building inside a block is a hole in it)
   // and clear of every street: the plot already stops at the street, but fitsIn's small tolerance could let a
   // corner over the line. Points along each side are tested too, since a street may bend at a house
   const clearOfWays = (pts) => pts.every((p, i) => {
@@ -113,7 +113,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     const wantGarden = lr.next() < gardenShare, wantOut = lr.next() < T.outbuilding, wantCroft = lr.next() < (district.crofts ?? T.croft);
     const gDepth = 0.8 + lr.next() * 0.6, oSize = sq(9 + lr.next() * 9), oSide = lr.next() - 0.5, yard = sq(10 + lr.next() * 15);
     const bClass = boundClass(lr);
-    // The house's shape: one rear wing (L), two (U), or two and a back range round a yard (court)
+    // The house's shape: one rear wing (L), two (U), or two and a back range around a yard (court)
     const shapeRoll = lr.next(), wingLeft = lr.next() < 0.5, wingW = sq(12 + lr.next() * 8), wingL = sq(15 + lr.next() * 20);
     const rowLen = 2 + lr.int(4); // terraces: houses in a row share one roof material
     const variant = lr.int(8); // a house and its wings share one roof
@@ -255,7 +255,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
           placed.push(rectOf(q));
         }
       }
-      // Gables on the front slope of a long roof, the house's roof carrying on round them in valleys: either wall
+      // Gables on the front slope of a long roof, the house's roof carrying on around them in valleys: either wall
       // dormers (a short gabled roof running back from the eave) or cross-gables (a gable rising straight from the
       // eave, its two slopes meeting the roof in a pair of valleys), half and half
       if (!sections.length && !bay && pitched && style !== "pyramid" && wantDormers && w >= sq(28)) {
@@ -393,14 +393,14 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         if (behindYard) addBounds(behindYard, wayById.get(lot.way), "wall", (a, b) => Math.abs(depthOf(a) - reachBack) < 0.05 && Math.abs(depthOf(b) - reachBack) < 0.05);
       }
     }
-    // Boundaries near the house only (Patrick, 24 Oct): the yard round the house and outbuilding, fenced on its
-    // sides and back but not along the street, and the fence round a croft. The long back lines aren't drawn.
+    // Boundaries near the house only (Patrick, 24 Oct): the yard around the house and outbuilding, fenced on its
+    // sides and back but not along the street, and the fence around a croft. The long back lines aren't drawn.
     const way = wayById.get(lot.way);
     if (yardLines && house) {
       const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);
       if (toft) addBounds(toft, way, bClass);
     }
-    // The croft's fence: all round, its sides only (open at the back, fading into the fields), or none
+    // The croft's fence: all around, its sides only (open at the back, fading into the fields), or none
     const croftFence = district.croftFence ?? T.croftFence ?? "all";
     if (yardLines && wantCroft && croftOf === i && croftFence !== "none") {
       const croft = out.crofts[out.crofts.length - 1];

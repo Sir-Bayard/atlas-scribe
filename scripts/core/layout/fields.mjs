@@ -3,7 +3,7 @@
  * (d3-delaunay, bundled in vendor/). Two systems:
  *
  * - patchwork: enclosed fields, each a Voronoi cell (a few merged with a neighbor into one bigger field), hedged or
- *   walled along the roads, round the system's edge and on about a quarter of the sides between them (the rest a faint
+ *   walled along the roads, around the system's edge and on about a quarter of the sides between them (the rest a faint
  *   grass edge), with a tree in the hedgerow here and there. The cells are stretched along the
  *   system's grain (the area's long axis), so fields run long and their sides fall roughly parallel, as old enclosures do.
  * - strips: open fields. The cells are furlongs, each plowed in long narrow strips running one way or the other
@@ -11,9 +11,9 @@
  *
  * Every field takes a crop for the season (plowed, growing, ripe, stubble, hay, pasture, fallow) and the way its
  * rows run; about a third of the fields (or furlongs) are left as grass, by the area's coverage, so the land isn't
- * cultivated wall to wall. The cells come from the area's own shape and stream, never from what's round it, so moving
+ * cultivated wall to wall. The cells come from the area's own shape and stream, never from what's around it, so moving
  * a road clips the fields differently but never reshuffles them; the land a system fills is its shape less the roads,
- * water, districts and a ragged margin of grass round each, squares, yards, other areas, buildings and the fields
+ * water, districts and a ragged margin of grass around each, squares, yards, other areas, buildings and the fields
  * systems listed before it. Pure: runs anywhere.
  * Numbers are in squares.
  */
@@ -43,11 +43,11 @@ const FIELD_FT = { patchwork: 300, strips: 450 };
 const STRIP_FT = 60;
 /** How far fields keep from things, in squares (beyond a road's or river's half width). */
 const KEEP = { road: 0.5, water: 0.7, square: 0.3, building: 0.6, area: 0.15, wall: 0.4, lane: 0.35 };
-/** The grass round a farmyard before the fields start, in feet, varying round it as a district's does. */
+/** The grass around a farmyard before the fields start, in feet, varying around it as a district's does. */
 const FARM_MARGIN_FT = [30, 90];
 /** An access lane: how wide, in feet, and the farthest a farm, yard, park or square can be from a road and still get one, in squares. */
 const LANE_FT = 10, LANE_REACH = 40;
-/** The grass round a district before the fields start, in feet: at least the first, up to the second, varying round it. */
+/** The grass around a district before the fields start, in feet: at least the first, up to the second, varying around it. */
 const MARGIN_FT = [75, 200];
 /** The share of a system's fields (or furlongs) that are cultivated when the plan gives no coverage; the rest is grass. */
 const COVERAGE = 0.65;
@@ -56,7 +56,7 @@ const HEDGED = 0.25;
 
 /**
  * What a field system keeps out of: polygons, from the plan alone (roads and water at their widths, walls and hedges,
- * districts with a ragged margin of grass round them (marginRound), squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
+ * districts with a ragged margin of grass around them (marginRound), squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
  * smoothed (as the layout has it).
  */
 export function fieldKeepOut(plan, self) {
@@ -100,14 +100,14 @@ export function fieldKeepOut(plan, self) {
   }
   // A farm's (or a yard's, park's or square's) lane out to the road
   for (const lane of accessLanes(plan)) paths.push({ path: lane.path, half: lane.width / 2 + KEEP.lane });
-  // Every polygon in Clipper's own winding (a union of one), so a shape drawn the other way round can't cancel another
+  // Every polygon in Clipper's own winding (a union of one), so a shape drawn the other way around can't cancel another
   // where they overlap
   return [...bands(paths), ...polys.filter((p) => p.length >= 3).flatMap((p) => union([p]))];
 }
 
 /**
- * A district and the grass round it, where fields don't come: the outline pushed out by 75 to 200 feet, the distance
- * wandering round it by a noise from the plan's seed and the district's id (not its own seed, so rerolling a district
+ * A district and the grass around it, where fields don't come: the outline pushed out by 75 to 200 feet, the distance
+ * wandering around it by a noise from the plan's seed and the district's id (not its own seed, so rerolling a district
  * never moves the fields). The district's box is lost in plain grass instead of standing out against the crops.
  */
 export function marginRound(plan, district, feet = MARGIN_FT) {
@@ -147,7 +147,7 @@ function crosses(a, b, c, d) {
  * nearest place on a plan road within LANE_REACH (a farm's from the middle of its yard; a park's from the middle of
  * one of its sides, where its paths begin). A lane doesn't run through water (across it or along its banks), a
  * district, another yard, park, farm or square, a plan building or a pond (what stands in or beside the feature
- * itself doesn't count), end off the map or at the water's edge, or go the long way round: when the nearest road can
+ * itself doesn't count), end off the map or at the water's edge, or go the long way around: when the nearest road can
  * only be reached by a detour of more than a third again (and 3 squares), there's no lane. Woods and fields it may
  * cross (hedges crossed lose their bushes there). From the plan alone, so the fields can keep off them and rerolling
  * never moves them; worked out once per plan. Returns [{ id, from, path, width }] (path from the feature's edge to the
@@ -219,7 +219,7 @@ export function accessLanes(plan) {
     let first = list.find((x) => !behind(x));
     if (!first) { list = within(LANE_REACH); first = list.find((x) => !behind(x)); }
     if (!first) continue;
-    const cap = first.d + Math.max(3, first.d / 3); // no lane rather than a long way round
+    const cap = first.d + Math.max(3, first.d / 3); // no lane rather than a long way around
     if (cap > list.at(-1).d) list = within(cap);
     const best = list.find((x) => x.d >= first.d && x.d <= cap && !behind(x) && !wet(x.st.from, x.q) && !blocked(x.st.from, x.q));
     if (!best) continue;
@@ -409,11 +409,11 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
         out.fields.push({ poly: piece.outer, holes: piece.holes, crop, angle, shade, variant, rows: ROWS[crop] ?? 0 });
       }
     }
-    // Borders: every side between two fields (or a field and grass), and round the fields at the land's edge, except
+    // Borders: every side between two fields (or a field and grass), and around the fields at the land's edge, except
     // along the map's edge and along an earlier field system (whose own border runs there). Grass meets grass unbounded
     const bordered = (s) => { const [i, j] = s.cells.map(find); return i !== j && !(open.has(i) && open.has(j)); };
     const openAt = (p) => { const i = cells.findIndex((c) => pointInPolygon(p, c)); return i >= 0 && open.has(find(i)); };
-    // Not every border is a hedge or wall, or every field is ringed by one: those along a road and round the system's
+    // Not every border is a hedge or wall, or every field is ringed by one: those along a road and around the system's
     // own edge are, and about a quarter of the sides between fields (each side's own draw); the rest are a faint grass
     // edge, as are the edges facing a village, water or a wood
     const walled = (s) => border !== "none" && r.fork("side", s.id).chance(HEDGED);
@@ -485,7 +485,7 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
       // A balk only runs between two strips that are there (a stub left as grass takes its balk with it)
       out.balks.push(...trimLines(cuts, kept, true));
     });
-    // Headlands between furlongs, and the border (if any) round the land
+    // Headlands between furlongs, and the border (if any) around the land
     const headlands = [];
     for (const s of inner) if (!(openF.has(s.cells[0]) && openF.has(s.cells[1]))) headlands.push(...clipSegment(s.a, s.b, land));
     out.balks.push(...trimLines(headlands, out.fields, false));

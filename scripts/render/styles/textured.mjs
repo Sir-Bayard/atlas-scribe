@@ -177,7 +177,7 @@ export function paint(ctx) {
   if (grassLift) { g.save(); g.globalCompositeOperation = "screen"; g.globalAlpha = 0.55; g.fillStyle = "rgb(75,88,30)"; g.fillRect(0, 0, W, H); g.restore(); }
   for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), 2, 0.5, "source-over", boxOf([a.poly]));
 
-  // Fields: each crop's texture, a field a shade lighter or darker than the next, a worn margin round each, then the
+  // Fields: each crop's texture, a field a shade lighter or darker than the next, a worn margin around each, then the
   // rows (furrows, drills, the windrows of cut hay) and the grass balks between strips
   progress(0.08, "Fields");
   const fields = items("field");
@@ -194,7 +194,7 @@ export function paint(ctx) {
   }
   for (const [key, list] of groups) {
     const [crop, v] = key.split("|");
-    // Under snow a field is mostly the snow round it: its own art shows only faintly
+    // Under snow a field is mostly the snow around it: its own art shows only faintly
     soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), winter ? 0.3 : 0.06, winter ? 0.45 : 1, "source-over", boxOf(list.map((f) => f.poly)));
   }
   // The crop art is dark beside the grass: lift each crop toward its own color (a screen), so a field reads as wheat,
@@ -358,7 +358,7 @@ export function paint(ctx) {
 
   // Squares
   progress(0.45, "Squares");
-  // A square sits in the roads rather than on them: a worn apron round it that the roads and streets run into, the
+  // A square sits in the roads rather than on them: a worn apron around it that the roads and streets run into, the
   // paving laid with a soft, slightly ragged edge, then the roads' worn lines carried on faintly across it
   for (const sq of items("surface", "square")) {
     const shape = (k, grow) => { poly(k, sq.poly); k.fill(); if (grow) { k.lineWidth = grow * 2 * pp; k.lineJoin = "round"; k.stroke(); } };
@@ -522,7 +522,7 @@ export function paint(ctx) {
       g.strokeStyle = s === "winter" ? "rgb(228,232,237)" : capColor(b.roof); g.lineWidth = capW;
       for (const seg of facets.caps) line(...seg);
     }
-    // A flat roof's parapet: a low stone wall round its edge (not across a wing's join), casting a little shade inward
+    // A flat roof's parapet: a low stone wall around its edge (not across a wing's join), casting a little shade inward
     if (facets.parapet) paintParapet(g, b, facets.parapet, pp, c, sn, s);
     // A mansard's skylight
     if (facets.skylight) paintSkylight(g, facets.skylight, pp, s);

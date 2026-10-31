@@ -19,6 +19,7 @@ export function underlayOf(plan) {
 
 /** The plan with an image of w by h pixels as its underlay, fitted inside the map and centered, half see-through. */
 export function addUnderlay(plan, path, w, h) {
+  if (!(isNum(w) && w > 0 && isNum(h) && h > 0)) return plan; // an image with no size can't be fitted
   const [MW, MH] = plan?.size?.squares ?? [50, 50];
   const k = Math.min(MW / w, MH / h);
   const iw = w * k, ih = h * k;

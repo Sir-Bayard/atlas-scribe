@@ -36,7 +36,7 @@ function turnAt(prev, at, next) {
  * A smooth curve through pts, a point about every step squares. Two points (or fewer) come back as they are.
  * corner: turns sharper than this many degrees are corners: the path is curved in pieces between them, so it never
  * swings wide to pass through a sharp turn. round: a corner is rounded off this far along each side (squares; 0
- * leaves it sharp). A path whose last point is its first (a ring road, a wall round a yard) is curved all the way
+ * leaves it sharp). A path whose last point is its first (a ring road, a wall around a yard) is curved all the way
  * round, with no kink at the join.
  */
 export function smoothPath(pts, step = 1, corner = 180, round = 0) {

@@ -35,12 +35,12 @@ export function checkPlan(raw) {
 
   const plan = normalize(raw);
   // The reference image under the window's sketch: never painted, so a broken one is only a warning
-  if (raw.underlay !== undefined && !underlayOf(raw)) warn(null, "underlay", "underlay should be { path, rect: [left, top, right, bottom] } (squares, left below right, top below bottom); it's ignored.");
+  if (raw.underlay !== undefined && !underlayOf(raw)) warn(null, "underlay", "underlay should be { path, rect: [left, top, right, bottom] } (squares, left less than right, top less than bottom); it's ignored.");
   else if (underlayOf(raw) && /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(underlayOf(raw).path)) warn(null, "underlay", `The underlay's image is outside Foundry's files (${underlayOf(raw).path.split("/")[2] ?? "another site"}); it's fetched from there each time the plan is opened.`);
   const [w, h] = plan.size.squares;
   if (!(plan.size.squares.length === 2 && Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
   // Past 100 ft a square a district holds thousands of plots a square and takes minutes to lay out
-  if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square: 5 for a battle map, 25 for a town).");
+  if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square; 25 suits a village or town).");
   if (!isNum(plan.seed) && !(typeof plan.seed === "string" && plan.seed)) err(null, "seed", "seed must be a number.");
   for (const [name, values] of [["season", SEASONS], ["style", STYLES], ["ground", SURFACES]])
     if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "textured" : "a plain fill"} will be used.`);
@@ -74,7 +74,7 @@ export function checkPlan(raw) {
 
   // Districts: a known profile, and a way in: a road into it, or a street from a neighboring district through a gate
   // on the side they share (a hamlet makes no streets of its own, so it needs a road)
-  const ways = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path));
+  const ways = plan.features.filter((f) => f.type === "road" && isPath(f.path));
   const dfeats = plan.features.filter((f) => f.type === "district" && f.id);
   let gates = null;
   const gatesOf = (id) => {
@@ -91,7 +91,8 @@ export function checkPlan(raw) {
   };
   for (const d of dfeats) {
     if (!PROFILES.includes(d.profile)) err(d.id, "profile", `District "${d.id}" uses the profile "${d.profile}", which this version doesn't know (it knows: ${PROFILES.join(", ")}).`);
-    const poly = shapeToPolygon(d.shape);
+    let poly = [];
+    try { poly = shapeToPolygon(d.shape); } catch { poly = []; }
     if (poly.length < 3 || ways.some((r) => pathTouchesPolygon(r.path, poly)) || gatesOf(d.id).length) continue;
     const hamlet = d.profile === "hamlet" || d.profile === "roadside";
     warn(d.id, "shape", hamlet
@@ -102,7 +103,7 @@ export function checkPlan(raw) {
   // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)
   for (const f of plan.features.filter((f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape))) {
     const pts = f.shape.filter((p, k) => !(k === f.shape.length - 1 && k > 0 && p[0] === f.shape[0][0] && p[1] === f.shape[0][1]));
-    if (pts.length >= 3 && polygonCrossesItself(pts)) warn(f.id, "shape", `"${f.id}"'s outline crosses itself or repeats a corner, so what's inside it is unclear. Give its corners in order round the edge.`);
+    if (pts.length >= 3 && polygonCrossesItself(pts)) warn(f.id, "shape", `"${f.id}"'s outline crosses itself or repeats a corner, so what's inside it is unclear. Give its corners in order around the edge.`);
   }
 
   // Districts that overlap: the shared part is filled by both, so their houses stand on each other's
@@ -205,8 +206,9 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(f.id, k, `"${where}" has a field "${k}" that AtlasScribe doesn't use.`);
 
   // Far off the map: wholly off it, it's left out; reaching far past it, laying it out would take too long
-  const pts = f.at ? [f.at] : f.path ?? (f.shape ? shapeToPolygon(f.shape) : []);
-  if (pts.length && pts.every(isPoint) && w > 0 && h > 0) {
+  let pts = [];
+  try { pts = f.at ? [f.at] : f.path ?? (f.shape ? shapeToPolygon(f.shape) : []); } catch { pts = []; }
+  if (Array.isArray(pts) && pts.length && pts.every(isPoint) && w > 0 && h > 0) {
     const [x0, y0, x1, y1] = bbox(pts);
     // How far past the edge: a district fills all of its shape with streets and plots, so it's held close; an area
     // less so; a road, river or wall just runs on (only one absurdly long would be too many points to curve)
@@ -257,7 +259,7 @@ function checkShape(shape, where, field, need, MIN_SHAPE = MIN_SIZE) {
   }
   if (shape?.rect) {
     const r = shape.rect;
-    if (!need(Array.isArray(r) && r.length === 4 && r.every(isNum) && r[0] < r[2] && r[1] < r[3], field, `"${where}" has a rect that should be [left, top, right, bottom], left below right and top below bottom.`)) return false;
+    if (!need(Array.isArray(r) && r.length === 4 && r.every(isNum) && r[0] < r[2] && r[1] < r[3], field, `"${where}" has a rect that should be [left, top, right, bottom], left less than right and top less than bottom.`)) return false;
     return big(r[2] - r[0] >= MIN_SHAPE && r[3] - r[1] >= MIN_SHAPE);
   }
   if (shape?.circle) return need(Array.isArray(shape.circle) && shape.circle.length === 3 && shape.circle.every(isNum) && shape.circle[2] > 0, field, `"${where}" has a circle that should be [x, y, radius].`) && big(shape.circle[2] * 2 >= MIN_SHAPE);

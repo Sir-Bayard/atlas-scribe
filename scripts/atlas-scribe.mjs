@@ -346,7 +346,7 @@ function theWindow() {
 Hooks.once("init", () => {
   game.settings.register(MOD, "outputFolder", {
     name: "Output folder",
-    hint: "Where AtlasScribe saves maps, thumbnails and scene backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",
+    hint: "Where AtlasScribe saves plans, maps, thumbnails and scene backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",
     scope: "world",
     config: true,
     type: String,
@@ -364,7 +364,7 @@ Hooks.on("renderSceneDirectory", (app, html) => {
   button.type = "button";
   button.className = "atlas-scribe-open";
   button.innerHTML = `<i class="fa-solid fa-map"></i> AtlasScribe`;
-  button.dataset.tooltip = "Make a map: Quick Start, preview, reroll, and make it a scene";
+  button.dataset.tooltip = "Make a map with Quick Start, change it on the map, and make it a scene";
   button.addEventListener("click", () => api.open().catch((e) => ui.notifications.error(e.message)));
   (root.querySelector(".header-actions") ?? root.querySelector(".directory-header") ?? root).append(button);
 });

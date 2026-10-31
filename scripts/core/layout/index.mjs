@@ -62,7 +62,7 @@ export const layoutCacheStats = () => ({ ...cacheStats });
 /** JSON for a cache key: NaN and Infinity written as themselves, so they never share a key with null. */
 const keyJSON = (v) => JSON.stringify(v, (k, x) => (typeof x === "number" && !Number.isFinite(x) ? `#${x}` : x));
 
-/** The box round every point in a value (a polygon, a path entry, a building item), or null if it has none. */
+/** The box around every point in a value (a polygon, a path entry, a building item), or null if it has none. */
 function boxOf(v) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x, y, r = 0) => { x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); };
@@ -80,6 +80,45 @@ function boxOf(v) {
   if (!(x0 <= x1)) return null;
   const pad = Number.isFinite(v?.clear) ? v.clear : 0; // a way's clearance reaches past its center line
   return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+}
+
+/**
+ * Streets cut where they'd run into a building (their edge inside it): each street is split there, and pieces shorter
+ * than a square are dropped. A street that only passes a building, its edge at most touching the wall (a house on the
+ * street line), is left whole.
+ */
+function trimAtBuildings(streets, feet) {
+  if (!feet.length) return streets;
+  const walls = feet.map((p) => ({ p, ring: closed(p), box: bbox(p) }));
+  const out = [];
+  for (const st of streets) {
+    const m = st.width / 2 - 0.015; // into the wall by more than a hair
+    const inside = (q) => walls.some(({ p, ring, box }) => q[0] > box[0] - m && q[0] < box[2] + m && q[1] > box[1] - m && q[1] < box[3] + m && (pointInPolygon(q, p) || distanceToPath(q, ring) < m));
+    if (!st.path.some((q, k) => k && walls.some(({ box }) => Math.max(q[0], st.path[k - 1][0]) > box[0] - m && Math.min(q[0], st.path[k - 1][0]) < box[2] + m && Math.max(q[1], st.path[k - 1][1]) > box[1] - m && Math.min(q[1], st.path[k - 1][1]) < box[3] + m))) { out.push(st); continue; }
+    // Walk the path in steps of a tenth of a square, keeping its own points and the last point before each cut
+    const pieces = [];
+    let cur = [], last = null, cut = false;
+    const end = () => { if (cur.length) { if (last && last !== cur.at(-1)) cur.push(last); pieces.push(cur); } cur = []; last = null; };
+    const visit = (q, own) => {
+      if (inside(q)) { cut = true; end(); return; }
+      if (own || !cur.length) cur.push(q);
+      last = q;
+    };
+    for (let k = 0; k < st.path.length - 1; k++) {
+      const a = st.path[k], b = st.path[k + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.1));
+      for (let t = 0; t < n; t++) visit(t ? [a[0] + ((b[0] - a[0]) * t) / n, a[1] + ((b[1] - a[1]) * t) / n] : a, t === 0);
+    }
+    visit(st.path.at(-1), true);
+    end();
+    if (!cut) { out.push(st); continue; }
+    const len = (pts) => pts.reduce((s, q, i) => (i ? s + Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) : 0), 0);
+    for (const pc of pieces) {
+      const pts = pc.map((q) => [q[0], q[1]]);
+      if (pts.length >= 2 && len(pts) >= 1) out.push({ ...st, path: pts });
+    }
+  }
+  return out;
 }
 
 export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
@@ -145,7 +184,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         if (f.path) {
           items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width: ft(f.width), frozen: !!f.frozen });
           space.water.push({ path: f.path, clear: ft(f.width) / 2 + 0.225 });
-        } else notes.push({ level: "warning", id: f.id, message: `"${f.id}": water drawn as an area isn't painted yet; only rivers and streams along a path are.` });
+        } else notes.push({ level: "warning", id: f.id, message: `"${f.id}": water drawn as an area isn't painted yet; only rivers, streams and canals along a path are.` });
         break;
       case "crossing": {
         const c = snapped.get(f.id) ?? { at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width), snappedTo: null };
@@ -236,13 +275,14 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     }
     const roof = b.roof ?? "slate";
     const v = r.int(8); // drawn even when given, so the stream stays the same
+    const cc = r.chance(0.75), cv = r.chance(0.5), ci = r.int(8); // the chimney's, likewise (a landmark's buildings share a stream)
     const item = {
       kind: "building", id, from, cx, cy, len, dep, rot: b.rot ?? 0, roof, variant: b.variant ?? v, tall: tallOf(b.height ?? 20),
       roofStyle: round ? "cone" : b.roofStyle ?? "gable", // see ROOF_STYLES; a round building's is always a cone
       ...(round ? { round: true } : {}),
       ...(b.join ? { join: b.join } : {}), // a wing's ends that run into another roof (valleys there, no hip)
       ...(b.cut ? { cut: b.cut } : {}), // hips that start in from their corner, where a flush wing covers it
-      chimney: chimneyOf(b, (b.chimney ?? r.chance(0.75)) && !round ? { u: 0.3, v: r.chance(0.5) ? -0.2 : 0.2, variant: r.int(8) } : null),
+      chimney: chimneyOf(b, (b.chimney ?? cc) && !round ? { u: 0.3, v: cv ? -0.2 : 0.2, variant: ci } : null),
       ...(b.name ? { name: b.name } : {}),
     };
     items.push(item);
@@ -278,7 +318,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
 
 
-  // Parks: open ground that streets and plots keep out of (filled later, once the streets round them are known)
+  // Parks: open ground that streets and plots keep out of (filled later, once the streets around them are known)
   for (const f of parks) {
     const poly = shapeToPolygon(f.shape, f.rot ?? 0);
     space.reserved.push(grow(poly, 0.2));
@@ -327,11 +367,12 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const [bx0, by0, bx1, by1] = bbox(poly);
     const near = ([, b]) => !b || (b[0] <= bx1 + KEY_MARGIN && b[2] >= bx0 - KEY_MARGIN && b[1] <= by1 + KEY_MARGIN && b[3] >= by0 - KEY_MARGIN);
     const around = Object.fromEntries(Object.entries(placed).map(([k, list]) => [k, list.filter(near).map(([v]) => v)]));
-    // Squares, yards and buildings placed before the districts, for plots and houses to keep off; streets keep well off
-    // the buildings (a plan's, or a pinned house), so none clips them: the tracer lets a street run a little way inside
-    // what it avoids, so the buildings are grown by about a street's width
+    // Squares, yards and buildings placed before the districts, for plots and houses to keep off. The streets are traced
+    // around the squares and yards only: a building (a plan's, or a pinned house) would stop a street being seeded
+    // anywhere near it, so a pinned house would take its own street away. Streets that run into one are cut short of it
+    // after (trimAtBuildings)
     const blocked = [...around.zones, ...around.plots];
-    const streetBlocked = [...around.zones, ...around.plots.map((p) => grow(p, 0.6))];
+    const streetBlocked = [...around.zones];
     // Laid out before with the same inputs: what it made is put back as it was (a district overlapping another sees
     // that one's things, so it's always laid out afresh)
     const overlaps = [...touching].some((k) => k.startsWith(`${d.id}|`));
@@ -365,6 +406,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       district: d, poly, roads: fixedHere, water: space.water, radials, blocked: streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
+    made.streets = trimAtBuildings(made.streets, around.plots);
     const surface = d.surface ?? fixedHere[0]?.surface ?? "dirt";
     const own = [];
     made.streets.forEach((st, k) => {
@@ -420,7 +462,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       }));
       while (districtCache.size > DISTRICT_CACHE_SIZE) districtCache.delete(districtCache.keys().next().value);
     };
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} ${own.length === 1 ? "street or lane" : "streets and lanes"}, ${made.bridges.length} ${made.bridges.length === 1 ? "bridge" : "bridges"}, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
     remember();
   }
 
@@ -460,7 +502,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin });
     park.trees.forEach((t, k) => items.push({ kind: "tree", id: `${f.id}/t${k + 1}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
     park.beds.forEach((garden, k) => items.push({ kind: "surface", id: `${f.id}/g${k + 1}`, from: f.id, class: "garden", garden }));
-    // Clipped hedges round the beds: small bushes close together
+    // Clipped hedges around the beds: small bushes close together
     park.hedges.forEach((path, k) => hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: streamFor(f.id).fork("hedge", k), items, step: 0.22, scale: [0.32, 0.08] }));
   }
 
@@ -566,8 +608,8 @@ function grow(poly, by) {
 const closed = (poly) => [...poly, poly[0]];
 
 /**
- * The plan with every district's and area's corners given the same way round (the way a rect's run), so an outline
- * saved the other way round lays out the same.
+ * The plan with every district's and area's corners given the same way around (the way a rect's run), so an outline
+ * saved the other way around lays out the same.
  */
 function windAlike(plan) {
   const signed = (p) => p.reduce((s, [x1, y1], i) => { const [x2, y2] = p[(i + 1) % p.length]; return s + x1 * y2 - x2 * y1; }, 0);

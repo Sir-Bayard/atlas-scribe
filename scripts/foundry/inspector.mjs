@@ -56,7 +56,7 @@ function fieldHTML(field, disabled, fonts = []) {
     case "list": {
       const chosen = new Set(Array.isArray(field.value) ? field.value : []);
       input = `<div class="as-pv-checks" id="${id}" ${data}>${field.values.map((v) => `<label><input type="checkbox" value="${esc(v)}" ${chosen.has(v) ? "checked" : ""} ${dis}> ${esc(field.names?.[v] ?? v)}</label>`).join("")}</div>`;
-      if (!set && auto) input += `<p class="as-pv-auto">None ticked: ${esc(auto)}</p>`;
+      if (!set && auto) input += `<p class="as-pv-auto">None checked: ${esc(auto)}</p>`;
       break;
     }
     case "color": {
@@ -135,7 +135,7 @@ export function generatedHTML(gen, { working = false } = {}) {
     ? `${item.parts.length > 1 ? `A house of ${item.parts.length} parts` : "A house"} the generator built in ${item.from}.`
     : `A ${item.class === "back" ? "back lane" : item.class === "street" ? "street" : "lane"} the generator laid out in ${item.from}${item.crossings?.length ? `, with ${item.crossings.length === 1 ? "a bridge" : `${item.crossings.length} bridges`}` : ""}.`;
   const after = kind === "house"
-    ? "Pinned, it becomes a fixed building group in the plan, drawn exactly as it is now; you can then name it, label it and change its roofs. The rest of the district still rerolls round it."
+    ? "Pinned, it becomes a fixed building group in the plan, drawn exactly as it is now; you can then name it, label it and change its roofs. The rest of the district still rerolls around it."
     : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";
   return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
       <header>
@@ -153,7 +153,7 @@ export function generatedHTML(gen, { working = false } = {}) {
 }
 
 /**
- * The underlay's panel: the image under the sketch to trace over. See-through, shown, locked, where it sits (its
+ * The underlay's panel: the image under the sketch to trace over. Opacity, shown, locked, where it sits (its
  * height follows its shape), another image, or none. Inputs carry data-under; the window reads them.
  */
 export function underlayHTML(u, { working = false } = {}) {
@@ -167,7 +167,7 @@ export function underlayHTML(u, { working = false } = {}) {
       </header>
       <div class="as-pv-fields">
         <p class="as-pv-hint">An image under the sketch to trace over. ${u.locked ? "It's locked: unlock it to move it." : "Drag it on the map to move it, or a corner to scale it."} It's saved with the plan and never painted into the scene.</p>
-        <div class="as-pv-field"><label>See-through</label><div class="as-pv-input"><input type="range" data-under="opacity" min="0.05" max="1" step="0.05" value="${u.opacity}"></div></div>
+        <div class="as-pv-field"><label>Opacity</label><div class="as-pv-input"><input type="range" data-under="opacity" min="0.05" max="1" step="0.05" value="${u.opacity}"></div></div>
         ${box("shown", "Shown", u.shown, "Hide it without losing where it sits")}
         ${box("locked", "Locked", u.locked, "Locked, it can't be dragged by accident")}
         ${num("left", "Left", x0)}
@@ -200,7 +200,7 @@ export function planHTML(plan, { working = false, fonts = [] } = {}) {
 
 /**
  * What a setting in the inspector says now, as setField takes it: a value, a list, or undefined (the default). el is
- * the element carrying data-field (for a list, the box round its checkboxes).
+ * the element carrying data-field (for a list, the box around its checkboxes).
  */
 export function readInput(el) {
   const kind = el.dataset.kind;
