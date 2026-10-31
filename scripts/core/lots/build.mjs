@@ -7,6 +7,7 @@ import { pointInPolygon, polygonsOverlap } from "../geom.mjs";
 import { lotTypeOf } from "./index.mjs";
 import { intersect, area, difference } from "./poly.mjs";
 import { ROOFS, ROOF_STYLES } from "../plan.mjs";
+import { SegGrid, finitePaths } from "../spatial.mjs";
 
 /** A key from { key: weight } for a roll in [0, 1). */
 function pickWeighted(roll, weights) {
@@ -65,10 +66,22 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   // In the plot, and clear of anything the plot was cut around (a named building inside a block is a hole in it)
   // and clear of every street: the plot already stops at the street, but fitsIn's small tolerance could let a
   // corner over the line. Points along each side are tested too, since a street may bend at a house
+  // The ways' segments in a grid, so each test looks only at the streets near it (the answers are the same as
+  // testing every street; a way with a broken point or width is tested the slow way)
+  const exact = finitePaths(ways.map((w) => w.path)) && ways.every((w) => Number.isFinite(w.width));
+  const grid = exact ? new SegGrid(ways.map((w) => w.path)) : null;
+  const maxHalf = ways.reduce((m, w) => Math.max(m, w.width / 2), 0);
+  const clearAt = grid
+    ? (x, y) => { for (const k of grid.near(x, y, maxHalf)) if (!(grid.dist(x, y, k) >= ways[grid.segPath[k]].width / 2 - 0.005)) return false; return true; }
+    : (x, y) => ways.every((w) => distToPath([x, y], w.path) >= w.width / 2 - 0.005);
   const clearOfWays = (pts) => pts.every((p, i) => {
     const q = pts[(i + 1) % pts.length];
-    return [0, 0.25, 0.5, 0.75].every((t) => { const x = p[0] + (q[0] - p[0]) * t, y = p[1] + (q[1] - p[1]) * t; return ways.every((w) => distToPath([x, y], w.path) >= w.width / 2 - 0.005); });
+    return [0, 0.25, 0.5, 0.75].every((t) => clearAt(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t));
   });
+  /** True when the point is within 0.1 of a way's edge line. */
+  const onWayEdge = grid
+    ? (mid) => { let hit = false; grid.eachNear(mid[0], mid[1], maxHalf + 0.1, (p, d) => { if (Math.abs(d - ways[p].width / 2) < 0.1) hit = true; }); return hit; }
+    : (mid) => ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1);
   const fits = (pts, poly) => fitsIn(pts, poly) && clearOfWays(pts) && !blocked.some((b) => polygonsOverlap(pts, b));
   const T = lotTypeOf(district);
   const sq = (ft) => ft / ftPerSquare;
@@ -87,7 +100,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       if (skip?.(a, b)) continue;
       const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       // Never along a street: this plot's own, or another one at its back or side
-      if (ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1)) continue;
+      if (onWayEdge(mid)) continue;
       if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.02) continue;
       out.bounds.push({ path: [a, b], class: cls });
     }

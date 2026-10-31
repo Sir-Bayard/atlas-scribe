@@ -11,6 +11,7 @@
 import { pointInPolygon } from "../geom.mjs";
 import { OLD_PROFILES } from "../plan.mjs";
 import { bands, difference, intersect, union, offset, area, shapes, centroid } from "./poly.mjs";
+import { SegGrid, finitePaths } from "../spatial.mjs";
 
 /**
  * Plot numbers per district type, in feet. frontage and depth: ranges; cover: the share of the frontage the
@@ -76,12 +77,14 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
 
   const lots = [];
   const back = [];
+  const fronting = ways.filter((w) => w.class !== "back");
+  const frontGrid = finitePaths(fronting.map((w) => w.path)) && fronting.every((w) => Number.isFinite(w.width)) ? new SegGrid(fronting.map((w) => w.path)) : null;
   blocks.forEach((block, bi) => {
     const br = r.fork("block", bi);
     const whole = [block.outer, ...block.holes];
     const depth = sq(T.depth[0] + br.next() * (T.depth[1] - T.depth[0]));
     // Plots front streets, roads and lanes; a back lane runs behind them and gets none
-    const runs = frontageRuns(block.outer, ways.filter((w) => w.class !== "back"));
+    const runs = frontageRuns(block.outer, fronting, frontGrid);
     // The band along the streets, as deep as a plot; the wider street cuts first, so it takes the corners
     const band = difference(whole, offset(whole, -depth));
     let claimed = [];
@@ -201,17 +204,21 @@ function frontOn(lot, run) {
  * The stretches of a block's edge that face a street: runs of edges lying half the street's width from its center
  * line. Returns [{ path, way, width, length }].
  */
-function frontageRuns(outer, ways) {
+function frontageRuns(outer, ways, grid = null) {
   const n = outer.length;
   const tag = [];
+  // With the ways' segments in a grid, only the ways near each edge are measured (the same answer as measuring all)
+  const maxHalf = ways.reduce((m, w) => Math.max(m, w.width / 2), 0);
   for (let i = 0; i < n; i++) {
     const a = outer[i], b = outer[(i + 1) % n];
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     let best = null;
-    for (const w of ways) {
-      const d = Math.abs(distToPath(mid, w.path) - w.width / 2);
+    const consider = (w, dist) => {
+      const d = Math.abs(dist - w.width / 2);
       if (d < 0.08 && (!best || w.width > best.width)) best = w;
-    }
+    };
+    if (grid) grid.eachNear(mid[0], mid[1], maxHalf + 0.08, (p, dist) => consider(ways[p], dist));
+    else for (const w of ways) consider(w, distToPath(mid, w.path));
     tag.push(best);
   }
   // Start where the tag changes, so a run that wraps around the first corner stays whole

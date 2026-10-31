@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Faster on big maps**
+- Big maps lay out several times faster, and every map lays out exactly as before. A town scaled up to 200 by 152 squares takes about 1.5 seconds instead of about 6, four towns side by side on a 200 by 200 map about 2.5 instead of about 7, and a 400 by 304 map under 10 instead of over a minute. Painting the image is unchanged: on a big map it's most of the wait (about 25 seconds for 200 by 152 squares at 50 pixels a square).
+
 ## 0.4.0
 
 Editing on the map: in the AtlasScribe window you can now change any feature's settings, draw new districts, areas, roads, rivers, walls, buildings, props and labels, place and turn labels, pin houses and streets the generator made, and trace over an image of your own, with faster redraws.

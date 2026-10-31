@@ -12,6 +12,7 @@ import { normalize, okJoin, okCut, okChimney } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
+import { BoxGrid, SegGrid } from "../spatial.mjs";
 import { seasonOf } from "../roles.mjs";
 import { seedOf } from "../seeds.mjs";
 import { labelsOf } from "../labels.mjs";
@@ -144,9 +145,14 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const touching = new Set(); // "a|b" for districts that overlap: free() sees each other's things there (wild trees and tracks), though houses are built over each other
   for (const a of districts) for (const b of districts) if (a !== b && polygonsOverlap(shrink(a.poly, 0.01), shrink(b.poly, 0.01))) touching.add(`${a.id}|${b.id}`);
   let filling = null; // the district being filled
+  let otherFor = null, other = new Map(); // owner -> whether it counts as elsewhere, while `filling` is otherFor
   const elsewhere = (o) => {
     const by = owner.get(o);
-    return filling !== null && by !== undefined && by !== filling && districtIds.has(by) && !touching.has(`${filling}|${by}`);
+    if (filling === null || by === undefined || by === filling) return false;
+    if (otherFor !== filling) { otherFor = filling; other = new Map(); }
+    let v = other.get(by);
+    if (v === undefined) other.set(by, (v = districtIds.has(by) && !touching.has(`${filling}|${by}`)));
+    return v;
   };
   const space = {
     reserved: [], // polygons
@@ -305,14 +311,38 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     }
   }
 
+  // What free() keeps clear of, in grids so it measures only what's near (the same answers as measuring
+  // everything). The grids catch up with space's lists, which only grow, each time free() is asked
+  const nearby = {
+    reserved: new BoxGrid(), gardens: new BoxGrid(), buildings: new BoxGrid(),
+    water: new SegGrid([], { pad: (p) => space.water[p].clear }), ways: new SegGrid([], { pad: (p) => space.ways[p].clear }),
+  };
+  const polyBox = (grid, poly) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [px, py] of poly) { x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py); }
+    grid.add(x0, y0, x1, y1);
+  };
+  const catchUp = () => {
+    for (const k of ["reserved", "gardens"]) while (nearby[k].count < space[k].length) polyBox(nearby[k], space[k][nearby[k].count]);
+    for (const k of ["water", "ways"]) while (nearby[k].paths.length < space[k].length) nearby[k].addPath(space[k][nearby[k].paths.length].path);
+    const bs = nearby.buildings;
+    while (bs.count < space.buildings.length) {
+      const b = space.buildings[bs.count], m = Math.max(b.len, b.dep) * 0.5 * 0.8 + 0.15;
+      bs.add(b.cx - m, b.cy - m, b.cx + m, b.cy + m);
+    }
+  };
+
   /** True when a thing of radius rad (half-depth half, when given) at x, y keeps clear of everything placed so far. */
   function free(x, y, rad, half = rad) {
     if (x < -1 || y < -1 || x > W + 1 || y > H + 1) return false;
-    for (const poly of space.reserved) if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false;
-    for (const poly of space.gardens) if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false;
-    for (const w of space.water) if (distanceToPath([x, y], w.path) < half + w.clear) return false;
-    for (const w of space.ways) if (!elsewhere(w) && distanceToPath([x, y], w.path) < half + w.clear) return false;
-    for (const b of space.buildings) if (!elsewhere(b) && Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false;
+    catchUp();
+    const pr = Math.max(0, rad * 0.9);
+    for (const k of nearby.reserved.near(x, y, pr)) { const poly = space.reserved[k]; if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false; }
+    for (const k of nearby.gardens.near(x, y, pr)) { const poly = space.gardens[k]; if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false; }
+    const hr = Math.max(0, half);
+    for (const k of nearby.water.near(x, y, hr)) if (nearby.water.dist(x, y, k) < half + space.water[nearby.water.segPath[k]].clear) return false;
+    for (const k of nearby.ways.near(x, y, hr)) { const w = space.ways[nearby.ways.segPath[k]]; if (!elsewhere(w) && nearby.ways.dist(x, y, k) < half + w.clear) return false; }
+    for (const k of nearby.buildings.near(x, y, Math.max(0, rad * 0.8))) { const b = space.buildings[k]; if (!elsewhere(b) && Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false; }
     return true;
   }
 
@@ -468,9 +498,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
   // Field systems: open ground, so nothing keeps out of them; their hedgerow trees keep clear of every building
   progress(0.55, "Fields");
+  const keepOutMemo = {}; // what every field system keeps out of, worked out once
   for (const f of plan.features.filter((f) => f.type === "area" && f.class === "fields")) {
     const r = streamFor(f.id);
-    const made = fillFields({ area: f, r, keepOut: fieldKeepOut(plan, f), earlier: earlierFields(plan, f), along: fieldRoads(plan), W, H, ftPerSquare: sq, season: seasonOf(plan) });
+    const made = fillFields({ area: f, r, keepOut: fieldKeepOut(plan, f, keepOutMemo), earlier: earlierFields(plan, f), along: fieldRoads(plan), W, H, ftPerSquare: sq, season: seasonOf(plan) });
     notes.push(...made.notes);
     made.fields.forEach((fd, k) => items.push({ kind: "field", id: `${f.id}/f${k + 1}`, from: f.id, system: made.system, ...fd }));
     made.balks.forEach((path, k) => items.push({ kind: "boundary", id: `${f.id}/k${k + 1}`, from: f.id, class: "balk", path }));

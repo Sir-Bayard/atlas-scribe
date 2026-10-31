@@ -59,13 +59,38 @@ const HEDGED = 0.25;
  * districts with a ragged margin of grass around them (marginRound), squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
  * smoothed (as the layout has it).
  */
-export function fieldKeepOut(plan, self) {
+export function fieldKeepOut(plan, self, memo = null) {
+  // Only earlier field systems depend on which system asks, so with a memo (one per layout, for one plan) the rest is
+  // worked out once: the same polygons, in the same order, as working it all out again
+  if (memo) {
+    if (!memo.parts) memo.parts = keepOutParts(plan);
+    const { bandsOut, each } = memo.parts;
+    const out = [...bandsOut];
+    let before = true;
+    for (const { f, polys } of each) {
+      if (f === self) { before = false; continue; }
+      if (f.type === "area" && f.class === "fields" && !before) continue;
+      out.push(...polys);
+    }
+    return out;
+  }
+  const { bandsOut, each } = keepOutParts(plan, self);
+  return [...bandsOut, ...each.flatMap((e) => e.polys)];
+}
+
+/**
+ * fieldKeepOut's pieces: the buffered paths, and each feature's polygons (in Clipper's winding) in plan order. With
+ * self, only the field systems before it; without, every field system (for the memo to choose from).
+ */
+function keepOutParts(plan, self = undefined) {
   const ft = (v) => (v == null ? 0 : v / plan.size.ftPerSquare);
-  const paths = [], polys = [];
+  const paths = [], each = [];
+  let polys;
   const grown = (poly, by) => (by ? offset([poly], by) : [poly]);
   let before = true;
   for (const f of plan.features) {
     if (f === self) { before = false; continue; }
+    polys = [];
     switch (f.type) {
       case "road":
         if (Array.isArray(f.path)) paths.push({ path: f.path, half: ft(f.width) / 2 + KEEP.road });
@@ -90,19 +115,20 @@ export function fieldKeepOut(plan, self) {
         for (const b of f.buildings ?? []) polys.push(...grown(shapeToPolygon(b.shape, b.rot ?? 0), KEEP.building));
         break;
       case "area":
-        if (f.class === "fields") { if (before) polys.push(shapeToPolygon(f.shape, f.rot ?? 0, 48)); }
+        if (f.class === "fields") { if (before || self === undefined) polys.push(shapeToPolygon(f.shape, f.rot ?? 0, 48)); }
         else if (f.class === "farmstead") polys.push(...marginRound(plan, f, FARM_MARGIN_FT));
         else polys.push(...grown(shapeToPolygon(f.shape, f.rot ?? 0, 48), KEEP.area));
         break;
       default:
         break;
     }
+    // Every polygon in Clipper's own winding (a union of one), so a shape drawn the other way around can't cancel
+    // another where they overlap
+    if (polys.length) each.push({ f, polys: polys.filter((p) => p.length >= 3).flatMap((p) => union([p])) });
   }
   // A farm's (or a yard's, park's or square's) lane out to the road
   for (const lane of accessLanes(plan)) paths.push({ path: lane.path, half: lane.width / 2 + KEEP.lane });
-  // Every polygon in Clipper's own winding (a union of one), so a shape drawn the other way around can't cancel another
-  // where they overlap
-  return [...bands(paths), ...polys.filter((p) => p.length >= 3).flatMap((p) => union([p]))];
+  return { bandsOut: bands(paths), each };
 }
 
 /**
