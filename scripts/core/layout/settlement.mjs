@@ -58,7 +58,7 @@ export function fillFarmstead({ area, r, free, addBuilding, items }) {
  * open ground between, many make a forest with clearings. Points are laid out before checking for anything else, so
  * what another district places can remove trees but never moves the rest. mix gives the share of each species.
  */
-export function fillWoods({ area, r, free, items }) {
+export function fillWoods({ area, r, free, items, winter = false }) {
   if (area.trees === 0) return []; // a wood with no trees asked for: open ground
   const poly = shapeToPolygon(area.shape, area.rot ?? 0);
   if (poly.length < 3) return [];
@@ -66,7 +66,7 @@ export function fillWoods({ area, r, free, items }) {
   if (!(a > 0)) return [];
   // Sparse, open and dense woods each have their own character (a tree count, or thick, the groves below)
   const counted = Number.isFinite(area.trees) && area.trees > 0;
-  if (!counted && (area.density === "sparse" || area.density === "open" || area.density === "dense")) return fillCharacter({ area, poly, r, free, items });
+  if (!counted && (area.density === "sparse" || area.density === "open" || area.density === "dense")) return fillCharacter({ area, poly, r, free, items, winter });
   // A tree count, else the density (trees a square square) times the area: so a wood redrawn bigger keeps its look
   const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a * WOOD_DENSITY.thick);
   const spacing = 0.85; // squares between trees in a grove: crowns overlap a little
@@ -88,16 +88,17 @@ export function fillWoods({ area, r, free, items }) {
   const [bx0, by0, bx1, by1] = bbox(poly), cell = spacing / Math.SQRT2; // as poissonInPolygon measures it
   if (!pts.length && Math.max(1, Math.ceil((bx1 - bx0) / cell)) * Math.max(1, Math.ceil((by1 - by0) / cell)) > 4e6) return [{ level: "warning", id: area.id, message: `"${area.id}" is too big to fill with trees, so it's left empty. Draw it as a few smaller woods.` }];
   const tr = r.fork("trees");
-  const bareShare = area.mix?.bare ?? 0.15;
-  const sizes = ["large", "medium", "small"];
+  // Big enough to read as canopies (the smallest fir art reads as specks at map scale); the leafy share by season
+  const bareShare = area.mix?.bare ?? leafyShare("thick", winter);
+  const sizes = ["large", "medium", "medium"];
   let n = 0;
   for (const [x, y] of pts) {
     const bare = tr.next() < bareShare, size = tr.pick(sizes), u = tr.next(), rot = tr.next() * 360, variant = tr.int(8);
     if (!free(x, y, 0.3)) continue;
     n++;
     items.push(bare
-      ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.55 + u * 0.3, rot, variant }
-      : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: 0.9 + u * 0.6, rot, variant });
+      ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.7 + u * 0.3, rot, variant }
+      : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: 1 + u * 0.5, rot, variant });
   }
   return [];
 }
@@ -110,7 +111,7 @@ export function fillWoods({ area, r, free, items }) {
  * Points are laid out before checking for anything else, as in the groves, so other features remove trees without
  * moving the rest.
  */
-function fillCharacter({ area, poly, r, free, items }) {
+function fillCharacter({ area, poly, r, free, items, winter }) {
   const kind = area.density;
   const spacing = kind === "sparse" ? 3.2 : kind === "open" ? 1.9 : 0.78;
   let keep = () => true;
@@ -142,22 +143,31 @@ function fillCharacter({ area, poly, r, free, items }) {
     }
   }
   const tr = r.fork("trees");
-  // Open woodland is mostly broadleaf, sparse ground half and half; dense takes the wood's mix (else mostly firs)
-  const bareShare = area.mix?.bare ?? (kind === "open" ? 0.75 : kind === "sparse" ? 0.5 : 0.15);
-  const sizes = kind === "open" ? ["large", "large", "medium"] : kind === "sparse" ? ["large", "medium", "medium"] : ["large", "medium", "small"];
+  const bareShare = area.mix?.bare ?? leafyShare(kind, winter);
+  const sizes = kind === "open" ? ["large", "large", "medium"] : ["large", "medium", "medium"];
   let n = 0;
   for (const [x, y] of pts) {
     const bare = tr.next() < bareShare, size = tr.pick(sizes), u = tr.next(), rot = tr.next() * 360, variant = tr.int(8);
     if (!free(x, y, 0.3)) continue;
     n++;
     // Open woodland's trees are big, spreading ones; sparse ground's smaller
-    const leafy = kind === "open" ? 0.8 + u * 0.3 : kind === "sparse" ? 0.55 + u * 0.3 : 0.55 + u * 0.3;
-    const fir = kind === "open" ? 1.2 + u * 0.4 : kind === "sparse" ? 0.9 + u * 0.4 : 0.9 + u * 0.6;
+    const leafy = kind === "open" ? 0.8 + u * 0.3 : kind === "sparse" ? 0.55 + u * 0.3 : 0.65 + u * 0.3;
+    const fir = kind === "open" ? 1.2 + u * 0.4 : kind === "sparse" ? 0.9 + u * 0.4 : 1 + u * 0.5;
     items.push(bare
       ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: leafy, rot, variant }
       : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: fir, rot, variant });
   }
   return [];
+}
+
+/**
+ * A wood's share of broadleaf trees when its mix doesn't say: mostly broadleaf, so summer woods read as leafy
+ * canopies; in winter mostly firs, so winter woods keep a snowy evergreen look rather than bare branches. Open
+ * woodland leans broadleaf, sparse ground and dense woods less so.
+ */
+export function leafyShare(kind, winter) {
+  const summer = { sparse: 0.5, open: 0.75, thick: 0.7, dense: 0.6 }[kind] ?? 0.7;
+  return winter ? Math.round(summer * 0.45 * 100) / 100 : summer;
 }
 
 function polyArea(poly) {

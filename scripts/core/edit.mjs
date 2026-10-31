@@ -67,7 +67,7 @@ export const FIELD_TEXT = {
   "area.rot": { label: "Turned", help: "Degrees; a turned area can't be reshaped by its corners yet", more: true },
   "area.density": { label: "Density", help: "Sparse: lone trees and small clumps. Open: big trees standing apart, like wood pasture. Thick: groves with clearings. Dense: crowns touching, a few gaps. A wood drawn bigger or smaller keeps its look", auto: "thick", names: { sparse: "sparse", open: "open", thick: "thick", dense: "dense" } },
   "area.trees": { label: "Tree count", help: "A set number of trees, in place of the density", auto: "from its density and size", more: true },
-  "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "0.15" },
+  "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "by density and season: mostly leafy (0.5 sparse, 0.75 open, 0.7 thick, 0.6 dense), in winter mostly firs" },
   "area.style": { label: "Style", names: { green: "village green", formal: "formal garden" }, auto: "village green" },
   "area.system": { label: "Field system", names: { patchwork: "hedged patchwork", strips: "open strips" }, help: "Else picked from its seed", auto: "by seed" },
   "area.fieldSize": { label: "Field size", help: "About how big a field (or a furlong of strips) is, in feet", auto: "by system" },

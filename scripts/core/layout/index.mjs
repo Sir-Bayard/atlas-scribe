@@ -428,7 +428,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
   // Woods and hedgerows last: trees keep clear of every building
   progress(0.6, "Woods");
   for (const f of plan.features.filter((f) => f.type === "area" && f.class === "woods")) {
-    notes.push(...fillWoods({ area: f, r: streamFor(f.id), free, items }));
+    notes.push(...fillWoods({ area: f, r: streamFor(f.id), free, items, winter: seasonOf(plan) === "winter" }));
   }
   for (const f of plan.features.filter((f) => f.type === "wall" && f.class === "hedge")) {
     hedgeBushes({ wall: f, r: streamFor(f.id), items });
