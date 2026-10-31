@@ -64,8 +64,11 @@ export function fillWoods({ area, r, free, items }) {
   if (poly.length < 3) return [];
   const a = polyArea(poly);
   if (!(a > 0)) return [];
+  // Sparse, open and dense woods each have their own character (a tree count, or thick, the groves below)
+  const counted = Number.isFinite(area.trees) && area.trees > 0;
+  if (!counted && (area.density === "sparse" || area.density === "open" || area.density === "dense")) return fillCharacter({ area, poly, r, free, items });
   // A tree count, else the density (trees a square square) times the area: so a wood redrawn bigger keeps its look
-  const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a * (Object.hasOwn(WOOD_DENSITY, area.density ?? "") ? WOOD_DENSITY[area.density] : WOOD_DENSITY.thick));
+  const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a * WOOD_DENSITY.thick);
   const spacing = 0.85; // squares between trees in a grove: crowns overlap a little
   const full = a / (spacing * spacing * 1.6); // about what a wood packed edge to edge would hold
   const share = Math.min(1, want / full);
@@ -95,6 +98,64 @@ export function fillWoods({ area, r, free, items }) {
     items.push(bare
       ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.55 + u * 0.3, rot, variant }
       : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: 0.9 + u * 0.6, rot, variant });
+  }
+  return [];
+}
+
+/**
+ * A wood of its own character, spread over its whole shape:
+ * - sparse: lone trees and small clumps of two or three, well apart (scrubby ground with the odd tree);
+ * - open: big trees standing apart, crowns not touching, evenly spread, mostly leafy (old wood pasture or parkland);
+ * - dense: crowns touching edge to edge, with only a few small gaps.
+ * Points are laid out before checking for anything else, as in the groves, so other features remove trees without
+ * moving the rest.
+ */
+function fillCharacter({ area, poly, r, free, items }) {
+  const kind = area.density;
+  const spacing = kind === "sparse" ? 3.2 : kind === "open" ? 1.9 : 0.78;
+  let keep = () => true;
+  if (kind === "dense") {
+    // A few small gaps: the lowest tenth of a noise
+    const gaps = makeNoise(r.int(2 ** 31), `${area.id}/gaps`, { scale: 3.5, octaves: 2 });
+    const [x0, y0, x1, y1] = bbox(poly);
+    const step = Math.max(0.5, Math.sqrt(((x1 - x0) * (y1 - y0)) / 40000));
+    const vals = [];
+    for (let y = y0 + step / 2; y < y1; y += step) for (let x = x0 + step / 2; x < x1; x += step) if (pointInPolygon([x, y], poly)) vals.push(gaps(x, y));
+    vals.sort((p, q) => p - q);
+    const level = vals.length ? vals[Math.floor(vals.length / 10)] : -Infinity;
+    keep = (x, y) => gaps(x, y) >= level;
+  }
+  const base = poissonInPolygon(poly, spacing, r.fork("points"), { keep, max: MAX_TRIES });
+  const [bx0, by0, bx1, by1] = bbox(poly), cell = spacing / Math.SQRT2;
+  if (!base.length && Math.max(1, Math.ceil((bx1 - bx0) / cell)) * Math.max(1, Math.ceil((by1 - by0) / cell)) > 4e6) return [{ level: "warning", id: area.id, message: `"${area.id}" is too big to fill with trees, so it's left empty. Draw it as a few smaller woods.` }];
+  // Sparse: about half the lone trees grow a clump of one or two more beside them
+  const pts = [];
+  const cl = r.fork("clumps");
+  for (const [x, y] of base) {
+    pts.push([x, y]);
+    if (kind !== "sparse" || cl.next() >= 0.5) continue;
+    const extra = 1 + cl.int(2);
+    for (let k = 0; k < extra; k++) {
+      const ang = cl.next() * Math.PI * 2, d = 0.55 + cl.next() * 0.3;
+      const p = [x + Math.cos(ang) * d, y + Math.sin(ang) * d];
+      if (pointInPolygon(p, poly)) pts.push(p);
+    }
+  }
+  const tr = r.fork("trees");
+  // Open woodland is mostly broadleaf, sparse ground half and half; dense takes the wood's mix (else mostly firs)
+  const bareShare = area.mix?.bare ?? (kind === "open" ? 0.75 : kind === "sparse" ? 0.5 : 0.15);
+  const sizes = kind === "open" ? ["large", "large", "medium"] : kind === "sparse" ? ["large", "medium", "medium"] : ["large", "medium", "small"];
+  let n = 0;
+  for (const [x, y] of pts) {
+    const bare = tr.next() < bareShare, size = tr.pick(sizes), u = tr.next(), rot = tr.next() * 360, variant = tr.int(8);
+    if (!free(x, y, 0.3)) continue;
+    n++;
+    // Open woodland's trees are big, spreading ones; sparse ground's smaller
+    const leafy = kind === "open" ? 0.8 + u * 0.3 : kind === "sparse" ? 0.55 + u * 0.3 : 0.55 + u * 0.3;
+    const fir = kind === "open" ? 1.2 + u * 0.4 : kind === "sparse" ? 0.9 + u * 0.4 : 0.9 + u * 0.6;
+    items.push(bare
+      ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: leafy, rot, variant }
+      : { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "conifer", size, s: fir, rot, variant });
   }
   return [];
 }

@@ -65,7 +65,7 @@ export const FIELD_TEXT = {
   "area.surface": { label: "Surface", auto: "trodden ground" },
   "area.fence": { label: "Fence", auto: "none" },
   "area.rot": { label: "Turned", help: "Degrees; a turned area can't be reshaped by its corners yet", more: true },
-  "area.density": { label: "Density", help: "How thick its trees stand: sparse, open, thick or dense. A wood drawn bigger or smaller keeps its look", auto: "thick", names: { sparse: "sparse", open: "open", thick: "thick", dense: "dense" } },
+  "area.density": { label: "Density", help: "Sparse: lone trees and small clumps. Open: big trees standing apart, like wood pasture. Thick: groves with clearings. Dense: crowns touching, a few gaps. A wood drawn bigger or smaller keeps its look", auto: "thick", names: { sparse: "sparse", open: "open", thick: "thick", dense: "dense" } },
   "area.trees": { label: "Tree count", help: "A set number of trees, in place of the density", auto: "from its density and size", more: true },
   "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "0.15" },
   "area.style": { label: "Style", names: { green: "village green", formal: "formal garden" }, auto: "village green" },

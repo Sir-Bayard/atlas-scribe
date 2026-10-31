@@ -161,8 +161,12 @@ export const TYPES = {
   },
 };
 
-/** Trees a square square, by a wood's density (thick is what a wood with neither density nor a count gets). */
-export const WOOD_DENSITY = { sparse: 0.15, open: 0.28, thick: 1 / 2.4, dense: 0.7 };
+/**
+ * Trees a square square in a thick wood (groves with clearings; what a wood with neither a density nor a count
+ * gets). Sparse, open and dense woods are laid out by their own character (layout/settlement.mjs): about 0.1, 0.2 and
+ * 1 tree a square square.
+ */
+export const WOOD_DENSITY = { thick: 1 / 2.4 };
 
 /** A label's text height in squares, by its size word. */
 export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };
