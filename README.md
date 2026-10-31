@@ -90,7 +90,3 @@ Written with Claude and tested in Foundry 14.
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Pathfinder
-
-AtlasScribe is an unofficial, free module for Foundry VTT. It is not published, endorsed or specifically approved by Paizo Inc. Pathfinder is a trademark of Paizo Inc., named here only because AtlasScribe is made by a Pathfinder GM for use alongside the Pathfinder Second Edition system, though it works with any system. The module contains no Paizo rules text, art or setting material.
