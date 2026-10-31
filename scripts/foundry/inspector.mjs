@@ -125,6 +125,33 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
     </section>`;
 }
 
+/**
+ * The panel for something the generator made (a house or a district's street), picked on the map: what it is, and
+ * Pin, which copies it into the plan so rerolls keep it. gen: { kind: "house" | "street", item }.
+ */
+export function generatedHTML(gen, { working = false } = {}) {
+  const { kind, item } = gen;
+  const what = kind === "house"
+    ? `${item.parts.length > 1 ? `A house of ${item.parts.length} parts` : "A house"} the generator built in ${item.from}.`
+    : `A ${item.class === "back" ? "back lane" : item.class === "street" ? "street" : "lane"} the generator laid out in ${item.from}${item.crossings?.length ? `, with ${item.crossings.length === 1 ? "a bridge" : `${item.crossings.length} bridges`}` : ""}.`;
+  const after = kind === "house"
+    ? "Pinned, it becomes a fixed building group in the plan, drawn exactly as it is now; you can then name it, label it and change its roofs. The rest of the district still rerolls round it."
+    : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";
+  return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
+      <header>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <span class="as-pv-name"><strong>${esc(kind === "house" ? "House" : item.class === "street" ? "Street" : "Lane")}</strong><em>generated · ${esc(item.id)}</em></span>
+      </header>
+      <div class="as-pv-fields">
+        <p class="as-pv-hint">${esc(what)}</p>
+        <p class="as-pv-hint">${esc(after)}</p>
+      </div>
+      <div class="as-pv-tools">
+        <button type="button" data-action="asPin" ${working ? "disabled" : ""} data-tooltip="Keep it when the district is rerolled"><i class="fa-solid fa-thumbtack"></i> Pin</button>
+      </div>
+    </section>`;
+}
+
 /** The plan's own settings: name, season, ground, size and scale, then the scene it's made into. */
 export function planHTML(plan, { working = false, fonts = [] } = {}) {
   const fields = planFieldsOf(plan);

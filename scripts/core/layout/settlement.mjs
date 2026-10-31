@@ -4,6 +4,7 @@
  */
 import { bbox, pointInPolygon, rotateAbout, shapeToPolygon } from "../geom.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
+import { WOOD_DENSITY } from "../plan.mjs";
 import { makeNoise } from "../noise.mjs";
 
 /** Cap on random tries for one area, so a huge or odd shape can't run on for ever. */
@@ -63,7 +64,8 @@ export function fillWoods({ area, r, free, items }) {
   if (poly.length < 3) return [];
   const a = polyArea(poly);
   if (!(a > 0)) return [];
-  const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a / 2.4);
+  // A tree count, else the density (trees a square square) times the area: so a wood redrawn bigger keeps its look
+  const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a * (Object.hasOwn(WOOD_DENSITY, area.density ?? "") ? WOOD_DENSITY[area.density] : WOOD_DENSITY.thick));
   const spacing = 0.85; // squares between trees in a grove: crowns overlap a little
   const full = a / (spacing * spacing * 1.6); // about what a wood packed edge to edge would hold
   const share = Math.min(1, want / full);

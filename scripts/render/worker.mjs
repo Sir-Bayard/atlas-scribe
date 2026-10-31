@@ -8,6 +8,7 @@
  */
 import { rng } from "../core/rng.mjs";
 import { layoutPlan } from "../core/layout/index.mjs";
+import { pinnables } from "../core/pin.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
 import * as sketch from "./styles/sketch.mjs";
 
@@ -39,7 +40,7 @@ const jobs = {
     const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
     const counts = {};
     for (const i of layout.items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), counts, ms: Math.round(performance.now() - t0) };
+    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), counts, ms: Math.round(performance.now() - t0) };
   },
 
   /** A test pattern: proves the worker, image loading, soft masks, progress and WebP output. */

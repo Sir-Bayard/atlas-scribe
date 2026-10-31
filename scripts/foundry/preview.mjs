@@ -14,7 +14,8 @@ import { normalize, LABEL_SIZES } from "../core/plan.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle, cleanFont } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
-import { featureHTML, planHTML, paletteHTML, howText, readInput } from "./inspector.mjs";
+import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML } from "./inspector.mjs";
+import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { addFeature, snapCorner, snapEnd, toolOf } from "../core/draw.mjs";
 
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
@@ -37,6 +38,10 @@ const mapKey = (p) => {
   if (q.output?.scene) q.output = { ...q.output, scene: { ...q.output.scene, labelColor: null, labelFont: null } };
   return canon(q);
 };
+/** Ids of picked things the generator made start with this (they aren't in the plan). */
+const GEN = "@gen:";
+const genCache = new WeakMap();
+
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 /** The middle of a polygon (its area centroid; the mean of its points if it has no area). */
@@ -79,6 +84,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asReset: AtlasScribeApp.#onReset,
       asDelete: AtlasScribeApp.#onDelete,
       asPlan: AtlasScribeApp.#onPlan,
+      asPin: AtlasScribeApp.#onPin,
       asDraw: AtlasScribeApp.#onDraw,
       asTool: AtlasScribeApp.#onTool,
       asFinish: AtlasScribeApp.#onFinish,
@@ -203,6 +209,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       this.#stale = !result;
       if (!this.rendered) return null; // closed meanwhile: nothing to show it in, and nothing to keep
       if (result) {
+        // What the generator made has new ids in a new drawing: a picked house or street could now name another
+        if (typeof this.#selected === "string" && this.#selected.startsWith(GEN)) this.#selected = null;
+        if (typeof this.#inspect === "string" && this.#inspect.startsWith(GEN)) this.#inspect = null;
         if (this.#url) URL.revokeObjectURL(this.#url);
         this.#url = URL.createObjectURL(result.blob);
         this.#result = result;
@@ -275,6 +284,34 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     return out;
   }
 
+  /**
+   * What the generator made that can be picked and pinned, from the last drawing: houses with each part's outline,
+   * and the districts' streets and lanes. Worked out once per drawing.
+   */
+  #generated() {
+    const r = this.#result;
+    if (!r?.pinnables) return { houses: [], streets: [] };
+    if (genCache.has(r.pinnables)) return genCache.get(r.pinnables);
+    const out = {
+      houses: r.pinnables.houses.map((h) => ({ ...h, polys: h.parts.map((p) => {
+        try { return p.round ? shapeToPolygon({ circle: [p.cx, p.cy, p.len / 2] }) : shapeToPolygon({ rect: [p.cx - p.len / 2, p.cy - p.dep / 2, p.cx + p.len / 2, p.cy + p.dep / 2] }, p.rot ?? 0); } catch { return []; }
+      }).filter((q) => q.length >= 3) })),
+      streets: r.pinnables.streets,
+    };
+    genCache.set(r.pinnables, out);
+    return out;
+  }
+
+  /** The generated house or street a "@gen:" id names, as { kind, item }, or null. */
+  #genOf(id) {
+    if (typeof id !== "string" || !id.startsWith(GEN)) return null;
+    const key = id.slice(GEN.length), g = this.#generated();
+    const house = g.houses.find((h) => h.id === key);
+    if (house) return { kind: "house", item: house };
+    const street = g.streets.find((x) => x.id === key);
+    return street ? { kind: "street", item: street } : null;
+  }
+
   /** Bridges, fords and props: points that can be clicked, [{ id, type, at }]. A bridge is where it was drawn (moved onto its road). */
   #points() {
     const drawn = new Map((this.#result?.crossings ?? []).map((c) => [c.id, c.at]));
@@ -327,8 +364,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const every = r ? handlesOf(this.#plan) : [];
     this.#corners = every.filter((h) => h.kind === "corner");
     // A feature that's gone (deleted, or undone away) is no longer picked or shown
-    if (this.#selected && !featureOf(this.#plan, this.#selected)) this.#selected = null;
-    if (this.#inspect && this.#inspect !== "@plan" && !featureOf(this.#plan, this.#inspect)) this.#inspect = null;
+    if (this.#selected && !featureOf(this.#plan, this.#selected) && !this.#genOf(this.#selected)) this.#selected = null;
+    if (this.#inspect && this.#inspect !== "@plan" && !featureOf(this.#plan, this.#inspect) && !this.#genOf(this.#inspect)) this.#inspect = null;
     const minor = this.#minor().map((f) => `<g class="as-pv-shape as-minor as-${f.type} ${f.id === this.#selected ? "as-selected" : ""}" data-id="${esc(f.id)}"><polygon points="${f.poly.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polygon></g>`).join("");
     const points = this.#points().map((p) => `<circle class="as-pv-shape as-point as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}" cx="${p.at[0]}" cy="${p.at[1]}" r="${fs * 0.35}"></circle>`).join("");
     this.#handles = every.filter((h) => this.#shapes || h.id === this.#selected);
@@ -346,10 +383,15 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           ${sel && !this.#tool ? `<circle class="as-pv-handle as-turn" data-id="${esc(l.id)}" cx="${hw + em * 0.6}" cy="0" r="0.3"></circle>` : ""}
         </g>`;
     }).join("");
+    // A picked house or street the generator made: its outline
+    const gen = this.#genOf(this.#selected);
+    const genSvg = !gen ? "" : gen.kind === "house"
+      ? `<g class="as-pv-gen as-selected">${this.#generated().houses.find((h) => h.id === gen.item.id).polys.map((q) => `<polygon points="${q.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polygon>`).join("")}</g>`
+      : `<g class="as-pv-gen as-selected"><polyline points="${gen.item.path.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polyline></g>`;
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${lines}${points}${labels}${this.#tool ? "" : handles}<g class="as-pv-draft"></g></svg>
+          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${genSvg}${lines}${points}${labels}${this.#tool ? "" : handles}<g class="as-pv-draft"></g></svg>
         </div>`
       : "";
     const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""} ${f.id === this.#selected ? "as-selected" : ""}" data-tooltip="Click for its settings and to reshape it">
@@ -392,6 +434,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         </div>
         ${this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
+          : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working })
           : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices() })
           : `<ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
@@ -599,6 +642,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** What the hint under the tools says: how to reshape, given what's picked. */
   #hint() {
+    const gen = this.#genOf(this.#selected);
+    if (gen) return `The generator made this ${gen.kind} in ${gen.item.from}. Pin it to keep it when ${gen.item.from} is rerolled. Click elsewhere to finish.`;
     if (this.#selected) {
       const has = this.#handles.some((h) => h.id === this.#selected);
       if (has && this.#handles.some((h) => h.id === this.#selected && h.path))
@@ -645,13 +690,29 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (d <= Math.max(p.half, 8 / px) && d < roadD) { roadD = d; road = p.id; }
     }
     if (road) return this.#select(road);
-    let best = null, bestArea = Infinity;
-    for (const f of [...this.#features(), ...this.#minor()]) {
-      if (f.poly.length < 3 || !pointInPolygon(at, f.poly)) continue;
-      const area = Math.abs(f.poly.reduce((a, p, i) => { const q = f.poly[(i + 1) % f.poly.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
-      if (area < bestArea) { bestArea = area; best = f.id; }
+    const smallest = (list) => {
+      let best = null, bestArea = Infinity;
+      for (const f of list) {
+        if (f.poly.length < 3 || !pointInPolygon(at, f.poly)) continue;
+        const area = Math.abs(f.poly.reduce((a, p, i) => { const q = f.poly[(i + 1) % f.poly.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+        if (area < bestArea) { bestArea = area; best = f.id; }
+      }
+      return best;
+    };
+    // A plan building, square or pond; then a house or street the generator made (to pin); then the smallest wood,
+    // field system, farm or district there
+    const minor = smallest(this.#minor());
+    if (minor) return this.#select(minor);
+    const g = this.#stale ? { houses: [], streets: [] } : this.#generated(); // the picture is of another plan
+    const house = g.houses.find((h) => h.polys.some((q) => pointInPolygon(at, q)));
+    if (house) return this.#select(GEN + house.id);
+    let street = null, streetD = Infinity;
+    for (const w of g.streets) {
+      const d = distanceToPath(at, w.path);
+      if (d <= Math.max((w.width ?? 0) / 2, 6 / px) && d < streetD) { streetD = d; street = w.id; }
     }
-    this.#select(best);
+    if (street) return this.#select(GEN + street);
+    this.#select(smallest(this.#features()));
   }
 
   /** Picks a feature (or none): its handles show and its settings open in the side panel. */
@@ -913,6 +974,18 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   }
 
   /** The plan's own settings in the side panel (again to close them). */
+  /** Pins the picked house or street: copied into the plan as a fixed feature, whose settings then open. */
+  static async #onPin() {
+    const gen = this.#genOf(this.#inspect);
+    if (!gen || this.#working || this.#stale) return; // never from a drawing of another plan
+    const res = gen.kind === "house" ? pinHouse(this.#plan, gen.item) : pinStreet(this.#plan, gen.item);
+    if (res.error) { this.#error = res.error; return this.render(); }
+    this.#selected = res.id;
+    this.#inspect = res.id;
+    const drawn = await this.#change(res.plan);
+    if (drawn) ui.notifications.info(`AtlasScribe: pinned as ${res.id}. ${gen.kind === "house" ? "It stays as it is when" : "It stays, and the district's other streets follow it, when"} ${gen.item.from} is rerolled; delete it to let the generator have the spot again.`);
+  }
+
   static #onPlan() {
     this.#endTool();
     this.#palette = false;

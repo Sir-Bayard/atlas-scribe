@@ -3,7 +3,7 @@
  * can't use is reported. Each problem is { level: "error" | "warning", id, field, message }. Errors stop a
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
-import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize } from "./plan.mjs";
+import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize, okJoin, okCut, okChimney } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 
@@ -138,7 +138,7 @@ export function checkPlan(raw) {
     if (f?.type !== "label" || !f.of) continue;
     const owner = plan.features.find((g) => g?.id === f.of);
     if (!owner) warn(f.id, "of", `Label "${f.id}" names "${f.of}", but there's no feature with that id, so it isn't shown.`);
-    else if (owner.type !== "district" && owner.type !== "area") warn(f.id, "of", `Label "${f.id}" names "${f.of}", a ${owner.type}; only districts and areas can carry their name, so it isn't shown.`);
+    else if (owner.type !== "district" && owner.type !== "area" && owner.type !== "landmark") warn(f.id, "of", `Label "${f.id}" names "${f.of}", a ${owner.type}; only districts, areas and landmarks can carry their name, so it isn't shown.`);
   }
 
   // The scene it's published to
@@ -171,7 +171,7 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   // Geometry
   const g = t.geometry;
   const need = (ok, field, message) => (ok ? true : (err(f.id, field, message), false));
-  if (g === "point" && !(f.type === "label" && typeof f.of === "string" && f.of)) need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y]${f.type === "label" ? " (or of: the id of the district or area it names)" : ""}.`);
+  if (g === "point" && !(f.type === "label" && typeof f.of === "string" && f.of)) need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y]${f.type === "label" ? " (or of: the id of the district, area or landmark it names)" : ""}.`);
   if (g === "path") need(isPath(f.path), "path", `"${where}" needs a path of two or more points: path: [[x, y], [x, y], ...].`);
   if (g === "shape") checkShape(f.shape, where, "shape", need);
   if (g === "path|shape") {
@@ -180,8 +180,17 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   }
   if (g === "buildings") {
     if (need(Array.isArray(raw.buildings) && raw.buildings.length > 0, "buildings", `Landmark "${where}" needs a list of buildings.`))
-      f.buildings.forEach((b, j) => checkShape(b.shape, `${where}, building ${j + 1}`, `buildings[${j}].shape`, need));
+      f.buildings.forEach((b, j) => checkShape(b.shape, `${where}, building ${j + 1}`, `buildings[${j}].shape`, need, MIN_PART));
   }
+
+  // A pinned building's drawing details, as the generator writes them (anything else is left out, with a warning)
+  const details = (b, at) => {
+    if (b.join != null && !okJoin(b.join)) warn(f.id, "join", `${at}: join isn't as AtlasScribe writes it, so it's left out.`);
+    if (b.cut != null && !okCut(b.cut)) warn(f.id, "cut", `${at}: cut isn't as AtlasScribe writes it, so it's left out.`);
+    if (b.chimneyAt != null && !okChimney(b.chimneyAt)) warn(f.id, "chimneyAt", `${at}: chimneyAt isn't as AtlasScribe writes it, so it's left out.`);
+  };
+  if (f.type === "building") details(raw, `"${where}"`);
+  if (f.type === "landmark" && Array.isArray(raw.buildings)) raw.buildings.forEach((b, j) => isObj(b) && details(b, `"${where}", building ${j + 1}`));
 
   // Fields: numbers in range, values from their lists, nothing unknown
   for (const [name, spec] of Object.entries(t.fields)) checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
@@ -227,9 +236,11 @@ function isPath(p) {
 }
 
 /** The smallest a shape may be, in squares across (and so a tenth of a square across, squared, in area). */
-const MIN_SHAPE = 0.1;
+const MIN_SIZE = 0.1;
+/** A landmark's part may be smaller (a pinned house's dormer is a sliver of roof): a fiftieth of a square. */
+const MIN_PART = 0.02;
 
-function checkShape(shape, where, field, need) {
+function checkShape(shape, where, field, need, MIN_SHAPE = MIN_SIZE) {
   const big = (ok) => need(ok, field, `"${where}" is too small to draw: make it at least ${MIN_SHAPE} of a square across.`);
   if (Array.isArray(shape)) {
     if (!need(shape.length >= 3 && shape.every(isPoint), field, `"${where}" has a polygon that needs three or more [x, y] points.`)) return false;

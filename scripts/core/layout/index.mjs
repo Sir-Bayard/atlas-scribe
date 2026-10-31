@@ -8,7 +8,7 @@
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
 import { roadWaterCrossings, snapCrossings } from "./crossings.mjs";
-import { normalize } from "../plan.mjs";
+import { normalize, okJoin, okCut, okChimney } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
@@ -27,6 +27,8 @@ import { makeNoise } from "../noise.mjs";
 export const LAYOUT_VERSION = 1;
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
+/** A building's chimney: the one drawn, unless it's pinned where it stood ({ u, v, variant }). */
+const chimneyOf = (b, drawn) => (drawn && okChimney(b.chimneyAt) ? { u: b.chimneyAt.u, v: b.chimneyAt.v, variant: b.chimneyAt.variant } : drawn);
 const tallOf = (heightFt) => Math.max(0, (Number(heightFt) - 20) / 20);
 
 /** The widest street and lane any district type makes, in feet: what a neighbour's street at a gate can be. */
@@ -167,8 +169,9 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
 
   /** A plan's building as addBuilding takes it: join and cut are the generator's own, never read from a plan. */
   function planBuilding(b) {
-    const { join, cut, ...rest } = b;
-    return rest;
+    // join and cut only as the generator writes them (a pinned building); anything else is left out
+    const { join, cut, chimneyAt, ...rest } = b;
+    return { ...rest, ...(okJoin(join) ? { join } : {}), ...(okCut(cut) ? { cut } : {}), ...(okChimney(chimneyAt) ? { chimneyAt } : {}) };
   }
 
   /** Adds a building item and keeps space clear around it. r: the stream for its own small choices. */
@@ -194,7 +197,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
       ...(round ? { round: true } : {}),
       ...(b.join ? { join: b.join } : {}), // a wing's ends that run into another roof (valleys there, no hip)
       ...(b.cut ? { cut: b.cut } : {}), // hips that start in from their corner, where a flush wing covers it
-      chimney: (b.chimney ?? r.chance(0.75)) && !round ? { u: 0.3, v: r.chance(0.5) ? -0.2 : 0.2, variant: r.int(8) } : null,
+      chimney: chimneyOf(b, (b.chimney ?? r.chance(0.75)) && !round ? { u: 0.3, v: r.chance(0.5) ? -0.2 : 0.2, variant: r.int(8) } : null),
       ...(b.name ? { name: b.name } : {}),
     };
     items.push(item);
@@ -265,6 +268,9 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     return { at, radius: poly.reduce((s, p) => s + Math.hypot(p[0] - at[0], p[1] - at[1]), 0) / poly.length };
   });
   const blocked = [...space.zones, ...space.plots]; // squares, yards and every building so far
+  // Streets keep well off the buildings already there (a plan's, or a pinned house), so none clips them: the tracer
+  // lets a street run a little way inside what it avoids, so the buildings are grown by about a street's width
+  const streetBlocked = [...space.zones, ...space.plots.map((p) => grow(p, 0.6))];
   for (const d of dfeats) {
     const { poly } = dlist.find((x) => x.id === d.id);
     const r = streamFor(d.id);
@@ -274,7 +280,7 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const nearHere = [...fixedHere, ...ways.filter((w) => !fixedHere.includes(w) && (w.path.some((p) => distanceToPath(p, ring) < w.width / 2 + 0.5) || poly.some((p) => distanceToPath(p, w.path) < w.width / 2 + 0.5)))];
     const borders = dlist.filter((o) => o.id !== d.id && o.streetSpacing).flatMap((o) => sharedEdges(poly, o.poly));
     const made = streetsFor({
-      district: d, poly, roads: fixedHere, water: space.water, radials, blocked, gates: gates.get(d.id) ?? [], borders,
+      district: d, poly, roads: fixedHere, water: space.water, radials, blocked: streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
     const surface = d.surface ?? fixedHere[0]?.surface ?? "dirt";

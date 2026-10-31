@@ -4,7 +4,7 @@
  * come from TYPES in plan.mjs, so a field added there shows up here; FIELD_TEXT gives each its words.
  * Pure: runs in the worker, on the page and under node.
  */
-import { TYPES, SURFACES, SEASONS, OLD_PROFILES, fieldDefault, isObj, normalize } from "./plan.mjs";
+import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, fieldDefault, isObj, normalize } from "./plan.mjs";
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
 
 /** The district types the window offers (an old plan's "roadside" reads as a hamlet, "core" as a city). */
@@ -43,6 +43,9 @@ export const FIELD_TEXT = {
   "building.chimney": { label: "Chimney", kind: "tristate", auto: "the generator decides" },
   "building.rot": { label: "Turned", help: "Degrees clockwise", more: true },
   "building.variant": { label: "Art piece", help: "Which of the roof art's pieces it uses; else picked from the seed", more: true },
+  "building.chimneyAt": { hidden: true },
+  "building.join": { hidden: true },
+  "building.cut": { hidden: true },
 
   "district.profile": { label: "Type", kind: "enum", values: PROFILE_CHOICES, help: "Hamlet: houses on the roads only. Village: a few lanes, deep plots. Town: long plots with back lanes. City: dense rows and alleys." },
   "district.gardens": { label: "Gardens", help: "The share of houses with a tended garden (0 to 1)" },
@@ -62,7 +65,8 @@ export const FIELD_TEXT = {
   "area.surface": { label: "Surface", auto: "trodden ground" },
   "area.fence": { label: "Fence", auto: "none" },
   "area.rot": { label: "Turned", help: "Degrees; a turned area can't be reshaped by its corners yet", more: true },
-  "area.trees": { label: "Trees", help: "About how many trees; else about one for every 2.4 square squares", auto: "from its size" },
+  "area.density": { label: "Density", help: "How thick its trees stand: sparse, open, thick or dense. A wood drawn bigger or smaller keeps its look", auto: "thick", names: { sparse: "sparse", open: "open", thick: "thick", dense: "dense" } },
+  "area.trees": { label: "Tree count", help: "A set number of trees, in place of the density", auto: "from its density and size", more: true },
   "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "0.15" },
   "area.style": { label: "Style", names: { green: "village green", formal: "formal garden" }, auto: "village green" },
   "area.system": { label: "Field system", names: { patchwork: "hedged patchwork", strips: "open strips" }, help: "Else picked from its seed", auto: "by seed" },
@@ -155,7 +159,12 @@ export function fieldsOf(plan, id) {
       value, auto, more: !!txt.more,
     });
     // A district's or area's name on the map: a label that follows it (after its name)
-    if (name === "name" && (f.type === "district" || f.type === "area"))
+    // A landmark's roof, for all its buildings at once (blank when they differ)
+    if (name === "name" && f.type === "landmark") {
+      const roofs = new Set((Array.isArray(f.buildings) ? f.buildings : []).map((b) => b?.roof ?? "slate"));
+      out.push({ name: ROOF_ALL, label: "Roof", help: "The roof of all its buildings", kind: "enum", values: ROOFS, names: null, unit: null, min: null, max: null, value: roofs.size === 1 ? [...roofs][0] : undefined, auto: roofs.size > 1 ? "mixed" : null, more: false, required: true });
+    }
+    if (name === "name" && (f.type === "district" || f.type === "area" || f.type === "landmark"))
       out.push({ name: NAME_LABEL, label: "Name on the map", help: "A label with its name that sits inside it and moves with it. Click the label to move it, turn it or change its look", kind: "boolean", values: null, names: null, unit: null, min: null, max: null, value: nameLabelsOf(plan, id).length > 0, auto: false, more: false, required: true });
   }
   return out;
@@ -212,6 +221,12 @@ export function setField(plan, id, name, raw) {
   const { value, error } = readValue(field, raw);
   if (error) return { error };
   if (name === NAME_LABEL) return { plan: withNameLabel(plan, id, value) };
+  if (name === ROOF_ALL) {
+    if (value === undefined) return { plan };
+    const next = structuredClone(plan);
+    for (const b of featureOf(next, id).buildings ?? []) if (isObj(b)) b.roof = value;
+    return { plan: next };
+  }
   // A placed label with no text couldn't be seen or picked again: it keeps its words (Delete takes it out)
   if (f.type === "label" && name === "text" && value === undefined && !f.of) return { error: "A label needs some text (Delete takes it out)." };
   const next = structuredClone(plan);
@@ -234,6 +249,9 @@ export function setField(plan, id, name, raw) {
 
 /** The inspector's setting for a district's or area's name on the map (not a plan field: it adds or takes out a label). */
 export const NAME_LABEL = "@nameLabel";
+
+/** The inspector's setting for a landmark's roof (all its buildings at once). */
+export const ROOF_ALL = "@roof";
 
 /** The plan with a feature's name label added (on) or taken out (off). */
 function withNameLabel(plan, id, on) {

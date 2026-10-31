@@ -87,6 +87,11 @@ export const TYPES = {
       roofStyle: { ...oneOf(ROOF_STYLES, "gable"), fallback: "it's drawn as a gable" },
       variant: num(null, { min: 0 }), // which of the roof art's pieces (else from the seed)
       name: str(),
+      // A pinned generated building keeps how it was drawn: where its chimney stands ({ u, v, variant }), the ends
+      // that run into another roof (join) and the hips that start in from a corner (cut)
+      chimneyAt: { kind: "data", default: null },
+      join: { kind: "data", default: null },
+      cut: { kind: "data", default: null },
     },
   },
   landmark: {
@@ -122,6 +127,7 @@ export const TYPES = {
       fence: { ...oneOf(["wattle", "wood", "stone"], null), only: ["yard"] },
       rot: num(0, { unit: "deg" }),
       trees: num(null, { min: 0, only: ["woods"] }),
+      density: { ...oneOf(["sparse", "open", "thick", "dense"], null), only: ["woods"], fallback: "it's drawn as thick" }, // a wood's: how thick its trees stand (thick if left out); a tree count wins
       mix: { kind: "object", default: null, only: ["woods"] }, // a wood's species shares, { bare: 0.15 } (the rest are firs)
       style: { ...oneOf(["green", "formal"], null), only: ["park"] }, // a park's: a village green (the default) or a formal garden
       system: { ...oneOf(["patchwork", "strips"], null), only: ["fields"] }, // a fields area's: enclosed fields or open strips; else picked from its seed
@@ -145,7 +151,7 @@ export const TYPES = {
   },
   label: {
     geometry: "point",
-    // A label is placed (at), or follows a district or area (of), sitting inside it plus its offset and showing its
+    // A label is placed (at), or follows a district, area or landmark (of), sitting inside it plus its offset and showing its
     // name unless it has text of its own (labels.mjs)
     fields: {
       text: str(""), show: oneOf(["gm", "all"], "gm"), size: oneOf(["small", "normal", "large", "huge"], "normal"),
@@ -154,6 +160,9 @@ export const TYPES = {
     },
   },
 };
+
+/** Trees a square square, by a wood's density (thick is what a wood with neither density nor a count gets). */
+export const WOOD_DENSITY = { sparse: 0.15, open: 0.28, thick: 1 / 2.4, dense: 0.7 };
 
 /** A label's text height in squares, by its size word. */
 export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };
@@ -175,6 +184,11 @@ export const SCENE = {
   labelColor: str("#13202e"),
   labelFont: str("Signika"),
 };
+
+/** A pinned building's details as the generator writes them: join { start?, end?, inset, flush? }, cut [[a, b, t]...], chimneyAt { u, v, variant }. */
+export const okJoin = (j) => !!j && typeof j === "object" && !Array.isArray(j) && (j.start === true || j.end === true) && (j.inset === undefined || (Number.isFinite(j.inset) && Math.abs(j.inset) <= 0.5)) && (j.flush === undefined || [-1, 1].includes(j.flush));
+export const okCut = (c) => Array.isArray(c) && c.length > 0 && c.every((x) => Array.isArray(x) && x.length === 3 && x.every(Number.isFinite) && [-1, 1].includes(x[0]) && [-1, 1].includes(x[1]) && x[2] >= 0 && x[2] <= 1);
+export const okChimney = (c) => !!c && typeof c === "object" && [c.u, c.v, c.variant].every(Number.isFinite) && Math.abs(c.u) <= 0.5 && Math.abs(c.v) <= 0.5;
 
 /** District profiles this version knows: how built up a district is. */
 export const PROFILES = ["hamlet", "village", "town", "city"];

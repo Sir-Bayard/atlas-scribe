@@ -27,6 +27,16 @@ function areaCentroid(poly) {
 
 /** The point a feature's name label sits at when it has no offset: well inside its shape. Null if it has none. */
 export function anchorOf(f) {
+  // A landmark's (a pinned house's): the middle of its first building
+  if (f?.type === "landmark") {
+    const b = Array.isArray(f.buildings) ? f.buildings[0] : null;
+    try {
+      const poly = b?.shape ? shapeToPolygon(b.shape, b.rot ?? 0) : [];
+      return poly.length >= 3 && poly.every(isPt) ? areaCentroid(poly) ?? insidePoint(poly) : null;
+    } catch {
+      return null;
+    }
+  }
   if (!f || !(f.type === "district" || f.type === "area") || !f.shape) return null;
   try {
     const poly = shapeToPolygon(f.shape, f.type === "area" ? f.rot ?? 0 : 0);
