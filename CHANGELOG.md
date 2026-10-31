@@ -19,7 +19,7 @@ Editing on the map: in the AtlasScribe window you can now change any feature's s
 - `checkPlan` no longer warns that a district has no road into it when a neighboring district's streets reach it.
 
 **Maps that will look different after updating**
-- Woods redraw with the new trees, districts' streets keep clear of plan buildings, farms farther from a road now get a lane, and a district's streets ignore buildings and squares more than 4 squares outside it. Reroll or lock as you like.
+- Woods redraw with the new trees; a district's streets now stop short of plan buildings rather than run into them (and no longer steer around them), so districts with buildings of their own may lay out a little differently; farms farther from a road now get a lane. Reroll or lock as you like.
 
 **For plan writers**
 - New plan fields: `underlay`; a label's `angle`, `color`, `font`, `alpha`, `of` (a district's, area's or landmark's id, in place of `at`) and `offset`; a district's or area's `name`; a wood's `density`; `output.scene.labelColor` and `labelFont`; buildings' `chimneyAt`, `join` and `cut` (from pinning). `quickPlan`'s choice `centre` is now `center` (the old name still works).
