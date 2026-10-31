@@ -10,6 +10,8 @@
  * returns a new plan and leaves the one given alone. Pure: runs anywhere. Numbers are in squares.
  */
 import { isObj, normalize } from "./plan.mjs";
+import { wallReach } from "./layout/walls.mjs";
+import { offset } from "./lots/poly.mjs";
 import { editableShape, shapeProblem, SAME } from "./reshape.mjs";
 import { checkPlan } from "./check.mjs";
 import { roadWaterCrossings } from "./layout/crossings.mjs";
@@ -37,6 +39,8 @@ export const TOOLS = [
   { id: "stream", label: "Stream", icon: "fa-droplet", geometry: "path", make: { type: "water", class: "stream" } },
   { id: "wall", label: "Wall", icon: "fa-dungeon", geometry: "path", make: { type: "wall", class: "drystone" } },
   { id: "hedge", label: "Hedge", icon: "fa-leaf", geometry: "path", make: { type: "wall", class: "hedge" } },
+  { id: "townwall", label: "Town wall", icon: "fa-chess-rook", geometry: "path", closes: true, base: "wall", make: { type: "wall", class: "town", straight: true } },
+  { id: "palisade", label: "Palisade", icon: "fa-tents", geometry: "path", closes: true, make: { type: "wall", class: "palisade" } },
   { id: "bridge", label: "Bridge", icon: "fa-bridge", geometry: "point", make: { type: "crossing", class: "bridge" } },
   { id: "ford", label: "Ford", icon: "fa-person-swimming", geometry: "point", make: { type: "crossing", class: "ford" } },
   { id: "tree", label: "Tree", icon: "fa-tree", geometry: "point", make: { type: "prop", class: "tree" } },
@@ -292,7 +296,7 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   if (!tool) return { error: `There's no tool "${toolId}".` };
   const next = structuredClone(plan);
   if (!Array.isArray(next.features)) next.features = [];
-  const id = freeId(next, tool.id);
+  const id = freeId(next, tool.base ?? tool.id);
   const f = { id, ...structuredClone(tool.make) };
   const sq = normalize(plan).size.ftPerSquare || 25;
   const pts = points.map((p) => [p[0], p[1]]);
@@ -304,6 +308,8 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
     // Points too close to the one before are one point
     const path = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > SAME);
     if (path.length < 2) return { error: "A line needs at least two points." };
+    // A town wall or palisade ended on its first point is a closed loop
+    if (tool.closes && path.length >= 4 && dist(path[0], path[path.length - 1]) <= SAME) path[path.length - 1] = [...path[0]];
     f.path = path;
   } else if (box) {
     if (Math.abs(box[2] - box[0]) < 0.1 || Math.abs(box[3] - box[1]) < 0.1) return { error: "Drag a bigger box (at least a tenth of a square each way)." };
@@ -332,4 +338,40 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   const errors = checkPlan(next).filter((p) => p.level === "error" && !had.has(p.message));
   if (errors.length) return { error: errors.map((p) => p.message).join(" ") };
   return { plan: next, id, crossings, access };
+}
+
+/**
+ * Wall in: a closed town wall around a district, its clear strip just outside the district's edge, so the
+ * district keeps all its ground. Roads crossing it get gates when the map is drawn. Returns { plan, id } or
+ * { error }.
+ */
+export function wallIn(plan, districtId) {
+  const d = (plan?.features ?? []).find((f) => isObj(f) && f.id === districtId);
+  if (!d || d.type !== "district") return { error: `There's no district "${districtId}".` };
+  const n = normalize(plan);
+  const sq = n.size.ftPerSquare || 25;
+  const wall = { type: "wall", class: "town", straight: true };
+  const reach = wallReach(wall, sq);
+  let poly;
+  try { poly = shapeToPolygon(d.shape); } catch { poly = []; }
+  if (poly.length < 3) return { error: `District "${districtId}" has no outline to wall in.` };
+  const grown = offset([poly], reach).reduce((a, b) => (!a || ringArea(b) > ringArea(a) ? b : a), null);
+  if (!grown || ringArea(grown) <= ringArea(poly)) return { error: `District "${districtId}" is too small to wall in.` };
+  // Rounded, with points that land on each other dropped, and closed on its first point
+  const ring = grown.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]).filter((p, i, a) => i === 0 || dist(p, a[i - 1]) > SAME);
+  while (ring.length > 1 && dist(ring[0], ring[ring.length - 1]) <= SAME) ring.pop();
+  if (ring.length < 3) return { error: `District "${districtId}" is too small to wall in.` };
+  const next = structuredClone(plan);
+  const id = freeId(next, "wall");
+  next.features.push({ id, ...wall, path: [...ring, [...ring[0]]] });
+  const had = new Set(checkPlan(plan).filter((p) => p.level === "error").map((p) => p.message));
+  const errors = checkPlan(next).filter((p) => p.level === "error" && !had.has(p.message));
+  if (errors.length) return { error: errors.map((p) => p.message).join(" ") };
+  return { plan: next, id };
+}
+
+function ringArea(p) {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; a += x1 * y2 - x2 * y1; }
+  return Math.abs(a / 2);
 }

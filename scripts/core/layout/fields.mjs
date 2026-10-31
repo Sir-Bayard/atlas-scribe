@@ -22,6 +22,7 @@ import { bands, difference, intersect, union, offset, shapes, area as areaOf, ce
 import { shapeToPolygon, pointInPolygon, bbox, distanceToPath, pathTouchesPolygon, insidePoint, segmentNearPath, pointsAlong } from "../geom.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
+import { isTownWall, wallReach, wallReachOut } from "./walls.mjs";
 
 export const SYSTEMS = ["patchwork", "strips"];
 export const CROPS = ["plowed", "growing", "ripe", "stubble", "hay", "pasture", "fallow"];
@@ -100,7 +101,8 @@ function keepOutParts(plan, self = undefined) {
         else if (f.shape) polys.push(...grown(shapeToPolygon(f.shape, f.rot ?? 0, 48), KEEP.water));
         break;
       case "wall":
-        if (Array.isArray(f.path)) paths.push({ path: f.path, half: KEEP.wall });
+        // A town wall or palisade keeps its clear strip, and its ditch or moat, too
+        if (Array.isArray(f.path)) paths.push({ path: f.path, half: KEEP.wall + (isTownWall(f) ? Math.max(wallReach(f, plan.size.ftPerSquare), wallReachOut(f, plan.size.ftPerSquare)) : 0) });
         break;
       case "district":
         polys.push(...marginRound(plan, f));

@@ -160,7 +160,15 @@ export function removeCorner(plan, id, i) {
   const isPath = (fid) => !!all.find((x) => x.f.id === fid)?.path;
   const where = new Map([[id, i]]);
   if (!isPath(id)) for (const p of partnersOf(plan, id, i)) if (!isPath(p.id)) where.set(p.id, p.i);
-  return refitAfter(plan, [...where.keys()], withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? pts.filter((_, j) => j !== where.get(fid)) : null)));
+  // A ring's first and last points are one point: taking it off takes both, and the ring closes on its new first
+  const take = (pts, j) => {
+    const ring = pts.length >= 4 && Math.abs(pts[0][0] - pts[pts.length - 1][0]) < 1e-9 && Math.abs(pts[0][1] - pts[pts.length - 1][1]) < 1e-9;
+    if (ring && pts.length < 5) return null; // a ring keeps three corners at least
+    if (!ring || (j !== 0 && j !== pts.length - 1)) return pts.filter((_, k) => k !== j);
+    const inner = pts.slice(1, -1);
+    return [...inner, [...inner[0]]];
+  };
+  return refitAfter(plan, [...where.keys()], withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? take(pts, where.get(fid)) : null)));
 }
 
 /** Where segment a-b crosses c-d, or null. */

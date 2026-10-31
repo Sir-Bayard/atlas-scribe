@@ -5,8 +5,9 @@
  */
 import { underlayOf } from "./underlay.mjs";
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize, okJoin, okCut, okChimney } from "./plan.mjs";
-import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath } from "./geom.mjs";
+import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath, segmentsIntersect } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
+import { isTownWall, isClosed, wallReach, towerReach } from "./layout/walls.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
@@ -85,7 +86,10 @@ export function checkPlan(raw) {
       const sqw = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
       const ws = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path) && f.path.every(isPoint)).map((f) => ({ path: f.path, clear: (isNum(f.width) ? f.width : 0) / sqw / 2 + 0.225 }));
       const inWater = (x, y) => ws.some((w) => distanceToPath([x, y], w.path) < w.clear);
-      try { gates = districtGates(list, { roads: ways, inWater, seed: isNum(plan.seed) ? plan.seed : 1 }); } catch { gates = new Map(); }
+      // and none through a town wall (only roads pass it)
+      const wb = plan.features.filter((f) => isTownWall(f) && f.path.every(isPoint)).map((f) => ({ path: f.path, half: wallReach(f, sqw) }));
+      const blocked = (x, y) => inWater(x, y) || wb.some((b) => distanceToPath([x, y], b.path) < b.half);
+      try { gates = districtGates(list, { roads: ways, inWater: blocked, seed: isNum(plan.seed) ? plan.seed : 1 }); } catch { gates = new Map(); }
     }
     return gates.get(id) ?? [];
   };
@@ -98,6 +102,33 @@ export function checkPlan(raw) {
     warn(d.id, "shape", hamlet
       ? `District "${d.id}" is a hamlet with no road or lane running into it, and a hamlet builds only along roads, so nothing will be built there.`
       : `District "${d.id}" has no road or lane running into it and shares no side with another district's streets, so nothing will be built along streets there.`);
+  }
+
+  // Town walls and palisades: a closed one no road crosses has no gate; one that crosses itself has no clear outside;
+  // a road running along one would have its towers standing in it
+  for (const f of plan.features.filter((f) => isTownWall(f) && f.path.every(isPoint))) {
+    const crosses = (r) => r.path.some((p, i) => i && f.path.some((q, j) => j && segmentsIntersect(r.path[i - 1], p, f.path[j - 1], q)));
+    if (isClosed(f.path)) {
+      if (!ways.some(crosses)) warn(f.id, "path", `"${f.id}" is a closed wall with no road crossing it, so it has no gate. Run a road through it where a gate should be.`);
+      if (f.path.length >= 4 && polygonCrossesItself(f.path.slice(0, -1))) warn(f.id, "path", `"${f.id}" crosses itself, so its inside and outside are unclear (it gets no ditch or moat). Give its points in order around it.`);
+    }
+    const sq = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
+    const near = Math.max((isNum(f.thickness) ? f.thickness : 12) / sq / 2 + 0.3, towerReach(f, sq) + 0.02); // where towers would stand in it
+    for (const r of ways) {
+      const rh = (isNum(r.width) ? r.width : 20) / sq / 2;
+      // Points every half square along the road that lie on the wall, away from where it crosses
+      let run = 0, best = 0;
+      for (let i = 1; i < r.path.length; i++) {
+        const [a, b] = [r.path[i - 1], r.path[i]], l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(l / 0.5));
+        for (let k = 0; k < n; k++) {
+          const q = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n];
+          run = distanceToPath(q, f.path) < rh + near ? run + l / n : 0;
+          best = Math.max(best, run);
+        }
+      }
+      // Longer than any crossing, however slanting
+      if (best > (2 * (rh + near)) / 0.25) { warn(f.id, "path", `Road "${r.id}" runs along "${f.id}" rather than through it; its towers there are left out. Move the wall or the road apart.`); break; }
+    }
   }
 
   // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)

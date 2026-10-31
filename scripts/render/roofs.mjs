@@ -5,7 +5,8 @@
  * A facet is { poly, down (its downslope, a unit vector; [0, 0] for a flat piece), eaveAngle (degrees: the texture's
  * rows run along the eave, its lower edge downslope), eaves (outline edges), flat (true for a flat piece) }. The list also carries:
  *   ridge: [a, b] or null; creases: [{ seg: [a, b], kind: "hip" | "valley" }]; caps: the ridge and hips, which get
- *   a ridge cap; parapet: for a flat roof, { w, joined: { start, end } }; skylight: { cx, cy, len, dep } or null.
+ *   a ridge cap; parapet: for a flat roof, { w, joined: { start, end }, crenels, and for a round tower round: true and R };
+ *   skylight: { cx, cy, len, dep } or null.
  *
  * Every form assumes equal pitches, so hips and valleys run at 45 degrees in plan (Tom Cartos-style roofs). A wing's
  * end that runs into another roof (b.join.start: the -x end, b.join.end: +x) has no hip or gable: its slopes carry on
@@ -16,7 +17,7 @@
 const HALF_HIP = 0.42;
 
 export function roofFacets(b) {
-  if (b.round) return coneFacets(b);
+  if (b.round) return b.tower && b.roofStyle === "flat" ? roundFlatFacets(b) : coneFacets(b);
   const style = b.roofStyle ?? "gable";
   if (style === "flat") return flatFacets(b);
   if (style === "mansard" && !b.join) return mansardFacets(b);
@@ -100,11 +101,19 @@ function slopedFacets(b, style) {
 /** A flat roof behind a parapet; a wing's joined ends have none, so wing and house read as one roof. */
 function flatFacets(b) {
   const A = b.len / 2, B = b.dep / 2;
-  const w = Math.min(0.1, Math.min(A, B) * 0.25);
+  const w = b.tower ? Math.min(0.14, Math.min(A, B) * 0.22) : Math.min(0.1, Math.min(A, B) * 0.25);
   const js = !!b.join?.start, je = !!b.join?.end;
   // A joined end's roof reaches on, between its own walls, over the parapet of the roof it joins
   const poly = [[-A, -B], [A, -B], ...(je ? [[A, -B + w], [A + w, -B + w], [A + w, B - w], [A, B - w]] : []), [A, B], [-A, B], ...(js ? [[-A, B - w], [-A - w, B - w], [-A - w, -B + w], [-A, -B + w]] : [])];
-  return finish([{ poly, down: [0, 0], eaveAngle: 0, eaves: [], flat: true }], { parapet: { w, joined: { start: js, end: je } } });
+  return finish([{ poly, down: [0, 0], eaveAngle: 0, eaves: [], flat: true }], { parapet: { w, joined: { start: js, end: je }, crenels: !!b.crenels } });
+}
+
+/** An open round tower: a flat top inside a round parapet (with battlements when it has them). */
+function roundFlatFacets(b) {
+  const R = Math.min(b.len, b.dep) / 2, n = 24;
+  const ring = Array.from({ length: n }, (_, k) => [R * Math.cos((k / n) * 2 * Math.PI), R * Math.sin((k / n) * 2 * Math.PI)]);
+  const w = Math.min(0.14, R * 0.22);
+  return finish([{ poly: ring, down: [0, 0], eaveAngle: 0, eaves: ring.map((p, k) => [p, ring[(k + 1) % n]]), flat: true }], { parapet: { w, round: true, R, joined: { start: false, end: false }, crenels: !!b.crenels } });
 }
 
 /** A mansard: four steep slopes around a flat top, with a skylight along it when there's room. */

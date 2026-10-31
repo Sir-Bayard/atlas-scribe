@@ -18,7 +18,7 @@ export function kindOf(f) {
   if (f.type === "area") return f.class ?? "area";
   if (f.type === "water") return f.class ?? "stream";
   if (f.type === "road") return f.class ?? "street";
-  if (f.type === "wall") return f.class === "hedge" ? "hedge" : `${f.class ?? "drystone"} wall`;
+  if (f.type === "wall") return f.class === "hedge" || f.class === "palisade" ? f.class : `${f.class ?? "drystone"} wall`;
   if (f.type === "crossing" || f.type === "prop") return f.class ?? f.type;
   return f.type;
 }
@@ -120,6 +120,7 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
       </header>
       <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
       <div class="as-pv-tools">
+        ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall in</button>` : ""}
         <button type="button" data-action="asDelete" data-id="${esc(id)}" class="as-danger" data-tooltip="Take it out of the plan (Undo brings it back)" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Delete</button>
       </div>
     </section>`;
@@ -215,17 +216,18 @@ const HOW = {
   shape: "Click each corner (double-click or Enter to finish), or drag a box. Corners snap to other districts' and areas' corners and sides, and to the map's edge.",
   box: "Drag a box, or click to place one of the usual size.",
   path: "Click each point (double-click or Enter to finish). Points snap onto a road (water onto water, a wall onto a wall) or the map's edge.",
+  loop: "Click each point (double-click or Enter to finish, or click the first point to close it around). Points snap onto another wall or the map's edge.",
   point: "Click where it goes.",
 };
 
 /** The hint under the palette: how to use the tool, and the points so far. */
 export function howText(tool, points) {
-  return `${HOW[tool.geometry]}${points ? ` ${points} point${points === 1 ? "" : "s"} so far; Backspace removes the last.` : ""} Esc cancels.`;
+  return `${HOW[tool.closes ? "loop" : tool.geometry]}${points ? ` ${points} point${points === 1 ? "" : "s"} so far; Backspace removes the last.` : ""} Esc cancels.`;
 }
 
 /** The drawing palette: a button per tool, the one in use lit, with how to use it and Finish and Cancel. */
 export function paletteHTML(tool, { points = 0, working = false } = {}) {
-  const groups = [["Areas", ["district", "woods", "fields", "park", "farmstead", "yard", "square", "building"]], ["Lines", ["road", "lane", "track", "river", "stream", "wall", "hedge"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "label"]]];
+  const groups = [["Areas", ["district", "woods", "fields", "park", "farmstead", "yard", "square", "building"]], ["Lines", ["road", "lane", "track", "river", "stream", "wall", "hedge", "townwall", "palisade"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "label"]]];
   const by = new Map(TOOLS.map((t) => [t.id, t]));
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">

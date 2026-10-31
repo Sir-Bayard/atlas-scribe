@@ -19,7 +19,17 @@ const treeRole = (t, s) => (t.species === "bare" ? (s === "winter" ? "tree.bare.
 const treeSize = (t, s) => (t.species === "bare" ? (s === "winter" ? 2.0 : 2.2) : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0);
 /** A hedge's bushes: bare in winter, in leaf otherwise. */
 const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
-const hasFlat = (b) => !b.round && (b.roofStyle === "flat" || b.roofStyle === "mansard");
+/** A wall's face moved toward its center line by d squares (both lists of points, the same length). */
+function offsetLine(face, center, d) {
+  return face.map((p, i) => {
+    const c = center[i] ?? p, dx = c[0] - p[0], dy = c[1] - p[1], l = Math.hypot(dx, dy) || 1;
+    return [p[0] + (dx / l) * d, p[1] + (dy / l) * d];
+  });
+}
+
+const hasFlat = (b) => (!b.round || b.tower) && (b.roofStyle === "flat" || b.roofStyle === "mansard");
+/** The flat roof's role: stone paving, or planks on a palisade's open tower. */
+const flatRole = (b, s) => (b.flatRoof === "wood" ? `roof.flat.wood.${s}` : `roof.flat.${s}`);
 
 /** A color each crop's art is lifted toward outside winter: [color, strength, how]. */
 const FIELD_LIFT = {
@@ -55,10 +65,15 @@ export function rolesFor(layout) {
     }
     if (i.kind === "water") { roles.add(`stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`); if (i.frozen) roles.add("water.ice.cracked"); }
     if (i.kind === "crossing") roles.add(`surface.trodden.${s}`).add(`stone.rough.${s}`).add("water.ice.cracked");
-    if (i.kind === "wall") roles.add(`stone.rough.${s}`);
+    if (i.kind === "wall") {
+      if (i.class === "palisade") roles.add("wood.stake");
+      else roles.add(`stone.rough.${s}`);
+      if (i.class === "town") roles.add(`wall.walk.${s}`);
+    }
+    if (i.kind === "ditch") roles.add(`surface.dirt.${s}`);
     if (i.kind === "building") {
       roles.add(`roof.${i.roof}.${s}`);
-      if (hasFlat(i)) roles.add(`roof.flat.${s}`);
+      if (hasFlat(i)) roles.add(flatRole(i, s));
       if (s === "winter" && (!SNOWY_IN_WINTER.has(i.roof) || hasFlat(i))) roles.add("overlay.snow");
       if (i.chimney) roles.add("chimney.stone");
     }
@@ -321,7 +336,7 @@ export function paint(ctx) {
 
   // Walls and hedges
   progress(0.25, "Walls and hedges");
-  const walls = items("wall");
+  const walls = items("wall").filter((w) => !w.thickness); // town walls and palisades come after the water
   if (walls.length) {
     const box = boxOf(walls.map((w) => w.path), 0.5);
     soft((k) => { for (const w of walls) { k.save(); k.translate(pp * 0.03, -pp * 0.09); strokeLine(k, w.path, 0.2); k.restore(); } }, "rgb(30,40,58)", 0.08, 0.35, "source-over", box);
@@ -331,6 +346,15 @@ export function paint(ctx) {
   }
   // A bush placed in a plan has no scale of its own
   for (const b of items("prop", "bush")) img(bushRole(s), b.variant, b.x, b.y, b.scale ?? 0.5, b.rot, 0.18);
+
+  // Ditches along town walls: a dark hollow of bare earth, grassed over at its edges, under the roads that cross it
+  for (const d of items("ditch")) {
+    const box = boxOf([d.path], d.width / 2 + 0.5);
+    soft((k) => strokeLine(k, d.path, d.width + 0.12), "rgb(54,46,36)", 0.06, 0.55, "multiply", box);
+    soft((k) => strokeLine(k, d.path, d.width), tex(`surface.dirt.${s}`, 2.5), 0.06, winter ? 0.5 : 0.9, "source-over", box);
+    soft((k) => strokeLine(k, d.path, d.width * 0.55), "rgb(84,74,58)", 0.12, winter ? 0.3 : 0.5, "multiply", box);
+    if (winter) soft((k) => strokeLine(k, d.path, d.width * 0.85), "rgb(232,236,242)", 0.15, 0.45, "source-over", box);
+  }
 
   // Roads and lanes: trodden verge, the surface, a darker core, ruts
   progress(0.35, "Roads");
@@ -381,10 +405,12 @@ export function paint(ctx) {
 
   // Water: the bank, a dark edge, the water or ice, a cracked line, a darker core
   progress(0.5, "Water");
-  for (const w of items("water")) {
-    const box = boxOf([w.path], w.width / 2 + 0.5);
-    soft((k) => strokeLine(k, w.path, w.width + 0.95), tex(`stone.rough.${s}`, 2), 0.35, 0.8, "source-over", box);
-    soft((k) => strokeLine(k, w.path, w.width + 0.3), "rgb(48,62,80)", 0.12, 0.7, "source-over", box);
+  // Every bank first, then every edge, then the water, so where a stream or moat opens into a river no bank runs
+  // across its mouth
+  const waters = items("water").map((w) => ({ w, box: boxOf([w.path], w.width / 2 + 0.5) }));
+  for (const { w, box } of waters) soft((k) => strokeLine(k, w.path, w.width + 0.95), tex(`stone.rough.${s}`, 2), 0.35, 0.8, "source-over", box);
+  for (const { w, box } of waters) soft((k) => strokeLine(k, w.path, w.width + 0.3), "rgb(48,62,80)", 0.12, 0.7, "source-over", box);
+  for (const { w, box } of waters) {
     soft((k) => strokeLine(k, w.path, w.width), tex(w.frozen ? "water.ice" : `water.${w.class}`, 2.5), 0.06, 1, "source-over", box);
     if (w.frozen) soft((k) => strokeLine(k, w.path, w.width * 0.48), tex("water.ice.cracked", 2), 0.2, 0.55, "source-over", box);
     soft((k) => strokeLine(k, w.path, 0.25), "rgb(40,60,82)", 0.15, 0.35, "multiply", box);
@@ -457,6 +483,33 @@ export function paint(ctx) {
     g.restore();
   }
 
+  // Town walls and palisades, over the water and roads they meet (their towers are buildings, below)
+  for (const w of items("wall").filter((w) => w.thickness)) {
+    const T = w.thickness;
+    const box = boxOf([w.path], T + 1.5);
+    const sh = 0.35 + 0.3 * (w.tall ?? 0); // as a building's
+    // Its shadow, cast north as the buildings' are
+    soft((k) => { k.save(); k.translate(sh * 0.3 * pp, -sh * pp); strokeLine(k, w.path, T); k.restore(); }, "rgb(28,38,58)", 0.12, 0.4, "source-over", box);
+    if (w.class === "palisade") {
+      // A line of upright logs, seen end on: a dark line, then each log's top as a round of timber
+      soft((k) => { k.lineCap = "butt"; strokeLine(k, w.path, T * 0.9); }, "rgb(40,30,22)", 0.01, 0.9, "source-over", box);
+      soft((k) => { k.lineCap = "round"; k.setLineDash([0.001 * pp, T * 0.95 * pp]); strokeLine(k, w.path, T * 1.05); k.setLineDash([]); }, "rgb(36,26,18)", 0.01, 0.95, "source-over", box);
+      soft((k) => { k.lineCap = "round"; k.setLineDash([0.001 * pp, T * 0.95 * pp]); strokeLine(k, w.path, T * 0.85); k.setLineDash([]); }, tex("wood.stake", 0.5), 0.01, 1, "source-over", box);
+      if (winter) soft((k) => { k.lineCap = "round"; k.setLineDash([0.001 * pp, T * 0.95 * pp]); strokeLine(k, w.path, T * 0.5); k.setLineDash([]); }, "rgb(236,239,243)", 0.01, 0.6, "source-over", box);
+      continue;
+    }
+    // The wall: a dark outline, its stone, the walk along the top between two parapets, and battlements (the gaps
+    // between merlons) along the outer one
+    soft((k) => { k.lineCap = "butt"; strokeLine(k, w.path, T + 0.06); }, "rgb(36,36,40)", 0.01, 0.95, "source-over", box);
+    soft((k) => { k.lineCap = "butt"; strokeLine(k, w.path, T); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", box);
+    soft((k) => { k.lineCap = "butt"; strokeLine(k, w.path, T); }, "rgb(170,166,160)", 0.01, 0.45, "multiply", box);
+    soft((k) => { k.lineCap = "butt"; strokeLine(k, w.path, T * 0.62); }, tex(`wall.walk.${s}`, 1.2), 0.01, 1, "source-over", box);
+    if (winter) soft((k) => { k.lineCap = "butt"; strokeLine(k, w.path, T * 0.58); }, "rgb(232,236,242)", 0.02, 0.75, "source-over", box);
+    // The parapets' inner edges: a fine shadow line each side of the walk
+    soft((k) => { k.lineCap = "butt"; for (const face of [w.face, w.back]) if (face) strokeLine(k, offsetLine(face, w.path, T * 0.19), 0.025); }, "rgb(40,40,44)", 0.01, 0.6, "source-over", box);
+    if (w.face) soft((k) => { k.lineCap = "butt"; k.setLineDash([T * 0.22 * pp, T * 0.22 * pp]); strokeLine(k, offsetLine(w.face, w.path, T * 0.095), T * 0.12); k.setLineDash([]); }, "rgb(40,38,40)", 0, 0.85, "source-over", box);
+  }
+
   // Buildings: shadows first, then roofs
   progress(0.6, "Roofs");
   const buildings = items("building");
@@ -480,7 +533,7 @@ export function paint(ctx) {
     g.save(); g.translate(X(b.cx), Y(b.cy)); g.rotate(th);
     const role = `roof.${b.roof}.${s}`;
     const im = art(role, b.variant);
-    const flatIm = hasFlat(b) ? art(`roof.flat.${s}`, b.variant) : null;
+    const flatIm = hasFlat(b) ? art(flatRole(b, s), b.variant) : null;
     const snow = s === "winter" ? art("overlay.snow", 0) : null;
     const P = ([x, y]) => [x * pp, y * pp];
     const shape = (pts) => { g.beginPath(); pts.forEach((q, k) => { const [x, y] = P(q); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
@@ -495,7 +548,7 @@ export function paint(ctx) {
     for (const f of facets) {
       if (!f.poly.length) continue; // a gable's verge: outline only
       // The texture's rows run along the facet's eave; flat pieces take the flat roof's paving
-      if (f.flat) fillTex(flatIm, 0, fallbackColor(`roof.flat.${s}`));
+      if (f.flat) fillTex(flatIm, 0, fallbackColor(flatRole(b, s)));
       else fillTex(im, f.eaveAngle, fallbackColor(role));
       shape(f.poly); g.fill();
       if (snow && (f.flat || !SNOWY_IN_WINTER.has(b.roof))) {
@@ -639,8 +692,24 @@ function capColor(roof) {
  * of pale stone; a wing's joined end gets none, and its roof runs on over its house's parapet, so the two join.
  * The bands on the sunny side throw a soft shadow onto the roof.
  */
-function paintParapet(g, b, { w, joined }, pp, c, sn, season) {
+function paintParapet(g, b, { w, joined, round, R, crenels }, pp, c, sn, season) {
   const A = (b.len / 2) * pp, B = (b.dep / 2) * pp, W = w * pp;
+  const stone = b.flatRoof === "wood" ? "rgb(104,78,54)" : season === "winter" ? "rgb(226,230,235)" : "rgb(178,170,158)";
+  // Battlements: the gaps between merlons, as dark notches along the parapet's middle
+  const notches = (draw) => {
+    if (!crenels) return;
+    g.save(); g.strokeStyle = "rgba(36,34,38,0.85)"; g.lineWidth = Math.max(1, W * 0.55); g.setLineDash([Math.max(1, W * 0.9), Math.max(1, W * 0.9)]);
+    draw(); g.stroke(); g.restore();
+  };
+  if (round) {
+    const r = R * pp;
+    // Shade inside the north side's wall, then the ring of stone, its inner edge and its outer edge
+    g.fillStyle = "rgba(18,28,48,0.18)"; g.beginPath(); g.arc(0, -W * 0.6, r - W, 0, 2 * Math.PI); g.arc(0, 0, r - W, 0, 2 * Math.PI, true); g.fill();
+    g.strokeStyle = stone; g.lineWidth = W; g.beginPath(); g.arc(0, 0, r - W / 2, 0, 2 * Math.PI); g.stroke();
+    notches(() => { g.beginPath(); g.arc(0, 0, r - W / 2, 0, 2 * Math.PI); });
+    g.strokeStyle = "rgba(28,28,36,0.5)"; g.lineWidth = Math.max(1, pp * 0.015); g.beginPath(); g.arc(0, 0, r - W, 0, 2 * Math.PI); g.stroke();
+    return;
+  }
   const edges = [
     { on: true, rect: [-A, -B, 2 * A, W], n: [0, 1] },
     { on: true, rect: [-A, B - W, 2 * A, W], n: [0, -1] },
@@ -658,8 +727,9 @@ function paintParapet(g, b, { w, joined }, pp, c, sn, season) {
     g.fillStyle = `rgba(18,28,48,${(0.22 * k).toFixed(3)})`;
     g.fillRect(sx, sy, ww, hh);
   }
-  g.fillStyle = season === "winter" ? "rgb(226,230,235)" : "rgb(178,170,158)";
+  g.fillStyle = stone;
   for (const ed of edges) if (ed.on) g.fillRect(...ed.rect);
+  notches(() => { g.beginPath(); g.rect(-A + W / 2, -B + W / 2, 2 * A - W, 2 * B - W); });
   // Its inner edge, a fine dark line
   g.strokeStyle = "rgba(28,28,36,0.5)"; g.lineWidth = Math.max(1, pp * 0.015);
   for (const ed of edges) {

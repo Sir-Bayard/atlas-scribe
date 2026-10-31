@@ -76,6 +76,13 @@ export const FIELD_TEXT = {
 
   "wall.height": { label: "Height", help: "In feet" },
   "wall.straight": { label: "Straight", help: "Straight lines between its points (a town wall's runs) instead of a smooth curve" },
+  "wall.thickness": { label: "Thickness", help: "How thick the wall is, in feet" },
+  "wall.towers": { label: "Towers", names: { roofed: "roofed", open: "open, with battlements", mixed: "some of each" }, auto: "picked from its seed" },
+  "wall.towerShape": { label: "Tower shape", names: { round: "round", square: "square", mixed: "some of each" }, auto: "picked from its seed (a palisade's are square)" },
+  "wall.towerSpacing": { label: "Tower spacing", help: "About how far apart its towers stand along a straight run, in feet; there's one at every corner too", more: true },
+  "wall.outside": { label: "Outside", names: { none: "nothing", ditch: "a dry ditch", moat: "a moat" }, help: "What runs along its outside" },
+  "wall.ditchWidth": { label: "Ditch width", help: "How wide its ditch or moat is, in feet" },
+  "wall.side": { label: "Outside is on the", names: { left: "left", right: "right" }, help: "For a wall that isn't a closed loop: which side is outside, going along it from its first point (a closed loop's outside is outward)", more: true },
 
   "prop.rot": { label: "Turned", help: "Degrees clockwise", notFor: ["tree"] }, // a tree is turned at random
   "prop.species": { label: "Tree", kind: "enum", values: ["conifer", "bare"], names: { conifer: "fir", bare: "leafy" }, auto: "leafy" },

@@ -97,9 +97,15 @@ export function paint(ctx) {
   const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)", balk: winter ? "rgba(150,160,170,0.45)" : "rgba(118,140,78,0.75)" };
   const boundWidth = { hedge: 0.08, balk: 0.12 };
   for (const b of items("boundary")) stroke(b.path, boundWidth[b.class] ?? 0.04, boundColor[b.class] ?? boundColor.fence);
-  for (const w of items("wall")) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
+  for (const w of items("wall").filter((w) => !w.thickness)) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
   const bush = winter ? "rgb(104,98,90)" : mix(col("bush"), [30, 50, 25], 0.1);
   for (const b of items("prop", "bush")) dot(b.x, b.y, (b.scale ?? 0.5) * 0.45, bush);
+
+  // Ditches: a dark hollow, under the roads that cross them
+  for (const d of items("ditch")) {
+    stroke(d.path, d.width, winter ? mix(base, [160, 170, 182], 0.4) : mix(base, [70, 62, 42], 0.35));
+    stroke(d.path, d.width * 0.45, winter ? mix(base, [130, 140, 152], 0.5) : mix(base, [50, 44, 30], 0.5));
+  }
 
   // Roads: a trodden verge, then the surface
   progress(0.4, "Roads");
@@ -112,10 +118,9 @@ export function paint(ctx) {
 
   // Water and crossings
   progress(0.5, "Water");
-  for (const w of items("water")) {
-    stroke(w.path, w.width + 0.95, mix(col(`stone.rough.${s}`), [255, 255, 255], 0.1));
-    stroke(w.path, w.width, col(w.frozen ? "water.ice" : `water.${w.class}`));
-  }
+  // Every bank, then the water, so where a stream or moat opens into a river no bank runs across its mouth
+  for (const w of items("water")) stroke(w.path, w.width + 0.95, mix(col(`stone.rough.${s}`), [255, 255, 255], 0.1));
+  for (const w of items("water")) stroke(w.path, w.width, col(w.frozen ? "water.ice" : `water.${w.class}`));
   for (const c of items("crossing")) {
     const a = (c.angle * Math.PI) / 180, half = (c.length ?? 2) / 2;
     const [x, y] = c.at, dx = Math.cos(a) * half, dy = Math.sin(a) * half;
@@ -132,6 +137,25 @@ export function paint(ctx) {
     }
   }
 
+  // Town walls and palisades: a shadow, the wall, its walk along the top and battlements along its outer face (the
+  // towers are buildings, drawn with the roofs)
+  for (const w of items("wall").filter((w) => w.thickness)) {
+    const T = w.thickness;
+    const sh = 0.35 + 0.3 * (w.tall ?? 0); // as a building's
+    g.save(); g.translate(sh * 0.3 * pp, -sh * pp); stroke(w.path, T, "rgba(28,38,58,0.3)"); g.restore();
+    if (w.class === "palisade") {
+      stroke(w.path, T * 0.9, "rgb(52,38,26)");
+      g.setLineDash([0.001, px(T * 0.95)]); stroke(w.path, T * 0.85, winter ? "rgb(170,150,126)" : "rgb(132,100,66)"); g.setLineDash([]);
+      continue;
+    }
+    g.lineCap = "butt";
+    stroke(w.path, T + 0.05, "rgb(52,50,50)");
+    stroke(w.path, T, mix(col(`stone.rough.${s}`), [70, 68, 66], 0.35));
+    stroke(w.path, T * 0.55, winter ? "rgb(218,223,230)" : mix(col("wall.walk"), [255, 250, 240], 0.1));
+    if (w.face) { g.setLineDash([px(0.1, 2), px(0.1, 2)]); stroke(w.face, Math.min(0.08, T * 0.3), "rgb(60,58,56)"); g.setLineDash([]); }
+    g.lineCap = "round";
+  }
+
   // Buildings: a little shadow, then each roof facet in its material's color, lit from the south
   progress(0.6, "Roofs");
   const buildings = items("building");
@@ -146,7 +170,7 @@ export function paint(ctx) {
   for (const b of buildings) {
     const th = (b.rot * Math.PI) / 180, c = Math.cos(th), sn = Math.sin(th);
     const facets = roofFacets(b);
-    const roof = col(`roof.${b.roof}`), flat = col(`roof.flat.${s}`);
+    const roof = col(`roof.${b.roof}`), flat = b.flatRoof === "wood" ? mix(col("roof.wood-shingle-dark"), [150, 120, 90], 0.3) : col(`roof.flat.${s}`);
     g.save(); g.translate(X(b.cx), Y(b.cy)); g.rotate(th);
     const P = ([x, y]) => [x * pp, y * pp];
     const shape = (pts) => { g.beginPath(); pts.forEach((q, k) => { const [x, y] = P(q); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
@@ -168,11 +192,24 @@ export function paint(ctx) {
     }
     if (facets.parapet) {
       const w = facets.parapet.w * pp;
-      const A = (b.len / 2) * pp, B = (b.dep / 2) * pp, { joined } = facets.parapet;
-      g.fillStyle = winter ? "rgb(226,230,235)" : "rgb(178,170,158)";
-      g.fillRect(-A, -B, 2 * A, w); g.fillRect(-A, B - w, 2 * A, w); // a wing's joined ends are left open
-      if (!joined.start) g.fillRect(-A, -B, w, 2 * B);
-      if (!joined.end) g.fillRect(A - w, -B, w, 2 * B);
+      const A = (b.len / 2) * pp, B = (b.dep / 2) * pp, { joined, round, R, crenels } = facets.parapet;
+      const stone = b.flatRoof === "wood" ? "rgb(96,72,50)" : winter ? "rgb(226,230,235)" : "rgb(178,170,158)";
+      g.fillStyle = stone; g.strokeStyle = stone;
+      if (round) { g.lineWidth = w; g.beginPath(); g.arc(0, 0, R * pp - w / 2, 0, 2 * Math.PI); g.stroke(); }
+      else {
+        g.fillRect(-A, -B, 2 * A, w); g.fillRect(-A, B - w, 2 * A, w); // a wing's joined ends are left open
+        if (!joined.start) g.fillRect(-A, -B, w, 2 * B);
+        if (!joined.end) g.fillRect(A - w, -B, w, 2 * B);
+      }
+      if (crenels) {
+        // Battlements: the gaps between merlons, as dark notches in the parapet
+        g.strokeStyle = "rgba(40,38,40,0.8)"; g.lineWidth = Math.max(1, w * 0.5);
+        g.setLineDash([Math.max(1, w * 0.9), Math.max(1, w * 0.9)]);
+        g.beginPath();
+        if (round) g.arc(0, 0, R * pp - w / 2, 0, 2 * Math.PI);
+        else g.rect(-A + w / 2, -B + w / 2, 2 * A - w, 2 * B - w);
+        g.stroke(); g.setLineDash([]);
+      }
     }
     if (facets.skylight) {
       const { cx, cy, len, dep } = facets.skylight;

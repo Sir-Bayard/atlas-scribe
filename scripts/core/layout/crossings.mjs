@@ -61,7 +61,7 @@ export function snapCrossings(list, crossings) {
 }
 
 /** A crossing put on one road-over-water point: along the road, long enough to span the water, a bridge as wide as the road. */
-function snapTo(crossing, x) {
+export function snapTo(crossing, x) {
   const [rx, ry] = x.roadDir, [wx, wy] = x.waterDir;
   const sin = Math.max(0.35, Math.abs(rx * wy - ry * wx)); // how squarely the road meets the water
   const cos = Math.sqrt(Math.max(0, 1 - sin * sin));

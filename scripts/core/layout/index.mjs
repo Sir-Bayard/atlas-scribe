@@ -21,6 +21,7 @@ import { fillFields, fieldKeepOut, earlierFields, fieldRoads, accessLanes } from
 import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
+import { isTownWall, layWall, bandPieces, offsetPath } from "./walls.mjs";
 import { buildOnLots } from "../lots/build.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
@@ -214,7 +215,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         break;
       }
       case "wall":
-        if (f.class === "hedge") break; // hedges are bushes, placed after the fill
+        if (f.class === "hedge" || isTownWall(f)) break; // hedges are bushes, placed after the fill; town walls just below
         items.push({ kind: "wall", id: f.id, from: f.id, class: f.class, path: f.path, height: ft(f.height) });
         break;
       case "prop":
@@ -284,8 +285,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const cc = r.chance(0.75), cv = r.chance(0.5), ci = r.int(8); // the chimney's, likewise (a landmark's buildings share a stream)
     const item = {
       kind: "building", id, from, cx, cy, len, dep, rot: b.rot ?? 0, roof, variant: b.variant ?? v, tall: tallOf(b.height ?? 20),
-      roofStyle: round ? "cone" : b.roofStyle ?? "gable", // see ROOF_STYLES; a round building's is always a cone
+      roofStyle: round ? (b.tower && b.roofStyle === "flat" ? "flat" : "cone") : b.roofStyle ?? "gable", // see ROOF_STYLES; a round building's is a cone (an open tower's flat)
       ...(round ? { round: true } : {}),
+      ...(b.tower ? { tower: true, ...(b.crenels ? { crenels: true } : {}), ...(b.flatRoof ? { flatRoof: b.flatRoof } : {}) } : {}),
       ...(b.join ? { join: b.join } : {}), // a wing's ends that run into another roof (valleys there, no hip)
       ...(b.cut ? { cut: b.cut } : {}), // hips that start in from their corner, where a flush wing covers it
       chimney: chimneyOf(b, (b.chimney ?? cc) && !round ? { u: 0.3, v: cv ? -0.2 : 0.2, variant: ci } : null),
@@ -348,6 +350,38 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
 
 
+  // Town walls and palisades: their runs, towers and gatehouses, a ditch or moat, and clear ground along them
+  // (streets end there, and only roads pass, through gates)
+  const wallBands = [];
+  {
+    const roadsSq = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) }));
+    const watersSq = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) }));
+    const moatFrozen = plan.features.some((f) => f.type === "water" && f.frozen); // a moat freezes with the plan's water
+    for (const f of plan.features.filter(isTownWall)) {
+      const r = streamFor(f.id);
+      const w = layWall(f, { roads: roadsSq, waters: watersSq, sq, r: r.fork("wall") });
+      // Each run carries its outer face (where the battlements are) and its inner one
+      w.runs.forEach((path, k) => items.push({ kind: "wall", id: w.runs.length === 1 ? f.id : `${f.id}/r${k + 1}`, from: f.id, class: f.class, path, height: ft(f.height), tall: tallOf(f.height ?? 25), thickness: ft(f.thickness), side: w.side, face: offsetPath(path, (w.side * ft(f.thickness)) / 2), back: offsetPath(path, (-w.side * ft(f.thickness)) / 2) }));
+      w.ditches.forEach((d, k) => {
+        const id = `${f.id}/${d.moat ? "moat" : "ditch"}${k ? `-${k + 1}` : ""}`;
+        if (d.moat) {
+          // Before the plan's own water, so a river or stream is painted over where the moat opens into it
+          const first = items.findIndex((i) => i.kind === "water");
+          items.splice(first < 0 ? items.length : first, 0, { kind: "water", id, from: f.id, class: "moat", path: d.path, width: d.width, frozen: moatFrozen });
+          space.water.push({ path: d.path, clear: d.width / 2 + 0.225 });
+        } else items.push({ kind: "ditch", id, from: f.id, path: d.path, width: d.width });
+        for (const poly of bandPieces(d.path, d.width / 2 + 0.1)) { space.reserved.push(poly); space.zones.push(poly); }
+      });
+      w.bridges.forEach((b, k) => items.push({ kind: "crossing", id: `${f.id}/b${k + 1}`, from: f.id, class: "bridge", at: b.at, angle: b.angle, length: b.length, width: b.width, frozen: false }));
+      w.towers.forEach((t, k) => addBuilding(t, `${f.id}/t${k + 1}`, r.fork("tower", t.key), f.id)); // its own stream by where it stands
+      for (const poly of bandPieces(f.path, w.band.half)) { space.reserved.push(poly); space.zones.push(poly); }
+      wallBands.push({ path: f.path, half: w.band.half });
+      notes.push(...w.notes);
+      notes.push({ level: "info", id: f.id, message: `"${f.id}": ${w.towers.filter((t) => t.kind !== "gatehouse").length} towers, ${w.gates.length} ${w.gates.length === 1 ? "gate" : "gates"}${w.ditches.length ? (w.ditches[0].moat ? ", a moat" : ", a ditch") : ""}.` });
+    }
+  }
+  const inWallBand = (x, y) => wallBands.some((b) => distanceToPath([x, y], b.path) < b.half);
+
   // Parks: open ground that streets and plots keep out of (filled later, once the streets around them are known)
   for (const f of parks) {
     const poly = shapeToPolygon(f.shape, f.rot ?? 0);
@@ -374,7 +408,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const dfeats = plan.features.filter((f) => f.type === "district");
   const dlist = dfeats.map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }));
   const waterAt = (x, y) => space.water.some((w) => distanceToPath([x, y], w.path) < w.clear);
-  const gates = districtGates(dlist, { roads: ways, inWater: waterAt, seed: plan.seed });
+  const gates = districtGates(dlist, { roads: ways, inWater: (x, y) => waterAt(x, y) || inWallBand(x, y), seed: plan.seed });
   const radials = plan.features.filter((f) => f.type === "square" && f.radial).map((f) => {
     const poly = shapeToPolygon(f.shape);
     const [x0, y0, x1, y1] = bbox(poly);

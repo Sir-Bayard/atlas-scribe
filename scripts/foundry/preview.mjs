@@ -17,7 +17,7 @@ import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.m
 import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
-import { addFeature, snapCorner, snapEnd, toolOf } from "../core/draw.mjs";
+import { addFeature, snapCorner, snapEnd, toolOf, wallIn } from "../core/draw.mjs";
 
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -87,6 +87,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asBack: AtlasScribeApp.#onBack,
       asReset: AtlasScribeApp.#onReset,
       asDelete: AtlasScribeApp.#onDelete,
+      asWallIn: AtlasScribeApp.#onWallIn,
       asPlan: AtlasScribeApp.#onPlan,
       asPin: AtlasScribeApp.#onPin,
       asUnder: AtlasScribeApp.#onUnder,
@@ -704,7 +705,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (this.#selected) {
       const has = this.#handles.some((h) => h.id === this.#selected);
       if (has && this.#handles.some((h) => h.id === this.#selected && h.path))
-        return `Drag ${this.#selected}'s points to move it (the dot in a stretch's middle adds a point; right-click a point to remove it). It's drawn as a smooth curve through them. Click elsewhere to finish.`;
+        return `Drag ${this.#selected}'s points to move it (the dot in a stretch's middle adds a point; right-click a point to remove it). It's drawn ${featureOf(this.#plan, this.#selected)?.straight ? "straight between them" : "as a smooth curve through them"}. Click elsewhere to finish.`;
       if (has) return `Drag ${this.#selected}'s corners to reshape it (the dot in a side's middle adds a corner; right-click a corner to remove it). Click elsewhere to finish.`;
       const f = featureOf(this.#plan, this.#selected);
       return (f?.type === "district" || f?.type === "area") && Number(f.rot)
@@ -1068,7 +1069,18 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     await this.#apply((plan) => (featureOf(plan, id) ? { plan: deleteFeature(plan, id) } : { error: `"${id}" is already gone.` }));
   }
 
-  /** The plan's own settings in the side panel (again to close them). */
+  /** Wall in: a town wall around the district; its settings open, and the map shows its gates and towers. */
+  static async #onWallIn(event, target) {
+    if (this.#working || !this.#plan) return;
+    const res = wallIn(this.#plan, target.dataset.id);
+    if (res.error) { this.#error = res.error; return this.render(); }
+    this.#selected = res.id;
+    this.#inspect = res.id;
+    const drawn = await this.#change(res.plan);
+    if (!drawn && this.#selected === res.id) { this.#selected = this.#inspect = null; this.render(); }
+    if (drawn) ui.notifications.info(`AtlasScribe: ${res.id} walls in ${target.dataset.id}, with a gate wherever a road crosses it. Reshape it by its corners, or delete it.`);
+  }
+
   /** Pins the picked house or street: copied into the plan as a fixed feature, whose settings then open. */
   static async #onPin() {
     const gen = this.#genOf(this.#inspect);
@@ -1078,6 +1090,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#selected = res.id;
     this.#inspect = res.id;
     const drawn = await this.#change(res.plan);
+    if (!drawn && this.#selected === res.id) { this.#selected = this.#inspect = null; this.render(); }
     if (drawn) ui.notifications.info(`AtlasScribe: pinned as ${res.id}. ${gen.kind === "house" ? "It stays as it is when" : "It stays, and the district's other streets follow it, when"} ${gen.item.from} is rerolled; delete it to let the generator have the spot again.`);
   }
 
@@ -1191,6 +1204,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       return this.#finish();
     }
     if (tool.geometry === "shape" && t.points.length >= 3 && Math.hypot(at[0] - t.points[0][0], at[1] - t.points[0][1]) <= this.#tolerance()) return this.#finish();
+    // A town wall or palisade closes around on its first point
+    if (tool.closes && t.points.length >= 3 && Math.hypot(at[0] - t.points[0][0], at[1] - t.points[0][1]) <= this.#tolerance()) {
+      t.points.push([...t.points[0]]);
+      return this.#finish();
+    }
     t.points.push(at);
     // Only the drawing and the palette's count change: a full render would replace the map under the pointer, and
     // the browser would then send no double-click

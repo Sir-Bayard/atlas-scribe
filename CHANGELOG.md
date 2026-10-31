@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Town walls**
+- Town walls and palisades: two new drawing tools (click a wall's first point again to close it around), and Wall in on a district's panel for a town wall around it. A gate wherever a road crosses (a gatehouse over the road, or a tower each side), an opening where water crosses, and towers at the corners and about every 120 feet (90 for a palisade).
+- Settings: thickness, height, towers (roofed, open with battlements, or some of each), tower shape (round, square or some of each), tower spacing, and what runs along the outside (a dry ditch or a moat, with bridges where the roads cross). A wall picks its own look from its seed unless set.
+- A clear strip along each wall: houses keep off it, districts' streets stop at the wall, and only roads pass, through its gates. Fields and woods keep clear too.
+- Where a wall meets water it stops at a tower on the bank. A moat runs on into a river it meets, so where the river runs close along the wall the water comes right up to it; a dry ditch stops short of the water.
+- Water is painted banks first, so where a stream or a moat opens into a river no bank line runs across its mouth (this changes how stream and river junctions look on existing maps).
+- For plan writers: wall classes `town` and `palisade`; fields `thickness`, `towers`, `towerShape`, `towerSpacing`, `outside`, `ditchWidth` and `side` (an open run's outside, left or right going along it). A wall whose last point is its first is closed. `checkPlan` warns about a closed wall no road crosses (it has no gate).
+
 **Faster on big maps**
 - Big maps lay out several times faster, and every map lays out exactly as before. A town scaled up to 200 by 152 squares takes about 1.5 seconds instead of about 6, four towns side by side on a 200 by 200 map about 2.5 instead of about 7, and a 400 by 304 map under 10 instead of over a minute. Painting the image is unchanged: on a big map it's most of the wait (about 25 seconds for 200 by 152 squares at 50 pixels a square).
 

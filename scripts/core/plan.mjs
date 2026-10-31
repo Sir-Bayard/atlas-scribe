@@ -39,6 +39,9 @@ export const ROOFS = [
 export const ROOF_STYLES = ["gable", "hip", "half-hip", "pyramid", "flat", "mansard"];
 export const SURFACES = ["dirt", "slush", "snow", "trodden", "cobble", "gravel", "grass", "mud", "flagstone"];
 
+/** The wall classes with towers, gates and a clear strip inside: town walls and palisades. */
+export const TOWN_WALLS = ["town", "palisade"];
+
 /**
  * Feature types. geometry: "point" (at), "path" (path), "shape" (shape), "path|shape", or "buildings" (a landmark).
  * classes: the allowed classes, the first being the default.
@@ -138,10 +141,19 @@ export const TYPES = {
   },
   wall: {
     geometry: "path",
-    classes: ["drystone", "hedge", "fence", "stone"],
+    classes: ["drystone", "hedge", "fence", "stone", "town", "palisade"],
     fields: {
-      height: num(null, { unit: "ft", min: 0, byClass: { drystone: 3, hedge: 5, fence: 4, stone: 6 } }),
+      height: num(null, { unit: "ft", min: 0, byClass: { drystone: 3, hedge: 5, fence: 4, stone: 6, town: 25, palisade: 10 } }),
       straight: bool(false), // drawn straight between its points (a town wall's straight runs, say); else it curves
+      // Town walls and palisades. A path whose last point is its first is a closed loop, its outside outward; an open
+      // run's outside is on its `side` (left or right, going along the path from its first point)
+      thickness: num(null, { unit: "ft", min: 1, byClass: { town: 12, palisade: 4 }, only: TOWN_WALLS }),
+      towers: { ...oneOf(["roofed", "open", "mixed"], null), only: TOWN_WALLS, fallback: "picked from its seed" },
+      towerShape: { ...oneOf(["round", "square", "mixed"], null), only: TOWN_WALLS, fallback: "picked from its seed (a palisade's are square)" },
+      towerSpacing: num(null, { unit: "ft", min: 30, byClass: { town: 120, palisade: 90 }, only: TOWN_WALLS }),
+      outside: { ...oneOf(["none", "ditch", "moat"], "none"), only: TOWN_WALLS },
+      ditchWidth: num(null, { unit: "ft", min: 5, byClass: { town: 20, palisade: 12 }, only: TOWN_WALLS }),
+      side: { ...oneOf(["left", "right"], "left"), only: TOWN_WALLS },
     },
   },
   prop: {
