@@ -12,6 +12,26 @@ import { roleChain } from "../../core/roles.mjs";
 const MOD = "atlas-scribe";
 let catalog = null;
 let roleMap = null;
+// What each role came to earlier this session ({ paths, premium }: premium when the Patreon login was there), so the
+// next render needn't open FA Nexus. Roles whose files failed to come are asked again; forget() clears it all.
+const found = new Map();
+
+/** Forgets the roles found earlier, so the next render asks FA Nexus again (when an image failed to load, say). */
+export function forget() {
+  found.clear();
+  catalog = null; // read again too, in case the files changed in FA Nexus
+}
+
+/** An error's message with web addresses and query strings taken out (FA Nexus's errors can carry a signed link). */
+export const safeMessage = (e) => String((typeof e === "string" ? e : e?.message) || "unknown error").replace(/\w+:\/\/\S+/g, "<link>").replace(/\?\S*=\S*/g, "?<removed>").slice(0, 200);
+
+function patreonState() {
+  try {
+    return game.settings.get("fa-nexus", "patreon_auth_data")?.state ?? null;
+  } catch {
+    return null; // no Patreon login to be had: free files only
+  }
+}
 
 export function available() {
   return !!game.modules.get("fa-nexus")?.active;
@@ -43,14 +63,32 @@ async function loadRoleMap() {
  */
 export async function resolve(roles, progress = () => {}) {
   if (!available()) return { art: {}, missing: [...roles], downloaded: 0, why: "FA Nexus isn't active, so the map is painted in plain colours" };
+  const state = patreonState();
+  const premium = !!state;
+  // Roles found earlier with the same login, and roles FA Nexus has no files for, need no FA Nexus window
+  const art = {}, missing = [], ask = [];
+  const map = await loadRoleMap();
+  for (const role of roles) {
+    const f = found.get(role);
+    if (f && f.premium === premium) {
+      if (f.paths.length) art[role] = [...f.paths];
+      else missing.push(role);
+    } else if (!roleChain(role).some((r) => map[r])) missing.push(role);
+    else ask.push(role);
+  }
+  if (!ask.length) return { art, missing, downloaded: 0 };
   let nexus = { app: null, opened: false };
   try {
     nexus = await nexusApp();
-    return await resolveWith(nexus.app, roles, progress);
+    const res = await resolveWith(nexus.app, ask, progress, state);
+    if (!res.why) {
+      for (const role of ask) if (!res.unsure.has(role)) found.set(role, { paths: [...(res.art[role] ?? [])], premium });
+    }
+    return { ...res, art: { ...art, ...res.art }, missing: [...missing, ...res.missing] };
   } catch (e) {
-    // FA Nexus changed, or failed: every role falls back to a plain colour, and the render goes on
-    console.warn(`${MOD} | FA Nexus couldn't be used: ${e?.message ?? e}`); // the message only: FA Nexus's own error may carry a signed URL
-    return { art: {}, missing: [...roles], downloaded: 0, why: `FA Nexus couldn't be used (${e?.message ?? e}), so the map is painted in plain colours` };
+    // FA Nexus changed, or failed: the roles not found earlier fall back to a plain colour, and the render goes on
+    console.warn(`${MOD} | FA Nexus couldn't be used: ${safeMessage(e)}`);
+    return { art, missing: [...missing, ...ask], downloaded: 0, why: `FA Nexus couldn't be used (${safeMessage(e)}), so the map is painted in plain colours` };
   } finally {
     if (nexus.opened) {
       try {
@@ -62,7 +100,7 @@ export async function resolve(roles, progress = () => {}) {
   }
 }
 
-async function resolveWith(app, roles, progress) {
+async function resolveWith(app, roles, progress, state) {
   const art = {};
   const missing = [];
   const map = await loadRoleMap();
@@ -81,12 +119,6 @@ async function resolveWith(app, roles, progress) {
     const b = k.replace(/\.\w+$/, "");
     if (!byName.has(`~${b}`)) byName.set(`~${b}`, a);
   }
-  let state = null;
-  try {
-    state = game.settings.get("fa-nexus", "patreon_auth_data")?.state ?? null;
-  } catch {
-    state = null; // no Patreon login to be had: free files only
-  }
 
   // What each role needs
   const wanted = [];
@@ -97,6 +129,7 @@ async function resolveWith(app, roles, progress) {
   }
   const total = wanted.reduce((n, w) => n + w.files.length, 0) || 1;
   let done = 0, downloaded = 0;
+  const unsure = new Set(); // roles a file failed for: asked again next time
   for (const { role, files } of wanted) {
     const paths = [];
     for (const name of files) {
@@ -115,12 +148,14 @@ async function resolveWith(app, roles, progress) {
           downloaded++;
         }
         if (local) paths.push(local);
+        else unsure.add(role); // came back with nothing: asked again next time
       } catch (e) {
-        console.warn(`${MOD} | couldn't get ${name} through FA Nexus: ${e?.message ?? e}`);
+        console.warn(`${MOD} | couldn't get ${name} through FA Nexus: ${safeMessage(e)}`);
+        unsure.add(role);
       }
     }
     if (paths.length) art[role] = paths;
     else missing.push(role);
   }
-  return { art, missing, downloaded };
+  return { art, missing, downloaded, unsure };
 }

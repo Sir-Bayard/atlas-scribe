@@ -3,8 +3,14 @@
  * folders later). A role nobody fills is listed as missing and painted in a plain colour.
  */
 import * as faNexus from "./fa-nexus.mjs";
+import { safeMessage } from "./fa-nexus.mjs";
 
 const PROVIDERS = [faNexus];
+
+/** Forgets what the providers found earlier, so the next render asks them again. */
+export function forgetArt() {
+  for (const p of PROVIDERS) p.forget?.();
+}
 
 /** Returns { art: { role: [absolute url, ...] }, missing: [role, ...], notes: [...] }. */
 export async function resolveArt(roles, progress = () => {}) {
@@ -17,7 +23,7 @@ export async function resolveArt(roles, progress = () => {}) {
     try {
       res = await p.resolve(remaining, progress);
     } catch (e) {
-      res = { art: {}, missing: remaining, why: `An art source failed (${e?.message ?? e}); its roles are painted in plain colours` };
+      res = { art: {}, missing: remaining, why: `An art source failed (${safeMessage(e)}); its roles are painted in plain colours` };
     }
     if (res.why) notes.push(res.why);
     Object.assign(art, res.art);

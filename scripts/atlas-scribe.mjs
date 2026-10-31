@@ -9,7 +9,7 @@ import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
-import { resolveArt } from "./foundry/art/index.mjs";
+import { resolveArt, forgetArt } from "./foundry/art/index.mjs";
 import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
@@ -228,6 +228,7 @@ const api = {
         const { art, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
         check();
         const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        if (img.brokenArt?.length) forgetArt(); // a file that failed may have gone: ask FA Nexus again next time
         check();
         let path = null;
         if (save) {

@@ -12,8 +12,9 @@ export function styleOf(layout) {
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt }: thumb is a
- * 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colours).
+ * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt }: thumb
+ * is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colours),
+ * brokenArt the roles any file failed for (painted with fewer variants, or plain).
  * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
  */
 export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
@@ -41,10 +42,11 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     }
   }));
   const bitmaps = {};
-  const failedArt = [];
+  const failedArt = [], brokenArt = [];
   for (const [role, list] of urls) {
     bitmaps[role] = list.map((u) => loaded.get(u)).filter(Boolean);
     if (list.length && !bitmaps[role].length) failedArt.push(role);
+    if (bitmaps[role].length < list.length) brokenArt.push(role);
   }
   const getArt = (role, variant = 0) => {
     const list = bitmaps[role];
@@ -89,7 +91,7 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   progress(0.98, "Making the thumbnail");
   const thumb = await thumbnail(out, THUMB);
   out.width = out.height = 1;
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, ms: Math.round(performance.now() - t0) };
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, ms: Math.round(performance.now() - t0) };
 }
 
 /** Thumbnail size, as Foundry makes them. */

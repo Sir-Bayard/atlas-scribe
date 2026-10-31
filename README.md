@@ -33,7 +33,7 @@ As the GM, open the Scenes tab and click **AtlasScribe**.
    - **Underlay:** an image under the sketch to trace over (a hand sketch, an old map). Underlay picks an image, fitted inside the map and half see-through; with its panel open, drag it to move it and drag a corner to scale it (it keeps its shape), or type where it sits. See-through, Shown and Locked are in the panel. It's saved with the plan and never painted into the scene.
    - **Plan settings** (the gear): the name, season, ground, the map's size, feet and pixels a square, the labels' colour and font, and the scene's settings (weather, darkness, light, fog).
 3. **Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and exported.
-4. **Make scene** saves the plan, paints the map with your art and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise). Cancel stops the painting. If some art couldn't be had, it says so and paints those parts in plain colours. After changes, **Update scene** repaints that scene (it's backed up first).
+4. **Make scene** saves the plan, paints the map with your art and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise). Cancel stops the painting. If some art couldn't be had, it says so and paints those parts in plain colours. After changes, **Update scene** repaints that scene (it's backed up first). The art FA Nexus found is remembered until Foundry reloads, so later scenes and updates don't wait for it again.
 
 ## From a script
 

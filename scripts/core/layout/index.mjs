@@ -10,7 +10,7 @@
 import { roadWaterCrossings, snapCrossings } from "./crossings.mjs";
 import { normalize, okJoin, okCut, okChimney } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
-import { rng } from "../rng.mjs";
+import { rng, hash128 } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
 import { seasonOf } from "../roles.mjs";
 import { seedOf } from "../seeds.mjs";
@@ -37,7 +37,52 @@ const GATE_WIDTH = {
   lane: Math.max(...Object.values(DISTRICT_TYPES).map((t) => t.lanes?.width ?? t.streets?.width ?? 0)),
 };
 
-export function layoutPlan(rawPlan, { onProgress = null } = {}) {
+/**
+ * What each district made, kept from earlier layouts so a district whose inputs haven't changed isn't laid out again
+ * (an edit in the window redraws only what it touched). Keyed by a hash of everything a district's fill reads: its
+ * own settings and seed; the plan's seed and size; all water and radial squares (they steer every district's
+ * streets); its gates and shared edges; the roads in or beside it; and whatever was placed before the districts
+ * (squares, yards, parks, farms, buildings and their footprints, roads) within KEY_MARGIN squares of it. Holds the
+ * last DISTRICT_CACHE_SIZE districts; per worker (or page), never saved.
+ */
+const DISTRICT_CACHE_SIZE = 96;
+const KEY_MARGIN = 4;
+const districtCache = new Map();
+const cacheStats = { hits: 0, misses: 0 };
+
+/** Empties the cache of districts' layouts (for tests). */
+export function clearLayoutCache() {
+  districtCache.clear();
+  cacheStats.hits = cacheStats.misses = 0;
+}
+
+/** How often a district came from the cache since it was last cleared: { hits, misses } (for tests). */
+export const layoutCacheStats = () => ({ ...cacheStats });
+
+/** JSON for a cache key: NaN and Infinity written as themselves, so they never share a key with null. */
+const keyJSON = (v) => JSON.stringify(v, (k, x) => (typeof x === "number" && !Number.isFinite(x) ? `#${x}` : x));
+
+/** The box round every point in a value (a polygon, a path entry, a building item), or null if it has none. */
+function boxOf(v) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x, y, r = 0) => { x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); };
+  const walk = (o, depth) => {
+    if (depth > 4 || o === null || typeof o !== "object") return;
+    if (Array.isArray(o)) {
+      if (o.length >= 2 && Number.isFinite(o[0]) && Number.isFinite(o[1]) && typeof o[0] === "number") return add(o[0], o[1]);
+      for (const e of o) walk(e, depth + 1);
+      return;
+    }
+    if (Number.isFinite(o.cx) && Number.isFinite(o.cy)) add(o.cx, o.cy, Math.hypot(o.len ?? 0, o.dep ?? 0) / 2);
+    for (const k of ["path", "poly", "clear"]) if (k in o) walk(o[k], depth + 1);
+  };
+  walk(v, 0);
+  if (!(x0 <= x1)) return null;
+  const pad = Number.isFinite(v?.clear) ? v.clear : 0; // a way's clearance reaches past its center line
+  return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+}
+
+export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Roads, rivers and walls curve through their points (the plan itself is left as it is)
   const asGiven = normalize(rawPlan);
   const plan = windAlike(smoothPlanPaths(asGiven));
@@ -207,7 +252,6 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     for (const o of [item, foot, kept]) owner.set(o, from);
     space.reserved.push(kept);
     space.plots.push(foot);
-    Object.defineProperty(item, "footprint", { value: foot, enumerable: false }); // for its own garden; not part of the layout data
     return item;
   }
 
@@ -267,18 +311,56 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     const at = [(x0 + x1) / 2, (y0 + y1) / 2];
     return { at, radius: poly.reduce((s, p) => s + Math.hypot(p[0] - at[0], p[1] - at[1]), 0) / poly.length };
   });
-  const blocked = [...space.zones, ...space.plots]; // squares, yards and every building so far
-  // Streets keep well off the buildings already there (a plan's, or a pinned house), so none clips them: the tracer
-  // lets a street run a little way inside what it avoids, so the buildings are grown by about a street's width
-  const streetBlocked = [...space.zones, ...space.plots.map((p) => grow(p, 0.6))];
+  // What every district's fill reads besides itself and what's near it (see districtCache), hashed once
+  const waterItems = items.filter((i) => i.kind === "water" && i.path);
+  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.seed, sq, W, H, waterItems, space.water, radials])).join(".") : null;
+  // What was placed before the districts, with each thing's box (the districts add to space as they fill). A district
+  // sees only what lies within KEY_MARGIN squares of it, with or without the cache, so its key covers all it reads
+  const placed = Object.fromEntries(["reserved", "zones", "plots", "buildings", "ways", "gardens"].map((k) => [k, space[k].map((v) => [v, boxOf(v)])]));
   for (const d of dfeats) {
     const { poly } = dlist.find((x) => x.id === d.id);
-    const r = streamFor(d.id);
     const fixedHere = ways.filter((w) => pathTouchesPolygon(w.path, poly));
     // Roads running just outside the edge too, so plots and houses keep off them
     const ring = closed(poly);
     const nearHere = [...fixedHere, ...ways.filter((w) => !fixedHere.includes(w) && (w.path.some((p) => distanceToPath(p, ring) < w.width / 2 + 0.5) || poly.some((p) => distanceToPath(p, w.path) < w.width / 2 + 0.5)))];
     const borders = dlist.filter((o) => o.id !== d.id && o.streetSpacing).flatMap((o) => sharedEdges(poly, o.poly));
+    const [bx0, by0, bx1, by1] = bbox(poly);
+    const near = ([, b]) => !b || (b[0] <= bx1 + KEY_MARGIN && b[2] >= bx0 - KEY_MARGIN && b[1] <= by1 + KEY_MARGIN && b[3] >= by0 - KEY_MARGIN);
+    const around = Object.fromEntries(Object.entries(placed).map(([k, list]) => [k, list.filter(near).map(([v]) => v)]));
+    // Squares, yards and buildings placed before the districts, for plots and houses to keep off; streets keep well off
+    // the buildings (a plan's, or a pinned house), so none clips them: the tracer lets a street run a little way inside
+    // what it avoids, so the buildings are grown by about a street's width
+    const blocked = [...around.zones, ...around.plots];
+    const streetBlocked = [...around.zones, ...around.plots.map((p) => grow(p, 0.6))];
+    // Laid out before with the same inputs: what it made is put back as it was (a district overlapping another sees
+    // that one's things, so it's always laid out afresh)
+    const overlaps = [...touching].some((k) => k.startsWith(`${d.id}|`));
+    let key = null;
+    if (cache && !overlaps) {
+      key = hash128(keyJSON([shared, d, seedOf(plan, d.id), gates.get(d.id) ?? [], borders, dlist.filter((o) => o.id !== d.id).flatMap((o) => sharedEdges(poly, o.poly)), nearHere, around])).join(".");
+    }
+    if (key && districtCache.has(key)) {
+      cacheStats.hits++;
+      const kept = districtCache.get(key);
+      districtCache.delete(key);
+      districtCache.set(key, kept); // most recently used last
+      // One clone of the whole record, so a building is the same object in items and in space.buildings, as it was
+      const rec = structuredClone(kept);
+      items.push(...rec.items);
+      rec.buildings.forEach((b) => {
+        space.buildings.push(b);
+        owner.set(b, d.id);
+      });
+      for (const p of rec.reserved) { space.reserved.push(p); owner.set(p, d.id); }
+      for (const p of rec.plots) { space.plots.push(p); owner.set(p, d.id); }
+      for (const p of rec.gardens) { space.gardens.push(p); owner.set(p, d.id); }
+      for (const w of rec.ways) { space.ways.push(w); owner.set(w, d.id); }
+      notes.push(...rec.notes);
+      continue;
+    }
+    if (key) cacheStats.misses++;
+    const mark = { items: items.length, buildings: space.buildings.length, reserved: space.reserved.length, plots: space.plots.length, gardens: space.gardens.length, ways: space.ways.length, notes: notes.length };
+    const r = streamFor(d.id);
     const made = streetsFor({
       district: d, poly, roads: fixedHere, water: space.water, radials, blocked: streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
@@ -299,7 +381,6 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
     });
     // Plots along every road and street, and what stands on them. Each gate is kept clear too: the neighbour's street
     // starts there, and its width reaches a little over the shared edge even where this district's street doesn't
-    const waterItems = items.filter((i) => i.kind === "water" && i.path);
     const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
     const keepOff = [...blocked, ...gateClear];
     const { lots, back } = lotsFor({ district: d, poly, ways: [...nearHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
@@ -331,7 +412,16 @@ export function layoutPlan(rawPlan, { onProgress = null } = {}) {
       }
     });
     filling = null;
+    const remember = () => {
+      if (!key) return;
+      districtCache.set(key, structuredClone({
+        items: items.slice(mark.items), buildings: space.buildings.slice(mark.buildings), reserved: space.reserved.slice(mark.reserved),
+        plots: space.plots.slice(mark.plots), gardens: space.gardens.slice(mark.gardens), ways: space.ways.slice(mark.ways), notes: notes.slice(mark.notes),
+      }));
+      while (districtCache.size > DISTRICT_CACHE_SIZE) districtCache.delete(districtCache.keys().next().value);
+    };
     notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} streets and lanes, ${made.bridges.length} bridges, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
+    remember();
   }
 
   // Field systems: open ground, so nothing keeps out of them; their hedgerow trees keep clear of every building

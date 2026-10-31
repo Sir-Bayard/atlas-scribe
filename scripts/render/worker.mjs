@@ -19,7 +19,7 @@ const jobs = {
     return { layout, roles: styleOf(layout).rolesFor(layout) };
   },
 
-  /** Layout to image. art: { role: [url, ...] }. Returns { blob, thumb, width, height, tiles, failedArt, ms }. */
+  /** Layout to image. art: { role: [url, ...] }. Returns { blob, thumb, width, height, tiles, failedArt, brokenArt, ms }. */
   async paint({ layout, art, tileSize, quality }, progress) {
     return paintLayout({ layout, art, tileSize, quality }, progress);
   },
