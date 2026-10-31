@@ -3,6 +3,7 @@
  * can't use is reported. Each problem is { level: "error" | "warning", id, field, message }. Errors stop a
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
+import { underlayOf } from "./underlay.mjs";
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize, okJoin, okCut, okChimney } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
@@ -33,6 +34,9 @@ export function checkPlan(raw) {
   if (out.length) return out;
 
   const plan = normalize(raw);
+  // The reference image under the window's sketch: never painted, so a broken one is only a warning
+  if (raw.underlay !== undefined && !underlayOf(raw)) warn(null, "underlay", "underlay should be { path, rect: [left, top, right, bottom] } (squares, left below right, top below bottom); it's ignored.");
+  else if (underlayOf(raw) && /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(underlayOf(raw).path)) warn(null, "underlay", `The underlay's image is outside Foundry's files (${underlayOf(raw).path.split("/")[2] ?? "another site"}); it's fetched from there each time the plan is opened.`);
   const [w, h] = plan.size.squares;
   if (!(plan.size.squares.length === 2 && Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
   // Past 100 ft a square a district holds thousands of plots a square and takes minutes to lay out

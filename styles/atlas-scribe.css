@@ -44,7 +44,7 @@
   height: 100%;
   overflow: visible;
 }
-.atlas-scribe .as-pv-overlay.as-off > :not(.as-pv-draft):not(.as-pv-label-g):not(.as-pv-gen) {
+.atlas-scribe .as-pv-overlay.as-off > :not(.as-pv-draft):not(.as-pv-label-g):not(.as-pv-gen):not(.as-pv-under-box) {
   display: none;
 }
 .atlas-scribe .as-pv-shape polygon {
@@ -307,6 +307,26 @@
   stroke: rgb(200, 120, 20);
   stroke-width: 2.5px;
   stroke-dasharray: 6 3;
+}
+/* The underlay: an image under the overlay to trace over, and while its panel is open a box to move and scale it */
+.atlas-scribe .as-pv-stage img.as-pv-under {
+  position: absolute;
+  pointer-events: none;
+  object-fit: fill;
+}
+.atlas-scribe .as-pv-under-move {
+  fill: rgba(255, 220, 120, 0.06);
+  stroke: rgb(200, 120, 20);
+  stroke-width: 1.5px;
+  stroke-dasharray: 6 4;
+  cursor: move;
+  pointer-events: all;
+}
+.atlas-scribe .as-pv-handle.as-under {
+  cursor: nwse-resize;
+}
+.atlas-scribe .as-pv-input input[type="range"] {
+  flex: 1;
 }
 /* A house or street the generator made, picked to pin */
 .atlas-scribe .as-pv-gen polygon {

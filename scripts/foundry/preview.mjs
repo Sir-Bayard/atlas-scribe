@@ -14,8 +14,9 @@ import { normalize, LABEL_SIZES } from "../core/plan.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle, cleanFont } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
-import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML } from "./inspector.mjs";
+import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
+import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
 import { addFeature, snapCorner, snapEnd, toolOf } from "../core/draw.mjs";
 
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
@@ -32,12 +33,15 @@ function fontChoices() {
   }
 }
 
-/** The plan as the map sees it: labels (and the plan's label colour and font) don't change the picture. */
+/** The plan as the map sees it: labels (and the plan's label colour and font) and the underlay don't change the picture. */
 const mapKey = (p) => {
-  const q = { ...p, locked: null, features: (p?.features ?? []).filter((f) => f?.type !== "label") };
+  const q = { ...p, locked: null, underlay: null, features: (p?.features ?? []).filter((f) => f?.type !== "label") };
   if (q.output?.scene) q.output = { ...q.output, scene: { ...q.output.scene, labelColor: null, labelFont: null } };
   return canon(q);
 };
+/** Where the underlay image sits on the stage, in its pixels. */
+const underStyle = (rect, px, opacity) => `left:${rect[0] * px}px;top:${rect[1] * px}px;width:${(rect[2] - rect[0]) * px}px;height:${(rect[3] - rect[1]) * px}px;opacity:${opacity}`;
+
 /** Ids of picked things the generator made start with this (they aren't in the plan). */
 const GEN = "@gen:";
 const genCache = new WeakMap();
@@ -85,6 +89,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asDelete: AtlasScribeApp.#onDelete,
       asPlan: AtlasScribeApp.#onPlan,
       asPin: AtlasScribeApp.#onPin,
+      asUnder: AtlasScribeApp.#onUnder,
+      asUnderPick: AtlasScribeApp.#onUnderPick,
+      asUnderRemove: AtlasScribeApp.#onUnderRemove,
       asDraw: AtlasScribeApp.#onDraw,
       asTool: AtlasScribeApp.#onTool,
       asFinish: AtlasScribeApp.#onFinish,
@@ -113,6 +120,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #tool = null; // the drawing under way: { id, points, box, cursor, snap, down }
   #keys = null; // the keyboard listener while drawing (Enter, Esc, Backspace)
   #finishedAt = 0; // when a drawing last finished, so the double-click that finished it doesn't also fit the map
+  #picking = false; // the file picker for the underlay is open
   #queue = []; // inspector changes made while the map was drawing: (plan) => { plan } | { error }, applied when it's done
   #corners = []; // every corner in the plan, for a dragged corner to snap to
   #handles = []; // handlesOf(plan) as drawn
@@ -365,7 +373,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#corners = every.filter((h) => h.kind === "corner");
     // A feature that's gone (deleted, or undone away) is no longer picked or shown
     if (this.#selected && !featureOf(this.#plan, this.#selected) && !this.#genOf(this.#selected)) this.#selected = null;
-    if (this.#inspect && this.#inspect !== "@plan" && !featureOf(this.#plan, this.#inspect) && !this.#genOf(this.#inspect)) this.#inspect = null;
+    if (this.#inspect && this.#inspect !== "@plan" && !(this.#inspect === "@underlay" && underlayOf(this.#plan)) && !featureOf(this.#plan, this.#inspect) && !this.#genOf(this.#inspect)) this.#inspect = null;
     const minor = this.#minor().map((f) => `<g class="as-pv-shape as-minor as-${f.type} ${f.id === this.#selected ? "as-selected" : ""}" data-id="${esc(f.id)}"><polygon points="${f.poly.map((p) => p.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polygon></g>`).join("");
     const points = this.#points().map((p) => `<circle class="as-pv-shape as-point as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}" cx="${p.at[0]}" cy="${p.at[1]}" r="${fs * 0.35}"></circle>`).join("");
     this.#handles = every.filter((h) => this.#shapes || h.id === this.#selected);
@@ -383,6 +391,13 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           ${sel && !this.#tool ? `<circle class="as-pv-handle as-turn" data-id="${esc(l.id)}" cx="${hw + em * 0.6}" cy="0" r="0.3"></circle>` : ""}
         </g>`;
     }).join("");
+    // The reference image, and while its panel is open (and it isn't locked) a box to drag it by and corners to scale it
+    const under = underlayOf(this.#plan);
+    const underBox = under && under.shown && !under.locked && this.#inspect === "@underlay" ? (() => {
+      const [x0, y0, x1, y1] = under.rect;
+      const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+      return `<g class="as-pv-under-box"><rect class="as-pv-under-move" x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" vector-effect="non-scaling-stroke"></rect>${corners.map((c, i) => `<circle class="as-pv-handle as-under" data-corner="${i}" cx="${c[0]}" cy="${c[1]}" r="0.3"></circle>`).join("")}</g>`;
+    })() : "";
     // A picked house or street the generator made: its outline
     const gen = this.#genOf(this.#selected);
     const genSvg = !gen ? "" : gen.kind === "house"
@@ -391,7 +406,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${genSvg}${lines}${points}${labels}${this.#tool ? "" : handles}<g class="as-pv-draft"></g></svg>
+          ${under && under.shown ? `<img class="as-pv-under" src="${esc(under.path)}" style="${underStyle(under.rect, r.width / MW, under.opacity)}" alt="" draggable="false">` : ""}
+          <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${shapes}${minor}${genSvg}${lines}${points}${labels}${underBox}${this.#tool ? "" : handles}<g class="as-pv-draft"></g></svg>
         </div>`
       : "";
     const rows = feats.map((f) => `<li data-id="${esc(f.id)}" class="${f.locked ? "as-locked" : ""} ${f.id === this.#selected ? "as-selected" : ""}" data-tooltip="Click for its settings and to reshape it">
@@ -434,6 +450,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         </div>
         ${this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
+          : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working })
           : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices() })
           : `<ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
@@ -442,6 +459,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <button type="button" data-action="asOutlines" class="${this.#outlines ? "as-on" : ""}"><i class="fa-solid fa-draw-polygon"></i> Outlines</button>
           <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip="Drag corners to reshape districts and areas; drag a side's middle dot to add a corner; alt-click or right-click a corner to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
           <button type="button" data-action="asFit" data-tooltip="Fit the map to the window (or double-click it)"><i class="fa-solid fa-expand"></i> Fit</button>
+          <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
         <div class="as-pv-tools as-pv-scene">
           <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip="${scene ? "Paint the map with your art and update the scene made from this plan (it's backed up first)" : "Paint the map with your art and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
@@ -523,6 +541,16 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (!box || !this.#result) return;
       const handle = ev.target.closest?.(".as-pv-handle");
       if (this.#tool && ev.button === 0) this.#tool.down = { x: ev.clientX, y: ev.clientY, at: this.#toSquares(ev) };
+      // The underlay, while its panel is open: drag it to move it, or a corner to scale it
+      const ug = ev.target.closest?.(".as-pv-under-move, .as-pv-handle.as-under");
+      if (ug && !this.#working && !this.#tool && ev.button === 0) {
+        const u = underlayOf(this.#plan);
+        if (!u) return;
+        ev.stopPropagation();
+        this.#edit = { under: { corner: ug.classList.contains("as-under") ? Number(ug.dataset.corner) : null, rect: u.rect, from: this.#toSquares(ev) }, plan: this.#plan, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        box.setPointerCapture(ev.pointerId);
+        return;
+      }
       // A picked label: drag its box to move it, or the dot beside it to turn it
       const grip = ev.target.closest?.(".as-pv-label-box, .as-pv-handle.as-turn");
       if (grip && !this.#working && !this.#tool && ev.button === 0) {
@@ -595,6 +623,25 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
     // A setting changed in the inspector: applied at once, and the map redrawn
     el.addEventListener("change", (ev) => {
+      const ui = ev.target.closest?.(".as-pv-insp [data-under]");
+      if (ui && this.#plan) {
+        if (this.#publishing || this.#saving) return this.render();
+        const u = underlayOf(this.#plan);
+        if (!u) return;
+        const k = ui.dataset.under, v = ui.type === "checkbox" ? ui.checked : Number(ui.value);
+        // A number box left empty or with text it can't read isn't a request to move the image to 0
+        if (ui.type === "number" && (ui.validity?.badInput || ui.value.trim() === "" || !Number.isFinite(v) || (k === "width" && v < 1))) {
+          this.#error = k === "width" ? "Width should be a number of squares, 1 or more. Nothing was changed." : `${k === "left" ? "Left" : "Top"} should be a number of squares. Nothing was changed.`;
+          return this.#working ? undefined : this.render();
+        }
+        const [x0, y0, x1, y1] = u.rect, aspect = (x1 - x0) / (y1 - y0);
+        const patch = k === "opacity" ? { opacity: v } : k === "shown" ? { shown: v } : k === "locked" ? { locked: v }
+          : k === "left" && Number.isFinite(v) ? { rect: [v, y0, v + x1 - x0, y1] }
+          : k === "top" && Number.isFinite(v) ? { rect: [x0, v, x1, v + y1 - y0] }
+          : k === "width" && Number.isFinite(v) && v >= 1 ? { rect: [x0, y0, x0 + v, y0 + v / aspect] } : null;
+        if (!patch) return this.render();
+        return this.#apply((plan) => ({ plan: setUnderlay(plan, patch) }));
+      }
       const box = ev.target.closest?.(".as-pv-insp [data-field]");
       if (!box || !this.#plan) return;
       const id = box.closest(".as-pv-insp").dataset.id, field = box.dataset.field;
@@ -619,6 +666,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (Date.now() - this.#finishedAt < 800) return; // the double-click that finished a drawing
       this.#view = null;
       this.#applyView();
+    });
+    // The underlay's see-through slider shows as it's dragged (the plan changes when it's let go)
+    el.addEventListener("input", (ev) => {
+      if (ev.target.dataset?.under === "opacity") this.element.querySelector(".as-pv-under")?.style.setProperty("opacity", ev.target.value);
     });
     // Hovering a row lights its outline, and hovering an outline lights its row
     el.addEventListener("pointerover", (ev) => this.#hover(ev.target.closest?.("[data-id]")?.dataset.id ?? null));
@@ -774,6 +825,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (!e.moved && Math.hypot(ev.clientX - e.x, ev.clientY - e.y) < 3) return;
     e.moved = true;
     if (e.label) return this.#labelMove(ev, e);
+    if (e.under) return this.#underMove(ev, e);
     let to = this.#toSquares(ev);
     const r = this.#result;
     const [MW, MH] = r.squares;
@@ -830,11 +882,32 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.element.querySelector(`.as-pv-label-g[data-id="${CSS.escape(l.id)}"]`)?.setAttribute("transform", `translate(${at[0]} ${at[1]}) rotate(${angle})`);
   }
 
+  /** The underlay being dragged (moved, or scaled from a corner keeping its shape): the image and its box follow. */
+  #underMove(ev, e) {
+    const u = e.under, now = this.#toSquares(ev);
+    const rect = u.corner === null ? movedRect(u.rect, now[0] - u.from[0], now[1] - u.from[1]) : scaledRect(u.rect, u.corner, now);
+    u.to = rect;
+    e.next = true;
+    const r = this.#result;
+    const img = this.element.querySelector(".as-pv-under");
+    if (img && r) img.setAttribute("style", underStyle(rect, r.width / r.squares[0], underlayOf(this.#plan)?.opacity ?? 0.5));
+    const box = this.element.querySelector(".as-pv-under-move");
+    box?.setAttribute("x", rect[0]); box?.setAttribute("y", rect[1]); box?.setAttribute("width", rect[2] - rect[0]); box?.setAttribute("height", rect[3] - rect[1]);
+    const cs = [[rect[0], rect[1]], [rect[2], rect[1]], [rect[2], rect[3]], [rect[0], rect[3]]];
+    for (const c of this.element.querySelectorAll(".as-pv-handle.as-under")) { const p = cs[Number(c.dataset.corner)]; c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); }
+  }
+
   /** A handle let go: the reshaped plan is drawn (a click that didn't move does nothing). */
   #editEnd() {
     const e = this.#edit;
     this.#edit = null;
     if (!e?.moved || !e.next) return;
+    // The underlay moved or scaled: kept on the plan as it is now (it changes nothing in the picture)
+    if (e.under) {
+      if (e.plan !== this.#plan) return this.render(); // the plan was replaced mid-drag: drop the drag
+      const rect = e.under.to;
+      return this.#apply((plan) => ({ plan: setUnderlay(plan, { rect }) })); // waits its turn if the map is drawing
+    }
     // A label moved or turned while the plan changed under it (a setting typed and left as the drag began): the move
     // is made on the plan as it is now
     if (e.label && e.plan !== this.#plan && featureOf(this.#plan, e.label.id) && !this.#working)
@@ -984,6 +1057,74 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#inspect = res.id;
     const drawn = await this.#change(res.plan);
     if (drawn) ui.notifications.info(`AtlasScribe: pinned as ${res.id}. ${gen.kind === "house" ? "It stays as it is when" : "It stays, and the district's other streets follow it, when"} ${gen.item.from} is rerolled; delete it to let the generator have the spot again.`);
+  }
+
+  /** Underlay: with none, pick an image to put under the sketch; with one, its panel (again to close it). */
+  static async #onUnder() {
+    if (this.#working || !this.#plan) return;
+    if (underlayOf(this.#plan)) {
+      this.#endTool();
+      this.#palette = false;
+      this.#selected = null;
+      this.#inspect = this.#inspect === "@underlay" ? null : "@underlay";
+      return this.render();
+    }
+    await this.#pickUnderlay();
+  }
+
+  static async #onUnderPick() {
+    await this.#pickUnderlay();
+  }
+
+  static async #onUnderRemove() {
+    if (this.#working || !underlayOf(this.#plan)) return;
+    this.#inspect = null;
+    await this.#change(removeUnderlay(this.#plan));
+  }
+
+  /** Foundry's file picker for an image; it's fitted inside the map and centred, half see-through, and its panel opens. */
+  async #pickUnderlay() {
+    if (this.#picking) return;
+    this.#picking = true;
+    try {
+      await this.#pickUnderlayNow();
+    } finally {
+      this.#picking = false;
+    }
+  }
+
+  async #pickUnderlayNow() {
+    const FP = foundry.applications.apps.FilePicker.implementation;
+    const path = await new Promise((resolve) => {
+      const fp = new FP({ type: "image", current: underlayOf(this.#plan)?.path ?? "", callback: (p) => resolve(p) });
+      fp.addEventListener?.("close", () => setTimeout(() => resolve(null), 0), { once: true });
+      fp.render(true);
+    });
+    if (!path || !this.#plan || this.#working) return;
+    // Its size, from the load event (decode() waits while the window is in the background)
+    const img = new Image();
+    const ok = await new Promise((resolve) => {
+      img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight > 0);
+      img.onerror = () => resolve(false);
+      img.src = path;
+    });
+    if (!this.rendered || !this.#plan) return; // the window was closed meanwhile
+    if (!ok) {
+      this.#error = `The image ${path} couldn't be opened.`;
+      return this.render();
+    }
+    if (this.#working) {
+      this.#error = "The map was busy, so the image wasn't put under it. Try again when it's done.";
+      return this.render();
+    }
+    const old = underlayOf(this.#plan);
+    let next = addUnderlay(this.#plan, path, img.naturalWidth, img.naturalHeight);
+    if (old) next = setUnderlay(next, { opacity: old.opacity, shown: true }); // a new picture keeps the see-through
+    this.#endTool();
+    this.#palette = false;
+    this.#selected = null;
+    this.#inspect = "@underlay";
+    await this.#change(next);
   }
 
   static #onPlan() {

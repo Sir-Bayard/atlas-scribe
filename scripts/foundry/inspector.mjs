@@ -152,6 +152,35 @@ export function generatedHTML(gen, { working = false } = {}) {
     </section>`;
 }
 
+/**
+ * The underlay's panel: the image under the sketch to trace over. See-through, shown, locked, where it sits (its
+ * height follows its shape), another image, or none. Inputs carry data-under; the window reads them.
+ */
+export function underlayHTML(u, { working = false } = {}) {
+  const [x0, y0, x1, y1] = u.rect;
+  const num = (key, label, value, step = 0.5) => `<div class="as-pv-field"><label>${esc(label)}</label><div class="as-pv-input"><input type="number" data-under="${key}" value="${Math.round(value * 100) / 100}" step="${step}"><span class="as-pv-unit">squares</span></div></div>`;
+  const box = (key, label, on, help) => `<div class="as-pv-field as-k-boolean"><label data-tooltip="${esc(help)}">${esc(label)}</label><div class="as-pv-input"><input type="checkbox" data-under="${key}" ${on ? "checked" : ""}></div></div>`;
+  return `<section class="as-pv-insp" data-id="@underlay">
+      <header>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <span class="as-pv-name"><strong>Underlay</strong><em>${esc(u.path.split("/").pop())}</em></span>
+      </header>
+      <div class="as-pv-fields">
+        <p class="as-pv-hint">An image under the sketch to trace over. ${u.locked ? "It's locked: unlock it to move it." : "Drag it on the map to move it, or a corner to scale it."} It's saved with the plan and never painted into the scene.</p>
+        <div class="as-pv-field"><label>See-through</label><div class="as-pv-input"><input type="range" data-under="opacity" min="0.05" max="1" step="0.05" value="${u.opacity}"></div></div>
+        ${box("shown", "Shown", u.shown, "Hide it without losing where it sits")}
+        ${box("locked", "Locked", u.locked, "Locked, it can't be dragged by accident")}
+        ${num("left", "Left", x0)}
+        ${num("top", "Top", y0)}
+        ${num("width", "Width", x1 - x0)}
+      </div>
+      <div class="as-pv-tools">
+        <button type="button" data-action="asUnderPick" ${working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i> Another image</button>
+        <button type="button" data-action="asUnderRemove" class="as-danger" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Remove</button>
+      </div>
+    </section>`;
+}
+
 /** The plan's own settings: name, season, ground, size and scale, then the scene it's made into. */
 export function planHTML(plan, { working = false, fonts = [] } = {}) {
   const fields = planFieldsOf(plan);
