@@ -2,14 +2,14 @@
  * Field systems: an area of class "fields" filled with fields, from a Voronoi diagram of points scattered over it
  * (d3-delaunay, bundled in vendor/). Two systems:
  *
- * - patchwork: enclosed fields, each a Voronoi cell (a few merged with a neighbour into one bigger field), hedged or
+ * - patchwork: enclosed fields, each a Voronoi cell (a few merged with a neighbor into one bigger field), hedged or
  *   walled along the roads, round the system's edge and on about a quarter of the sides between them (the rest a faint
  *   grass edge), with a tree in the hedgerow here and there. The cells are stretched along the
  *   system's grain (the area's long axis), so fields run long and their sides fall roughly parallel, as old enclosures do.
- * - strips: open fields. The cells are furlongs, each ploughed in long narrow strips running one way or the other
+ * - strips: open fields. The cells are furlongs, each plowed in long narrow strips running one way or the other
  *   across the grain, with grass balks between the strips and headlands between the furlongs. No hedges inside.
  *
- * Every field takes a crop for the season (ploughed, growing, ripe, stubble, hay, pasture, fallow) and the way its
+ * Every field takes a crop for the season (plowed, growing, ripe, stubble, hay, pasture, fallow) and the way its
  * rows run; about a third of the fields (or furlongs) are left as grass, by the area's coverage, so the land isn't
  * cultivated wall to wall. The cells come from the area's own shape and stream, never from what's round it, so moving
  * a road clips the fields differently but never reshuffles them; the land a system fills is its shape less the roads,
@@ -24,19 +24,19 @@ import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
 
 export const SYSTEMS = ["patchwork", "strips"];
-export const CROPS = ["ploughed", "growing", "ripe", "stubble", "hay", "pasture", "fallow"];
+export const CROPS = ["plowed", "growing", "ripe", "stubble", "hay", "pasture", "fallow"];
 
 /** How likely each crop is, by season, in enclosed fields; open strips are arable, so pasture and hay are rare there. */
 const CROP_MIX = {
-  spring: { ploughed: 3, growing: 4, pasture: 3, fallow: 1.5 },
-  summer: { growing: 3, ripe: 2.5, hay: 1.5, pasture: 2.5, fallow: 1, ploughed: 0.5 },
-  autumn: { stubble: 3, ploughed: 3, ripe: 0.7, pasture: 2.5, fallow: 1.5 },
-  winter: { ploughed: 4, stubble: 2, pasture: 3, fallow: 1 },
+  spring: { plowed: 3, growing: 4, pasture: 3, fallow: 1.5 },
+  summer: { growing: 3, ripe: 2.5, hay: 1.5, pasture: 2.5, fallow: 1, plowed: 0.5 },
+  autumn: { stubble: 3, plowed: 3, ripe: 0.7, pasture: 2.5, fallow: 1.5 },
+  winter: { plowed: 4, stubble: 2, pasture: 3, fallow: 1 },
 };
 const STRIP_DAMP = { pasture: 0.15, hay: 0, fallow: 0.6 };
 
 /** The rows a crop shows: spacing in squares, or none. */
-export const ROWS = { ploughed: 0.3, growing: 0.26, ripe: 0.26, stubble: 0.3, hay: 1.2 };
+export const ROWS = { plowed: 0.3, growing: 0.26, ripe: 0.26, stubble: 0.3, hay: 1.2 };
 
 /** Field and furlong sizes, in feet, when the plan gives none; a strip's width. */
 const FIELD_FT = { patchwork: 300, strips: 450 };
@@ -382,7 +382,7 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
   };
 
   if (system === "patchwork") {
-    // A few neighbours merged into one bigger field (never more than three cells), so not every field is a cell
+    // A few neighbors merged into one bigger field (never more than three cells), so not every field is a cell
     const group = cells.map((_, i) => i);
     const find = (i) => (group[i] === i ? i : (group[i] = find(group[i])));
     const count = cells.map(() => 1);

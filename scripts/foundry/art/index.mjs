@@ -1,6 +1,6 @@
 /**
  * Art: turns the roles a Layout needs into image URLs, through the providers in order (FA Nexus for now; art
- * folders later). A role nobody fills is listed as missing and painted in a plain colour.
+ * folders later). A role nobody fills is listed as missing and painted in a plain color.
  */
 import * as faNexus from "./fa-nexus.mjs";
 import { safeMessage } from "./fa-nexus.mjs";
@@ -23,7 +23,7 @@ export async function resolveArt(roles, progress = () => {}) {
     try {
       res = await p.resolve(remaining, progress);
     } catch (e) {
-      res = { art: {}, missing: remaining, why: `An art source failed (${safeMessage(e)}); its roles are painted in plain colours` };
+      res = { art: {}, missing: remaining, why: `An art source failed (${safeMessage(e)}); its roles are painted in plain colors` };
     }
     if (res.why) notes.push(res.why);
     Object.assign(art, res.art);

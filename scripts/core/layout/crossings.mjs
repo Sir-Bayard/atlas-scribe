@@ -1,6 +1,6 @@
 /**
  * A plan's bridges and fords sit where a road crosses water. A point placed by hand (or by an AI) is rarely exactly
- * on that crossing, so each one is snapped to the nearest place a road's centre line crosses a water's centre line,
+ * on that crossing, so each one is snapped to the nearest place a road's center line crosses a water's center line,
  * turned to run along the road, made long enough to span the water at that angle, and (a bridge) wide enough to
  * carry the road. A crossing with no road over water near it is drawn where the plan puts it. Pure: runs anywhere.
  * Numbers are in squares.

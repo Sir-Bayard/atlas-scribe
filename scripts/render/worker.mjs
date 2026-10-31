@@ -25,7 +25,7 @@ const jobs = {
   },
 
   /**
-   * A quick look at a plan: laid out, then painted in plain colours (the sketch style, no art) with the longer side
+   * A quick look at a plan: laid out, then painted in plain colors (the sketch style, no art) with the longer side
    * about px pixels. Returns { blob, width, height, pxPerSquare, squares, notes, counts, ms }.
    */
   async preview({ plan, px = 1600 }, progress) {

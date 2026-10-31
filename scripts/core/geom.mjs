@@ -5,7 +5,7 @@
 
 export const DEG = Math.PI / 180;
 
-/** A plan shape (polygon array, { rect }, { circle }, { ellipse }) as a polygon, turned by rot degrees about its centre. */
+/** A plan shape (polygon array, { rect }, { circle }, { ellipse }) as a polygon, turned by rot degrees about its center. */
 export function shapeToPolygon(shape, rot = 0, segments = 32) {
   let pts;
   if (Array.isArray(shape)) pts = shape.map((p) => [p[0], p[1]]);

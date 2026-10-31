@@ -21,12 +21,12 @@ const treeSize = (t, s) => (t.species === "bare" ? (s === "winter" ? 2.0 : 2.2) 
 const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
 const hasFlat = (b) => !b.round && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 
-/** A colour each crop's art is lifted toward outside winter: [colour, strength, how]. */
+/** A color each crop's art is lifted toward outside winter: [color, strength, how]. */
 const FIELD_LIFT = {
   growing: ["rgb(70,88,22)", 0.55, "screen"],
   ripe: ["rgb(130,100,30)", 0.5, "screen"],
   stubble: ["rgb(120,100,62)", 0.3, "screen"],
-  ploughed: ["rgb(92,64,40)", 0.4, "screen"],
+  plowed: ["rgb(92,64,40)", 0.4, "screen"],
   fallow: ["rgb(52,66,22)", 0.45, "screen"],
   pasture: ["rgb(24,34,10)", 0.25, "screen"],
   hay: ["rgb(80,68,30)", 0.35, "screen"],
@@ -84,7 +84,7 @@ export function paint(ctx) {
   const items = (kind, cls) => L.items.filter((i) => i.kind === kind && (cls === undefined || i.class === cls));
   const winter = s === "winter";
 
-  /** A fill for a role: its texture as a map-anchored pattern (sqPerTile squares to one repeat), or its plain colour. */
+  /** A fill for a role: its texture as a map-anchored pattern (sqPerTile squares to one repeat), or its plain color. */
   const tex = (role, sqPerTile, variant = 0) => {
     const im = art(role, variant);
     if (!im) return fallbackColor(role);
@@ -197,7 +197,7 @@ export function paint(ctx) {
     // Under snow a field is mostly the snow round it: its own art shows only faintly
     soft((k) => { k.beginPath(); for (const f of list) fieldPath(k, f); k.fill("evenodd"); }, tex(`field.${crop}.${s}`, 4, Number(v)), winter ? 0.3 : 0.06, winter ? 0.45 : 1, "source-over", boxOf(list.map((f) => f.poly)));
   }
-  // The crop art is dark beside the grass: lift each crop toward its own colour (a screen), so a field reads as wheat,
+  // The crop art is dark beside the grass: lift each crop toward its own color (a screen), so a field reads as wheat,
   // hay or soil at a glance; snow needs none
   if (!winter) for (const [crop, [color, alpha, op]] of Object.entries(FIELD_LIFT)) {
     const these = fields.filter((f) => f.crop === crop);
@@ -214,7 +214,7 @@ export function paint(ctx) {
   }
   if (fields.length) soft((k) => { k.lineWidth = 0.3 * pp; for (const f of fields.filter((f) => !f.strip)) { k.beginPath(); fieldPath(k, f); k.stroke(); } }, "rgb(120,112,92)", 0.2, winter ? 0.12 : 0.2, "multiply");
   const rowColor = {
-    ploughed: winter ? ["rgba(70,78,92,0.24)", 0.07] : ["rgba(42,30,18,0.38)", 0.07],
+    plowed: winter ? ["rgba(70,78,92,0.24)", 0.07] : ["rgba(42,30,18,0.38)", 0.07],
     growing: ["rgba(36,48,18,0.24)", 0.05], ripe: ["rgba(90,66,24,0.24)", 0.05],
     stubble: winter ? ["rgba(110,100,84,0.2)", 0.04] : ["rgba(70,54,32,0.22)", 0.04],
   };
@@ -500,7 +500,7 @@ export function paint(ctx) {
       shape(f.poly); g.fill();
       if (snow && (f.flat || !SNOWY_IN_WINTER.has(b.roof))) {
         const p = g.createPattern(snow, "repeat"); p.setTransform(new DOMMatrix().rotate(f.eaveAngle).scale((pp * 1.5) / snow.width));
-        // A pale wash first, so a coloured roof reads as snowed on as much as the art that comes with snow
+        // A pale wash first, so a colored roof reads as snowed on as much as the art that comes with snow
         g.fillStyle = "rgba(232,237,243,0.3)"; shape(f.poly); g.fill();
         g.globalAlpha = f.flat ? 0.9 : 0.75; g.fillStyle = p; shape(f.poly); g.fill(); g.globalAlpha = 1;
       }
@@ -624,7 +624,7 @@ export function wayDirectionAt(L, [x, y]) {
   return bestD < 3 && best ? best : [0, 1];
 }
 
-/** A ridge cap's colour: the roof's own colour, much paler. */
+/** A ridge cap's color: the roof's own color, much paler. */
 function capColor(roof) {
   const hex = fallbackColor(`roof.${roof}`);
   const m = /^#([0-9a-f]{6})$/i.exec(hex);

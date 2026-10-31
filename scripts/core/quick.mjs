@@ -13,7 +13,7 @@ export const QUICK = {
   season: ["summer", "spring", "autumn", "winter"],
   water: ["river", "stream", "none"],
   roads: ["crossroads", "through", "fork"],
-  centre: ["square", "green", "none"],
+  center: ["square", "green", "none"],
   surroundings: ["mixed", "farmland", "woodland", "open"],
 };
 
@@ -23,7 +23,7 @@ export const QUICK_LABELS = {
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
   water: { river: "A river", stream: "A stream", none: "No water" },
   roads: { crossroads: "A crossroads", through: "A road through", fork: "A fork in the road" },
-  centre: { square: "A market square", green: "A village green", none: "Neither" },
+  center: { square: "A market square", green: "A village green", none: "Neither" },
   surroundings: { mixed: "Farms and woods", farmland: "Farmland", woodland: "Woodland", open: "Open ground" },
 };
 
@@ -130,10 +130,11 @@ function placeName(r, water) {
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "quick-start";
 
 /**
- * A plan from Quick Start's choices: { size, season, water, roads, centre, surroundings, name, seed } (any left out
+ * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, name, seed } (any left out
  * is picked from the seed; seed itself defaults to 1). Returns { plan, choices }: choices are the ones used.
  */
 export function quickPlan(options = {}) {
+  if (options.center === undefined && options.centre !== undefined) options = { ...options, center: options.centre }; // the name before 0.4.0
   const seed = Number.isFinite(Number(options.seed)) && Number(options.seed) >= 1 ? Math.floor(Number(options.seed)) : 1;
   const pick = rng(seed, "quick", "choices");
   const choices = {};
@@ -145,19 +146,19 @@ export function quickPlan(options = {}) {
   const winter = choices.season === "winter";
   const features = [];
 
-  // The centre, and the main road's direction (mostly across the map's long side)
+  // The center, and the main road's direction (mostly across the map's long side)
   const C = [W / 2 + r.range(-0.08, 0.08) * W, H / 2 + r.range(-0.08, 0.08) * H];
   const theta = r.range(-30, 30) + (choices.size !== "town" && r.chance(0.25) ? 90 : 0); // a town runs along the long side
   const U = dirOf(theta), V = [-U[1], U[0]];
   const at = (u, v) => add(add(C, mul(U, u)), mul(V, v));
 
-  // Roads: arms from the centre to the edges
+  // Roads: arms from the center to the edges
   const arm = (deg, straight) => wander(r, C, dirOf(deg), W, H, { step: r.range(7, 10), amp: r.range(1, 2.4), straight });
-  const join = (a, b) => [...[...a].reverse(), ...b.slice(1)]; // two arms into one road through the centre
-  const hold = S.square + 3; // straight near the centre, so the roads meet the square squarely
+  const join = (a, b) => [...[...a].reverse(), ...b.slice(1)]; // two arms into one road through the center
+  const hold = S.square + 3; // straight near the center, so the roads meet the square squarely
   const roads = [];
   const mainA = arm(theta, hold), mainB = arm(theta + 180 + r.range(-8, 8), hold);
-  const arms = [mainA, mainB]; // every road leaving the centre
+  const arms = [mainA, mainB]; // every road leaving the center
   if (choices.roads === "fork") {
     const branch = arm(theta + 180 + r.range(35, 55) * (r.chance(0.5) ? 1 : -1), hold);
     arms.push(branch);
@@ -224,7 +225,7 @@ export function quickPlan(options = {}) {
     districts[1].poly[0] = [...k1]; districts[1].poly[3] = [...k2];
     districts[2].poly[1] = [...k0]; districts[2].poly[2] = [...k3];
   }
-  // Inner edges between neighbours were built from the same u, v; snap equal points together after rounding
+  // Inner edges between neighbors were built from the same u, v; snap equal points together after rounding
   for (const d of districts) d.poly = outline(clipToMap(d.poly.map(pt), W, H));
   // Points the same up to rounding become one point, so shared corners stay shared
   const all = districts.flatMap((d) => d.poly);
@@ -243,14 +244,14 @@ export function quickPlan(options = {}) {
   const cluster = districts.map((d) => d.poly);
   const nearCluster = (p, m) => cluster.some((poly) => distToPoly(p, poly) < m);
 
-  // The centre: a square where the roads meet, or a green beside them
-  if (choices.centre === "square") {
+  // The center: a square where the roads meet, or a green beside them
+  if (choices.center === "square") {
     const surface = choices.size === "town" ? "cobble" : choices.size === "village" ? "gravel" : "trodden";
     features.push({ id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface, radial: choices.size === "town", name: "The square" });
   }
   let green = null;
-  if (choices.centre === "green") {
-    // In the widest gap between the roads leaving the centre, clear of them
+  if (choices.center === "green") {
+    // In the widest gap between the roads leaving the center, clear of them
     const angles = roads.flatMap((rd) => {
       const i = rd.path.findIndex((p) => Math.hypot(p[0] - C[0], p[1] - C[1]) < 1e-6);
       const out = [];
@@ -265,7 +266,7 @@ export function quickPlan(options = {}) {
     });
     const [gw, gd] = S.green;
     const D = [Math.cos(best), Math.sin(best)];
-    // Pushed out from the centre until it's clear of every road (they wander a little once past the centre)
+    // Pushed out from the center until it's clear of every road (they wander a little once past the center)
     for (let push = 0; push < 6 && !green; push++) {
       const off = Math.hypot(gw, gd) / 2 / Math.max(0.5, Math.sin(Math.min(gap, Math.PI) / 2)) + roadHalf(roads[0]) + 0.8 + push;
       const gc = add(C, mul(D, off));
@@ -345,13 +346,13 @@ export function quickPlan(options = {}) {
   }
   farms.forEach((f, n) => features.push({ id: `farm-${n + 1}`, type: "area", class: "farmstead", shape: { rect: [r1(f.c[0] - f.size / 2), r1(f.c[1] - f.size / 2), r1(f.c[0] + f.size / 2), r1(f.c[1] + f.size / 2)] }, rot: f.rot }));
 
-  // Field systems: in some of the wedges of land between the roads leaving the centre (a wide gap split in two), each
+  // Field systems: in some of the wedges of land between the roads leaving the center (a wide gap split in two), each
   // filled with enclosed fields or open strips by the layout, which keeps them off the roads, water and farmyards and
   // a ragged margin of grass round the districts. Farmland runs to the map's edge; mixed country has fields round the
   // village and rough ground beyond
   const fields = [];
   if (choices.surroundings !== "open") {
-    // The lines the wedges lie between: each road leaving the centre, and a wandering line through a wide gap
+    // The lines the wedges lie between: each road leaving the center, and a wandering line through a wide gap
     const angleOf = (path) => { const e = path[path.length - 1]; return Math.atan2(e[1] - C[1], e[0] - C[0]); };
     const lines = arms.map((path) => ({ path, a: angleOf(path) })).sort((x, y) => x.a - y.a);
     const withSplits = [];
@@ -364,7 +365,7 @@ export function quickPlan(options = {}) {
       }
     });
     const extent = Math.max(...cluster.flat().map((p) => Math.hypot(p[0] - C[0], p[1] - C[1])));
-    /** A line from the centre cut off at distance R. */
+    /** A line from the center cut off at distance R. */
     const upTo = (path, R) => {
       const out = [path[0]];
       for (let i = 1; i < path.length; i++) {

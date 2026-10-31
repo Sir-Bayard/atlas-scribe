@@ -82,7 +82,7 @@ export function streetsFor({ district, poly, roads, water = [], radials = [], bl
     wobble: spacing * 1.3,
   });
   const passes = [{ kind: "street", spacing, minLength: spacing * 0.6, bridge: type.streets.bridge ?? null }];
-  // The back lanes' depth: from the street's centre to the lane's, so a plot of the type's depth fits between
+  // The back lanes' depth: from the street's center to the lane's, so a plot of the type's depth fits between
   const backDepth = type.back ? sq(type.back.depth[0] + r.next() * (type.back.depth[1] - type.back.depth[0]) + type.streets.width / 2 + type.back.width / 2) : null;
   if (type.back) passes.push({ kind: "back", depth: backDepth });
   if (type.lanes) passes.push({ kind: "lane", spacing: Math.min(sq(type.lanes.spacing), spacing * 0.6), minLength: sq(type.lanes.spacing) * 0.5, bridge: type.lanes.bridge ?? null, only: type.lanes.only ?? null });

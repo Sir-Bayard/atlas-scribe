@@ -13,7 +13,7 @@ export function styleOf(layout) {
 
 /**
  * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt }: thumb
- * is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colours),
+ * is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colors),
  * brokenArt the roles any file failed for (painted with fewer variants, or plain).
  * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
  */

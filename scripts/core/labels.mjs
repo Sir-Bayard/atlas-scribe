@@ -1,7 +1,7 @@
 /**
  * Labels: where each one sits and how it looks, worked out from the plan. A label is placed (at: [x, y]) or follows a
  * district or area (of: its id), sitting at a point well inside it plus its offset, and showing its name unless it
- * has text of its own. A label can be turned (angle, degrees clockwise), and has its own colour, font and opacity,
+ * has text of its own. A label can be turned (angle, degrees clockwise), and has its own color, font and opacity,
  * each falling back to the plan's (output.scene.labelColor, labelFont). A label dropped on a road or water takes the
  * line's angle there, turned so it never reads upside down.
  * Pure: runs in the worker, on the page and under node.
@@ -65,7 +65,7 @@ export function readable(a) {
 }
 
 /**
- * Every label the plan shows, resolved: [{ id, of, text, at, angle, size, show, color, font, alpha }], colour and
+ * Every label the plan shows, resolved: [{ id, of, text, at, angle, size, show, color, font, alpha }], color and
  * font always set (the label's own, else the plan's). Labels with no text, no place, or following a feature that
  * isn't there (or has no shape) are left out.
  */

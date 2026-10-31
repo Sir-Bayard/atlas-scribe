@@ -207,7 +207,7 @@ export function waterTest(plan) {
 
 /**
  * A way in for a new district or square (in the copy it's given), so what's drawn away from the roads is reached. A
- * district with no road into it and no street from a neighbour gets a lane from the nearest road to a point well
+ * district with no road into it and no street from a neighbor gets a lane from the nearest road to a point well
  * inside it, so its streets have somewhere to start (a hamlet builds along it). A square inside a district with no
  * road at it gets a street from the nearest road into it (a lane in a village or hamlet), so houses line the way to
  * it. Either runs from a road point it can reach without running through another district, a yard, park, farm,
@@ -299,7 +299,7 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
     const [x0, y0, x1, y1] = [Math.min(box[0], box[2]), Math.min(box[1], box[3]), Math.max(box[0], box[2]), Math.max(box[1], box[3])].map((v) => Math.round(v * 1000) / 1000);
     f.shape = { rect: [x0, y0, x1, y1] };
   } else if (tool.geometry === "box") {
-    // A click places a building of the tool's size, centred there
+    // A click places a building of the tool's size, centered there
     if (!pts[0]) return { error: "Drag a box, or click where it goes." };
     const [w, d] = tool.size.map((ft) => ft / sq);
     const [cx, cy] = pts[0];

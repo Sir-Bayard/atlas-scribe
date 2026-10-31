@@ -28,7 +28,7 @@
       {
         "id": "fa-nexus",
         "type": "module",
-        "reason": "Paints maps with the Forgotten Adventures art you have through FA Nexus. Without it, AtlasScribe paints in plain colours."
+        "reason": "Paints maps with the Forgotten Adventures art you have through FA Nexus. Without it, AtlasScribe paints in plain colors."
       }
     ]
   }

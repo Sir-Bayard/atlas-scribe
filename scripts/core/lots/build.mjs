@@ -41,14 +41,14 @@ function roofStyles(district, T) {
   return own.length ? Object.fromEntries(own.map((x) => [x, 1])) : T.styles ?? { gable: 1 };
 }
 
-/** The four corners of a rectangle centred at (cx, cy), len along (ux, uy), dep across it. */
+/** The four corners of a rectangle centered at (cx, cy), len along (ux, uy), dep across it. */
 function corners(cx, cy, len, dep, [ux, uy]) {
   const [nx, ny] = [-uy, ux];
   return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [cx + (a * len) / 2 * ux + (b * dep) / 2 * nx, cy + (a * len) / 2 * uy + (b * dep) / 2 * ny]);
 }
 
 /** True when a rectangle (its corners) lies in the plot; tested a hair inside its edges, so a house built right
- * on the street line or against its neighbour still counts as fitting. */
+ * on the street line or against its neighbor still counts as fitting. */
 const fitsIn = (pts, poly) => {
   const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   return pts.every(([x, y]) => pointInPolygon([cx + (x - cx) * 0.96, cy + (y - cy) * 0.96], poly));
@@ -385,7 +385,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
           tree(x, y, crown);
         }
       }
-      // Faint lines between long town plots, behind the yard only, where neighbours' backs meet (decision 24)
+      // Faint lines between long town plots, behind the yard only, where neighbors' backs meet (decision 24)
       if (stripLines && span > sq(20)) {
         const behindYard = difference([lot.poly], [clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack) ?? []]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
         const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
@@ -413,7 +413,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       addBounds(croft, way, bClass, backOf);
     }
   });
-  // Neighbours' fences on the same line become one fence (their pieces overlap with staggered ends otherwise)
+  // Neighbors' fences on the same line become one fence (their pieces overlap with staggered ends otherwise)
   out.bounds = joinBounds(mergeCollinear(out.bounds));
   return out;
 }
@@ -425,7 +425,7 @@ function clipDepth(poly, [mx, my], [ux, uy], [nx, ny], depth) {
 }
 
 /**
- * Merges fence segments lying on one line: overlapping or touching pieces become one, so two neighbours' fences
+ * Merges fence segments lying on one line: overlapping or touching pieces become one, so two neighbors' fences
  * along their shared side are drawn once, from the front to the deeper of the two.
  */
 function mergeCollinear(segs) {

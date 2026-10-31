@@ -17,7 +17,7 @@ export function underlayOf(plan) {
   return { path: u.path.trim(), rect: r, opacity: isNum(u.opacity) ? Math.min(1, Math.max(0.05, u.opacity)) : 0.5, shown: u.shown !== false, locked: u.locked === true };
 }
 
-/** The plan with an image of w by h pixels as its underlay, fitted inside the map and centred, half see-through. */
+/** The plan with an image of w by h pixels as its underlay, fitted inside the map and centered, half see-through. */
 export function addUnderlay(plan, path, w, h) {
   const [MW, MH] = plan?.size?.squares ?? [50, 50];
   const k = Math.min(MW / w, MH / h);

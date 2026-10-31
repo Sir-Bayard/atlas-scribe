@@ -72,7 +72,7 @@ export function checkPlan(raw) {
     checkFeature(f, where, raw.features?.[i] ?? {}, { err, warn, w, h });
   });
 
-  // Districts: a known profile, and a way in: a road into it, or a street from a neighbouring district through a gate
+  // Districts: a known profile, and a way in: a road into it, or a street from a neighboring district through a gate
   // on the side they share (a hamlet makes no streets of its own, so it needs a road)
   const ways = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path));
   const dfeats = plan.features.filter((f) => f.type === "district" && f.id);
@@ -151,13 +151,13 @@ export function checkPlan(raw) {
     for (const [name, spec] of Object.entries(SCENE)) checkField(null, `output.scene.${name}`, "output.scene", name, spec, scene[name], { err, warn }, "the default will be used");
     for (const k of Object.keys(scene)) if (!(k in SCENE)) warn(null, `output.scene.${k}`, `output.scene has a field "${k}" that AtlasScribe doesn't use.`);
     if (typeof scene.labelColor === "string" && !/^#[0-9a-f]{6}$/i.test(scene.labelColor))
-      warn(null, "output.scene.labelColor", `output.scene.labelColor "${scene.labelColor}" should be a colour like #13202e; the default will be used.`);
+      warn(null, "output.scene.labelColor", `output.scene.labelColor "${scene.labelColor}" should be a color like #13202e; the default will be used.`);
   }
 
   return out.sort((a, b) => (a.level === b.level ? 0 : a.level === "error" ? -1 : 1));
 }
 
-/** Pulls a polygon in slightly toward its centre, so shapes that only touch don't count as overlapping. */
+/** Pulls a polygon in slightly toward its center, so shapes that only touch don't count as overlapping. */
 function shrink(poly, by = 0.02) {
   const [x0, y0, x1, y1] = bbox(poly);
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
@@ -200,7 +200,7 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   for (const [name, spec] of Object.entries(t.fields)) checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
   if (f.type === "label" && !String(f.text ?? "").trim() && !f.of) warn(f.id, "text", `Label "${where}" has no text.`);
   if (f.type === "label" && typeof f.font === "string" && f.font.trim() && !/^[\p{L}\p{N} _.-]+$/u.test(f.font.trim())) warn(f.id, "font", `Label "${where}": the font "${f.font}" isn't a plain font name; the plan's will be used.`);
-  if (f.type === "label" && typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id, "color", `Label "${where}": color "${f.color}" should be a colour like #13202e; the plan's will be used.`);
+  if (f.type === "label" && typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id, "color", `Label "${where}": color "${f.color}" should be a color like #13202e; the plan's will be used.`);
   const known = new Set(["id", "type", "class", "at", "path", "shape", "buildings", "note", ...Object.keys(t.fields)]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(f.id, k, `"${where}" has a field "${k}" that AtlasScribe doesn't use.`);
 

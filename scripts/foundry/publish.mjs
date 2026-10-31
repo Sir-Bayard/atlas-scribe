@@ -17,7 +17,7 @@ const FONT = { min: 8, max: 256 };
 /**
  * plan: a normalized plan. image: the rendered map's path, width and height in pixels, and thumb (a Blob) when
  * the worker made one. folder: the output folder. sceneId: a scene to update instead of creating one; one
- * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was cancelled; it's called
+ * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
  * before anything is written. Returns { sceneId, created, backup, thumb, labels, warnings }.
  */
 export async function publish({ plan, image, width, height, folder, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
@@ -124,8 +124,8 @@ async function makeThumb(image, dir, id) {
 }
 
 /**
- * The plan's labels as text drawings, centred on their point and turned by their angle (labels.mjs works out where
- * each sits, including a name label following its district or area, and its colour, font and opacity). Hidden from
+ * The plan's labels as text drawings, centered on their point and turned by their angle (labels.mjs works out where
+ * each sits, including a name label following its district or area, and its color, font and opacity). Hidden from
  * players unless show is "all".
  */
 async function labelDrawings(plan, scene, warnings) {

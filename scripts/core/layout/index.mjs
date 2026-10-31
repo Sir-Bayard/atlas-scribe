@@ -31,7 +31,7 @@ export const LAYOUT_VERSION = 1;
 const chimneyOf = (b, drawn) => (drawn && okChimney(b.chimneyAt) ? { u: b.chimneyAt.u, v: b.chimneyAt.v, variant: b.chimneyAt.variant } : drawn);
 const tallOf = (heightFt) => Math.max(0, (Number(heightFt) - 20) / 20);
 
-/** The widest street and lane any district type makes, in feet: what a neighbour's street at a gate can be. */
+/** The widest street and lane any district type makes, in feet: what a neighbor's street at a gate can be. */
 const GATE_WIDTH = {
   street: Math.max(...Object.values(DISTRICT_TYPES).map((t) => t.streets?.width ?? 0)),
   lane: Math.max(...Object.values(DISTRICT_TYPES).map((t) => t.lanes?.width ?? t.streets?.width ?? 0)),
@@ -115,7 +115,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     plots: [], // gardens laid so far, and every building's footprint, for gardens to keep out of
     gardens: [], // gardens laid so far, for houses to keep out of
     buildings: [], // {cx, cy, len, dep}
-    ways: [], // {path, clear}: distance a new thing's edge keeps from the way's centre line
+    ways: [], // {path, clear}: distance a new thing's edge keeps from the way's center line
     water: [],
   };
 
@@ -298,7 +298,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     }
   }
 
-  // Districts: generated streets first (each district's own, meeting its neighbours' at gates on shared edges),
+  // Districts: generated streets first (each district's own, meeting its neighbors' at gates on shared edges),
   // then houses along every road, street and lane that runs into it
   progress(0.4, "Districts");
   const dfeats = plan.features.filter((f) => f.type === "district");
@@ -379,7 +379,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const foot = b.kind === "footbridge";
       items.push({ kind: "crossing", id: `${d.id}/b${k + 1}`, from: d.id, class: b.kind, at: b.at, angle: b.angle, length: b.length + 0.3, width: (foot ? 8 : 20) / sq, frozen: false });
     });
-    // Plots along every road and street, and what stands on them. Each gate is kept clear too: the neighbour's street
+    // Plots along every road and street, and what stands on them. Each gate is kept clear too: the neighbor's street
     // starts there, and its width reaches a little over the shared edge even where this district's street doesn't
     const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
     const keepOff = [...blocked, ...gateClear];
@@ -552,7 +552,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   return layout;
 }
 
-/** A polygon pushed out from its centre by a margin (rough, for keeping clear; fine for convex shapes). */
+/** A polygon pushed out from its center by a margin (rough, for keeping clear; fine for convex shapes). */
 function grow(poly, by) {
   if (!by) return poly;
   const [x0, y0, x1, y1] = bbox(poly);
@@ -575,7 +575,7 @@ function windAlike(plan) {
   return plan.features.some(turn) ? { ...plan, features: plan.features.map((f) => (turn(f) ? { ...f, shape: [...f.shape].reverse() } : f)) } : plan;
 }
 
-/** A polygon pulled in toward its centre by a fraction, so shapes that only touch don't count as overlapping. */
+/** A polygon pulled in toward its center by a fraction, so shapes that only touch don't count as overlapping. */
 function shrink(poly, by) {
   const [x0, y0, x1, y1] = bbox(poly);
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;

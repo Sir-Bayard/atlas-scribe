@@ -54,7 +54,7 @@ function crossAt(px, py, qx, qy, s) {
 
 /**
  * poly: the district polygon. field: from makeField. roads: [{ path }] the plan's roads (and any streets already
- * there). water: [{ path, clear }] (clear: distance from the centre line to keep out of). blocked: polygons
+ * there). water: [{ path, clear }] (clear: distance from the center line to keep out of). blocked: polygons
  * streets end at and never cross (squares, yards, landmarks). gates: [{ at, nx, ny, kind }] points on the edge
  * shared with another district (nx, ny: the way into this district) where a street of that kind must start, so
  * the two districts' streets meet. borders: the edges shared with other districts, as paths: a street that reaches
@@ -272,7 +272,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
           if (t !== null && (!best || t < best.t)) best = { t, sg };
         }
         const pt = best && [ex + (fx - ex) * best.t, ey + (fy - ey) * best.t];
-        // Towards a neighbouring district with no street to meet: it turns back to its own street instead, a short
+        // Towards a neighboring district with no street to meet: it turns back to its own street instead, a short
         // cross lane closing the loop (back lanes joined their high street at the ends of the town)
         if (!best || best.sg.line.edge === "edge" && nearBorder(pt, 0.3) || !inside(ex + (fx - ex) * best.t * 0.5, ey + (fy - ey) * best.t * 0.5)) {
           // Unless it has just crossed a street: then it ends there, rather than running on past it and laying a
@@ -361,7 +361,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
         carry = ((carry - l) % spacing + spacing) % spacing;
       }
     };
-    // Gates first: the streets that meet the neighbouring district's at the shared edge
+    // Gates first: the streets that meet the neighboring district's at the shared edge
     for (const g of gates.filter((q) => q.kind === pass.kind)) {
       const [gx, gy] = g.at;
       const ma = field.major(gx + g.nx * 0.2, gy + g.ny * 0.2);
@@ -585,7 +585,7 @@ export function smooth(path, rounds = 1) {
   return p;
 }
 
-/** Drops points that lie within tol of the line through their neighbours (Douglas-Peucker). */
+/** Drops points that lie within tol of the line through their neighbors (Douglas-Peucker). */
 export function simplify(path, tol) {
   if (path.length < 3) return path;
   const keep = new Uint8Array(path.length);

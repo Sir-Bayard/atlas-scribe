@@ -37,12 +37,12 @@ function requireGM() {
 }
 
 function cancelledError() {
-  const e = new Error("AtlasScribe: cancelled");
+  const e = new Error("AtlasScribe: canceled");
   e.cancelled = true;
   return e;
 }
 
-/** Runs fn(check) as the one job; check() throws once the job has been cancelled. */
+/** Runs fn(check) as the one job; check() throws once the job has been canceled. */
 async function exclusive(fn) {
   if (job) throw new Error("AtlasScribe is already working on a map. Wait for it to finish, or stop it with cancel().");
   const me = { cancelled: false };
@@ -91,7 +91,7 @@ async function publishChecked(plan, image, { scene, force }, check) {
     bar.done(`${title}: ${res.created ? "created the scene" : "updated the scene"}${res.backup ? ` (backup: ${res.backup})` : ""}`);
     return res;
   } catch (e) {
-    bar.done(e.cancelled ? `${title}: cancelled` : `${title}: failed (${e.message})`);
+    bar.done(e.cancelled ? `${title}: canceled` : `${title}: failed (${e.message})`);
     throw e;
   }
 }
@@ -153,7 +153,7 @@ const api = {
   },
 
   /**
-   * A quick look at a plan: lays it out and draws it in plain colours (no art) in a window, in a second or so, with
+   * A quick look at a plan: lays it out and draws it in plain colors (no art) in a window, in a second or so, with
    * its districts and areas outlined. Reroll, lock and undo there, then take the plan the window has made with Copy
    * plan or from the window's plan property. Only one preview window is open at a time: a second call shows the new
    * plan in it. px: the longer side of the picture, in pixels. Returns the window; if the plan can't be drawn (another
@@ -190,14 +190,14 @@ const api = {
   },
 
   /**
-   * Quick Start without the window: a plan from { size, season, water, roads, centre, surroundings, name, seed }
+   * Quick Start without the window: a plan from { size, season, water, roads, center, surroundings, name, seed }
    * (any left out is picked from the seed). Returns { plan, choices }. The choices are listed in api.quickChoices.
    */
   quickPlan(options = {}) {
     return quickPlan(options);
   },
 
-  /** Quick Start's choices: { size: [...], season: [...], water, roads, centre, surroundings }. */
+  /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings }. */
   get quickChoices() {
     return structuredClone(QUICK);
   },
@@ -205,7 +205,7 @@ const api = {
   /**
    * Renders a plan into an image, in the worker, and saves it to <output>/maps (never over an existing file).
    * Steps: check the plan (errors stop it), lay it out, fetch the art its style needs (FA Nexus; roles with no art
-   * are painted in plain colours and listed in missingArt), paint, save.
+   * are painted in plain colors and listed in missingArt), paint, save.
    * With publish: true the map is then published (see publish; scene and force as there). If publishing fails,
    * the error carries the saved map's result as error.result.
    * Returns { path, width, height, tiles, ms, layout, missingArt, notes, artNotes, warnings }, and scene when
@@ -247,7 +247,7 @@ const api = {
         };
         Object.defineProperty(result, "thumb", { value: img.thumb ?? null, enumerable: false }); // for publish
       } catch (e) {
-        bar.done(e.cancelled ? `${title}: cancelled` : `${title}: failed (${e.message})`);
+        bar.done(e.cancelled ? `${title}: canceled` : `${title}: failed (${e.message})`);
         throw e;
       }
       if (andPublish) {
@@ -296,7 +296,7 @@ const api = {
         bar.done(`AtlasScribe test saved: ${path}`);
         return { path, width: res.width, height: res.height, ms: res.ms, bytes: res.blob.size };
       } catch (e) {
-        bar.done(e.cancelled ? "AtlasScribe test: cancelled" : `AtlasScribe test: failed (${e.message})`);
+        bar.done(e.cancelled ? "AtlasScribe test: canceled" : `AtlasScribe test: failed (${e.message})`);
         throw e;
       }
     });

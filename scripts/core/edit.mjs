@@ -85,7 +85,7 @@ export const FIELD_TEXT = {
   "label.show": { label: "Shown to", names: { gm: "the GM only", all: "everyone" } },
   "label.size": { label: "Size" },
   "label.angle": { label: "Turn", help: "Degrees clockwise. A label dropped on a road or water turns along it; drag the dot beside a picked label to turn it by hand" },
-  "label.color": { label: "Colour", kind: "color", help: "Left as the plan's label colour unless set" },
+  "label.color": { label: "Color", kind: "color", help: "Left as the plan's label color unless set" },
   "label.font": { label: "Font", kind: "font", help: "Left as the plan's label font unless set" },
   "label.alpha": { label: "Opacity", help: "Lower for quiet labels, like a wood's or a field's name" },
   "label.of": { hidden: true },
@@ -102,7 +102,7 @@ export const PLAN_FIELDS = [
   { path: "size.ftPerSquare", label: "Feet a square", kind: "number", min: 1, max: 100, help: "25 for a town; 5 for a battle map" },
   { path: "output.pxPerSquare", label: "Pixels a square", kind: "number", min: 20, step: 1, whole: true, help: "The finished image's grid size, and so its size" },
   { path: "seed", label: "Seed", kind: "number", step: 1, whole: true, help: "Changing it redraws everything that has no seed of its own", more: true },
-  { path: "output.scene.labelColor", label: "Label colour", kind: "color", more: true, help: "Every label's colour, unless a label sets its own" },
+  { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own" },
   { path: "output.scene.labelFont", label: "Label font", kind: "font", more: true, help: "Every label's font, unless a label sets its own" },
   { path: "output.scene.name", label: "Scene name", kind: "string", group: "scene" },
   { path: "output.scene.weather", label: "Weather", kind: "string", group: "scene", help: "A Foundry weather effect (snow, rain, fog...), or empty for none" },
@@ -149,7 +149,7 @@ export function fieldsOf(plan, id) {
     if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? 0.1 : 0; // an M1 plan's
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
     let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);
-    // A label's colour and font fall back to the plan's; a name label's text to its feature's name
+    // A label's color and font fall back to the plan's; a name label's text to its feature's name
     if (f.type === "label" && name === "color") { const c = normalize(plan).output.scene.labelColor; auto = /^#[0-9a-f]{6}$/i.test(c ?? "") ? c : "#13202e"; }
     if (f.type === "label" && name === "font") auto = cleanFont(normalize(plan).output.scene.labelFont) ?? "Signika";
     if (f.type === "label" && name === "text" && f.of) { const o = featureOf(plan, f.of); auto = o ? `the name of ${o.name ?? o.id}` : null; }
@@ -203,7 +203,7 @@ export function readValue(field, raw) {
       if (!String(raw).trim()) return { value: undefined };
       return cleanFont(String(raw)) ? { value: cleanFont(String(raw)) } : { error: `${field.label} should be a font's name (letters, numbers, spaces, dots and dashes).` };
     case "color":
-      return /^#[0-9a-f]{6}$/i.test(String(raw).trim()) ? { value: String(raw).trim().toLowerCase() } : { error: `${field.label} should be a colour like #13202e.` };
+      return /^#[0-9a-f]{6}$/i.test(String(raw).trim()) ? { value: String(raw).trim().toLowerCase() } : { error: `${field.label} should be a color like #13202e.` };
     default:
       return { error: `${field.label} can't be changed here.` };
   }

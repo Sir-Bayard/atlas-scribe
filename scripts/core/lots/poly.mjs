@@ -1,5 +1,5 @@
 /**
- * Polygon operations for blocks and lots, over the bundled Clipper2 (vendor/clipper2.mjs, Boost licence).
+ * Polygon operations for blocks and lots, over the bundled Clipper2 (vendor/clipper2.mjs, Boost license).
  * AtlasScribe's polygons are lists of [x, y] in squares; Clipper's are lists of { x, y }. Pure: runs anywhere.
  */
 import * as C from "../../../vendor/clipper2.mjs";

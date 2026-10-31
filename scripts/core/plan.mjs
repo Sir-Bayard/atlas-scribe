@@ -21,8 +21,8 @@ const listOf = (values, dflt = null) => ({ kind: "list", values, default: dflt }
 const pointOf = () => ({ kind: "point", default: null });
 
 /**
- * Roof materials. The plain words ("slate", "wood-shingle") are the old defaults; the rest name a colour. Tile
- * colours come in several tile shapes (round, flat, beaver tail), picked by the building's variant.
+ * Roof materials. The plain words ("slate", "wood-shingle") are the old defaults; the rest name a color. Tile
+ * colors come in several tile shapes (round, flat, beaver tail), picked by the building's variant.
  */
 export const ROOFS = [
   "slate", "slate-black", "slate-blue", "slate-purple", "slate-mossy",

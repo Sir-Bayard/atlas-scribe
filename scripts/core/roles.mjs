@@ -1,6 +1,6 @@
 /**
  * Art roles: what a piece of the map should look like ("roof.slate.winter", "tree.conifer.large.winter"), never
- * a file. Providers turn roles into files; a role nobody can fill gets a plain colour, so a map always paints.
+ * a file. Providers turn roles into files; a role nobody can fill gets a plain color, so a map always paints.
  * Pure: runs anywhere.
  */
 
@@ -12,7 +12,7 @@ export function roleChain(role) {
   return out;
 }
 
-/** Plain colours for roles with no art, by their first part (and second where it matters). */
+/** Plain colors for roles with no art, by their first part (and second where it matters). */
 const COLORS = {
   ground: "#c9cdc4",
   "ground.snow": "#e6eaef",
@@ -59,20 +59,20 @@ const COLORS = {
   chimney: "#6e655c",
   prop: "#7a6450",
   field: "#8d9a5c",
-  "field.ploughed": "#7a5f42",
+  "field.plowed": "#7a5f42",
   "field.growing": "#6f8a3e",
   "field.ripe": "#c4a24e",
   "field.stubble": "#b39c6a",
   "field.hay": "#b8ab72",
   "field.pasture": "#86a457",
   "field.fallow": "#8d9a5c",
-  "field.ploughed.winter": "#d9dde2",
+  "field.plowed.winter": "#d9dde2",
   "field.stubble.winter": "#d8d6cf",
   "field.pasture.winter": "#e4e8ed",
   "field.fallow.winter": "#dde2e2",
 };
 
-/** The colour that stands in for a role. */
+/** The color that stands in for a role. */
 export function fallbackColor(role) {
   for (const r of roleChain(role)) if (COLORS[r]) return COLORS[r];
   const first = String(role).split(".")[0];

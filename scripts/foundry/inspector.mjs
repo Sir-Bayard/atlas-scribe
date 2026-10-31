@@ -23,7 +23,7 @@ export function kindOf(f) {
   return f.type;
 }
 
-/** One setting as a labelled input. */
+/** One setting as a labeled input. */
 function fieldHTML(field, disabled, fonts = []) {
   const id = `as-f-${field.name.replace(/[^a-z0-9]/gi, "-")}`;
   const set = field.value !== undefined && field.value !== null;
@@ -60,7 +60,7 @@ function fieldHTML(field, disabled, fonts = []) {
       break;
     }
     case "color": {
-      // A colour box shows the colour in use: the label's own, or the plan's when it's left as the default
+      // A color box shows the color in use: the label's own, or the plan's when it's left as the default
       const shown = /^#[0-9a-f]{6}$/i.test(field.value ?? "") ? field.value : /^#[0-9a-f]{6}$/i.test(field.auto ?? "") ? field.auto : "#13202e";
       input = `<input type="color" id="${id}" ${data} value="${esc(shown)}" ${dis}>${set ? "" : `<span class="as-pv-auto-inline">${esc(`Default (${field.auto ?? "plan's"})`)}</span>`}`;
       break;

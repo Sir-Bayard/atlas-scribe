@@ -1,6 +1,6 @@
 /**
  * Roof shapes, as flat pieces to paint: each slope of a roof seen from above. Everything is in the building's own
- * frame (squares, x along len, y along dep, centred on the building). Pure: runs anywhere.
+ * frame (squares, x along len, y along dep, centered on the building). Pure: runs anywhere.
  *
  * A facet is { poly, down (its downslope, a unit vector; [0, 0] for a flat piece), eaveAngle (degrees: the texture's
  * rows run along the eave, its lower edge downslope), eaves (outline edges), flat (true for a flat piece) }. The list also carries:
@@ -127,7 +127,7 @@ function mansardFacets(b) {
   return finish(out, { creases: hips.map((seg) => ({ seg, kind: "hip" })), caps: hips, skylight });
 }
 
-/** A round building's cone: wedges round the centre, each lit by the way it faces. */
+/** A round building's cone: wedges round the center, each lit by the way it faces. */
 function coneFacets(b) {
   const R = Math.min(b.len, b.dep) / 2;
   const n = 16;

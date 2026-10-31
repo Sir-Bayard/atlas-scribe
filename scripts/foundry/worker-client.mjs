@@ -1,6 +1,6 @@
 /**
  * The page's side of the worker: starts it on first use, sends jobs, passes progress on, and can cancel.
- * Cancelling stops the worker outright (the only way to stop a long paint); the next job starts a new one.
+ * Canceling stops the worker outright (the only way to stop a long paint); the next job starts a new one.
  */
 export class WorkerClient {
   #worker = null;
@@ -54,10 +54,10 @@ export class WorkerClient {
     return this.#pending.size > 0;
   }
 
-  /** Stops whatever is running; its promise rejects with "cancelled". */
+  /** Stops whatever is running; its promise rejects with "canceled". */
   cancel() {
     if (!this.#pending.size) return false;
-    const e = new Error("AtlasScribe: cancelled");
+    const e = new Error("AtlasScribe: canceled");
     e.cancelled = true;
     this.#fail(e);
     return true;

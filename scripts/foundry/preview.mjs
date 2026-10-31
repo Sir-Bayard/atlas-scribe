@@ -1,5 +1,5 @@
 /**
- * The AtlasScribe window. A plan laid out and drawn in plain colours in a second or so, with its districts and areas
+ * The AtlasScribe window. A plan laid out and drawn in plain colors in a second or so, with its districts and areas
  * outlined, so a change can be judged before a full render; and around it, the plan's file (Quick Start, open, import,
  * save, export), its problems, and making it into a scene. Rerolling, locking and undoing happen here; the window
  * keeps the plan they make (app.plan), and Copy plan puts it on the clipboard. With Shapes on, districts and areas
@@ -33,7 +33,7 @@ function fontChoices() {
   }
 }
 
-/** The plan as the map sees it: labels (and the plan's label colour and font) and the underlay don't change the picture. */
+/** The plan as the map sees it: labels (and the plan's label color and font) and the underlay don't change the picture. */
 const mapKey = (p) => {
   const q = { ...p, locked: null, underlay: null, features: (p?.features ?? []).filter((f) => f?.type !== "label") };
   if (q.output?.scene) q.output = { ...q.output, scene: { ...q.output.scene, labelColor: null, labelFont: null } };
@@ -379,7 +379,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#handles = every.filter((h) => this.#shapes || h.id === this.#selected);
     const handles = this.#handles.map((h, n) => `<circle class="as-pv-handle as-${h.kind}" data-h="${n}" data-id="${esc(h.id)}" cx="${h.at[0]}" cy="${h.at[1]}" r="0.3"></circle>`).join("");
     const lines = this.#paths().map((p) => `<g class="as-pv-shape as-path as-${p.type} ${p.id === this.#selected ? "as-selected" : ""}" data-id="${esc(p.id)}"><polyline points="${p.pts.map((q) => q.join(",")).join(" ")}" vector-effect="non-scaling-stroke"></polyline></g>`).join("");
-    // Labels at their true size, turned, in their colour, font and opacity; a picked one has a box to drag it by and
+    // Labels at their true size, turned, in their color, font and opacity; a picked one has a box to drag it by and
     // a dot to turn it by
     const labels = (r?.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => {
       const em = LABEL_SIZES[l.size] ?? LABEL_SIZES.normal, sel = l.id === this.#selected;
@@ -706,7 +706,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         : `${this.#selected}'s settings are in the panel. Click elsewhere to finish.`;
     }
     if (this.#shapes) return "Drag a corner or a road's point to reshape; points shared by two districts or two roads move together. A turned area can't be reshaped here yet.";
-    return "A quick sketch in plain colours. Click anything to see its settings and reshape it; scroll to zoom, drag to move.";
+    return "A quick sketch in plain colors. Click anything to see its settings and reshape it; scroll to zoom, drag to move.";
   }
 
   /**
@@ -1082,7 +1082,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     await this.#change(removeUnderlay(this.#plan));
   }
 
-  /** Foundry's file picker for an image; it's fitted inside the map and centred, half see-through, and its panel opens. */
+  /** Foundry's file picker for an image; it's fitted inside the map and centered, half see-through, and its panel opens. */
   async #pickUnderlay() {
     if (this.#picking) return;
     this.#picking = true;
@@ -1326,7 +1326,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
     const content = `<div class="atlas-scribe as-quick">
         <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Leave empty for a made-up name"></div>
-        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("centre", "Centre")}${select("surroundings", "Around it")}
+        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}
         <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
         <p class="hint">Every choice can be rerolled, locked and reshaped afterwards.</p>
       </div>`;
@@ -1478,7 +1478,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const made = game.scenes.get(res?.scene?.sceneId);
       ui.notifications.info(`AtlasScribe: ${res?.scene?.created ? "made the scene" : "updated the scene"} ${made?.name ?? ""} in ${Math.round((res?.ms ?? 0) / 1000)} s.`);
       // Why the map looks as it does, when it isn't as asked: art that couldn't be had, settings the scene didn't take
-      const why = [...(res?.artNotes ?? []), ...(res?.missingArt?.length ? [`${res.missingArt.length} kinds of art weren't found and are painted in plain colours (${res.missingArt.slice(0, 6).join(", ")}${res.missingArt.length > 6 ? ", ..." : ""}).`] : []), ...(res?.warnings ?? [])];
+      const why = [...(res?.artNotes ?? []), ...(res?.missingArt?.length ? [`${res.missingArt.length} kinds of art weren't found and are painted in plain colors (${res.missingArt.slice(0, 6).join(", ")}${res.missingArt.length > 6 ? ", ..." : ""}).`] : []), ...(res?.warnings ?? [])];
       if (why.length) ui.notifications.warn(`AtlasScribe: ${why.join(" ")}`, { permanent: true });
     } catch (e) {
       if (!e.cancelled) ui.notifications.error(e.message, { permanent: true });

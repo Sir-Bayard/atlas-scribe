@@ -1,7 +1,7 @@
 /**
- * The "sketch" style: the preview. A Layout in plain map colours, with no art, no blur and no soft edges, so it
+ * The "sketch" style: the preview. A Layout in plain map colors, with no art, no blur and no soft edges, so it
  * paints in a fraction of a second at a few px a square. It draws the same things the textured style does (the
- * roads, the water, every roof in its material's colour and form, the trees), so a preview shows what a full render
+ * roads, the water, every roof in its material's color and form, the trees), so a preview shows what a full render
  * will put where. Numbers are in squares.
  *
  * paint(ctx) takes the same ctx as the other styles; art is never asked for.
@@ -16,7 +16,7 @@ export const MAX_BLUR = 0;
 /** A sketch needs no art. */
 export const rolesFor = () => [];
 
-/** "#rrggbb" or "rgb(...)" mixed toward [r, g, b] by k (0 to 1), as an rgb() colour. */
+/** "#rrggbb" or "rgb(...)" mixed toward [r, g, b] by k (0 to 1), as an rgb() color. */
 function mix(color, to, k) {
   const [r, g, b] = rgbOf(color).map((v, i) => Math.round(v + (to[i] - v) * k));
   return `rgb(${r},${g},${b})`;
@@ -53,7 +53,7 @@ export function paint(ctx) {
   progress(0.2, "Yards and gardens");
   const trodden = col(`surface.trodden.${s}`);
   for (const a of items("surface", "trodden")) { g.globalAlpha = 0.5; fillPoly(a.poly, trodden); g.globalAlpha = 1; }
-  // Fields: each in its crop's colour, a shade lighter or darker, with its rows
+  // Fields: each in its crop's color, a shade lighter or darker, with its rows
   for (const f of items("field")) {
     const c = col(`field.${f.crop}.${s}`);
     const ring = (pts) => { pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); };
@@ -132,7 +132,7 @@ export function paint(ctx) {
     }
   }
 
-  // Buildings: a little shadow, then each roof facet in its material's colour, lit from the south
+  // Buildings: a little shadow, then each roof facet in its material's color, lit from the south
   progress(0.6, "Roofs");
   const buildings = items("building");
   g.fillStyle = "rgba(28,38,58,0.3)";
@@ -213,7 +213,7 @@ export function paint(ctx) {
   progress(1, "Done");
 }
 
-/** [r, g, b] of "#rrggbb" or "rgb(...)"; mid grey for anything else. */
+/** [r, g, b] of "#rrggbb" or "rgb(...)"; mid gray for anything else. */
 function rgbOf(color) {
   const hex = /^#([0-9a-f]{6})$/i.exec(color);
   if (hex) { const n = parseInt(hex[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; }

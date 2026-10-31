@@ -5,7 +5,7 @@
  * Blocks: the district minus every street, road, river and square, each buffered to its width.
  * Lots: along each street side of a block, a band as deep as the district type's plots, cut square to the street
  * at varied frontages. The wider street goes first, so it takes the corner plot. Slivers are merged into their
- * neighbour. Whatever is left of a block (its middle, its back edges) is back land.
+ * neighbor. Whatever is left of a block (its middle, its back edges) is back land.
  * Everything in squares. Pure: runs anywhere.
  */
 import { pointInPolygon } from "../geom.mjs";
@@ -20,7 +20,7 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
  * back); bounds: the plot-line style when a district turns plotLines on (yards and crofts; else faint strips);
  * shapes: the chance a house has one rear wing (L), two (U) or wings and a back range round a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
  * merge: the chance a plot is joined to the one before it (a double plot); roofs: roof materials and their weights,
- * of which each district keeps `palette` (picked from its seed), so neighbouring districts can differ; styles: the
+ * of which each district keeps `palette` (picked from its seed), so neighboring districts can differ; styles: the
  * share of each roof form (a terrace row shares its material and form, so it reads as a row); shapes also take T (a
  * wing from the middle of the back); extras: the chance of a bay out to the street (a cross-gable), gabled dormers on
  * a long roof, a round corner turret, a long house built in stepped sections, a square shed being round, and a range
@@ -91,7 +91,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
       const [fmin, fmax] = T.frontage.map((f) => sq(f * (1 + 1.5 * spacious)));
       const ext = extend(run.path, depth);
       const total = pathLen(ext);
-      // Cut positions: varied frontages, the last short one folded into its neighbour
+      // Cut positions: varied frontages, the last short one folded into its neighbor
       const cuts = [0];
       while (cuts[cuts.length - 1] < total) cuts.push(cuts[cuts.length - 1] + fmin + rr.next() * (fmax - fmin));
       if (cuts.length > 2 && total - cuts[cuts.length - 2] < fmin * 0.6) cuts.splice(cuts.length - 2, 1);
@@ -198,7 +198,7 @@ function frontOn(lot, run) {
 }
 
 /**
- * The stretches of a block's edge that face a street: runs of edges lying half the street's width from its centre
+ * The stretches of a block's edge that face a street: runs of edges lying half the street's width from its center
  * line. Returns [{ path, way, width, length }].
  */
 function frontageRuns(outer, ways) {

@@ -2,7 +2,7 @@
  * The FA Nexus art provider: finds each role's Forgotten Adventures files in the user's own FA Nexus catalog and
  * downloads them through FA Nexus (premium files need FA Nexus connected to Patreon). Uses FA Nexus's internal
  * methods, not a published API, so an FA Nexus update can break it; everything here fails soft (a role with no
- * art falls back to a plain colour).
+ * art falls back to a plain color).
  *
  * Always pass the Patreon login state when asking for a download link: asking without it makes FA Nexus treat
  * the login as expired and disconnect Patreon.
@@ -62,7 +62,7 @@ async function loadRoleMap() {
  * progress(pct, label) while downloading.
  */
 export async function resolve(roles, progress = () => {}) {
-  if (!available()) return { art: {}, missing: [...roles], downloaded: 0, why: "FA Nexus isn't active, so the map is painted in plain colours" };
+  if (!available()) return { art: {}, missing: [...roles], downloaded: 0, why: "FA Nexus isn't active, so the map is painted in plain colors" };
   const state = patreonState();
   const premium = !!state;
   // Roles found earlier with the same login, and roles FA Nexus has no files for, need no FA Nexus window
@@ -86,9 +86,9 @@ export async function resolve(roles, progress = () => {}) {
     }
     return { ...res, art: { ...art, ...res.art }, missing: [...missing, ...res.missing] };
   } catch (e) {
-    // FA Nexus changed, or failed: the roles not found earlier fall back to a plain colour, and the render goes on
+    // FA Nexus changed, or failed: the roles not found earlier fall back to a plain color, and the render goes on
     console.warn(`${MOD} | FA Nexus couldn't be used: ${safeMessage(e)}`);
-    return { art, missing: [...missing, ...ask], downloaded: 0, why: `FA Nexus couldn't be used (${safeMessage(e)}), so the map is painted in plain colours` };
+    return { art, missing: [...missing, ...ask], downloaded: 0, why: `FA Nexus couldn't be used (${safeMessage(e)}), so the map is painted in plain colors` };
   } finally {
     if (nexus.opened) {
       try {
@@ -104,12 +104,12 @@ async function resolveWith(app, roles, progress, state) {
   const art = {};
   const missing = [];
   const map = await loadRoleMap();
-  if (!app?._contentService || !app?._downloadManager) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus didn't open, so the map is painted in plain colours" };
+  if (!app?._contentService || !app?._downloadManager) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus didn't open, so the map is painted in plain colors" };
   if (!catalog?.length) {
     const listed = await app._contentService.list("assets");
     const list = Array.isArray(listed) ? listed : Object.values(listed ?? {}).find(Array.isArray);
     catalog = Array.isArray(list) ? list : [];
-    if (!catalog.length) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus's catalog came back empty, so the map is painted in plain colours" };
+    if (!catalog.length) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus's catalog came back empty, so the map is painted in plain colors" };
   }
   const byName = new Map();
   for (const a of catalog) {
