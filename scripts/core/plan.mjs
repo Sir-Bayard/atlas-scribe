@@ -7,6 +7,9 @@
  * Pure: runs in the worker, on the page and under node.
  */
 
+import { CHARACTERS } from "./character.mjs";
+import { USES, TRADES } from "./uses.mjs";
+
 export const PLAN_VERSION = 1;
 
 /**
@@ -110,8 +113,11 @@ export const TYPES = {
       roofStyle: { ...oneOf(ROOF_STYLES, "gable"), fallback: "it's drawn as a gable" },
       variant: num(null, { min: 0 }), // which of the roof art's pieces (else from the seed)
       name: str(),
+      use: { ...oneOf(USES, null), fallback: "it's taken as a house" }, // what it's for (a pinned building keeps its use); named on the scene's labels
       // A pinned generated building keeps how it was drawn: where its chimney stands ({ u, v, variant }), the ends
       // that run into another roof (join) and the hips that start in from a corner (cut)
+      tower: bool(false), // drawn as a tower: a flat roof inside a parapet, a round one too (a pinned watch post)
+      crenels: bool(false), // a tower's parapet notched as battlements
       chimneyAt: { kind: "data", default: null },
       join: { kind: "data", default: null },
       cut: { kind: "data", default: null },
@@ -126,7 +132,11 @@ export const TYPES = {
     fields: {
       name: str(), // what the window and the outlines call it; else its id
       profile: str("village"),
-      gardens: num(0.1, { min: 0, max: 1 }), // the share of houses with a tended garden (true and false still read)
+      character: { ...oneOf(CHARACTERS, "homes"), fallback: "it's built as homes" }, // what it's for, beside how built up it is (see character.mjs)
+      trades: listOf(TRADES), // the trades worked there, each sited by its rule (a crafts district picks some if none are given)
+      notable: bool(true), // a temple, an inn and a smithy of its own, as a place its size would have
+      anchor: bool(true), // its character's landmark on its own square (a temple quarter's cathedral, the nobles' palace)
+      gardens: num(null, { min: 0, max: 1 }), // the share of houses with a tended garden, else its character's (true and false still read)
       density: num(1, { min: 0, max: 1 }),
       surface: oneOf(SURFACES, null), // its streets' surface; else the surface of a road through it
       bend: num(null, { unit: "deg", min: 0, max: 90 }),
@@ -328,7 +338,7 @@ function normalizeFeature(f) {
   if (t.classes && !t.classes.includes(out.class)) out.class = t.classes[0]; // unknown classes are drawn as the default (the checker says so)
   for (const [name, spec] of Object.entries(t.fields)) if (out[name] === undefined) out[name] = fieldDefault(spec, out.class);
   if (f.type === "district" && Object.hasOwn(OLD_PROFILES, out.profile)) out.profile = OLD_PROFILES[out.profile];
-  if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? 0.1 : 0; // M1 plans said true or false
+  if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? null : 0; // M1 plans said true (gardens: its character's share) or false
   // A stream, river or canal given a shape is drawn as a lake: frozen in winter unless the plan says
   if (f.type === "water" && !Array.isArray(f.path) && f.shape != null && f.frozen === undefined && RUNNING.includes(out.class)) out.frozen = null;
   if (f.type === "landmark") out.buildings = (Array.isArray(f.buildings) ? f.buildings : []).map((b) => normalizeFeature({ ...(isObj(b) ? b : {}), type: "building" }));

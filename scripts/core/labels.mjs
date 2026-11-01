@@ -9,6 +9,7 @@
 import { normalize, isObj, LABEL_SIZES } from "./plan.mjs";
 import { shapeToPolygon, insidePoint, distanceToPath, pointInPolygon } from "./geom.mjs";
 import { smoothPlanPaths } from "./smooth.mjs";
+import { USE_INFO, useLabel } from "./uses.mjs";
 
 const isPt = (p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v));
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -102,6 +103,61 @@ export function labelsOf(plan) {
       font: cleanFont(f.font) ?? planFont,
       alpha: Number.isFinite(f.alpha) ? Math.min(1, Math.max(0.1, f.alpha)) : 1,
     });
+  }
+  return out;
+}
+
+/**
+ * Hidden labels for a map's notable buildings (an inn, a temple, a smithy, a warehouse), from its layout: each reads
+ * its use, or the name the GM gave a pinned or drawn building. One per building group, level, at its main part's
+ * middle, small, for the GM only. A building the plan already labels gets none, nor one off the map. Where two
+ * would overlap (or one would cover a plan label), the more telling one stays: a district's centerpiece, then a
+ * plan's building or one of its own (a temple, an inn), then a trade, then a street-corner shrine or watch post.
+ * Same shape as labelsOf.
+ */
+const GROUP = /\/h-(l\d+-\d+|anchor\d+|shrine\d+|watch\d+)$/;
+export function useLabelsOf(plan, layout) {
+  const p = normalize(plan);
+  const scene = isObj(p.output?.scene) ? p.output.scene : {};
+  const color = HEX.test(scene.labelColor ?? "") ? scene.labelColor : "#13202e";
+  const font = cleanFont(scene.labelFont) ?? "Signika";
+  const byId = new Map(p.features.map((f) => [f.id, f]));
+  const labeled = new Set(p.features.filter((f) => f.type === "label" && typeof f.of === "string").map((f) => f.of));
+  const [W, H] = Array.isArray(layout?.size?.squares) ? layout.size.squares : [Infinity, Infinity];
+  const done = new Set();
+  const want = [];
+  for (const b of layout?.items ?? []) {
+    if (b.kind !== "building" || typeof b.use !== "string" || !USE_INFO[b.use]?.notable) continue;
+    // The group it belongs to: a generated building's main part (its parts end in w1, w2...: a house's, a district's
+    // centerpiece's, a street-corner shrine's or watch post's), a plan building or landmark
+    const owner = byId.get(b.from);
+    const planned = !!owner && (owner.type === "building" || owner.type === "landmark");
+    const group = planned ? owner.id : GROUP.test(b.id) ? b.id : null;
+    if (!group || done.has(group) || labeled.has(group)) continue;
+    done.add(group);
+    if (!(b.cx >= 0 && b.cy >= 0 && b.cx <= W && b.cy <= H)) continue;
+    const name = planned && typeof owner.name === "string" && owner.name.trim() ? owner.name.replace(/\s+/g, " ").trim() : null;
+    const rank = /\/h-anchor\d+$/.test(group) ? 0 : planned || USE_INFO[b.use].form ? 1 : /\/h-(shrine|watch)\d+$/.test(group) ? 3 : 2;
+    want.push({ rank, k: want.length, label: { id: `@use:${group}`, of: null, text: name ?? useLabel(b.use), at: [b.cx, b.cy], angle: 0, size: "small", show: "gm", color, font, alpha: 1 } });
+  }
+  // Roughly the box a label takes on the scene, as publish sizes it (the font its size share of a square, the box
+  // its text plus 0.6 of the size wide and 1.6 of it high), turned by its angle (the box around the turned box)
+  const boxOf = (l) => {
+    const sz = LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
+    const w = String(l.text ?? "").length * sz * 0.6 + sz * 0.6, h = sz * 1.6;
+    const a = ((Number.isFinite(l.angle) ? l.angle : 0) * Math.PI) / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+    const hw = (w * c + h * s) / 2, hh = (w * s + h * c) / 2;
+    return [l.at[0] - hw, l.at[1] - hh, l.at[0] + hw, l.at[1] + hh];
+  };
+  const hits = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+  const taken = [];
+  try { for (const l of labelsOf(plan)) if (isPt(l.at)) taken.push(boxOf(l)); } catch { /* a plan whose labels can't be read: none to keep off */ }
+  const out = [];
+  for (const { label } of want.sort((a, b) => a.rank - b.rank || a.k - b.k)) {
+    const box = boxOf(label);
+    if (taken.some((t) => hits(t, box))) continue;
+    taken.push(box);
+    out.push(label);
   }
   return out;
 }

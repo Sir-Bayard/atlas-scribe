@@ -70,6 +70,11 @@ function crossAt(px, py, qx, qy, s) {
 export function traceStreets({ poly, field, roads = [], water = [], blocked = [], gates = [], borders = [], passes = [], r, step = 0.35, maxLength = 300, trimDeadEnds = false }) {
   const finest = Math.min(...passes.filter((p) => p.spacing).map((p) => p.spacing), 8);
   const grid = new SegmentGrid(Math.max(1, finest / 2));
+  /** True when the straight line a-b crosses a blocked shape's edge. */
+  const blockedOn = (a, b) => {
+    for (const sg of grid.near((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.hypot(b[0] - a[0], b[1] - a[1]) / 2 + 1)) if (sg.line.edge === "blocked" && crossAt(a[0], a[1], b[0], b[1], sg) !== null) return true;
+    return false;
+  };
   const lines = [];
   let nextId = 0;
   const addLine = (path, kind, fixed = false, edge = null) => {
@@ -192,6 +197,8 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
         break;
       }
       if (!pointInPolygon([nx, ny], poly)) { end = "edge"; pts.push(edgePoint(x, y, nx, ny, poly)); break; }
+      // Never into a blocked shape (a gate can open right beside one, so a street can start on its edge)
+      if (blocked.some((b) => pointInPolygon([nx, ny], b))) { end = "blocked"; break; }
       if (inWater(nx, ny)) {
         const far = bridgeOver(x, y, hx, hy, pass, mine);
         if (!far) { end = "water"; break; }
@@ -269,12 +276,15 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
         const d = Math.hypot(ex - qx, ey - qy) || 1;
         const ux = (ex - qx) / d, uy = (ey - qy) / d;
         const reach = D * 1.2, fx = ex + ux * reach, fy = ey + uy * reach;
-        let best = null;
+        let best = null, wall = Infinity;
         for (const sg of grid.near(ex, ey, reach + 1)) {
-          if (sg.line.edge === "blocked") continue;
           const t = crossAt(ex, ey, fx, fy, sg);
-          if (t !== null && (!best || t < best.t)) best = { t, sg };
+          if (t === null) continue;
+          if (sg.line.edge === "blocked") wall = Math.min(wall, t);
+          else if (!best || t < best.t) best = { t, sg };
         }
+        // Never through a blocked shape (a landmark's walled block, a plan building) to a street beyond it
+        if (best && best.t > wall) best = null;
         const pt = best && [ex + (fx - ex) * best.t, ey + (fy - ey) * best.t];
         // Towards a neighboring district with no street to meet: it turns back to its own street instead, a short
         // cross lane closing the loop (back lanes joined their high street at the ends of the town)
@@ -314,7 +324,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
             if (!q || Math.hypot(c[0] - e[0], c[1] - e[1]) < Math.hypot(q[0] - e[0], q[1] - e[1])) q = c;
           }
           const lerp = (t) => [e[0] + (q[0] - e[0]) * t, e[1] + (q[1] - e[1]) * t];
-          if (!q || !inPoly(lerp(0.5)) || !inPoly(lerp(0.9))) continue;
+          if (!q || !inPoly(lerp(0.5)) || !inPoly(lerp(0.9)) || blockedOn(e, q)) continue;
           const link = [e, lerp(0.5), q];
           if (endIx) path.push(...link.slice(1)); else path.unshift(...link.slice(1).reverse());
           ends[endIx] = m.from.fixed ? "road" : "junction";

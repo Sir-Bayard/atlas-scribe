@@ -87,7 +87,22 @@ async function publishChecked(plan, image, { scene, force }, check) {
   const title = `AtlasScribe: publishing ${plan.output.scene.name}`;
   const bar = progressBar(title);
   try {
-    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), sceneId: scene, force, check, onProgress: (p, l) => bar.update(p, l) });
+    // The layout names the notable buildings' labels: render's, else laid out again (the same plan lays out the same,
+    // so it can take a while for a big city: it shows on the bar and can be canceled). Should that fail, the scene
+    // is still made, without those labels
+    let layout = image?.layout ?? null, from = 0, lost = null;
+    if (!layout) {
+      from = 0.3;
+      try {
+        layout = (await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(from * p, `Laying out for the labels: ${l ?? ""}`.trim()) })).layout;
+      } catch (e) {
+        if (e.cancelled) throw e;
+        lost = `The notable buildings' hidden labels were left off: laying the map out again for them failed (${e.message}).`;
+      }
+    }
+    check();
+    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), layout, sceneId: scene, force, check, onProgress: (p, l) => bar.update(from + (1 - from) * p, l) });
+    if (lost) res.warnings.push(lost);
     bar.done(`${title}: ${res.created ? "created the scene" : "updated the scene"}${res.backup ? ` (backup: ${res.backup})` : ""}`);
     return res;
   } catch (e) {

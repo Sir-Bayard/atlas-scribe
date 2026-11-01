@@ -4,6 +4,7 @@
  */
 import { makeField } from "./field.mjs";
 import { OLD_PROFILES } from "../plan.mjs";
+import { withCharacterStreets, characterOf } from "../character.mjs";
 import { traceStreets } from "./trace.mjs";
 export { districtGates } from "./borders.mjs";
 
@@ -22,9 +23,9 @@ export const DISTRICT_TYPES = {
   city: { streets: { spacing: [125, 175], width: 15, bridge: "bridge" }, lanes: { spacing: 60, width: 8, bridge: null }, bend: 8, trim: true },
 };
 
-/** A district's type, by its profile (older names read as their new ones: "roadside" a hamlet, "core" a city). */
+/** A district's type, by its profile (older names read as their new ones: "roadside" a hamlet, "core" a city), with its character's changes. */
 export function typeOf(district) {
-  return DISTRICT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? DISTRICT_TYPES.hamlet;
+  return withCharacterStreets(DISTRICT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? DISTRICT_TYPES.hamlet, characterOf(district));
 }
 
 /**

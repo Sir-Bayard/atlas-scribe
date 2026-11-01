@@ -4,9 +4,15 @@
  * come from TYPES in plan.mjs, so a field added there shows up here; FIELD_TEXT gives each its words.
  * Pure: runs in the worker, on the page and under node.
  */
+import { USES, TRADES, useLabel } from "./uses.mjs";
 import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize, isConifer } from "./plan.mjs";
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
+import { CHARACTERS, CHARACTER_LABELS } from "./character.mjs";
 
+/** What the window calls each use, trade and district character. */
+const USE_NAMES = Object.fromEntries(USES.map((u) => [u, useLabel(u).toLowerCase()]));
+const TRADE_NAMES = Object.fromEntries(TRADES.map((u) => [u, useLabel(u).toLowerCase()]));
+const CHARACTER_NAMES = Object.fromEntries(CHARACTERS.map((c) => [c, CHARACTER_LABELS[c].toLowerCase()]));
 /** The district types the window offers (an old plan's "roadside" reads as a hamlet, "core" as a city). */
 export const PROFILE_CHOICES = ["hamlet", "village", "town", "city"];
 
@@ -44,17 +50,24 @@ export const FIELD_TEXT = {
   "square.radial": { label: "Streets ring it", help: "The district's streets circle the square and run out from it" },
 
   "building.roof": { label: "Roof" },
+  "building.use": { label: "Use", names: USE_NAMES, help: "What it's for: a notable use (an inn, a temple, a trade) gets a hidden label on the scene, for the GM", auto: "a house" },
   "building.roofStyle": { label: "Roof form" },
   "building.height": { label: "Height", help: "In feet; taller buildings cast longer shadows" },
   "building.chimney": { label: "Chimney", kind: "tristate", auto: "the generator decides" },
   "building.rot": { label: "Turned", help: "Degrees clockwise", more: true },
   "building.variant": { label: "Art piece", help: "Which of the roof art's pieces it uses; else picked from the seed", more: true },
+  "building.tower": { label: "Tower", help: "Drawn as a tower: a flat roof inside a parapet (a round one too, if its roof form is flat)", more: true },
+  "building.crenels": { label: "Battlements", help: "A tower's parapet notched as battlements", more: true },
   "building.chimneyAt": { hidden: true },
   "building.join": { hidden: true },
   "building.cut": { hidden: true },
 
   "district.profile": { label: "Type", kind: "enum", values: PROFILE_CHOICES, help: "Hamlet: houses on the roads only. Village: a few lanes, deep plots. Town: long plots with back lanes. City: dense rows and alleys." },
-  "district.gardens": { label: "Gardens", help: "The share of houses with a tended garden (0 to 1)" },
+  "district.character": { label: "Character", names: CHARACTER_NAMES, help: "What it's for: shifts its plots, house shapes, gardens, roofs and streets (homes changes nothing)" },
+  "district.trades": { label: "Trades", names: TRADE_NAMES, help: "The trades worked there, each placed by its own rule (tanners by the water, smiths by the roads)", auto: "none, or a crafts district's mix" },
+  "district.anchor": { label: "Centerpiece", help: "Its character's great building on its own square, placed first so the streets lead to it: a cathedral, a palace, the market square and hall, a guildhall, a customs house, a keep, a shrine" },
+  "district.notable": { label: "Notable buildings", help: "A temple, an inn and a smithy of its own, as a place its size would have" },
+  "district.gardens": { label: "Gardens", help: "The share of houses with a tended garden (0 to 1)", auto: "its character's" },
   "district.density": { label: "Built up", help: "Below 1, some plots are left empty (0 to 1)", more: true },
   "district.surface": { label: "Street surface", help: "Else the surface of a road through it", auto: "its road's" },
   "district.bend": { label: "Bend", help: "How much its streets wander, in degrees", auto: "its type's", more: true },
@@ -161,7 +174,7 @@ export function fieldsOf(plan, id) {
     const dflt = fieldDefault(spec, cls);
     let value = f[name];
     if (kind === "share") value = isObj(f[name]) ? f[name][txt.key] : undefined;
-    if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? 0.1 : 0; // an M1 plan's
+    if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? null : 0; // an M1 plan's (true: its character's share)
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
     if (f.type === "prop" && name === "species" && value !== undefined && value !== null) value = isConifer(value) ? "conifer" : "bare"; // "pine" is drawn, and shown, as a fir
     let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);

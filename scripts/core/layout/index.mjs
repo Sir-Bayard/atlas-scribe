@@ -18,24 +18,60 @@ import { seedOf } from "../seeds.mjs";
 import { labelsOf } from "../labels.mjs";
 import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
 import { fillFields, fieldKeepOut, earlierFields, fieldRoads, accessLanes } from "./fields.mjs";
-import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES } from "../streets/index.mjs";
+import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES, typeOf } from "../streets/index.mjs";
 import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
 import { isTownWall, layWall, bandPieces, offsetPath } from "./walls.mjs";
 import { buildOnLots } from "../lots/build.mjs";
+import { centroid, shapes } from "../lots/poly.mjs";
+import { notablesFor, planUses, useLabel, USE_INFO, CLUTTER_FT } from "../uses.mjs";
+import { LOOK, characterOf } from "../character.mjs";
+import { anchorFor, layAnchor } from "./anchors.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
 import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, frozenOf, keepOf, nearWater, segClears, SHORE_REACH } from "../water.mjs";
 import { layDock, shoreRuns } from "./docks.mjs";
 import { shoreLife } from "./shores.mjs";
 
-export const LAYOUT_VERSION = 1;
+export const LAYOUT_VERSION = 2;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
 /** A building's chimney: the one drawn, unless it's pinned where it stood ({ u, v, variant }). */
 const chimneyOf = (b, drawn) => (drawn && okChimney(b.chimneyAt) ? { u: b.chimneyAt.u, v: b.chimneyAt.v, variant: b.chimneyAt.variant } : drawn);
 const tallOf = (heightFt) => Math.max(0, (Number(heightFt) - 20) / 20);
+
+/** How far along a ray (from, unit dir) it meets the segment a-b, or null. */
+function rayHit([ox, oy], [dx, dy], [ax, ay], [bx, by]) {
+  const ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex;
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((ax - ox) * ey - (ay - oy) * ex) / den, u = ((ax - ox) * dy - (ay - oy) * dx) / den;
+  return u >= 0 && u <= 1 ? t : null;
+}
+
+/** Points every step squares along a path, each with the path's direction there: [[point, [dx, dy]]]. */
+function stepsAlong(path, step) {
+  const out = [];
+  let next = step / 2, run = 0; // where the next point falls, and how far along the path this segment starts
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i];
+    const l = Math.hypot(bx - ax, by - ay);
+    if (!l) continue;
+    const d = [(bx - ax) / l, (by - ay) / l];
+    for (; next < run + l; next += step) out.push([[ax + d[0] * (next - run), ay + d[1] * (next - run)], d]);
+    run += l;
+  }
+  return out;
+}
+
+/** A roof for a quarter's back building: one of its character's own materials, else slate. */
+function pickRoof(d, r) {
+  const roofs = (Array.isArray(d.roofs) && d.roofs.length ? Object.fromEntries(d.roofs.map((x) => [x, 1])) : LOOK[characterOf(d)]?.roofs) ?? { slate: 1 };
+  const keys = Object.keys(roofs), total = keys.reduce((a, k) => a + roofs[k], 0);
+  let x = r.next() * total;
+  for (const k of keys) if ((x -= roofs[k]) < 0) return k;
+  return keys[keys.length - 1];
+}
 
 /** The widest street and lane any district type makes, in feet: what a neighbor's street at a gate can be. */
 const GATE_WIDTH = {
@@ -318,6 +354,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       ...(b.cut ? { cut: b.cut } : {}), // hips that start in from their corner, where a flush wing covers it
       chimney: chimneyOf(b, (b.chimney ?? cc) && !round ? { u: 0.3, v: cv ? -0.2 : 0.2, variant: ci } : null),
       ...(b.name ? { name: b.name } : {}),
+      ...(b.use ? { use: b.use } : {}),
+      ...(b.grand ? { grand: true } : {}),
     };
     items.push(item);
     space.buildings.push(item);
@@ -327,6 +365,201 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     space.reserved.push(kept);
     space.plots.push(foot);
     return item;
+  }
+
+  /**
+   * True when a rectangle (its four corners) keeps clear of this district's and the plan's buildings, ways, water,
+   * squares, yards and other kept ground: tested at its corners, the middles of its sides and its middle, and its
+   * outline against every building near it. Things another district placed don't count (see elsewhere).
+   */
+  function rectFree(pts) {
+    catchUp();
+    const samples = [...pts, ...pts.map((p, i) => [(p[0] + pts[(i + 1) % 4][0]) / 2, (p[1] + pts[(i + 1) % 4][1]) / 2]), [(pts[0][0] + pts[2][0]) / 2, (pts[0][1] + pts[2][1]) / 2]];
+    const reach = Math.hypot(pts[2][0] - pts[0][0], pts[2][1] - pts[0][1]) / 2;
+    const [cx, cy] = samples[8];
+    for (const [x, y] of samples) {
+      if (x < 0 || y < 0 || x > W || y > H) return false;
+      for (const k of nearby.ways.near(x, y, 0.02)) { const w = space.ways[nearby.ways.segPath[k]]; if (!elsewhere(w) && nearby.ways.dist(x, y, k) < w.clear + 0.02) return false; }
+      for (const k of nearby.water.near(x, y, 0.02)) { const w = space.water[nearby.water.segPath[k]]; if (nearby.water.dist(x, y, k) < (w.clears ? w.clears[nearby.water.segIndex[k] - 1] : w.clear)) return false; }
+    }
+    for (const k of nearby.buildings.near(cx, cy, reach)) { const b = space.buildings[k]; if (!elsewhere(b) && polygonsOverlap(pts, footOf(b))) return false; }
+    for (const z of space.zones) if (!elsewhere(z) && polygonsOverlap(pts, z)) return false;
+    for (const k of nearby.gardens.near(cx, cy, reach)) { const g = space.gardens[k]; if (!elsewhere(g) && polygonsOverlap(pts, g)) return false; }
+    return true;
+  }
+  /** A building item's footprint (a round one's square box). */
+  function footOf(b) {
+    return b.round ? shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot) : shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot);
+  }
+
+  /**
+   * Builds up one empty middle of a dense quarter's block: rows of buildings square to the nearest street, each inside
+   * the piece and clear of the others, with a little clutter in the gaps. B: the quarter's back numbers (LOOK).
+   */
+  function fillBack(d, shape, k, B, near, r, plots = []) {
+    const piece = shape.outer, holes = shape.holes ?? [];
+    // The plots along the streets (with their boxes): the middle of a block can reach a little into the backs of the
+    // odd plot, and a temple's yard or a mansion's grounds stay open
+    const [px0, py0, px1, py1] = bbox(piece);
+    const near2 = plots.filter(([, b]) => b[0] < px1 && b[2] > px0 && b[1] < py1 && b[3] > py0);
+    const onPlot = (pts) => {
+      const [x0, y0, x1, y1] = bbox(pts);
+      const [mx, my] = [(x0 + x1) / 2, (y0 + y1) / 2];
+      const inset = pts.map(([x, y]) => { const dx = mx - x, dy = my - y, l = Math.hypot(dx, dy) || 1, t = Math.min(0.08, l * 0.4) / l; return [x + dx * t, y + dy * t]; });
+      return near2.some(([p, b]) => b[0] < x1 && b[2] > x0 && b[1] < y1 && b[3] > y0 && polygonsOverlap(inset, p));
+    };
+    const [cx0, cy0] = centroid(piece);
+    let dir = [1, 0], bd = Infinity;
+    for (const w of near) for (let i = 1; i < w.path.length; i++) {
+      const [ax, ay] = w.path[i - 1], [bx, by] = w.path[i];
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((cx0 - ax) * dx + (cy0 - ay) * dy) / l2));
+      const dd = Math.hypot(ax + t * dx - cx0, ay + t * dy - cy0);
+      if (dd < bd) { bd = dd; const l = Math.sqrt(l2); dir = [dx / l, dy / l]; }
+    }
+    const [ux, uy] = dir, nxv = -uy, nyv = ux;
+    const rot = (Math.atan2(uy, ux) * 180) / Math.PI;
+    const us = piece.map(([x, y]) => (x - cx0) * ux + (y - cy0) * uy), vs = piece.map(([x, y]) => (x - cx0) * nxv + (y - cy0) * nyv);
+    const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
+    const ext = (range) => (range[0] + r.next() * (range[1] - range[0])) / sq;
+    const gap = B.gap / sq;
+    const placed = [];
+    // Corners in the piece, none of its corners (or a hole's) poking in, and no hole under it
+    const inside = (pts) => pts.every((p) => pointInPolygon(p, piece)) && !piece.some((p) => pointInPolygon(p, pts)) && !holes.some((h) => polygonsOverlap(h, pts)) && !onPlot(pts);
+    let n = 0, m = 0;
+    for (let v = v0 + gap; v < v1 - gap && n < 200; ) {
+      const dd = ext(B.dep);
+      for (let u = u0 + gap; u < u1 - gap && n < 200; ) {
+        const ll = ext(B.len);
+        const cu = u + ll / 2, cv = v + dd / 2;
+        const x = cx0 + ux * cu + nxv * cv, y = cy0 + uy * cu + nyv * cv;
+        const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [x + ux * (a * ll) / 2 + nxv * (b * dd) / 2, y + uy * (a * ll) / 2 + nyv * (b * dd) / 2]);
+        // Now and then a gap is left open: a yard with the quarter's clutter, or (a close) a garden or an orchard
+        const open = r.next() < (B.gardens ? 0.4 : 0.15);
+        if (!open && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
+          placed.push(pts);
+          addBuilding({ shape: { rect: [x - ll / 2, y - dd / 2, x + ll / 2, y + dd / 2] }, rot, roof: pickRoof(d, r), variant: r.int(8), roofStyle: "gable", height: 15, chimney: B.use === "house" ? undefined : false, use: B.use }, `${d.id}/o-b${k}-${++n}`, r.fork("b", n), d.id);
+        } else if (open && B.gardens && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
+          placed.push(pts);
+          if (r.next() < 0.6) {
+            const garden = { cx: x, cy: y, w: ll * 0.9, d: dd * 0.9, rot, strip: true };
+            items.push({ kind: "surface", id: `${d.id}/g-b${k}-${++m}`, from: d.id, class: "garden", garden });
+            const gp = shapeToPolygon({ rect: [x - ll * 0.45, y - dd * 0.45, x + ll * 0.45, y + dd * 0.45] }, rot);
+            owner.set(gp, d.id);
+            space.gardens.push(gp);
+          } else for (const [a2, b2] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) {
+            const tx = x + ux * a2 * ll + nxv * b2 * dd, ty = y + uy * a2 * ll + nyv * b2 * dd;
+            items.push({ kind: "tree", id: `${d.id}/t-b${k}-${++m}`, from: d.id, x: tx, y: ty, species: "bare", size: null, s: 0.35 + r.next() * 0.1, rot: r.next() * 360, variant: r.int(8) });
+          }
+        } else if (open && B.clutter?.length && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
+          placed.push(pts); // the yard stays open
+          const cls = B.clutter[r.int(B.clutter.length)];
+          items.push({ kind: "prop", id: `${d.id}/q-b${k}-${++m}`, from: d.id, class: cls, x, y, rot: rot + r.next() * 30, variant: r.int(8), scale: (CLUTTER_FT[cls] ?? 6) / sq / (PROP_SQUARES[cls] ?? 0.45) });
+        }
+        u += ll + gap;
+      }
+      v += dd + gap;
+    }
+  }
+
+  /** Puts a district's anchor on the map: its square, buildings, garden, walls, props and trees. */
+  function addAnchor(d, A, r) {
+    A.surfaces.forEach((x, k) => items.push({ kind: "surface", id: `${d.id}/anchor-s${k + 1}`, from: d.id, class: x.class, poly: x.poly, ...(x.surface ? { surface: x.surface } : {}) }));
+    // The landmark and its parts, ids as a house's (the first, then w1, w2...), so it's picked and pinned as one
+    A.buildings.forEach((b, k) => addBuilding(b.spec, k ? `${d.id}/h-anchor0w${k}` : `${d.id}/h-anchor0`, r.fork(b.key), d.id));
+    A.walls.forEach((path, k) => items.push({ kind: "wall", id: `${d.id}/anchor-v${k + 1}`, from: d.id, class: "stone", path, height: 6 / sq }));
+    A.hedges.forEach((path, k) => items.push({ kind: "boundary", id: `${d.id}/anchor-h${k + 1}`, from: d.id, class: "clipped", path }));
+    A.props.forEach((x, k) => items.push({ kind: "prop", id: `${d.id}/anchor-q${k + 1}`, from: d.id, class: x.class, x: x.x, y: x.y, rot: x.rot, variant: r.int(8), scale: (x.size ?? CLUTTER_FT[x.class] ?? 6) / sq / (PROP_SQUARES[x.class] ?? 0.45) }));
+    A.trees.forEach((t, k) => items.push({ kind: "tree", id: `${d.id}/anchor-t${k + 1}`, from: d.id, x: t.x, y: t.y, species: t.species ?? "bare", size: t.size ?? null, s: t.s, rot: t.rot, variant: t.variant }));
+    // The temple's yard holds its graves (a churchyard is where a parish buries its own; big cemeteries lie outside)
+    for (const yard of A.surfaces.filter((x) => x.class === "churchyard")) addGraves(d, yard.poly, A.rot ?? 0, graveCount(d, true), r.fork("graves"));
+    // Kept clear, so nothing else is built on it
+    const kept = A.block;
+    owner.set(kept, d.id);
+    space.reserved.push(kept);
+    space.zones.push(kept);
+  }
+
+  /**
+   * Wells, fountains, shrines and watch posts at the corners of a district's streets: just off a street where two
+   * meet or one ends, on free ground, kept apart from each other.
+   */
+  function streetCorners(d, poly, own, want, r) {
+    // Where two of its own streets meet (a well or fountain stands right there, in the crossing; never on the plan's
+    // roads), and spots along every street just off it (a shrine or watch post, where there's room)
+    const junctions = [];
+    for (const w of own) for (const end of [w.path[0], w.path[w.path.length - 1]]) {
+      if (own.some((o) => o !== w && distanceToPath(end, o.path) < (o.width ?? 0.6) / 2 + 0.1) && !ways.some((o) => distanceToPath(end, o.path) < (o.width ?? 0.6) / 2 + 0.6)) junctions.push(end);
+    }
+    const spots = [];
+    for (const w of own) for (const [at, dir] of stepsAlong(w.path, 2.5)) for (const s of [-1, 1]) spots.push({ at, dir, side: s, width: w.width });
+    const order = r.shuffle(spots), crossings = r.shuffle(junctions);
+    // What this district has already put down that space doesn't hold (walls, props, trees, kilns), to keep off
+    const mine = items.filter((i) => i.from === d.id && (i.kind === "prop" || i.kind === "tree" || i.kind === "kiln"));
+    const myWalls = items.filter((i) => i.from === d.id && i.kind === "wall");
+    const clearOfMine = (x, y, rad) => !mine.some((i) => Math.hypot(i.x - x, i.y - y) < rad + (i.rad ?? 0.25)) && !myWalls.some((w) => distanceToPath([x, y], w.path) < rad + 0.1);
+    const ownBuildings = space.buildings.filter((b) => owner.get(b) === d.id || owner.get(b) === b.from && !dfeats.some((f) => f.id === owner.get(b)));
+    const taken = [];
+    const SIZE = { well: 10, fountain: 18, shrine: 12, watch: 14 }; // feet across
+    for (const [what, n] of Object.entries(want)) {
+      let left = n;
+      if (what === "well" || what === "fountain") {
+        for (const [x, y] of crossings) {
+          if (left <= 0) break;
+          const size = SIZE[what] / sq;
+          if (!pointInPolygon([x, y], poly) || taken.some(([tx, ty]) => Math.hypot(tx - x, ty - y) < 6) || !clearOfMine(x, y, size / 2)) continue;
+          if (ownBuildings.some((b) => Math.hypot(b.cx - x, b.cy - y) < Math.max(b.len, b.dep) / 2 + size / 2)) continue;
+          taken.push([x, y]);
+          left--;
+          items.push({ kind: "prop", id: `${d.id}/x-${what}${taken.length}`, from: d.id, class: what, x, y, rot: 0, variant: r.int(8), scale: (what === "fountain" ? 18 : 8) / sq / 0.45 });
+        }
+      }
+      for (const sp of order) {
+        if (left <= 0) break;
+        const size = SIZE[what] / sq, reach = (size / 2) * Math.SQRT2; // a turned square's corners reach farther
+        const off = sp.width / 2 + reach + 0.25, along = reach + 0.4;
+        const x = sp.at[0] + sp.dir[0] * along - sp.dir[1] * off * sp.side, y = sp.at[1] + sp.dir[1] * along + sp.dir[0] * off * sp.side;
+        const rot = (Math.atan2(sp.dir[1], sp.dir[0]) * 180) / Math.PI;
+        const box = shapeToPolygon({ rect: [x - reach, y - reach, x + reach, y + reach] });
+        if (!box.every((p) => pointInPolygon(p, poly)) || taken.some(([tx, ty]) => Math.hypot(tx - x, ty - y) < 6)) continue;
+        if (!free(x, y, reach + 0.1, reach) || !rectFree(box) || !clearOfMine(x, y, reach)) continue;
+        taken.push([x, y]);
+        left--;
+        if (what === "shrine") addBuilding({ shape: { rect: [x - size / 2, y - size / 2, x + size / 2, y + size / 2] }, rot, roof: "slate", roofStyle: "pyramid", height: 22, chimney: false, use: "shrine" }, `${d.id}/h-shrine${taken.length}`, r.fork("shrine", taken.length), d.id);
+        else if (what === "watch") addBuilding({ shape: { circle: [x, y, size / 2] }, rot, roof: "slate-black", roofStyle: "flat", height: 34, chimney: false, tower: true, crenels: true, use: "watch" }, `${d.id}/h-watch${taken.length}`, r.fork("watch", taken.length), d.id);
+        else items.push({ kind: "prop", id: `${d.id}/x-${what}${taken.length}`, from: d.id, class: what, x, y, rot, variant: r.int(8), scale: (what === "fountain" ? SIZE.fountain : 8) / sq / 0.45 });
+      }
+    }
+  }
+
+  /** How many graves a temple's yard holds: more in a bigger place, most around a cathedral. */
+  function graveCount(d, cathedral) {
+    return Math.round(({ hamlet: 8, village: 14, town: 22, city: 30 }[d.profile] ?? 14) * (cathedral ? 1.6 : 1));
+  }
+  /**
+   * Graves in rows in a temple's yard, square to the temple, each clear of buildings, trees and each other.
+   */
+  function addGraves(d, poly, rot, count, r) {
+    const ux = Math.cos((rot * Math.PI) / 180), uy = Math.sin((rot * Math.PI) / 180);
+    const [cx, cy] = centroid(poly);
+    const us = poly.map(([x, y]) => (x - cx) * ux + (y - cy) * uy), vs = poly.map(([x, y]) => -(x - cx) * uy + (y - cy) * ux);
+    const step = 14 / sq, row = 20 / sq;
+    const spots = [];
+    // Only this district's own trees (another district's never reach into its temple's yard, and reading another
+    // feature's would tie these graves to it, outside the district's cache key; a grave under a plan's tree is taken
+    // out after, with the other districts' clean-up)
+    const trees = items.filter((t) => t.kind === "tree" && t.from === d.id);
+    for (let v = Math.min(...vs) + row / 2; v < Math.max(...vs); v += row) for (let u = Math.min(...us) + step / 2; u < Math.max(...us); u += step) {
+      const x = cx + ux * u - uy * v, y = cy + uy * u + ux * v;
+      if (pointInPolygon([x, y], poly) && free(x, y, 0.3, 0.2) && !trees.some((t) => Math.abs(t.x - x) < 0.8 && Math.abs(t.y - y) < 0.8)) spots.push([x, y]);
+    }
+    // Rows filled from one side, a few gaps left, so the yard reads as used but not full
+    let n = 0;
+    for (const [x, y] of spots) {
+      if (n >= count) break;
+      if (r.next() < 0.25) continue;
+      items.push({ kind: "prop", id: `${d.id}/grave${++n}-${Math.round(x * 10)}`, from: d.id, class: "grave", x, y, rot: rot + 90 + (r.next() - 0.5) * 8, variant: r.int(8), scale: 9 / sq / 0.45 });
+    }
   }
 
   function addProp(f, r) {
@@ -422,6 +655,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // (streets end there, and only roads pass, through gates)
   const wallBands = [];
   const gatedBy = new Set(); // what has a gate through a wall
+  const wallGatePts = []; // where the gates stand
   {
     // (and quays: one with no water near it yet may be moved onto a moat, below, so it gets a gate where it crosses
     // and keeps towers off it, but doesn't stop the wall where it only runs over it)
@@ -434,7 +668,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     for (const f of plan.features.filter(isTownWall)) {
       const r = streamFor(f.id);
       const w = layWall(f, { roads: roadsSq, waters: watersSq, sq, r: r.fork("wall") });
-      for (const g of w.gates) gatedBy.add(g.road);
+      for (const g of w.gates) { gatedBy.add(g.road); if (Array.isArray(g.at)) wallGatePts.push(g.at); }
       if (!w.runs.length && !w.notes.some((n) => /too short|all gates or water/.test(n.message))) notes.push({ level: "warning", id: f.id, message: `Nothing of "${f.id}" is built: all of it lies on roads or water.` });
       // Each run carries its outer face (where the battlements are) and its inner one
       w.runs.forEach((path, k) => items.push({ kind: "wall", id: w.runs.length === 1 ? f.id : `${f.id}/r${k + 1}`, from: f.id, class: f.class, path, height: ft(f.height), tall: tallOf(f.height ?? 25), thickness: ft(f.thickness), side: w.side, face: offsetPath(path, (w.side * ft(f.thickness)) / 2), back: offsetPath(path, (-w.side * ft(f.thickness)) / 2) }));
@@ -523,7 +757,35 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     ...waterItems.flatMap((w) => (w.widths ? w.path.slice(1).map((b, i) => ({ path: [w.path[i], b], width: Math.max(w.widths[i], w.widths[i + 1]) })) : [w])),
     ...bodies.flatMap((b) => b.runs.map((path) => ({ path, width: 2 * (b.keep - 0.1) }))),
   ];
-  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.seed, sq, W, H, waterItems, space.water, radials, bodies.length ? lotWater : 0])).join(".") : null;
+  // Each settlement's notable buildings shared out among its districts, and what the trades are sited by: the water
+  // (rivers flow from their first point), the plan's roads, the squares and greens, the wind for smoke
+  const roadIds = new Set(plan.features.filter((f) => f.type === "road").map((f) => f.id));
+  const useWater = [...waterItems.map((w) => ({ path: w.path, width: w.width })), ...bodies.map((b) => ({ ring: b.ring }))];
+  const greens = [...plan.features.filter((f) => f.type === "square").map((f) => shapeToPolygon(f.shape)), ...parks.filter((f) => f.style !== "formal").map((f) => shapeToPolygon(f.shape, f.rot ?? 0))];
+  const notables = notablesFor({ dlist: dlist.map((x) => ({ ...x, feature: dfeats.find((f) => f.id === x.id) })), squares: greens, roads: ways.filter((w) => roadIds.has(w.id)), gates: wallGatePts, r: rng(plan.seed, "notables") });
+  const wind = rng(plan.seed, "wind").next() * 360;
+  // Buildings the plan already has with a use (drawn, or pinned), by the district they stand in: a district doesn't
+  // build another inn because the GM pinned its inn
+  const planUsesIn = new Map();
+  for (const f of plan.features) {
+    const bs = f.type === "building" ? [f] : f.type === "landmark" ? f.buildings ?? [] : [];
+    const counted = new Set();
+    for (const b of bs) {
+      if (typeof b.use !== "string" || counted.has(b.use)) continue;
+      const [x0, y0, x1, y1] = bbox(shapeToPolygon(b.shape ?? { rect: [0, 0, 0, 0] }));
+      const home = dlist.find((x) => pointInPolygon([(x0 + x1) / 2, (y0 + y1) / 2], x.poly));
+      if (!home) continue;
+      counted.add(b.use); // a landmark's parts share a use: one building
+      const m = planUsesIn.get(home.id) ?? {};
+      m[b.use] = (m[b.use] ?? 0) + 1;
+      planUsesIn.set(home.id, m);
+    }
+  }
+  /** A list of uses less those the plan already has (each counted once). */
+  const lessPlanned = (list, have = {}) => { const left = { ...have }; return list.filter((u) => !(left[u] > 0 && left[u]--)); };
+  /** Counts of small things less those the plan already has. */
+  const reduceBy = (want, have = {}) => Object.fromEntries(Object.entries(want).map(([k, n]) => [k, Math.max(0, n - (have[k] ?? 0))]));
+  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.seed, sq, W, H, waterItems, space.water, radials, bodies.length ? lotWater : 0, wind])).join(".") : null;
   // What was placed before the districts, with each thing's box (the districts add to space as they fill). A district
   // sees only what lies within KEY_MARGIN squares of it, with or without the cache, so its key covers all it reads
   const placed = Object.fromEntries(["reserved", "zones", "plots", "buildings", "ways", "gardens"].map((k) => [k, space[k].map((v) => [v, boxOf(v)])]));
@@ -548,7 +810,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const overlaps = [...touching].some((k) => k.startsWith(`${d.id}|`));
     let key = null;
     if (cache && !overlaps) {
-      key = hash128(keyJSON([shared, d, seedOf(plan, d.id), gates.get(d.id) ?? [], borders, dlist.filter((o) => o.id !== d.id).flatMap((o) => sharedEdges(poly, o.poly)), nearHere, around])).join(".");
+      key = hash128(keyJSON([shared, d, seedOf(plan, d.id), notables.get(d.id) ?? null, planUsesIn.get(d.id) ?? null, [...roadIds], gates.get(d.id) ?? [], borders, dlist.filter((o) => o.id !== d.id).flatMap((o) => sharedEdges(poly, o.poly)), nearHere, around])).join(".");
     }
     if (key && districtCache.has(key)) {
       cacheStats.hits++;
@@ -572,12 +834,89 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     if (key) cacheStats.misses++;
     const mark = { items: items.length, buildings: space.buildings.length, reserved: space.reserved.length, plots: space.plots.length, gardens: space.gardens.length, ways: space.ways.length, notes: notes.length };
     const r = streamFor(d.id);
+    // Its anchor first, the landmark its character is known by, on its own square: the streets lead to it and the
+    // plots keep off it (where it stands hangs on the district's shape and roads, not its seed)
+    const anchorAt = anchorFor({ district: d, poly, roads: nearHere, water: space.water, blocked: [...around.zones, ...around.plots], ftPerSquare: sq });
+    const anchor = anchorAt ? layAnchor(anchorAt, r.fork("anchor"), sq) : null;
+    // A band along a path (half its width each side) that stays in the district, off water, the plan's roads, squares,
+    // yards and buildings: where the anchor's ring and approach streets may run
+    // (bandWhy says what's in the way: "road" when it's only a plan road, which can stand in for the street; skip: a
+    // road it may meet)
+    const bandWhy = (path, half, skip = null) => {
+      catchUp();
+      let road = false;
+      for (const [p] of stepsAlong(path, 0.4)) {
+        if (!pointInPolygon(p, poly)) return "other";
+        for (const k of nearby.water.near(p[0], p[1], half)) { const w = space.water[nearby.water.segPath[k]]; if (nearby.water.dist(p[0], p[1], k) < half + (w.clears ? w.clears[nearby.water.segIndex[k] - 1] : w.clear)) return "other"; }
+        if ([...around.zones, ...around.plots].some((z) => pointInPolygon(p, z) || distanceToPath(p, closed(z)) < half)) return "other";
+        if (nearHere.some((w) => w !== skip && distanceToPath(p, w.path) < w.width / 2 + half)) road = true;
+      }
+      return road ? "road" : null;
+    };
+    const bandClear = (path, half, skip = null) => bandWhy(path, half, skip) === null;
+    // A street all around the anchor's block, so the houses about it face it, as a square's do (where it fits); the
+    // district's own streets then stop at its outer edge rather than on the block's walls
+    const ringWidth = sq ? (typeOf(d).streets?.width ?? 15) / sq : 0.6;
+    // A side the main road already runs along is left to the road (the anchor often stands by it); anything else in
+    // the way, and there's no ring. anchorRing: the ring's corners; ringRuns: the stretches laid, front (the side
+    // facing out, R[0] to R[1]) first if it's laid
+    let anchorRing = null, ringRuns = [], frontOnRoad = false;
+    if (anchor) {
+      const g = ringWidth / 2 + 0.02;
+      const R = shapeToPolygon({ rect: [anchor.center[0] - anchor.w / 2 - g, anchor.center[1] - anchor.h / 2 - g, anchor.center[0] + anchor.w / 2 + g, anchor.center[1] + anchor.h / 2 + g] }, anchor.rot);
+      const why = R.map((a, k) => bandWhy([a, R[(k + 1) % 4]], ringWidth / 2));
+      if (!why.includes("other") && why.some((w) => w === null)) {
+        anchorRing = R;
+        if (why.every((w) => w === null)) ringRuns = [[...R, R[0]]];
+        else {
+          // Runs of laid sides, each from the corner after a road side
+          const start = why.findIndex((w, k) => w === null && why[(k + 3) % 4] !== null);
+          let cur = null;
+          for (let n = 0; n < 4; n++) {
+            const k = (start + n) % 4;
+            if (why[k] !== null) { cur = null; continue; }
+            if (!cur) { cur = [R[k]]; ringRuns.push(cur); }
+            cur.push(R[(k + 1) % 4]);
+          }
+        }
+      }
+      // Its front: the side whose middle is nearest where the approach starts
+      const fp = anchor.approach?.[0];
+      if (fp) {
+        const mids = R.map((a, k) => [(a[0] + R[(k + 1) % 4][0]) / 2, (a[1] + R[(k + 1) % 4][1]) / 2]);
+        const fk = mids.reduce((b, m, k) => (Math.hypot(m[0] - fp[0], m[1] - fp[1]) < Math.hypot(mids[b][0] - fp[0], mids[b][1] - fp[1]) ? k : b), 0);
+        frontOnRoad = why[fk] === "road";
+      }
+    }
+    // (with no ring, a street's half width short of the walls, so its end doesn't run over them)
+    const grow = anchorRing ? ringWidth + 0.05 : ringWidth / 2 + 0.05;
+    const streetStop = anchor ? shapeToPolygon({ rect: [anchor.center[0] - anchor.w / 2 - grow, anchor.center[1] - anchor.h / 2 - grow, anchor.center[0] + anchor.w / 2 + grow, anchor.center[1] + anchor.h / 2 + grow] }, anchor.rot) : null;
     const made = streetsFor({
-      district: d, poly, roads: fixedHere, water: space.water, radials, blocked: streetBlocked, gates: gates.get(d.id) ?? [], borders,
+      district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, anchor.radial] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
     made.streets = trimAtBuildings(made.streets, around.plots);
-    const surface = d.surface ?? fixedHere.find((w) => !w.quay)?.surface ?? "dirt";
+    for (const path of ringRuns) made.streets.push({ path, kind: "street", width: ringWidth, ends: [], ring: true });
+    // The anchor's square opens onto the town: a street straight out from the middle of its front to the nearest
+    // street or road it meets, where that way is clear
+    // (none when its front is on the main road already); checked up to the edge of the way it meets
+    if (anchor?.approach && !frontOnRoad) {
+      const [front, dir] = anchor.approach;
+      const from = anchorRing ? [front[0] + dir[0] * ringWidth, front[1] + dir[1] * ringWidth] : front;
+      const others = [...made.streets.filter((st) => !st.ring).map((st) => ({ path: st.path, width: st.width ?? ringWidth, road: null })), ...nearHere.map((w) => ({ path: w.path, width: w.width, road: w }))];
+      let hit = null;
+      for (const o of others) for (let i = 1; i < o.path.length; i++) {
+        const t = rayHit(from, dir, o.path[i - 1], o.path[i]);
+        if (t !== null && t > 0.2 && (!hit || t < hit.t)) hit = { t, o };
+      }
+      const to = hit ? [from[0] + dir[0] * hit.t, from[1] + dir[1] * hit.t] : null;
+      const upTo = hit ? hit.t - hit.o.width / 2 - 0.05 : 0;
+      if (to && hit.t < 25 && upTo > 0.1 && bandClear([from, [from[0] + dir[0] * upTo, from[1] + dir[1] * upTo]], ringWidth / 2, hit.o.road)) made.streets.push({ path: [from, to], kind: "street", width: ringWidth, ends: [] });
+    }
+    // How its character shows: the ground under it, its streets' surface, trees along them, its blocks built up
+    const look = LOOK[characterOf(d)] ?? {};
+    const surface = d.surface ?? look.street ?? fixedHere.find((w) => !w.quay)?.surface ?? "dirt";
+    if (look.ground) items.push({ kind: "surface", id: `${d.id}/ground`, from: d.id, class: "quarter", poly, ...look.ground });
     const own = [];
     made.streets.forEach((st, k) => {
       const item = { kind: "way", id: `${d.id}/s${k + 1}`, from: d.id, class: st.kind, path: st.path, width: st.width, surface, ruts: false };
@@ -594,12 +933,38 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // Plots along every road and street, and what stands on them. Each gate is kept clear too: the neighbor's street
     // starts there, and its width reaches a little over the shared edge even where this district's street doesn't
     const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
-    const keepOff = [...blocked, ...gateClear];
+    const keepOff = [...blocked, ...gateClear, ...(anchor ? [anchor.block] : [])];
     const { lots, back } = lotsFor({ district: d, poly, ways: [...nearHere, ...own], water: lotWater, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
-    const built = buildOnLots({ lots, district: d, ways: [...nearHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build") });
+    // Which plots go to its notable buildings, trades and shops
+    const note = notables.get(d.id);
+    const usesFor = (tryForm) => planUses({ district: d, lots, ways: [...nearHere, ...own], want: lessPlanned((note?.want ?? []).filter((u) => !(anchor && u === "temple" && anchorAt.kind === "temple")), planUsesIn.get(d.id)), ctx: note?.ctx ?? { center: centroid(poly), radius: 10, gates: [], squares: [] }, water: useWater, roadIds, ftPerSquare: sq, r: r.fork("uses"), tryForm });
+    const built = buildOnLots({ lots, district: d, ways: [...nearHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build"), usesFor });
+    const uses = built.uses;
     filling = d.id;
-    for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
+    if (anchor) addAnchor(d, anchor, r.fork("anchor-fill"));
+    const smoky = [];
+    for (const h of built.houses) { const item = addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id); if (h.smoke) smoky.push([item, h.smoke]); }
     for (const o of built.outbuildings) addBuilding(o.building, `${d.id}/o-${o.id}`, o.r, d.id);
+    // Smoke from a forge's, kiln's or oven's chimney (or its middle), drifting with the map's wind
+    for (const [b, tint] of smoky) {
+      const a = (b.rot * Math.PI) / 180, u = b.chimney ? b.chimney.u * b.len : 0, v = b.chimney ? b.chimney.v * b.dep : 0;
+      items.push({ kind: "smoke", id: `${b.id}/smoke`, from: d.id, x: b.cx + u * Math.cos(a) - v * Math.sin(a), y: b.cy + u * Math.sin(a) + v * Math.cos(a), tint, s: 1, wind });
+    }
+    built.kilns.forEach((k, n) => {
+      items.push({ kind: "kiln", id: `${d.id}/k${n + 1}`, from: d.id, x: k.x, y: k.y, rad: k.rad });
+      items.push({ kind: "smoke", id: `${d.id}/k${n + 1}/smoke`, from: d.id, x: k.x, y: k.y, tint: USE_INFO[k.use]?.smoke ?? "gray", s: 1.2, wind });
+      const kp = shapeToPolygon({ circle: [k.x, k.y, k.rad] }, 0, 12);
+      owner.set(kp, d.id);
+      space.plots.push(kp);
+    });
+    built.surfaces.forEach((x, k) => items.push({ kind: "surface", id: `${d.id}/u${k + 1}`, from: d.id, class: x.class, poly: x.poly, surface: x.surface }));
+    for (const x of built.surfaces.filter((x) => x.class === "churchyard")) {
+      const t = built.houses.find((h) => h.site === "temple" && pointInPolygon([(h.building.shape.rect?.[0] + h.building.shape.rect?.[2]) / 2, (h.building.shape.rect?.[1] + h.building.shape.rect?.[3]) / 2], x.poly));
+      addGraves(d, x.poly, t?.building.rot ?? 0, graveCount(d, false), r.fork("graves", x.poly.length, Math.round(x.poly[0][0] * 10)));
+    }
+    built.pits.forEach((x, k) => items.push({ kind: "pit", id: `${d.id}/p${k + 1}`, from: d.id, ...x }));
+    built.walls.forEach((path, k) => items.push({ kind: "wall", id: `${d.id}/v${k + 1}`, from: d.id, class: "stone", path, height: 5 / sq }));
+    built.props.forEach((x, k) => items.push({ kind: "prop", id: `${d.id}/q${k + 1}`, from: d.id, class: x.class, x: x.x, y: x.y, rot: x.rot, variant: x.variant, scale: (CLUTTER_FT[x.class] ?? 6) / sq / (PROP_SQUARES[x.class] ?? 0.45) }));
     built.gardens.forEach((garden, k) => {
       items.push({ kind: "surface", id: `${d.id}/g${k + 1}`, from: d.id, class: "garden", garden });
       const gp = shapeToPolygon({ rect: [garden.cx - garden.w / 2, garden.cy - garden.d / 2, garden.cx + garden.w / 2, garden.cy + garden.d / 2] }, garden.rot);
@@ -609,20 +974,39 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     built.crofts.forEach((poly, k) => items.push({ kind: "surface", id: `${d.id}/c${k + 1}`, from: d.id, class: "croft", poly }));
     built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
     // Trees in the plots: orchards in rows and trees about the yards
-    built.trees.forEach((t, k) => items.push({ kind: "tree", id: `${d.id}/y${k + 1}`, from: d.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
+    built.trees.forEach((t, k) => items.push({ kind: "tree", id: `${d.id}/y${k + 1}`, from: d.id, x: t.x, y: t.y, species: t.species ?? "bare", size: t.size ?? null, s: t.s, rot: t.rot, variant: t.variant }));
     // Ground no plot takes (beyond the back lanes, the middle of big blocks): trees scattered evenly (Poisson-disk),
     // thinned in patches by a noise, so they gather in clumps with open ground between
     const T = lotTypeOf(d);
     const wr = r.fork("wild");
     const patch = makeNoise(plan.seed, `${d.id}/wild`, { scale: 6, octaves: 2 });
     let wild = 0;
-    back.forEach((poly, k) => {
+    // A dense quarter builds up the middles of its blocks instead: rows of stores, workshops or shacks square to the
+    // nearest street, with its clutter between them
+    const keepPlots = look.back ? [...lots.map((l) => l.poly), ...built.surfaces.filter((x) => x.poly).map((x) => x.poly)].map((p) => [p, bbox(p)]) : [];
+    if (look.back) shapes(back).forEach((piece, k) => fillBack(d, piece, k, look.back, [...nearHere, ...own], r.fork("back", k), keepPlots));
+    else back.forEach((poly, k) => {
       const pts = poissonInPolygon(poly, T.wild ?? 1.5, wr.fork(k), { keep: (x, y) => patch(x, y) > -0.1 && free(x, y, 0.45), max: 400 });
       for (const [x, y] of pts) {
         wild++;
         items.push({ kind: "tree", id: `${d.id}/w${wild}`, from: d.id, x, y, species: "bare", size: null, s: 0.4 + wr.next() * 0.25, rot: wr.next() * 360, variant: wr.int(8) });
       }
     });
+    // Trees along its main streets (a nobles' or temple quarter's), where there's room
+    if (look.streetTrees) {
+      const tr = r.fork("avenue");
+      let n = 0;
+      for (const st of own.filter((w) => w.class === "street")) {
+        for (const [p, dir] of stepsAlong(st.path, 35 / sq)) for (const side of [-1, 1]) {
+          const off = st.width / 2 + 7 / sq;
+          const x = p[0] - dir[1] * off * side, y = p[1] + dir[0] * off * side;
+          if (!pointInPolygon([x, y], poly) || !free(x, y, 0.4, 0.3)) continue;
+          items.push({ kind: "tree", id: `${d.id}/a${++n}`, from: d.id, x, y, species: "bare", size: null, s: 0.42 + tr.next() * 0.12, rot: tr.next() * 360, variant: tr.int(8) });
+        }
+      }
+    }
+    // Small things by its streets: wells, fountains, wayside shrines, watch posts (its character says how many)
+    if (look.extras) streetCorners(d, poly, own.filter((w) => w.class !== "back"), reduceBy(look.extras, planUsesIn.get(d.id)), r.fork("extras"));
     filling = null;
     const remember = () => {
       if (!key) return;
@@ -632,7 +1016,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       }));
       while (districtCache.size > DISTRICT_CACHE_SIZE) districtCache.delete(districtCache.keys().next().value);
     };
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} ${own.length === 1 ? "street or lane" : "streets and lanes"}, ${made.bridges.length} ${made.bridges.length === 1 ? "bridge" : "bridges"}, ${lots.length} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} ${own.length === 1 ? "street or lane" : "streets and lanes"}, ${made.bridges.length} ${made.bridges.length === 1 ? "bridge" : "bridges"}, ${lots.length - uses.sites.reduce((n, st) => n + st.lots.length - 1, 0)} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
+    for (const use of uses?.missed ?? []) notes.push({ level: "info", id: d.id, message: `"${d.name ?? d.id}" had no room for its ${useLabel(use).toLowerCase()}.` });
+    for (const use of uses?.dry ?? []) notes.push({ level: "info", id: d.id, message: `"${d.name ?? d.id}" has no water near for its ${useLabel(use).toLowerCase()}, so it has none.` });
     remember();
   }
 
@@ -766,6 +1152,26 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     if ((t.kind === "tree" || (t.kind === "prop" && t.class === "bush")) && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) items.splice(k, 1);
   }
 
+  // A grave under a tree the plan or another feature put in a temple's yard
+  const yardTrees = items.filter((t) => t.kind === "tree");
+  for (let k = items.length - 1; k >= 0; k--) {
+    const g = items[k];
+    if (g.kind === "prop" && g.class === "grave" && /\/grave\d+-/.test(g.id) && yardTrees.some((t) => t.from !== g.from && Math.abs(t.x - g.x) < 0.8 && Math.abs(t.y - g.y) < 0.8)) items.splice(k, 1);
+  }
+
+  // A yard's or a centerpiece's wall where another district's street comes by (one bending to its gate can cut a
+  // corner over the border): a gap there
+  for (let k = items.length - 1; k >= 0; k--) {
+    const v = items[k];
+    if (v.kind !== "wall" || !/\/(v|anchor-v)\d+$/.test(v.id)) continue;
+    const [x0, y0, x1, y1] = bbox(v.path);
+    const near = hard.filter(({ w, box }) => w.from !== v.from && box[0] < x1 && box[2] > x0 && box[1] < y1 && box[3] > y0);
+    if (!near.length) continue;
+    const runs = cutWhere(v.path, (pt) => near.some(({ w, m }) => distanceToPath(pt, w.path) < m));
+    if (runs.length === 1 && runs[0] === v.path) continue;
+    items.splice(k, 1, ...runs.map((path, n) => ({ ...v, id: n ? `${v.id}-${n + 1}` : v.id, path })));
+  }
+
   // Each ford's stepping stones (and rocks, frozen), once every way is laid
   const allWays = items.filter((i) => i.kind === "way");
   for (const c of items) if (c.kind === "crossing" && c.class === "ford") Object.assign(c, fordDetail(c, allWays));
@@ -787,6 +1193,34 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   };
   progress(1, "Done");
   return layout;
+}
+
+/**
+ * A path in pieces, leaving out where hit(point) is true (tested every 0.05 squares); the same path when nothing
+ * is hit. Pieces shorter than 0.1 go.
+ */
+function cutWhere(path, hit) {
+  const pts = [];
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.05));
+    for (let j = i === 1 ? 0 : 1; j <= n; j++) {
+      const p = [ax + ((bx - ax) * j) / n, ay + ((by - ay) * j) / n];
+      pts.push({ p, vertex: j === 0 || j === n, off: hit(p) });
+    }
+  }
+  if (!pts.some((q) => q.off)) return [path];
+  const out = [];
+  let cur = null;
+  for (let k = 0; k < pts.length; k++) {
+    const q = pts[k];
+    if (q.off) { cur = null; continue; }
+    // A piece keeps its corners and its two ends
+    const end = !cur || k === pts.length - 1 || pts[k + 1].off;
+    if (!cur) { cur = [q.p]; out.push(cur); } else if (q.vertex || end) cur.push(q.p);
+  }
+  const len = (p) => p.reduce((s, q, i) => s + (i ? Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0), 0);
+  return out.filter((p) => p.length >= 2 && len(p) >= 0.1);
 }
 
 /** A polygon pushed out from its center by a margin (rough, for keeping clear; fine for convex shapes). */

@@ -3,6 +3,7 @@
  * input carries data-field (the setting's name or path) and data-kind; the window reads a change with readInput and
  * applies it with setField or setPlanField from core/edit.mjs. Builds HTML only; the window owns the events.
  */
+import { useLabel } from "../core/uses.mjs";
 import { fieldsOf, planFieldsOf, featureOf, wordsFor } from "../core/edit.mjs";
 import { rerollable } from "../core/seeds.mjs";
 import { TOOLS } from "../core/draw.mjs";
@@ -129,6 +130,12 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
     </section>`;
 }
 
+/** What the panel calls a trade's building, where its name alone is the worker ("a farrier" is a person). */
+const PLACE = {
+  farrier: "farrier's forge", gunsmith: "gunsmith's forge", carpenter: "carpenter's shop", cooper: "cooper's shop",
+  wheelwright: "wheelwright's shop", butcher: "butcher's shop", alchemist: "alchemist's workshop", inventor: "inventor's workshop",
+};
+
 /**
  * The panel for something the generator made (a house or a district's street), picked on the map: what it is, and
  * Pin, which copies it into the plan so rerolls keep it. gen: { kind: "house" | "street", item }. nameOf: a
@@ -137,23 +144,31 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
 export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}) {
   const { kind, item } = gen;
   const where = nameOf(item.from);
+  // A building of its own or a house put to a use is called by its use ("A smithy", "A temple of 4 parts")
+  const use = kind === "house" ? item.parts[0]?.use ?? "house" : null;
+  const called = use ? (useLabel(use) ?? "House") : null;
+  const named = use ? (PLACE[use] ?? called.toLowerCase()) : null; // a trade by its place: "a farrier's forge"
+  const article = named && /^[aeiou]/i.test(named) ? "An" : "A";
   const what = kind === "house"
-    ? `${item.parts.length > 1 ? `A house of ${item.parts.length} parts` : "A house"} the generator built in ${where}.`
+    ? `${item.parts.length > 1 ? `${article} ${named} of ${item.parts.length} parts` : `${article} ${named}`} the generator built in ${where}.`
     : `A ${item.class === "back" ? "back lane" : item.class === "street" ? "street" : "lane"} the generator laid out in ${where}${item.crossings?.length ? `, with ${item.crossings.length === 1 ? "a bridge" : `${item.crossings.length} bridges`}` : ""}.`;
-  const after = kind === "house"
+  const fixed = kind === "house" && item.pinnable === false; // a district's centerpiece: its setting makes it
+  const after = fixed
+    ? `${where}'s centerpiece, made by its Centerpiece setting: it stays where it is through rerolls while that's on, so it can't be pinned. Turn the setting off to give its ground to houses.`
+    : kind === "house"
     ? "Pinned, it becomes a fixed building group in the plan, drawn exactly as it is now; you can then name it, label it and change its roofs. The rest of the district still rerolls around it."
     : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";
   return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
       <header>
         <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
-        <span class="as-pv-name"><strong>${esc(kind === "house" ? "House" : item.class === "street" ? "Street" : "Lane")}</strong><em>generated · ${esc(item.id)}</em></span>
+        <span class="as-pv-name"><strong>${esc(kind === "house" ? called : item.class === "street" ? "Street" : "Lane")}</strong><em>generated · ${esc(item.id)}</em></span>
       </header>
       <div class="as-pv-fields">
         <p class="as-pv-hint">${esc(what)}</p>
         <p class="as-pv-hint">${esc(after)}</p>
       </div>
       <div class="as-pv-tools">
-        <button type="button" data-action="asPin" ${working ? "disabled" : ""} data-tooltip="Keep it when the district is rerolled"><i class="fa-solid fa-thumbtack"></i> Pin</button>
+        <button type="button" data-action="asPin" ${working || fixed ? "disabled" : ""} data-tooltip="${fixed ? "Its district's Centerpiece setting keeps it" : "Keep it when the district is rerolled"}"><i class="fa-solid fa-thumbtack"></i> Pin</button>
       </div>
     </section>`;
 }

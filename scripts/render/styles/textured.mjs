@@ -63,7 +63,7 @@ export function rolesFor(layout) {
   for (const i of layout.items) {
     if (i.kind === "way") roles.add(`surface.${i.surface}.${s}`);
     if (i.kind === "surface" && i.surface) roles.add(`surface.${i.surface}.${s}`);
-    if (i.kind === "surface" && i.class === "square" && s === "winter") roles.add("overlay.snow");
+    if (i.kind === "surface" && (i.class === "square" || i.class === "plaza") && s === "winter") roles.add("overlay.snow");
     if (i.kind === "surface" && i.class === "park") {
       for (const w of i.paths ?? []) roles.add(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`);
       if (i.basin) roles.add(`stone.rough.${s}`).add(s === "winter" ? "water.ice" : "water.pond");
@@ -93,6 +93,9 @@ export function rolesFor(layout) {
     if (i.kind === "field") roles.add(`field.${i.crop}.${s}`);
     if (i.kind === "tree") roles.add(treeRole(i, s));
     if (i.kind === "prop") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
+    if (i.kind === "smoke") roles.add(`smoke.${smokeTone(i.tint)}`);
+    if (i.kind === "surface" && (i.class === "churchyard" || i.class === "lawn" || i.class === "garth" || i.class === "bed" || (i.class === "quarter" && i.lush)) && s !== "winter") roles.add("ground.grass.grassy");
+    if (i.kind === "prop" && i.class === "fountain") roles.add(`stone.rough.${s}`).add(s === "winter" ? "water.ice" : "water.pond");
   }
   return [...roles];
 }
@@ -222,6 +225,18 @@ export function paint(ctx) {
   // FA's grass is dark for an overview: lift it toward a light green
   const grassLift = gb === "grass" && !winter;
   if (grassLift) { g.save(); g.globalCompositeOperation = "screen"; g.globalAlpha = 0.55; g.fillStyle = "rgb(75,88,30)"; g.fillRect(0, 0, W, H); g.restore(); }
+  // A quarter's own ground (its character's): paving, bare dirt or mud, trodden earth, or lush lawns, softly edged (under
+  // the trodden ground, fields, yards, gardens and parks laid on it)
+  for (const qg of items("surface", "quarter")) {
+    const box = boxOf([qg.poly], 1);
+    if (qg.lush) {
+      if (s !== "winter") soft((k) => { poly(k, qg.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.6, qg.alpha ?? 0.5, "source-over", box);
+      if (s !== "winter" && grassLift) soft((k) => { poly(k, qg.poly); k.fill(); }, "rgb(60,84,26)", 0.6, 0.5, "screen", box);
+      continue;
+    }
+    soft((k) => { poly(k, qg.poly); k.fill(); }, tex(`surface.${qg.surface}.${s}`, 2.5), 0.6, qg.alpha ?? 0.7, "source-over", box);
+    if (qg.mud) soft((k) => { poly(k, qg.poly); k.fill(); }, "rgb(120,100,80)", 0.6, s === "winter" ? 0.15 : 0.35, "multiply", box);
+  }
   for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), 2, 0.5, "source-over", boxOf([a.poly]));
 
   // Fields: each crop's texture, a field a shade lighter or darker than the next, a worn margin around each, then the
@@ -329,6 +344,54 @@ export function paint(ctx) {
       g.beginPath(); g.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); g.stroke(); g.restore();
     }
   }
+  // A landmark's lawns and its cloister's garden: lush kept grass
+  for (const ln of [...items("surface", "lawn"), ...items("surface", "garth")]) {
+    if (s === "winter") continue;
+    const box = boxOf([ln.poly], 1);
+    soft((k) => { poly(k, ln.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.3, 0.6, "source-over", box);
+    if (grassLift) soft((k) => { poly(k, ln.poly); k.fill(); }, "rgb(60,84,26)", 0.3, 0.5, "screen", box);
+  }
+  // A landmark's square or forecourt: paved, crisp at its edge, worn a little around it
+  for (const pz of items("surface", "plaza")) {
+    const box = boxOf([pz.poly], 1);
+    soft((k) => { poly(k, pz.poly); k.fill(); k.lineWidth = 0.4 * pp; k.lineJoin = "round"; k.stroke(); }, tex(`surface.trodden.${s}`, 2.5), 0.4, 0.7, "source-over", box);
+    soft((k) => { poly(k, pz.poly); k.fill(); }, tex(`surface.${pz.surface ?? "cobble"}.${s}`, 1.2), 0.08, 1, "source-over", box);
+    soft((k) => { k.lineWidth = 0.12 * pp; poly(k, pz.poly); k.stroke(); }, "rgb(70,64,58)", 0.05, 0.35, "multiply", box);
+    if (s === "winter") soft((k) => { poly(k, pz.poly); k.fill(); }, tex("overlay.snow", 2), 0.4, 0.35, "source-over", box); // drifted as a square is
+  }
+  // A formal garden's beds: lawn, cut into the gravel
+  for (const bd of items("surface", "bed")) {
+    const box = boxOf([bd.poly], 0.5);
+    soft((k) => { poly(k, bd.poly); k.fill(); }, s === "winter" ? "rgb(226,232,238)" : tex("ground.grass.grassy", 4), 0.04, 1, "source-over", box);
+    if (s !== "winter" && grassLift) soft((k) => { poly(k, bd.poly); k.fill(); }, "rgb(60,84,26)", 0.04, 0.4, "screen", box);
+  }
+  // A temple's yard: kept grass, a little lusher and darker than the ground around it
+  for (const cy of items("surface", "churchyard")) {
+    const box = boxOf([cy.poly]);
+    if (s !== "winter") soft((k) => { poly(k, cy.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.3, 0.5, "source-over", box);
+    soft((k) => { poly(k, cy.poly); k.fill(); }, "rgb(150,160,140)", 0.3, 0.25, "multiply", box);
+  }
+  // A mansion's drive: gravel from the gate to the door
+  for (const dv of items("surface", "drive")) soft((k) => { poly(k, dv.poly); k.fill(); }, tex(`surface.${dv.surface ?? "gravel"}.${s}`, 2.5), 0.05, s === "winter" ? 0.5 : 0.9, "source-over", boxOf([dv.poly]));
+  // Tanning, dyeing and fulling pits: a timber rim around dark liquid (dye in its color)
+  const PIT = { tan: "rgb(92,66,38)", full: "rgb(150,156,142)", blue: "rgb(46,74,132)", red: "rgb(134,40,38)", yellow: "rgb(184,146,40)", green: "rgb(58,104,58)" };
+  for (const pt of items("pit")) {
+    if (!near(pt.x, pt.y, pt.size)) continue;
+    const w = pt.size * pp;
+    g.save(); g.translate(X(pt.x), Y(pt.y)); g.rotate((pt.rot * Math.PI) / 180);
+    g.fillStyle = "rgb(88,70,52)"; g.fillRect(-w / 2, -w / 2, w, w);
+    g.fillStyle = winter ? "rgb(214,220,226)" : PIT[pt.liquid] ?? PIT.tan; g.fillRect(-w * 0.38, -w * 0.38, w * 0.76, w * 0.76);
+    g.restore();
+  }
+  // Kilns: a round brick hearth with its dark fire hole
+  for (const kl of items("kiln")) {
+    if (!near(kl.x, kl.y, kl.rad)) continue;
+    g.save(); g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -pp * 0.12;
+    g.fillStyle = "rgb(150,86,64)"; g.beginPath(); g.arc(X(kl.x), Y(kl.y), kl.rad * pp, 0, 2 * Math.PI); g.fill(); g.restore();
+    g.save(); g.strokeStyle = "rgba(60,36,28,0.8)"; g.lineWidth = Math.max(1, pp * 0.04);
+    g.beginPath(); g.arc(X(kl.x), Y(kl.y), kl.rad * pp, 0, 2 * Math.PI); g.stroke();
+    g.fillStyle = "rgb(46,32,28)"; g.beginPath(); g.arc(X(kl.x), Y(kl.y), kl.rad * pp * 0.42, 0, 2 * Math.PI); g.fill(); g.restore();
+  }
   // Gardens are quiet: the ground shows through, rows barely show (winter) or softly (other seasons), and the fence
   // is a thin line, never a bright box
   for (const gd of items("surface", "garden")) {
@@ -368,6 +431,19 @@ export function paint(ctx) {
       g.strokeStyle = "rgba(240,243,247,0.5)"; g.lineWidth = Math.max(1, st.width * pp * 0.4);
       for (const b of these) { path(g, b.path); g.stroke(); }
     }
+    g.restore();
+  }
+
+  // Clipped box around a formal garden's beds: a crisp dark hedge with a lit top and a shadow on its north side
+  const clipped = bounds.filter((b) => b.class === "clipped");
+  if (clipped.length) {
+    g.save(); g.lineCap = "square"; g.lineJoin = "miter";
+    g.strokeStyle = "rgba(20,30,20,0.35)"; g.lineWidth = Math.max(2, 0.2 * pp);
+    for (const b of clipped) { g.save(); g.translate(0.03 * pp, -0.06 * pp); path(g, b.path); g.stroke(); g.restore(); }
+    g.strokeStyle = winter ? "rgb(70,88,72)" : "rgb(44,74,36)"; g.lineWidth = Math.max(2, 0.16 * pp);
+    for (const b of clipped) { path(g, b.path); g.stroke(); }
+    g.strokeStyle = winter ? "rgba(236,240,244,0.7)" : "rgba(120,160,80,0.6)"; g.lineWidth = Math.max(1, 0.06 * pp);
+    for (const b of clipped) { path(g, b.path); g.stroke(); }
     g.restore();
   }
 
@@ -698,6 +774,8 @@ export function paint(ctx) {
       const lit = f.flat ? 0.35 : dx * SUN[0] + dy * SUN[1];
       g.fillStyle = `rgba(18,28,48,${(0.2 - 0.16 * lit).toFixed(3)})`; shape(f.poly); g.fill();
       if (lit > 0.5) { g.fillStyle = "rgba(255,248,236,0.05)"; shape(f.poly); g.fill(); }
+      // A landmark's roof catches the light: brighter than the houses around it
+      if (b.grand) { g.fillStyle = `rgba(255,250,236,${(0.08 + 0.08 * Math.max(0, lit)).toFixed(3)})`; shape(f.poly); g.fill(); }
     }
     g.lineCap = "round";
     // Valleys (and hips, under their caps) as fine lines
@@ -716,7 +794,7 @@ export function paint(ctx) {
     // A mansard's skylight
     if (facets.skylight) paintSkylight(g, facets.skylight, pp, s);
     // The outline: only the eaves and verges, so a wing's roof joins its house's without a seam
-    g.strokeStyle = `rgba(28,28,36,${0.85 * LINES.eave})`; g.lineWidth = Math.max(1, pp * 0.035 * LINES.eave);
+    g.strokeStyle = `rgba(28,28,36,${0.85 * LINES.eave * (b.grand ? 1.15 : 1)})`; g.lineWidth = Math.max(1, pp * 0.035 * LINES.eave * (b.grand ? 1.8 : 1));
     for (const f of facets) for (const [a2, b2] of f.eaves) line(a2, b2);
     if (facets.finial) {
       g.fillStyle = "rgb(70,62,54)"; g.beginPath(); g.arc(0, 0, Math.max(2, pp * 0.05), 0, 2 * Math.PI); g.fill();
@@ -735,7 +813,18 @@ export function paint(ctx) {
 
   // Props, then trees from north to south so southern crowns overlap
   progress(0.75, "Props and trees");
-  for (const p of items("prop").filter((p) => p.class !== "bush")) {
+  // Fountains: a stone basin of water, the fountain's art in its middle
+  for (const f of items("prop", "fountain")) {
+    const rad = (0.45 * (f.scale ?? 1)) / 2; // its size across, in squares, as a prop's is
+    if (!near(f.x, f.y, rad + 0.3)) continue;
+    const bb = [f.x - rad - 0.3, f.y - rad - 0.3, f.x + rad + 0.3, f.y + rad + 0.3];
+    soft((k) => { k.beginPath(); k.arc(X(f.x), Y(f.y), (rad + 0.08) * pp, 0, 2 * Math.PI); k.fill(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", bb);
+    soft((k) => { k.beginPath(); k.arc(X(f.x), Y(f.y), rad * 0.85 * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), 0.01, 1, "source-over", bb);
+    g.save(); g.strokeStyle = "rgba(40,40,46,0.6)"; g.lineWidth = Math.max(1, pp * 0.025);
+    g.beginPath(); g.arc(X(f.x), Y(f.y), (rad + 0.08) * pp, 0, 2 * Math.PI); g.stroke(); g.restore();
+    img("prop.fountain", f.variant, f.x, f.y, rad * 0.9, f.rot, 0.05);
+  }
+  for (const p of items("prop").filter((p) => p.class !== "bush" && p.class !== "fountain")) {
     const size = PROP_SQUARES[p.class] ?? 0.45;
     const shadow = { well: 0.1, cart: 0.08, wagon: 0.1 }[p.class] ?? 0.08;
     img(`prop.${p.class}`, p.variant, p.x, p.y, size * (p.scale ?? 1), p.rot, shadow);
@@ -744,6 +833,28 @@ export function paint(ctx) {
     const sz = treeSize(t, s) * t.s * 1.1;
     img(treeRole(t, s), t.variant, t.x, t.y, sz, t.rot, sz * 0.35);
   }
+  // Smoke from forges, kilns and ovens, drifting with the wind, over everything
+  for (const sm of items("smoke")) {
+    const size = 1.8 * (sm.s ?? 1), a = ((sm.wind ?? 0) * Math.PI) / 180;
+    // The plume starts at the chimney and trails downwind: its art runs along its height
+    const cx = sm.x + Math.cos(a) * size * 0.8, cy = sm.y + Math.sin(a) * size * 0.8;
+    if (!near(cx, cy, size * 2)) continue;
+    const role = `smoke.${smokeTone(sm.tint)}`, im = art(role, 0);
+    const tint = SMOKE_TINT[sm.tint];
+    if (tint) { g.save(); g.globalAlpha = 0.3; g.fillStyle = tint; g.beginPath(); g.ellipse(X(cx), Y(cy), size * pp * 0.9, size * pp * 0.45, a, 0, 2 * Math.PI); g.fill(); g.restore(); }
+    if (im) { g.save(); g.globalAlpha = 0.95; img(role, sm.variant ?? 0, cx, cy, size, (sm.wind ?? 0) - 90, 0); g.restore(); }
+    else {
+      // No art: a few soft puffs, fading as they go
+      g.save();
+      for (let k = 0; k < 4; k++) {
+        const d = size * (0.15 + k * 0.45), r = size * pp * (0.18 + k * 0.1);
+        g.globalAlpha = 0.45 - k * 0.09;
+        g.fillStyle = tint ?? (sm.tint === "dark" ? "rgb(70,70,72)" : sm.tint === "light" ? "rgb(226,226,222)" : "rgb(150,150,150)");
+        g.beginPath(); g.arc(X(sm.x + Math.cos(a) * d), Y(sm.y + Math.sin(a) * d), r, 0, 2 * Math.PI); g.fill();
+      }
+      g.restore();
+    }
+  }
 
   // A light vignette over the whole map (lighter outside winter, so summer grass doesn't darken at the edges)
   progress(0.95, "Finishing");
@@ -751,6 +862,10 @@ export function paint(ctx) {
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(20,28,40,${winter ? 0.25 : 0.12})`);
   g.fillStyle = vg; g.fillRect(0, 0, W, H);
 }
+
+/** Smoke's art by its tint: alchemists' and laboratories' tinted smoke is light smoke over a colored haze. */
+const smokeTone = (tint) => (tint === "dark" || tint === "gray" ? tint : "light");
+const SMOKE_TINT = { green: "rgb(120,190,110)", violet: "rgb(160,120,200)" };
 
 /** True when a point is inside a polygon (even-odd). */
 function pointIn([x, y], poly) {

@@ -52,6 +52,11 @@ export function paint(ctx) {
   // Surfaces: trodden ground, fields, yards, crofts, gardens, parks
   progress(0.2, "Yards and gardens");
   const trodden = col(`surface.trodden.${s}`);
+  // A quarter's own ground: paving, dirt or lawns (under the trodden ground, fields, yards and parks on it)
+  for (const qg of items("surface", "quarter")) {
+    if (qg.lush) { if (!winter) fillPoly(qg.poly, "rgba(90,140,60,0.25)"); continue; }
+    g.globalAlpha = (qg.alpha ?? 0.7) * 0.8; fillPoly(qg.poly, qg.mud ? mix(col(`surface.dirt.${s}`), [90, 70, 50], 0.3) : col(`surface.${qg.surface}.${s}`)); g.globalAlpha = 1;
+  }
   for (const a of items("surface", "trodden")) { g.globalAlpha = 0.5; fillPoly(a.poly, trodden); g.globalAlpha = 1; }
   // Fields: each in its crop's color, a shade lighter or darker, with its rows
   for (const f of items("field")) {
@@ -81,6 +86,13 @@ export function paint(ctx) {
     }
   }
 
+  // A landmark's lawns and its square
+  for (const ln of [...items("surface", "lawn"), ...items("surface", "garth")]) if (!winter) fillPoly(ln.poly, "rgba(90,140,60,0.3)");
+  for (const pz of items("surface", "plaza")) { fillPoly(pz.poly, mix(col(`surface.${pz.surface ?? "cobble"}.${s}`), [255, 255, 255], 0.05)); stroke([...pz.poly, pz.poly[0]], 0.04, "rgba(70,64,58,0.5)"); }
+  for (const bd of items("surface", "bed")) fillPoly(bd.poly, winter ? "rgb(226,232,238)" : "rgb(120,160,80)");
+  // A temple's yard, a little greener; a mansion's gravel drive
+  for (const cy of items("surface", "churchyard")) fillPoly(cy.poly, winter ? "rgba(150,160,175,0.12)" : "rgba(80,120,60,0.18)");
+  for (const dv of items("surface", "drive")) fillPoly(dv.poly, mix(col(`surface.gravel.${s}`), [255, 255, 255], 0.1));
   // Gardens over parks, as the textured style lays them, so a formal garden's beds show
   for (const gd of items("surface", "garden")) {
     const { cx, cy, w, d, rot } = gd.garden;
@@ -91,11 +103,21 @@ export function paint(ctx) {
     g.strokeRect((-w / 2) * pp, (-d / 2) * pp, w * pp, d * pp);
     g.restore();
   }
+  // Tanning and dyeing pits, and kilns
+  const PIT = { tan: "rgb(92,66,38)", full: "rgb(150,156,142)", blue: "rgb(46,74,132)", red: "rgb(134,40,38)", yellow: "rgb(184,146,40)", green: "rgb(58,104,58)" };
+  for (const pt of items("pit")) {
+    g.save(); g.translate(X(pt.x), Y(pt.y)); g.rotate((pt.rot * Math.PI) / 180);
+    const w = pt.size * pp;
+    g.fillStyle = "rgb(88,70,52)"; g.fillRect(-w / 2, -w / 2, w, w);
+    g.fillStyle = winter ? "rgb(214,220,226)" : PIT[pt.liquid] ?? PIT.tan; g.fillRect(-w * 0.38, -w * 0.38, w * 0.76, w * 0.76);
+    g.restore();
+  }
+  for (const kl of items("kiln")) { dot(kl.x, kl.y, kl.rad, "rgb(150,86,64)"); dot(kl.x, kl.y, kl.rad * 0.42, "rgb(46,32,28)"); }
   // Crofts after gardens, as the textured style lays them: a tint, so what's under shows
   for (const c of items("surface", "croft")) fillPoly(c.poly, winter ? "rgba(120,132,150,0.08)" : "rgba(110,135,60,0.15)");
   // Plot lines, walls, hedges and their bushes
-  const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)", balk: winter ? "rgba(150,160,170,0.45)" : "rgba(118,140,78,0.75)" };
-  const boundWidth = { hedge: 0.08, balk: 0.12 };
+  const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)", clipped: "rgb(44,74,36)", balk: winter ? "rgba(150,160,170,0.45)" : "rgba(118,140,78,0.75)" };
+  const boundWidth = { hedge: 0.08, balk: 0.12, clipped: 0.16 };
   for (const b of items("boundary")) stroke(b.path, boundWidth[b.class] ?? 0.04, boundColor[b.class] ?? boundColor.fence);
   for (const w of items("wall").filter((w) => !w.thickness)) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
   const bush = winter ? "rgb(104,98,90)" : mix(col("bush"), [30, 50, 25], 0.1);
@@ -264,7 +286,8 @@ export function paint(ctx) {
 
   // Props, then trees from north to south
   progress(0.8, "Trees");
-  for (const p of items("prop").filter((p) => p.class !== "bush")) dot(p.x, p.y, 0.18 * (p.scale ?? 1), col(`prop.${p.class}`));
+  for (const p of items("prop").filter((p) => p.class === "fountain")) { const rad = (0.45 * (p.scale ?? 1)) / 2; dot(p.x, p.y, rad + 0.08, col(`stone.rough.${s}`)); dot(p.x, p.y, rad * 0.85, col(winter ? "water.ice" : "water.pond")); }
+  for (const p of items("prop").filter((p) => p.class !== "bush" && p.class !== "fountain")) dot(p.x, p.y, 0.18 * (p.scale ?? 1), col(`prop.${p.class}`));
   // Sized as the textured style sizes them; leafy trees are crowns, and only in winter are they bare
   const crown = winter ? "rgb(88,104,84)" : col("tree"), leafy = winter ? crown : mix(col("tree"), [120, 150, 60], 0.25), bare = col("tree.bare");
   for (const t of [...items("tree")].sort((a, b) => a.y - b.y)) {
@@ -282,6 +305,17 @@ export function paint(ctx) {
       dot(t.x, t.y, r, c);
       dot(t.x - r * 0.2, t.y + r * 0.2, r * 0.55, mix(c, [255, 255, 255], 0.12));
     }
+  }
+  // Smoke from forges, kilns and ovens, drifting with the wind
+  const SMOKE = { dark: "rgb(70,70,72)", gray: "rgb(150,150,150)", light: "rgb(226,226,222)", green: "rgb(150,200,140)", violet: "rgb(180,150,215)" };
+  for (const sm of items("smoke")) {
+    const a = ((sm.wind ?? 0) * Math.PI) / 180, size = 1.8 * (sm.s ?? 1);
+    for (let k = 0; k < 4; k++) {
+      g.globalAlpha = 0.45 - k * 0.09;
+      const d = size * (0.15 + k * 0.45);
+      dot(sm.x + Math.cos(a) * d, sm.y + Math.sin(a) * d, size * (0.18 + k * 0.1), SMOKE[sm.tint] ?? SMOKE.gray);
+    }
+    g.globalAlpha = 1;
   }
   progress(1, "Done");
 }

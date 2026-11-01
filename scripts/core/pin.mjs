@@ -12,15 +12,18 @@ const r3 = (v) => Math.round(v * 1000) / 1000;
 const r2 = (v) => Math.round(v * 100) / 100;
 const PART = /^(w\d+|d\d+|s\d+|t|b)$/; // a house's wings, dormers, stepped sections, turret and bay
 
-/** The base id of a generated house part ("town/h-l3-2w1" is part of "town/h-l3-2"), or null if it isn't one. */
+/**
+ * The base id of a generated building's part ("town/h-l3-2w1" is part of "town/h-l3-2"; a district's centerpiece,
+ * "town/h-anchor0", and its street-corner shrines and watch posts count too), or null if it isn't one.
+ */
 export function houseOf(id) {
-  const m = /^(.+\/h-l\d+-\d+)(.*)$/.exec(String(id ?? ""));
+  const m = /^(.+\/h-(?:l\d+-\d+|anchor\d+|shrine\d+|watch\d+))(.*)$/.exec(String(id ?? ""));
   return m && (m[2] === "" || PART.test(m[2])) ? m[1] : null;
 }
 
 /**
- * What the window can pick and pin from a layout: houses ({ id, from, parts: [building items] }, parts in the order
- * they're drawn) and the districts' own streets and lanes ({ id, from, class, faint, path, width, surface }).
+ * What the window can pick and pin from a layout: houses ({ id, from, parts: [building items], pinnable }, parts in
+ * the order they're drawn; a district's centerpiece isn't pinnable, as its Centerpiece setting makes it) and the districts' own streets and lanes ({ id, from, class, faint, path, width, surface }).
  */
 export function pinnables(layout) {
   const houses = new Map();
@@ -29,7 +32,7 @@ export function pinnables(layout) {
     if (i.kind === "building" && i.from && i.id !== i.from) {
       const base = houseOf(i.id);
       if (!base) continue;
-      if (!houses.has(base)) houses.set(base, { id: base, from: i.from, parts: [] });
+      if (!houses.has(base)) houses.set(base, { id: base, from: i.from, parts: [], pinnable: !/\/h-anchor\d+$/.test(base) });
       houses.get(base).parts.push(i);
     } else if (i.kind === "way" && i.from && /\/s\d+$/.test(i.id) && Array.isArray(i.path) && i.path.length >= 2) {
       streets.push({ id: i.id, from: i.from, class: i.class, path: i.path, width: i.width, surface: i.surface ?? null, crossings: [] });
@@ -49,6 +52,8 @@ function asPlanBuilding(b) {
   const out = b.round
     ? { shape: { circle: [r3(b.cx), r3(b.cy), r3(b.len / 2)] } }
     : { shape: { rect: [r3(b.cx - b.len / 2), r3(b.cy - b.dep / 2), r3(b.cx + b.len / 2), r3(b.cy + b.dep / 2)] }, roofStyle: b.roofStyle };
+  // A tower (a watch post) stays one: its flat roof inside a parapet, with its battlements
+  if (b.tower) { out.tower = true; if (b.crenels) out.crenels = true; if (b.round) out.roofStyle = b.roofStyle; }
   out.rot = r3(b.rot ?? 0);
   out.roof = b.roof;
   out.height = r2(20 + (b.tall ?? 0) * 20);
@@ -57,12 +62,14 @@ function asPlanBuilding(b) {
   if (b.chimney) out.chimneyAt = { u: b.chimney.u, v: b.chimney.v, variant: b.chimney.variant };
   if (b.join) out.join = structuredClone(b.join);
   if (Array.isArray(b.cut) && b.cut.length) out.cut = structuredClone(b.cut);
+  if (typeof b.use === "string") out.use = b.use;
   return out;
 }
 
 /** The plan with a generated house pinned as a landmark. Returns { plan, id } or { error }. */
 export function pinHouse(plan, house) {
   if (!house?.parts?.length) return { error: "There's no house there to pin." };
+  if (house.pinnable === false) return { error: "A district's centerpiece can't be pinned: its Centerpiece setting makes it, and keeps it while that's on." };
   const next = structuredClone(plan);
   if (!Array.isArray(next.features)) next.features = [];
   const id = freeId(next, "house");

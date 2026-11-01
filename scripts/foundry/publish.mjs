@@ -7,7 +7,7 @@
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
-import { labelsOf } from "../core/labels.mjs";
+import { labelsOf, useLabelsOf } from "../core/labels.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -16,11 +16,12 @@ const FONT = { min: 8, max: 256 };
 
 /**
  * plan: a normalized plan. image: the rendered map's path, width and height in pixels, and thumb (a Blob) when
- * the worker made one. folder: the output folder. sceneId: a scene to update instead of creating one; one
+ * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
+ * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
  * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
  * before anything is written. Returns { sceneId, created, backup, thumb, labels, warnings }.
  */
-export async function publish({ plan, image, width, height, folder, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
+export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
   const opts = plan.output.scene;
   let backup = null;
@@ -87,7 +88,7 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
   // The new labels go in before the old ones come out, so a failure never leaves the scene with none
   scene = sceneById(sceneId);
   const old = scene.drawings.filter((d) => isObj(d.flags?.[MOD]) && "batch" in d.flags[MOD]).map((d) => d.id);
-  const labels = await labelDrawings(plan, sceneById(sceneId), warnings);
+  const labels = await labelDrawings(plan, sceneById(sceneId), warnings, layout);
   if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", labels);
   if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
 
@@ -127,12 +128,12 @@ async function thumbOf(image) {
  * each sits, including a name label following its district or area, and its color, font and opacity). Hidden from
  * players unless show is "all".
  */
-async function labelDrawings(plan, scene, warnings) {
+async function labelDrawings(plan, scene, warnings, layout) {
   const pps = plan.output.pxPerSquare;
   const { sceneX, sceneY } = scene.dimensions;
   const ctx = new OffscreenCanvas(8, 8).getContext("2d");
   const out = [], fonts = new Set();
-  for (const l of labelsOf(plan)) {
+  for (const l of [...labelsOf(plan), ...useLabelsOf(plan, layout)]) {
     const size = Math.min(FONT.max, Math.max(FONT.min, Math.round(pps * (LABEL_SIZES[l.size] ?? LABEL_SIZES.normal))));
     try {
       await document.fonts.load(`${size}px "${l.font}"`);

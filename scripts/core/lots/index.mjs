@@ -10,6 +10,7 @@
  */
 import { pointInPolygon } from "../geom.mjs";
 import { OLD_PROFILES } from "../plan.mjs";
+import { withCharacterLots, characterOf } from "../character.mjs";
 import { bands, difference, intersect, union, offset, area, shapes, centroid } from "./poly.mjs";
 import { SegGrid, finitePaths } from "../spatial.mjs";
 
@@ -40,8 +41,9 @@ export const LOT_TYPES = {
     roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 }, fill: { trees: 0.35, open: 0.65 }, wild: 2.5 },
 };
 
+/** A district's plot numbers: its profile's, with its character's changes. */
 export function lotTypeOf(district) {
-  return LOT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? LOT_TYPES.village;
+  return withCharacterLots(LOT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? LOT_TYPES.village, characterOf(district));
 }
 
 const dist2seg = ([x, y], [ax, ay], [bx, by]) => {

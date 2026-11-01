@@ -239,6 +239,12 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   };
   if (f.type === "building") details(raw, `"${where}"`);
   if (f.type === "landmark" && Array.isArray(raw.buildings)) raw.buildings.forEach((b, j) => isObj(b) && details(b, `"${where}", building ${j + 1}`));
+  // A landmark's buildings take a building's settings (roof, use, height...), checked as one's are
+  if (f.type === "landmark" && Array.isArray(raw.buildings)) raw.buildings.forEach((b, j) => {
+    if (!isObj(b)) return;
+    for (const [name, spec] of Object.entries(TYPES.building.fields)) checkField(f.id, `buildings[${j}].${name}`, `"${where}", building ${j + 1}`, name, spec, b[name], { err, warn });
+    for (const k of Object.keys(b)) if (k !== "shape" && !Object.hasOwn(TYPES.building.fields, k)) warn(f.id, `buildings[${j}].${k}`, `"${where}", building ${j + 1} has a field "${k}" that AtlasScribe doesn't use.`);
+  });
 
   // Fields: numbers in range, values from their lists, nothing unknown
   for (const [name, spec] of Object.entries(t.fields)) checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
