@@ -8,7 +8,7 @@
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
 import { roadWaterCrossings, snapCrossings, fordDetail } from "./crossings.mjs";
-import { normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer } from "../plan.mjs";
+import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
@@ -25,7 +25,7 @@ import { isTownWall, layWall, bandPieces, offsetPath } from "./walls.mjs";
 import { buildOnLots } from "../lots/build.mjs";
 import { centroid, shapes } from "../lots/poly.mjs";
 import { notablesFor, planUses, useLabel, USE_INFO, CLUTTER_FT } from "../uses.mjs";
-import { LOOK, characterOf } from "../character.mjs";
+import { LOOK, characterOf, lookOf } from "../character.mjs";
 import { anchorFor, layAnchor } from "./anchors.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
@@ -64,9 +64,12 @@ function stepsAlong(path, step) {
   return out;
 }
 
-/** A roof for a quarter's back building: one of its character's own materials, else slate. */
-function pickRoof(d, r) {
-  const roofs = (Array.isArray(d.roofs) && d.roofs.length ? Object.fromEntries(d.roofs.map((x) => [x, 1])) : LOOK[characterOf(d)]?.roofs) ?? { slate: 1 };
+/** A district's own roof forms, those AtlasScribe knows. */
+const ownStyles = (d) => (Array.isArray(d.roofStyles) ? d.roofStyles.filter((s) => ROOF_STYLES.includes(s)) : []);
+
+/** A roof for a quarter's back building: one of its character's own materials, else the district's own palette. */
+function pickRoof(d, r, palette = null) {
+  const roofs = (Array.isArray(d.roofs) && d.roofs.length ? Object.fromEntries(d.roofs.map((x) => [x, 1])) : LOOK[characterOf(d)]?.roofs ?? palette ?? lotTypeOf(d).roofs) ?? { slate: 1 };
   const keys = Object.keys(roofs), total = keys.reduce((a, k) => a + roofs[k], 0);
   let x = r.next() * total;
   for (const k of keys) if ((x -= roofs[k]) < 0) return k;
@@ -396,7 +399,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
    * Builds up one empty middle of a dense quarter's block: rows of buildings square to the nearest street, each inside
    * the piece and clear of the others, with a little clutter in the gaps. B: the quarter's back numbers (LOOK).
    */
-  function fillBack(d, shape, k, B, near, r, plots = []) {
+  function fillBack(d, shape, k, B, near, r, plots = [], palette = null) {
     const piece = shape.outer, holes = shape.holes ?? [];
     // The plots along the streets (with their boxes): the middle of a block can reach a little into the backs of the
     // odd plot, and a temple's yard or a mansion's grounds stay open
@@ -438,7 +441,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         const open = r.next() < (B.gardens ? 0.4 : 0.15);
         if (!open && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
           placed.push(pts);
-          addBuilding({ shape: { rect: [x - ll / 2, y - dd / 2, x + ll / 2, y + dd / 2] }, rot, roof: pickRoof(d, r), variant: r.int(8), roofStyle: "gable", height: 15, chimney: B.use === "house" ? undefined : false, use: B.use }, `${d.id}/o-b${k}-${++n}`, r.fork("b", n), d.id);
+          addBuilding({ shape: { rect: [x - ll / 2, y - dd / 2, x + ll / 2, y + dd / 2] }, rot, roof: pickRoof(d, r, palette), variant: r.int(8), roofStyle: ownStyles(d).length ? ownStyles(d)[r.int(ownStyles(d).length)] : "gable", height: 15, chimney: B.use === "house" ? undefined : false, use: B.use }, `${d.id}/o-b${k}-${++n}`, r.fork("b", n), d.id);
         } else if (open && B.gardens && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
           placed.push(pts);
           if (r.next() < 0.6) {
@@ -762,7 +765,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const roadIds = new Set(plan.features.filter((f) => f.type === "road").map((f) => f.id));
   const useWater = [...waterItems.map((w) => ({ path: w.path, width: w.width })), ...bodies.map((b) => ({ ring: b.ring }))];
   const greens = [...plan.features.filter((f) => f.type === "square").map((f) => shapeToPolygon(f.shape)), ...parks.filter((f) => f.style !== "formal").map((f) => shapeToPolygon(f.shape, f.rot ?? 0))];
-  const notables = notablesFor({ dlist: dlist.map((x) => ({ ...x, feature: dfeats.find((f) => f.id === x.id) })), squares: greens, roads: ways.filter((w) => roadIds.has(w.id)), gates: wallGatePts, r: rng(plan.seed, "notables") });
+  const notables = notablesFor({ dlist: dlist.map((x) => ({ ...x, seed: seedOf(plan, x.id), feature: dfeats.find((f) => f.id === x.id) })), squares: greens, roads: ways.filter((w) => roadIds.has(w.id)), gates: wallGatePts, r: rng(plan.seed, "notables") });
   const wind = rng(plan.seed, "wind").next() * 360;
   // Buildings the plan already has with a use (drawn, or pinned), by the district they stand in: a district doesn't
   // build another inn because the GM pinned its inn
@@ -892,7 +895,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const grow = anchorRing ? ringWidth + 0.05 : ringWidth / 2 + 0.05;
     const streetStop = anchor ? shapeToPolygon({ rect: [anchor.center[0] - anchor.w / 2 - grow, anchor.center[1] - anchor.h / 2 - grow, anchor.center[0] + anchor.w / 2 + grow, anchor.center[1] + anchor.h / 2 + grow] }, anchor.rot) : null;
     const made = streetsFor({
-      district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, anchor.radial] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
+      district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, { ...anchor.radial, anchor: true }] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
     made.streets = trimAtBuildings(made.streets, around.plots);
@@ -914,7 +917,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       if (to && hit.t < 25 && upTo > 0.1 && bandClear([from, [from[0] + dir[0] * upTo, from[1] + dir[1] * upTo]], ringWidth / 2, hit.o.road)) made.streets.push({ path: [from, to], kind: "street", width: ringWidth, ends: [] });
     }
     // How its character shows: the ground under it, its streets' surface, trees along them, its blocks built up
-    const look = LOOK[characterOf(d)] ?? {};
+    const look = lookOf(d);
     const surface = d.surface ?? look.street ?? fixedHere.find((w) => !w.quay)?.surface ?? "dirt";
     if (look.ground) items.push({ kind: "surface", id: `${d.id}/ground`, from: d.id, class: "quarter", poly, ...look.ground });
     const own = [];
@@ -984,7 +987,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // A dense quarter builds up the middles of its blocks instead: rows of stores, workshops or shacks square to the
     // nearest street, with its clutter between them
     const keepPlots = look.back ? [...lots.map((l) => l.poly), ...built.surfaces.filter((x) => x.poly).map((x) => x.poly)].map((p) => [p, bbox(p)]) : [];
-    if (look.back) shapes(back).forEach((piece, k) => fillBack(d, piece, k, look.back, [...nearHere, ...own], r.fork("back", k), keepPlots));
+    if (look.back) shapes(back).forEach((piece, k) => fillBack(d, piece, k, look.back, [...nearHere, ...own], r.fork("back", k), keepPlots, built.palette));
     else back.forEach((poly, k) => {
       const pts = poissonInPolygon(poly, T.wild ?? 1.5, wr.fork(k), { keep: (x, y) => patch(x, y) > -0.1 && free(x, y, 0.45), max: 400 });
       for (const [x, y] of pts) {
@@ -1104,6 +1107,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         const l = Math.hypot(p[0] - q[0], p[1] - q[1]) || 1;
         let dir = Math.atan2(p[1] - q[1], p[0] - q[0]);
         if (pointInPolygon([p[0] + ((p[0] - q[0]) / l) * 1.5, p[1] + ((p[1] - q[1]) / l) * 1.5], poly)) continue; // runs back in
+        // A house by the lane's end: a track (wider than a lane) would clip it
+        const trackHalf = 10 / sq / 2 + 0.02;
+        if (items.some((b) => b.kind === "building" && b.from === d.id && Math.abs(b.cx - p[0]) < Math.max(b.len, b.dep) + 1 && Math.abs(b.cy - p[1]) < Math.max(b.len, b.dep) + 1 && (pointInPolygon(p, footOf(b)) || distanceToPath(p, closed(footOf(b))) < trackHalf))) continue;
         const path = [p];
         let at = p, joined = false;
         for (let k = 0; k < want; k++) {

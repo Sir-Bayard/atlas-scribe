@@ -13,7 +13,7 @@ import { resolveArt, forgetArt } from "./foundry/art/index.mjs";
 import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
-import { quickPlan, QUICK, QUICK_LABELS } from "./core/quick.mjs";
+import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY } from "./core/quick.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
@@ -212,7 +212,7 @@ const api = {
     return quickPlan(options);
   },
 
-  /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings }. */
+  /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings, river (a city's) }. */
   get quickChoices() {
     return structuredClone(QUICK);
   },
@@ -324,7 +324,7 @@ const host = {
   check: (input) => api.checkPlan(input),
   read: (input) => readPlan(input),
   quick: (options) => quickPlan(options),
-  quickChoices: { QUICK, LABELS: QUICK_LABELS },
+  quickChoices: { QUICK, LABELS: QUICK_LABELS, ANY: QUICK_ANY },
   folder: plansDir,
   plans: {
     list: () => listPlans(plansDir()),

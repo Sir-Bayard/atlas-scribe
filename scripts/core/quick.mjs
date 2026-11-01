@@ -6,25 +6,39 @@
  */
 import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
+import { cityPlan, CITY_WATER, RIVER_FORMS } from "./quick-city.mjs";
+import { meander, bends } from "./meander.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
 export const QUICK = {
-  size: ["village", "hamlet", "town"],
+  size: ["village", "hamlet", "town", "city", "metropolis"],
   season: ["summer", "spring", "autumn", "winter"],
-  water: ["river", "stream", "none"],
+  water: ["river", "stream", "coast", "lake", "estuary", "none"],
   roads: ["crossroads", "through", "fork"],
   center: ["square", "green", "none"],
   surroundings: ["mixed", "farmland", "woodland", "open"],
+  river: RIVER_FORMS, // a city's river (left out, the seed picks; the dialog shows Any first)
 };
+
+/** Choices the dialog leaves on Any unless they're picked, and that only some places use. */
+export const QUICK_ANY = ["river"];
+
+/**
+ * What a choice left out is picked from: the sizes and water a village or town can have (a city is made only when it's
+ * asked for, and the plans earlier seeds made stay the same).
+ */
+const PICK = { size: ["village", "hamlet", "town"], water: ["river", "stream", "none"] };
+const CITIES = ["city", "metropolis"];
 
 /** How each choice reads in the Quick Start dialog. */
 export const QUICK_LABELS = {
-  size: { hamlet: "A hamlet (a handful of houses)", village: "A village", town: "A town" },
+  size: { hamlet: "A hamlet (a handful of houses)", village: "A village", town: "A town", city: "A walled city (wards)", metropolis: "A metropolis (two walls, many wards)" },
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
-  water: { river: "A river", stream: "A stream", none: "No water" },
+  water: { river: "A river", stream: "A stream", coast: "A sea coast and harbor (a city)", lake: "A lake shore (a city)", estuary: "A river meeting the sea (a city)", none: "No water" },
   roads: { crossroads: "A crossroads", through: "A road through", fork: "A fork in the road" },
   center: { square: "A market square", green: "A village green", none: "Neither" },
   surroundings: { mixed: "Farms and woods", farmland: "Farmland", woodland: "Woodland", open: "Open ground" },
+  river: { meander: "Bending through", island: "Split around an island", loop: "Looping around the city", meeting: "Two rivers meeting" },
 };
 
 /** Per size: the map in squares, the main and cross roads' classes, the square's radius, the green's size. */
@@ -138,7 +152,17 @@ export function quickPlan(options = {}) {
   const seed = Number.isFinite(Number(options.seed)) && Number(options.seed) >= 1 ? Math.floor(Number(options.seed)) : 1;
   const pick = rng(seed, "quick", "choices");
   const choices = {};
-  for (const [k, list] of Object.entries(QUICK)) choices[k] = list.includes(options[k]) ? options[k] : pick.pick(list);
+  for (const [k, list] of Object.entries(QUICK)) if (!QUICK_ANY.includes(k)) choices[k] = list.includes(options[k]) ? options[k] : pick.pick(PICK[k] ?? list);
+  if (RIVER_FORMS.includes(options.river)) choices.river = options.river;
+  // A city's water left out is any a city can have, a stream is a river there, and a village or town by the sea or a
+  // lake has a river for now
+  if (CITIES.includes(choices.size)) {
+    if (!QUICK.water.includes(options.water)) choices.water = rng(seed, "quick", "city-water").pick(CITY_WATER);
+    else if (choices.water === "stream") choices.water = "river";
+    return cityQuick(choices, seed, options);
+  }
+  if (!PICK.water.includes(choices.water)) choices.water = "river";
+  delete choices.river; // (a city's)
   const S = SIZES[choices.size];
   const [W, H] = S.squares;
   const r = rng(seed, "quick", "layout");
@@ -287,14 +311,19 @@ export function quickPlan(options = {}) {
     const tries = [];
     for (const s of r.shuffle([1, -1])) tries.push({ q: (m) => at(s * (extent + m), 0), dir: theta + 90 });
     for (const s of r.shuffle([1, -1])) tries.push({ q: (m) => at(0, s * (sideExtent + m)), dir: theta });
-    for (let t = 0; t < tries.length * 3 && !water; t++) {
+    for (let t = 0; t < tries.length * 4 && !water; t++) {
       const tr = tries[t % tries.length];
       const q = tr.q(half + r.range(4, 8));
       if (q[0] < 3 || q[1] < 3 || q[0] > W - 3 || q[1] > H - 3) continue;
       const deg = tr.dir + r.range(-12, 12);
-      const a = wander(r, q, dirOf(deg), W, H, { step: r.range(6, 9), amp: r.range(1.2, 2.6) });
-      const b = wander(r, q, dirOf(deg + 180), W, H, { step: r.range(6, 9), amp: r.range(1.2, 2.6) });
-      const path = join(a, b).map(pt);
+      // Bending as it goes (gentler on each round of tries, so it still finds room beside the town)
+      const bd = bends(r, Math.min(W, H) * 0.45), calm = [1, 0.7, 0.45, 0.2][Math.floor(t / tries.length)];
+      bd.swing *= calm;
+      bd.swing2 *= calm;
+      const path = thin(meander(q, (deg * Math.PI) / 180, W, H, bd), 0.08).map(pt);
+      // (well across the map, not bending off it near a corner)
+      // (on the last round, nearly straight, any length will do)
+      if (t < tries.length * 3 && path.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) : 0), 0) < Math.min(W, H) * 0.9) continue;
       // Clear of every district and the green, banks and all
       const clear = (p) => !nearCluster(p, half + 1.5) && !(green && distToPoly(p, green) < half + 1.5);
       const dense = path.flatMap((p, i) => (i ? Array.from({ length: 6 }, (_, k) => [path[i - 1][0] + ((p[0] - path[i - 1][0]) * k) / 6, path[i - 1][1] + ((p[1] - path[i - 1][1]) * k) / 6]) : [p]));
@@ -339,7 +368,8 @@ export function quickPlan(options = {}) {
     const d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1;
     const c = add(on, mul([-d[1] / l, d[0] / l], (r.chance(0.5) ? 1 : -1) * (roadHalf(rd) + r.range(3.5, 5))));
     const size = 4.6, rot = Math.round(r.range(-15, 15));
-    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => add(c, [(x * size) / 2, (y * size) / 2]));
+    // (its corners, the middles of its sides and its center: a bending river or stream can pass between corners)
+    const corners = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]].map(([x, y]) => add(c, [(x * size) / 2, (y * size) / 2]));
     if (![c, ...corners].every((p) => clearOf(p, 1.2))) continue;
     if (farms.some((f) => Math.hypot(f.c[0] - c[0], f.c[1] - c[1]) < size * 2)) continue;
     farms.push({ c, size, rot });
@@ -460,6 +490,49 @@ export function quickPlan(options = {}) {
     output: { scene: { name, weather: winter ? "snow" : null } },
   };
   return { plan, choices: { ...choices, seed, name } };
+}
+
+/** A Quick Start city or metropolis (quick-city.mjs), as a plan like the others. */
+function cityQuick(choices, seed, options) {
+  const made = cityPlan(choices, seed);
+  const name = String(options.name ?? "").trim() || placeName(rng(seed, "quick", "name"), choices.water);
+  const winter = choices.season === "winter";
+  const plan = {
+    atlasScribe: PLAN_VERSION,
+    id: `${slug(name)}-${seed}`,
+    name,
+    kind: "settlement",
+    size: { squares: [made.W, made.H], ftPerSquare: 25 },
+    season: choices.season,
+    sun: winter ? "low-south" : "high-south",
+    seed,
+    ground: winter ? "snow" : "grass",
+    features: [...made.features, { id: "name", type: "label", text: name, at: made.label.at, show: "gm", size: "huge" }],
+    output: { pxPerSquare: made.px, scene: { name, weather: winter ? "snow" : null } },
+  };
+  const kept = { ...choices, seed, name };
+  if (made.river) kept.river = made.river;
+  else delete kept.river;
+  return { plan, choices: kept };
+}
+
+/** A path with points dropped where it runs straight: none more than tol off the line kept (Douglas-Peucker). */
+function thin(path, tol) {
+  if (path.length < 3) return path;
+  const keep = path.map((_, i) => i === 0 || i === path.length - 1);
+  const off = (p, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+    return Math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1]);
+  };
+  const stack = [[0, path.length - 1]];
+  while (stack.length) {
+    const [i, j] = stack.pop();
+    let far = -1, d = tol;
+    for (let k = i + 1; k < j; k++) { const e = off(path[k], path[i], path[j]); if (e > d) { d = e; far = k; } }
+    if (far >= 0) { keep[far] = true; stack.push([i, far], [far, j]); }
+  }
+  return path.filter((_, k) => keep[k]);
 }
 
 /** Every point where path a crosses path b. */

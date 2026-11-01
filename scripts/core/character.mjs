@@ -172,6 +172,23 @@ export const LOOK = {
   },
 };
 
+/**
+ * How ordinary housing looks in a city district: trodden ground, its block middles built up with houses and yards (a
+ * city's homes are packed, not houses on grass), and a few wells (Patrick, 1 Nov).
+ */
+const CITY_HOMES = {
+  ground: { surface: "trodden", alpha: 0.6 }, street: "cobble",
+  back: { len: [16, 26], dep: [12, 18], gap: 4, use: "house", clutter: ["barrel", "firewood"] },
+  extras: { well: 2 },
+};
+
+/** A district's look: its character's, and for homes in a city district the city's own. */
+export function lookOf(d) {
+  const c = characterOf(d);
+  if (c === "homes" && (d?.profile === "city" || d?.profile === "core")) return CITY_HOMES;
+  return LOOK[c] ?? {};
+}
+
 /** The district's character, the default for anything this version doesn't know. */
 export const characterOf = (district) => (Object.hasOwn(CHARACTER, district?.character) ? district.character : "homes");
 

@@ -9,6 +9,12 @@ import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCross
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 import { isTownWall, isClosed, wallReach, towerReach } from "./layout/walls.mjs";
 import { waterEntries, nearWater, okWidths, bodyOf, RUNNING, BODIES } from "./water.mjs";
+import { offset, intersect, area as polyArea } from "./lots/poly.mjs";
+
+/** How much two polygons overlap, in square squares (sides lying on one line don't count, whatever the rounding). */
+function overlapArea(a, b) {
+  try { return intersect([a], [b]).reduce((s, p) => s + polyArea(p), 0); } catch { return 1; }
+}
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
@@ -140,10 +146,14 @@ export function checkPlan(raw) {
   }
 
   // Districts that overlap: the shared part is filled by both, so their houses stand on each other's
-  const dpolys = plan.features.filter((f) => f.type === "district").map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape) })).filter((d) => d.poly.length >= 3);
+  // (each drawn in a little first, along its own outline, so neighbors sharing a side don't count, whatever their
+  // shape: drawing in toward the middle of the box around it would push a bent district's far side out)
+  const dpolys = plan.features.filter((f) => f.type === "district").map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape) })).filter((d) => d.poly.length >= 3)
+    .map((d) => { let inner; try { inner = offset([d.poly], -0.03); } catch { inner = null; } return { ...d, inner: inner?.length ? inner : [shrink(d.poly)], box: bbox(d.poly) }; });
+  const meets = (a, b) => a.box[0] <= b.box[2] && b.box[0] <= a.box[2] && a.box[1] <= b.box[3] && b.box[1] <= a.box[3];
   for (let i = 0; i < dpolys.length; i++)
     for (let j = i + 1; j < dpolys.length; j++)
-      if (polygonsOverlap(shrink(dpolys[i].poly), shrink(dpolys[j].poly)))
+      if (meets(dpolys[i], dpolys[j]) && dpolys[i].inner.some((a) => dpolys[j].inner.some((b) => polygonsOverlap(a, b) && overlapArea(a, b) > 0.02)))
         warn(dpolys[i].id, "shape", `Districts "${dpolys[i].id}" and "${dpolys[j].id}" overlap. They can share an edge, but where they overlap both build, and their houses stand on each other's.`);
 
   // Buildings that overlap each other

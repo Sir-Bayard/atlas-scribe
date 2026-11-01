@@ -399,7 +399,14 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
 
     while (queue.length) {
       const seed = queue.shift();
-      const { x, y, ux, uy, line, jitter } = seed;
+      const { ux, uy, line, jitter } = seed;
+      let { x, y } = seed;
+      // A road along the district's edge (a city's wards are bounded by streets) has its seeds on the edge itself:
+      // such a seed starts a little in from the road, on the district's side
+      if (!inside(x, y) && !line.edge) {
+        const side = [[x - uy * 0.3, y + ux * 0.3], [x + uy * 0.3, y - ux * 0.3]].find(([px, py]) => inside(px, py));
+        if (side) [x, y] = side;
+      }
       if (!inside(x, y) || blocked.some((b) => pointInPolygon([x, y], b))) continue;
       // Of the field's two directions here, take the one more square to the line the seed is on
       const ma = field.major(x, y);

@@ -1401,12 +1401,16 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   static async #onQuick() {
     if (this.#working || !(await this.#mayDiscard())) return;
     const before = this.#plan;
-    const { QUICK, LABELS } = this.#host.quickChoices;
-    const select = (key, title) => `<div class="form-group"><label>${title}</label><select name="${key}">${QUICK[key].map((v) => `<option value="${v}">${esc(LABELS[key]?.[v] ?? v)}</option>`).join("")}<option value="">Any (picked from the seed)</option></select></div>`;
+    const { QUICK, LABELS, ANY = [] } = this.#host.quickChoices;
+    // (a choice only some places use shows Any first, so it's left to the seed unless picked)
+    const select = (key, title) => {
+      const any = `<option value="">Any (picked from the seed)</option>`, opts = QUICK[key].map((v) => `<option value="${v}">${esc(LABELS[key]?.[v] ?? v)}</option>`).join("");
+      return `<div class="form-group"><label>${title}</label><select name="${key}">${ANY.includes(key) ? any + opts : opts + any}</select></div>`;
+    };
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
     const content = `<div class="atlas-scribe as-quick">
         <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Leave empty for a made-up name"></div>
-        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}
+        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}${QUICK.river ? select("river", "River (a city)") : ""}
         <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
         <p class="hint">Everything it makes can be changed afterwards.</p>
       </div>`;

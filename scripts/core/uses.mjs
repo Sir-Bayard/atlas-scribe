@@ -9,6 +9,7 @@
 import { pointInPolygon, distanceToPath, bbox } from "./geom.mjs";
 import { centroid, area } from "./lots/poly.mjs";
 import { characterOf } from "./character.mjs";
+import { rng } from "./rng.mjs";
 
 /** The trades a district can be given (each a use). */
 export const TRADES = [
@@ -79,9 +80,10 @@ const RANK = { hamlet: 0, village: 1, town: 2, city: 3 };
 
 /**
  * The notable buildings of each settlement, shared out among its districts. dlist: [{ id, poly, feature }] every
- * district; squares: [polygon] squares and greens; roadIds: the plan's roads; ways: the plan's ways. Returns a Map
+ * district (with seed: its own seed); squares: [polygon] squares and greens; roadIds: the plan's roads; ways: the plan's ways. Returns a Map
  * from a district id to { want: [use...], ctx } where ctx describes its settlement for the siting rules: { center,
- * radius, gates: [point], squares: [polygon] }. Depends only on the plan, never on a district's seed.
+ * radius, gates: [point], squares: [polygon] }. Depends only on the plan, except that a city of ten or more districts
+ * thins its notables by each district's own seed (so a reroll changes only that district's).
  */
 export function notablesFor({ dlist, squares = [], roads = [], gates: wallGates = [], r }) {
   const out = new Map();
@@ -127,6 +129,10 @@ export function notablesFor({ dlist, squares = [], roads = [], gates: wallGates 
     const top = Math.max(...g.map((d) => RANK[d.feature.profile] ?? 1));
     const want = new Map(g.map((d) => [d.id, []]));
     const on = (d) => d.feature.notable !== false;
+    // A city of ten wards or more doesn't want a temple, an inn and a smithy in every ward: about a third of its wards
+    // get a temple, half an inn and half a smithy (each ward's own draw, so another ward's reroll moves nothing)
+    const big = g.length >= 10;
+    const cityShare = (d, what) => rng(d.seed ?? 0, "city-notable", d.id, what).next();
     const roadIn = (d) => roads.some((w) => w.path.some((p) => pointInPolygon(p, d.poly)) || d.poly.some((p) => distanceToPath(p, w.path) < (w.width ?? 0.8) / 2 + 0.3));
     // A temple: one in a village (in the district nearest its green or square, else the biggest), one in each town or
     // city district; a temple district has its own
@@ -138,7 +144,7 @@ export function notablesFor({ dlist, squares = [], roads = [], gates: wallGates 
         const score = (d) => (sqs.some((s) => s.some((p) => pointInPolygon(p, d.poly)) || d.poly.some((p) => pointInPolygon(p, s))) ? 1e9 : 0) + area(d.poly);
         const best = [...eligible].sort((a, b) => score(b) - score(a))[0];
         if (best) want.get(best.id).push("temple");
-      } else for (const d of eligible) if ((RANK[d.feature.profile] ?? 1) >= RANK.town && !["nobles", "temple"].includes(characterOf(d.feature))) want.get(d.id).push("temple");
+      } else for (const d of eligible) if ((RANK[d.feature.profile] ?? 1) >= RANK.town && !["nobles", "temple"].includes(characterOf(d.feature)) && (!big || cityShare(d, "temple") < 0.3)) want.get(d.id).push("temple");
     }
     // An inn in each village-or-bigger district a road runs through (one more in a big town district or a market)
     // and a smithy in each; in a hamlet, now and then one smithy
@@ -147,11 +153,11 @@ export function notablesFor({ dlist, squares = [], roads = [], gates: wallGates 
       if (!on(d)) continue;
       const rank = RANK[d.feature.profile] ?? 1, ch = characterOf(d.feature);
       if (rank === RANK.hamlet) { if (d === g[0] && gr.next() < 0.5) want.get(d.id).push("smithy"); continue; }
-      if (roadIn(d) && !["nobles", "temple", "garrison"].includes(ch)) {
+      if (roadIn(d) && !["nobles", "temple", "garrison"].includes(ch) && (!big || cityShare(d, "inn") < 0.5 || ch === "market")) {
         want.get(d.id).push("inn");
         if (rank >= RANK.town && area(d.poly) > 900) want.get(d.id).push("inn");
       }
-      if (!["nobles", "temple", "market"].includes(ch)) want.get(d.id).push("smithy");
+      if (!["nobles", "temple", "market"].includes(ch) && (!big || cityShare(d, "smithy") < 0.5 || ch === "crafts")) want.get(d.id).push("smithy");
     }
     for (const d of g) out.set(d.id, { want: want.get(d.id), ctx });
   }

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+**Quick Start cities**
+- Quick Start makes a walled city or a metropolis: a wall with a gate for each main road, the main roads meeting at a central market square, a street inside the wall, and wards (Voronoi cells between the main roads) bounded by streets, each an ordinary district you can reroll, lock and reshape.
+- City water: a river through it, a sea coast with a harbor (a quay and piers), a lake shore (a wharf and jetties), or a river meeting the sea.
+- A city's river bends through it, splits around an island at its heart, loops around it outside the wall (all but a neck of land), or meets a second river inside the walls. A new River choice picks the shape; left on Any, the seed picks.
+- Quick Start rivers and streams in villages, hamlets and towns now bend through the country instead of running nearly straight. Existing Quick Start seeds get different rivers, and the farms and fields around them move with them.
+- Wards get characters by the city's geography, varied by the seed: market and temple at the center, docks on the water, the garrison against the wall by a gate (often walled in as a citadel with its own gate), the nobles on the quiet side, crafts and the poor by the wall and downstream, merchants along the main roads, homes in between. Each ward is named (Market Ward, High Ward, North Ward and so on).
+- A metropolis keeps its old inner wall around the old town, with more wards, gates and suburbs.
+- Outside the walls: suburbs along the roads beyond some gates, farmsteads, fields and woods.
+- Every district of type City now builds up its block middles with houses and yards on trodden ground, and its lanes run across its main streets only (except around a radial square), so its blocks are bigger and fuller. Quick Start town cores change with this.
+- A city of ten or more districts gives a temple to about a third of its districts and an inn and a smithy to about half, not one of each to every district.
+- A street's seeds along a road on the district's edge now start just inside it, so districts bounded by roads (a city's wards) fill with streets.
+- For a city, the Roads choice sets the gates (a road through: 2, a fork: 3, a crossroads: 4; a metropolis 2 more), and a village green makes a grass square where the main roads meet.
+- `checkPlan` no longer reports two bent districts that only share a side as overlapping.
+- A track doesn't start from a lane's end beside a house (it would clip it).
+
 **District character and what buildings are for**
 - A district's Character: homes (the default, which changes nothing), market, merchants, crafts, docks, nobles, temple, poor quarter or garrison. It shifts the district's plots, house shapes, gardens, roofs and streets: narrow packed plots and crooked lanes in the poor quarter, big houses set back in walled grounds for the nobles, courtyard houses and warehouses for the merchants, barracks and straight streets for the garrison.
 - Each character reads apart at a glance: its own ground (cobbles in the market, merchants' and docks' quarters, bare dirt in the crafts and poor quarters, trodden earth for the garrison, lawns for the nobles and the temple), its own street surface, its own roof colors, and in the dense quarters the middles of the blocks built up with stores, workshops or shacks.
