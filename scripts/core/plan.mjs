@@ -179,7 +179,7 @@ export const TYPES = {
   prop: {
     geometry: "point",
     classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue"],
-    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0 }) },
+    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }) },
   },
   label: {
     geometry: "point",
@@ -187,7 +187,8 @@ export const TYPES = {
     // name unless it has text of its own (labels.mjs)
     fields: {
       text: str(""), show: oneOf(["gm", "all"], "gm"), size: oneOf(["small", "normal", "large", "huge"], "normal"),
-      angle: num(0, { unit: "deg", min: -180, max: 180 }), color: str(null), font: str(null), alpha: num(1, { min: 0.1, max: 1 }),
+      // angle: any number of degrees, read as -180 to 180 (370 is 10)
+      angle: num(0, { unit: "deg" }), color: str(null), font: str(null), alpha: num(1, { min: 0.1, max: 1 }),
       of: str(null), offset: pointOf(),
     },
   },
@@ -199,6 +200,13 @@ export const TYPES = {
  * 1 tree a square square.
  */
 export const WOOD_DENSITY = { thick: 1 / 2.4 };
+
+/** A plan tree's species words drawn as a conifer (any other is a broadleaf, bare in winter). */
+export const CONIFERS = ["conifer", "fir", "pine", "spruce", "cedar", "larch", "yew", "cypress", "juniper", "hemlock", "evergreen"];
+export const isConifer = (species) => typeof species === "string" && CONIFERS.includes(species.trim().toLowerCase());
+
+/** How wide a prop is drawn, in squares, when the plan gives it no size (a prop's size, in feet, sets it). */
+export const PROP_SQUARES = { well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45 };
 
 /** A label's text height in squares, by its size word. */
 export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };

@@ -11,6 +11,18 @@
 - Houses, streets, trees and fields keep off ponds, lakes, the sea and their shores, and a town wall stops at a lake's shore as it does at a river.
 - For plan writers: water classes `pond`, `lake` and `sea` with a `shape`; water fields `endWidth`, `widths` (a width in feet for each point of the path, in place of `width` and `endWidth`) and `shore`; a new feature type `dock` (classes `quay`, `wharf`, `pier`, `jetty`; fields `width` and `material`, stone or wood). `checkPlan` warns about a pond, lake or sea drawn along a path, a river drawn as a shape, and `widths` that don't match the path.
 
+**Fixes**
+- Quays: one drawn across a river is built on the bank most of it is on (it used to jump the water); one out in open water isn't drawn; one along a town wall's moat is moved onto the moat's edge; one moved out of the district it was drawn in says so. In winter, open water has ice along its shore.
+- Farms by ponds: a farmhouse's corner keeps off a pond's shore, and a farm with a pond in its middle still gets a lane to the road.
+- Town walls: a farm's lane never runs through a town wall (only roads get gates), no tower stands well off the map, and where a road passes over a wall without crossing it (a wide road by a corner) the wall stops at a tower each side. A park's lane never starts in a river.
+- Fields keep clear of the trees, wells and carts a plan places. A plan tree's species can be any conifer's name (pine, fir, spruce and so on), and a prop's Size (in feet) now sets how big it's drawn.
+- A village green stands out from the fields around it in summer.
+- A river that changes width sharply between two far-apart points no longer shows a notch.
+- Labels: a name label on a turned area turns with it; a label's angle can be any number of degrees (370 reads as 10).
+- In the window: a Stop button while a slow map draws; a click on a label's text picks the label rather than a well or cart under it; hints name districts by name; a building group whose roofs differ shows "mixed" rather than a Default that did nothing; the underlay's see-through slider no longer jumps back when the map finishes drawing; a scene publish canceled after the map was saved says where the map is.
+- Publishing into a scene replaces every label AtlasScribe put there before, whatever plan made them, and a canceled publish no longer leaves a new thumbnail behind.
+- A cemetery is reported once, not twice.
+
 **Lighter lines**
 - Roads no longer have a dark line down the middle (ruts are unchanged), and their worn middles, trodden edges, the outlines around roofs and the dark edge along water are lighter.
 

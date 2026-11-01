@@ -105,6 +105,14 @@
 .atlas-scribe .as-pv-map.as-busy .as-pv-wait {
   display: block;
 }
+.atlas-scribe .as-pv-wait button {
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
+  line-height: 1.4;
+  width: auto;
+  min-height: 0;
+  font-size: inherit;
+}
 .atlas-scribe .as-pv-map.as-stale .as-pv-stage {
   opacity: 0.35;
 }

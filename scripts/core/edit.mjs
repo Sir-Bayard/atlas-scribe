@@ -4,7 +4,7 @@
  * come from TYPES in plan.mjs, so a field added there shows up here; FIELD_TEXT gives each its words.
  * Pure: runs in the worker, on the page and under node.
  */
-import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize } from "./plan.mjs";
+import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize, isConifer } from "./plan.mjs";
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
 
 /** The district types the window offers (an old plan's "roadside" reads as a hamlet, "core" as a city). */
@@ -92,7 +92,7 @@ export const FIELD_TEXT = {
 
   "prop.rot": { label: "Turned", help: "Degrees clockwise", notFor: ["tree"] }, // a tree is turned at random
   "prop.species": { label: "Tree", kind: "enum", values: ["conifer", "bare"], names: { conifer: "fir", bare: "leafy" }, auto: "leafy" },
-  "prop.size": { hidden: true }, // not used yet
+  "prop.size": { label: "Size", help: "How wide it is, in feet (a tree's crown); else the usual size", more: true },
 
   "label.text": { label: "Text" },
   "label.show": { label: "Shown to", names: { gm: "the GM only", all: "everyone" } },
@@ -163,6 +163,7 @@ export function fieldsOf(plan, id) {
     if (kind === "share") value = isObj(f[name]) ? f[name][txt.key] : undefined;
     if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? 0.1 : 0; // an M1 plan's
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
+    if (f.type === "prop" && name === "species" && value !== undefined && value !== null) value = isConifer(value) ? "conifer" : "bare"; // "pine" is drawn, and shown, as a fir
     let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);
     if (f.type === "water" && name === "frozen" && dflt === null) auto = "in winter"; // a pond or lake left unset
     // A label's color and font fall back to the plan's; a name label's text to its feature's name

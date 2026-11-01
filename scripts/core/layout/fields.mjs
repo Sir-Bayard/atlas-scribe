@@ -56,7 +56,7 @@ const COVERAGE = 0.65;
 const HEDGED = 0.25;
 
 /**
- * What a field system keeps out of: polygons, from the plan alone (roads and water at their widths, walls and hedges,
+ * What a field system keeps out of: polygons, from the plan alone (roads, water and docks at their widths, walls and hedges,
  * districts with a ragged margin of grass around them (marginRound), squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
  * smoothed (as the layout has it).
  */
@@ -106,6 +106,10 @@ function keepOutParts(plan, self = undefined) {
         break;
       case "dock":
         if (Array.isArray(f.path)) paths.push({ path: f.path, half: ft(f.width ?? 15) / 2 + KEEP.road });
+        break;
+      case "prop":
+        // A tree, well or cart the plan placed: its own spot (a tree its crown)
+        if (Array.isArray(f.at) && Number.isFinite(f.at[0]) && Number.isFinite(f.at[1])) polys.push(shapeToPolygon({ circle: [f.at[0], f.at[1], (f.class === "tree" ? 1 : 0.6) + KEEP.area] }, 0, 12));
         break;
       case "wall":
         // A town wall or palisade keeps its clear strip, and its ditch or moat, too
@@ -214,6 +218,7 @@ export function accessLanes(plan) {
     if (f.type === "landmark") for (const b of f.buildings ?? []) solid.push({ id: f.id, poly: poly({ ...b, type: "building" }) });
   }
   const walls = solid.filter((x) => x.poly.length >= 3).map((x) => ({ ...x, box: bbox(x.poly), ring: [...x.poly, x.poly[0]] }));
+  const townWalls = plan.features.filter((f) => isTownWall(f) && Array.isArray(f.path) && f.path.length >= 2);
   const out = [];
   for (const f of plan.features) {
     const farm = f.type === "area" && f.class === "farmstead";
@@ -222,7 +227,9 @@ export function accessLanes(plan) {
     const pts = poly(f);
     if (pts.length < 3) continue;
     const ring = [...pts, pts[0]];
-    const [x0, y0, x1, y1] = bbox(pts), c = insidePoint(pts);
+    const [x0, y0, x1, y1] = bbox(pts);
+    const ponds = walls.filter((x) => x.water);
+    let c = insidePoint(pts);
     if (!farm && districts.some((d) => pointInPolygon(c, d))) continue; // the district's streets reach it
     if (!farm && farms.some((x) => pts.some((q) => distanceToPath(q, x.ring) < 1) || x.ring.some((q) => distanceToPath(q, ring) < 1))) continue; // a farm's yard: the farm's lane serves it
     // Already on a road: one runs through it or along it (a park's paths meet a road whose side averages within 2.5
@@ -232,11 +239,29 @@ export function accessLanes(plan) {
     // What it mustn't run through: anything apart from what stands in it or beside it (a farm's own yard and barns)
     const own = (x) => x.id === f.id || (!x.water && meets(x.box, 1) && x.poly.some((q) => pointInPolygon(q, pts) || distanceToPath(q, ring) < 1)); // never a pond beside it
     const blockers = walls.filter((x) => !own(x));
-    const blocked = (a, b) => blockers.some((x) => Math.max(a[0], b[0]) >= x.box[0] && Math.min(a[0], b[0]) <= x.box[2] && Math.max(a[1], b[1]) >= x.box[1] && Math.min(a[1], b[1]) <= x.box[3] && pathTouchesPolygon([a, b], x.poly));
-    // Where it leaves from: the middle of the yard (the lane starts at its edge), or a park's side middles
-    const starts = f.class === "park" ? pts.map((q, i) => { const n = pts[(i + 1) % pts.length]; return { from: [(q[0] + n[0]) / 2, (q[1] + n[1]) / 2], edge: true }; }) : [{ from: c, edge: false }];
+    // (nor through a town wall: only the plan's roads get gates)
+    const blocked = (a, b) => blockers.some((x) => Math.max(a[0], b[0]) >= x.box[0] && Math.min(a[0], b[0]) <= x.box[2] && Math.max(a[1], b[1]) >= x.box[1] && Math.min(a[1], b[1]) <= x.box[3] && pathTouchesPolygon([a, b], x.poly))
+      || townWalls.some((w) => w.path.some((q, i) => i && crosses(a, b, w.path[i - 1], q)));
     // Every road point in reach, then those within the detour allowed of the nearest
     const near = roadPts.filter(({ q }) => q[0] >= x0 - LANE_REACH && q[0] <= x1 + LANE_REACH && q[1] >= y0 - LANE_REACH && q[1] <= y1 + LANE_REACH);
+    // A yard whose middle is in its pond starts from the dry point in it nearest a road in reach (tried on a grid of
+    // at most about 60 points a side)
+    if (ponds.some((x) => pointInPolygon(c, x.poly))) {
+      let best = null;
+      const step = Math.max(0.5, Math.max(x1 - x0, y1 - y0) / 60);
+      const toRoad = (q) => near.reduce((m, r) => Math.min(m, Math.hypot(r.q[0] - q[0], r.q[1] - q[1])), Infinity);
+      for (let gx = x0 + step / 2; gx <= x1; gx += step) for (let gy = y0 + step / 2; gy <= y1; gy += step) {
+        const q = [gx, gy];
+        if (!pointInPolygon(q, pts) || ponds.some((x) => pointInPolygon(q, x.poly) || distanceToPath(q, x.ring) < 0.5)) continue;
+        const d = toRoad(q);
+        if (!best || d < best.d) best = { q, d };
+      }
+      if (best) c = best.q;
+    }
+    // Where it leaves from: the middle of the yard (the lane starts at its edge), or a park's side middles
+    // (never from a side's middle that's in a river or a pond)
+    const starts = (f.class === "park" ? pts.map((q, i) => { const n = pts[(i + 1) % pts.length]; return { from: [(q[0] + n[0]) / 2, (q[1] + n[1]) / 2], edge: true }; }) : [{ from: c, edge: false }])
+      .filter((st) => !st.edge || (!waters.some((w) => byWater(st.from, w, w.half + 0.3)) && !ponds.some((x) => pointInPolygon(st.from, x.poly))));
     const cands = [];
     for (const st of starts) for (const { q, half } of near) {
       const d = Math.hypot(q[0] - st.from[0], q[1] - st.from[1]);

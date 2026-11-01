@@ -7,7 +7,7 @@
  * rolesFor(layout) lists the art roles a Layout needs; paint(ctx) paints one window.
  */
 import { fallbackColor } from "../../core/roles.mjs";
-import { rng } from "../../core/rng.mjs";
+import { PROP_SQUARES } from "../../core/plan.mjs";
 import { roofFacets } from "../roofs.mjs";
 export { roofFacets };
 
@@ -72,6 +72,7 @@ export function rolesFor(layout) {
     if (i.kind === "water") {
       roles.add(i.poly ? `shore.${i.shore}.${s}` : `stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`);
       if (i.frozen) roles.add("water.ice.cracked");
+      if (i.poly && s === "winter") roles.add("water.ice"); // shore ice on open water
     }
     if (i.kind === "dock") roles.add(`dock.${i.material}.${s}`);
     if (i.kind === "reed") roles.add("prop.reeds");
@@ -133,10 +134,9 @@ export function paint(ctx) {
       k.moveTo(x + r, y); k.arc(x, y, r, 0, 2 * Math.PI);
       if (!i) continue;
       const px = X(pts[i - 1][0]), py = Y(pts[i - 1][1]), r0 = Math.max(0, ((widths[i - 1] * mul + add) / 2) * pp);
-      const dx = x - px, dy = y - py, l = Math.hypot(dx, dy);
-      if (!l) continue;
-      const nx = -dy / l, ny = dx / l;
-      k.moveTo(px - nx * r0, py - ny * r0); k.lineTo(x - nx * r, y - ny * r); k.lineTo(x + nx * r, y + ny * r); k.lineTo(px + nx * r0, py + ny * r0); k.closePath();
+      const band = tangentBand(px, py, r0, x, y, r);
+      if (!band) continue;
+      k.moveTo(...band[0]); k.lineTo(...band[1]); k.lineTo(...band[2]); k.lineTo(...band[3]); k.closePath();
     }
     k.fill("nonzero");
   };
@@ -310,7 +310,12 @@ export function paint(ctx) {
   // Parks: grass where the season shows it, then their paths (trodden or gravel), then a formal garden's basin
   for (const pk of items("surface", "park")) {
     const box = boxOf([pk.poly, ...(pk.paths ?? []).map((w) => w.path)], 1 + Math.max(0, ...(pk.paths ?? []).map((w) => w.width / 2)));
-    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, 0.35, "source-over", box);
+    // A green stands out from the fields around it: lusher grass, a little lighter
+    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, pk.style === "formal" ? 0.45 : 0.65, "source-over", box);
+    if (s !== "winter" && grassLift) {
+      soft((k) => { poly(k, pk.poly); k.fill(); }, "rgb(70,92,30)", 0.4, 0.6, "screen", box);
+      soft((k) => { k.lineWidth = 0.3 * pp; poly(k, pk.poly); k.stroke(); }, "rgb(110,112,80)", 0.25, 0.3, "multiply", box); // where the mowing stops
+    }
     // Under snow every path is trodden snow
     for (const w of pk.paths ?? []) soft((k) => strokeLine(k, w.path, w.width), tex(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`, 2.5), 0.06, w.surface === "gravel" ? 0.95 : 0.75, "source-over", box);
     // A little darker, as a road's worn middle is, so a path shows on grass or snow alike
@@ -493,6 +498,11 @@ export function paint(ctx) {
     const S = { sea: 2.2, lake: 1.4, pond: 0.7 }[b.class] ?? 1.4;
     soft(nearShore(S * 2, false), "rgb(40,62,88)", S * 0.5, { sea: 0.3, lake: 0.22, pond: 0.15 }[b.class] ?? 0.22, "multiply", box);
     soft(nearShore(S, true), "rgb(120,160,150)", S * 0.3, 0.3, "screen", box);
+    // Open water in winter: ice forming along the shore, and snow drifted over its edge
+    if (winter) {
+      soft(nearShore(2.2, true), tex("water.ice", 2), 0.4, 0.8, "source-over", box);
+      soft(nearShore(0.8, true), "rgb(236,239,243)", 0.25, 0.75, "source-over", box);
+    }
     if (b.surf) {
       // Foam where the waves break, and a broken line of it a little way out
       soft(nearShore(0.3, true), "rgb(240,244,246)", 0.06, 0.55, "source-over", box);
@@ -557,7 +567,7 @@ export function paint(ctx) {
   function paintFord(c) {
     const [fx, fy] = c.at;
     const fa = (c.angle * Math.PI) / 180;
-    const dir = wayDirectionAt(L, c.at); // the road running through the ford
+    const dir = c.dir ?? wayDirectionAt(L, c.at); // the road running through the ford
     const along = (t) => [fx + dir[0] * t, fy + dir[1] * t];
     const el = (k, rx, ry) => { k.beginPath(); k.ellipse(X(fx), Y(fy), rx * pp, ry * pp, fa, 0, 7); k.fill(); };
     // A 50 ft ford at 25 ft a square: an ellipse 4.6 by 2.5 squares (semi-axes 2.3 and 1.25)
@@ -571,33 +581,28 @@ export function paint(ctx) {
     soft((k) => strokeLine(k, [along(-1.7), c.at, along(1.7)], 1.25), tex(`stone.rough.${s}`, 1.2), 0.2, 0.75, "source-over", box);
     soft((k) => strokeLine(k, [along(-1.7), c.at, along(1.7)], 1.25), "rgb(120,104,86)", 0.2, 0.5, "multiply", box);
     soft((k) => strokeLine(k, [along(-1.3), c.at, along(1.3)], 0.55), "rgb(58,74,90)", 0.15, 0.45, "source-over", box);
-    const r = rng(c.id, "ford");
-    if (c.frozen) for (let i = 0; i < 14; i++) {
-      const t = r.next() * Math.PI * 2, rr = 1 + r.next() * 0.35;
-      const x = fx + Math.cos(t) * rx * rr * Math.cos(fa) - Math.sin(t) * ry * rr * Math.sin(fa);
-      const y = fy + Math.cos(t) * rx * rr * Math.sin(fa) + Math.sin(t) * ry * rr * Math.cos(fa);
-      const sz = (0.25 + r.next() * 0.45) * pp;
+    // Its rocks (frozen) and stepping stones, as the layout placed them
+    for (const rock of c.rocks ?? []) {
+      const { x, y } = rock, sz = rock.size * pp;
       // The rock's corners are worked out in tile space, so its texture stays anchored to the map
-      const turn = r.next() * 3, ct = Math.cos(turn), st = Math.sin(turn), px = X(x), py = Y(y);
+      const turn = rock.turn, ct = Math.cos(turn), st = Math.sin(turn), px = X(x), py = Y(y);
       g.save();
       g.shadowColor = "rgba(20,30,48,0.55)"; g.shadowBlur = pp * 0.05; g.shadowOffsetY = -pp * 0.04;
       g.fillStyle = tex(`ground.${gb}`, 2);
       g.beginPath();
-      const nv = 5 + Math.floor(r.next() * 3);
+      const nv = rock.corners.length;
       for (let v = 0; v < nv; v++) {
-        const a = (v / nv) * Math.PI * 2, rr2 = sz * (0.3 + r.next() * 0.25);
+        const a = (v / nv) * Math.PI * 2, rr2 = sz * rock.corners[v];
         const lx = Math.cos(a) * rr2, ly = Math.sin(a) * rr2;
         const qx = px + lx * ct - ly * st, qy = py + lx * st + ly * ct;
         v ? g.lineTo(qx, qy) : g.moveTo(qx, qy);
       }
       g.closePath(); g.fill(); g.shadowColor = "transparent"; g.fillStyle = "rgba(150,175,200,0.25)"; g.fill(); g.restore();
     }
-    for (let i = 0; i < 16; i++) {
-      const [sx, sy] = along(-1.2 + r.next() * 2.4);
-      const x = sx + (r.next() - 0.5) * 0.9 * -dir[1], y = sy + (r.next() - 0.5) * 0.9 * dir[0];
-      const rad = (0.04 + r.next() * 0.09) * pp;
-      g.fillStyle = "rgba(66,64,62,0.92)"; g.beginPath(); g.ellipse(X(x), Y(y), rad * 1.2, rad, r.next() * 3, 0, 7); g.fill();
-      if (r.next() < 0.6) { g.fillStyle = "rgba(232,236,241,0.85)"; g.beginPath(); g.ellipse(X(x) - rad * 0.15, Y(y) - rad * 0.2, rad * 0.7, rad * 0.55, 0, 0, 7); g.fill(); }
+    for (const st of c.stones ?? []) {
+      const { x, y } = st, rad = st.size * pp;
+      g.fillStyle = "rgba(66,64,62,0.92)"; g.beginPath(); g.ellipse(X(x), Y(y), rad * 1.2, rad, st.rot, 0, 7); g.fill();
+      if (st.cap) { g.fillStyle = "rgba(232,236,241,0.85)"; g.beginPath(); g.ellipse(X(x) - rad * 0.15, Y(y) - rad * 0.2, rad * 0.7, rad * 0.55, 0, 0, 7); g.fill(); }
     }
   }
 
@@ -731,7 +736,7 @@ export function paint(ctx) {
   // Props, then trees from north to south so southern crowns overlap
   progress(0.75, "Props and trees");
   for (const p of items("prop").filter((p) => p.class !== "bush")) {
-    const size = { well: 0.45, cart: 0.45, wagon: 0.6 }[p.class] ?? 0.45;
+    const size = PROP_SQUARES[p.class] ?? 0.45;
     const shadow = { well: 0.1, cart: 0.08, wagon: 0.1 }[p.class] ?? 0.08;
     img(`prop.${p.class}`, p.variant, p.x, p.y, size * (p.scale ?? 1), p.rot, shadow);
   }
@@ -755,6 +760,21 @@ function pointIn([x, y], poly) {
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;
+}
+
+/**
+ * The band between two round ends (centers and radii in pixels) along the lines that touch both, so a widening
+ * line has no notch where a band meets an end: its four corners, wound as canvas arcs are; or null when one end
+ * holds the other.
+ */
+export function tangentBand(ax, ay, ra, bx, by, rb) {
+  const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy);
+  if (!l) return null;
+  const s = (ra - rb) / l;
+  if (Math.abs(s) >= 1) return null;
+  const c = Math.sqrt(1 - s * s), ux = dx / l, uy = dy / l, nx = -uy, ny = ux;
+  const m1 = [s * ux + c * nx, s * uy + c * ny], m2 = [s * ux - c * nx, s * uy - c * ny];
+  return [[ax + m2[0] * ra, ay + m2[1] * ra], [bx + m2[0] * rb, by + m2[1] * rb], [bx + m1[0] * rb, by + m1[1] * rb], [ax + m1[0] * ra, ay + m1[1] * ra]];
 }
 
 /** Points every step squares along a path (from half a step in). */

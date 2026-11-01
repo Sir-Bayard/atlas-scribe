@@ -268,8 +268,8 @@ const api = {
    * output.scene, a thumbnail, and the plan's labels as locked text drawings (hidden from players unless show is
    * "all"). image: the result of render, or a path. scene: the id of a scene to update instead of creating one.
    * AtlasScribe only updates scenes it made, unless force is true; all of the scene is backed up to
-   * <output>/backups first, its name is kept, and only the labels an earlier publish of this plan added are
-   * replaced. Returns { sceneId, created, backup, thumb, labels, warnings }.
+   * <output>/backups first, its name is kept, and the labels AtlasScribe added to it before (from whatever plan)
+   * are replaced. Returns { sceneId, created, backup, thumb, labels, warnings }.
    */
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();

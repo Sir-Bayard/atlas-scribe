@@ -84,6 +84,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asFit: AtlasScribeApp.#onFit,
       asShapes: AtlasScribeApp.#onShapes,
       asCancel: AtlasScribeApp.#onCancel,
+      asStopDraw: AtlasScribeApp.#onStopDraw,
       asBack: AtlasScribeApp.#onBack,
       asReset: AtlasScribeApp.#onReset,
       asDelete: AtlasScribeApp.#onDelete,
@@ -216,7 +217,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       try {
         result = await this.#run(this.#plan);
       } catch (e) {
-        this.#error = e.message ?? String(e);
+        // Stopped: a change that started it is taken back (#change), so the plan matches the picture
+        this.#error = !e.cancelled ? e.message ?? String(e) : this.#result ? "Stopped drawing." : "Stopped drawing. Any change draws it again.";
       }
       this.#busy = false;
       this.#stale = !result;
@@ -229,7 +231,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         this.#url = URL.createObjectURL(result.blob);
         this.#result = result;
       }
-      await this.render();
+      // Changes made while it drew are applied first (just below), and show then: rendering now would put an input
+      // moved meanwhile (the underlay's slider) back where it was until they're applied
+      if (!this.#queue.length) await this.render();
       return result;
     };
     this.#drawing = go().finally(() => {
@@ -428,7 +432,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     el.innerHTML = `
       <div class="as-pv-map ${this.#busy ? "as-busy" : ""} ${this.#stale ? "as-stale" : ""} ${this.#tool ? "as-drawing" : ""}">
         ${map}
-        <div class="as-pv-wait"><i class="fa-solid fa-spinner fa-spin"></i> Drawing</div>
+        <div class="as-pv-wait"><i class="fa-solid fa-spinner fa-spin"></i> Drawing <button type="button" data-action="asStopDraw" data-tooltip="Stop drawing (the change that started it is taken back)">Stop</button></div>
         ${this.#error ? `<p class="as-pv-error">${esc(this.#error)}</p>` : ""}
       </div>
       <aside class="as-pv-side">
@@ -455,7 +459,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         ${this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
-          : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working })
+          : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
           : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices() })
           : `<ul class="as-pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
@@ -543,7 +547,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     };
     el.addEventListener("pointerdown", (ev) => {
       const box = ev.target.closest?.(".as-pv-map");
-      if (!box || !this.#result) return;
+      // A button over the map (Stop) is a button, not the start of a drag: a drag captures the pointer, and the
+      // button's click would never reach it
+      if (!box || !this.#result || ev.target.closest?.(".as-pv-wait, button")) return;
       const handle = ev.target.closest?.(".as-pv-handle");
       if (this.#tool && ev.button === 0) this.#tool.down = { x: ev.clientX, y: ev.clientY, at: this.#toSquares(ev) };
       // The underlay, while its panel is open: drag it to move it, or a corner to scale it
@@ -700,7 +706,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   /** What the hint under the tools says: how to reshape, given what's picked. */
   #hint() {
     const gen = this.#genOf(this.#selected);
-    if (gen) return `The generator made this ${gen.kind} in ${gen.item.from}. Pin it to keep it when ${gen.item.from} is rerolled. Click elsewhere to finish.`;
+    if (gen) return `The generator made this ${gen.kind} in ${this.#nameOf(gen.item.from)}. Pin it to keep it when ${this.#nameOf(gen.item.from)} is rerolled. Click elsewhere to finish.`;
     if (this.#selected) {
       const has = this.#handles.some((h) => h.id === this.#selected);
       if (has && this.#handles.some((h) => h.id === this.#selected && h.path))
@@ -715,9 +721,16 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     return "A quick sketch in plain colors. Click anything to see its settings and reshape it; scroll to zoom, drag to move.";
   }
 
+  /** A feature's name for the words in hints and notices: its name, else its id. */
+  #nameOf(id) {
+    const name = featureOf(this.#plan, id)?.name;
+    return typeof name === "string" && name.trim() ? name : id;
+  }
+
   /**
-   * Picks what's under a click: a bridge, ford or prop first, then a label, then a road, river or wall, then the
-   * smallest shape there (a building, square, pond, wood or district), so a wood inside a district can be picked.
+   * Picks what's under a click: a label's text, then a bridge, ford or prop, then the space around a label, then a
+   * road, river or wall, then the smallest shape there (a building, square, pond, wood or district), so a wood inside
+   * a district can be picked.
    */
   #pick(ev) {
     if (!this.#result || this.#working) return;
@@ -731,14 +744,18 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const d = Math.hypot(p.at[0] - at[0], p.at[1] - at[1]);
       if (d <= pointD) { pointD = d; point = p.id; }
     }
-    if (point) return this.#select(point);
-    // A label, by the box its text takes
-    const near = 8 / px; // at least 8 pixels around the text, however far out the map is zoomed
-    const label = this.#labelBoxes().find((l) => {
+    // A label, by the box its text takes (with at least 8 pixels around it, however far out the map is zoomed). A
+    // click on the text itself picks the label over a well or cart under it; around the text, the well or cart wins
+    const near = 8 / px;
+    const inLabel = (pad) => this.#labelBoxes().find((l) => {
       const a = (-l.angle * Math.PI) / 180, dx = at[0] - l.at[0], dy = at[1] - l.at[1];
       const x = dx * Math.cos(a) - dy * Math.sin(a), y = dx * Math.sin(a) + dy * Math.cos(a); // into the label's frame
-      return Math.abs(x) <= Math.max(l.hw, near) && Math.abs(y) <= Math.max(l.hh, near);
+      return Math.abs(x) <= Math.max(l.hw, pad) && Math.abs(y) <= Math.max(l.hh, pad);
     });
+    const onText = inLabel(0);
+    if (onText) return this.#select(onText.id);
+    if (point) return this.#select(point);
+    const label = inLabel(near);
     if (label) return this.#select(label.id);
     // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area around it
     let road = null, roadD = Infinity;
@@ -756,8 +773,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       }
       return best;
     };
-    // A plan building, square or pond; then a house or street the generator made (to pin); then the smallest wood,
-    // field system, farm or district there
+    // A plan building or square; then a house or street the generator made (to pin); then the smallest wood, field
+    // system, farm, pond, lake or district there
     const minor = smallest(this.#minor());
     if (minor) return this.#select(minor);
     const g = this.#stale ? { houses: [], streets: [] } : this.#generated(); // the picture is of another plan
@@ -1007,7 +1024,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (sameMap && this.#result && !this.#stale) {
       this.#result = { ...this.#result, labels: labelsOf(before) };
       this.render();
-    } else await this.#draw();
+    } else if (!(await this.#draw()) && this.rendered && this.#error === "Stopped drawing.") {
+      this.#error = "Stopped drawing. The undo stands, but the picture is of the plan before it; any change draws it again.";
+      this.render();
+    }
   }
 
   /** The scene this plan was made into last, if any. */
@@ -1077,7 +1097,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#inspect = res.id;
     const drawn = await this.#change(res.plan);
     if (!drawn && this.#selected === res.id) { this.#selected = this.#inspect = null; this.render(); }
-    if (drawn) ui.notifications.info(`AtlasScribe: ${res.id} walls in ${target.dataset.id}, with a gate wherever a road crosses it. Reshape it by its corners, or delete it.`);
+    if (drawn) ui.notifications.info(`AtlasScribe: ${res.id} walls in ${this.#nameOf(target.dataset.id)}, with a gate wherever a road crosses it. Reshape it by its corners, or delete it.`);
   }
 
   /** Pins the picked house or street: copied into the plan as a fixed feature, whose settings then open. */
@@ -1090,7 +1110,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#inspect = res.id;
     const drawn = await this.#change(res.plan);
     if (!drawn && this.#selected === res.id) { this.#selected = this.#inspect = null; this.render(); }
-    if (drawn) ui.notifications.info(`AtlasScribe: pinned as ${res.id}. ${gen.kind === "house" ? "It stays as it is when" : "It stays, and the district's other streets follow it, when"} ${gen.item.from} is rerolled; delete it to let the generator have the spot again.`);
+    if (drawn) ui.notifications.info(`AtlasScribe: pinned as ${res.id}. ${gen.kind === "house" ? "It stays as it is when" : "It stays, and the district's other streets follow it, when"} ${this.#nameOf(gen.item.from)} is rerolled; delete it to let the generator have the spot again.`);
   }
 
   /** Underlay: with none, pick an image to put under the sketch; with one, its panel (again to close it). */
@@ -1565,6 +1585,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       if (why.length) ui.notifications.warn(`AtlasScribe: ${why.join(" ")}`, { permanent: true });
     } catch (e) {
       if (!e.cancelled) ui.notifications.error(e.message, { permanent: true });
+      // Canceled once the map was saved: Foundry can't delete a file, so say where it is
+      else if (e.result?.path) ui.notifications.info(`AtlasScribe: canceled. The map had already been saved, to ${e.result.path}; the scene wasn't changed.`);
     } finally {
       this.#publishing = false;
       if (this.rendered) {
@@ -1579,6 +1601,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   /** Stops the painting under way (nothing is saved or changed). */
   static #onCancel() {
     if (this.#publishing) this.#host.cancel();
+  }
+
+  /** Stops the drawing under way (a slow one: a big map, or many feet a square); the change that started it is taken back. */
+  static #onStopDraw() {
+    if (this.#busy && !this.#publishing) this.#host.cancel();
   }
 
   /** Goes to the scene made from this plan. */

@@ -85,14 +85,17 @@ export function labelsOf(plan) {
       const owner = byId.get(f.of);
       const a = anchorOf(owner);
       if (!a) continue;
-      const off = isPt(f.offset) ? f.offset : [0, 0];
+      // Its offset and angle are the turned area's own, so they turn with it
+      const off = turned(isPt(f.offset) ? f.offset : [0, 0], rotOf(owner));
       at = [a[0] + off[0], a[1] + off[1]];
       if (!text) text = line(owner.name) || line(owner.id);
     } else if (isPt(f.at)) at = f.at;
     if (!at || !text) continue;
+    const spin = typeof f.of === "string" && f.of ? rotOf(byId.get(f.of)) : 0;
     out.push({
       id: f.id, of: f.of ?? null, text, at,
-      angle: Number.isFinite(f.angle) ? wrapAngle(f.angle) : 0,
+      // (turned with its area, but never upside down)
+      angle: spin ? readable(wrapAngle((Number.isFinite(f.angle) ? f.angle : 0) + spin)) : wrapAngle(Number.isFinite(f.angle) ? f.angle : 0),
       size: LABEL_SIZES[f.size] ? f.size : "normal",
       show: f.show === "all" ? "all" : "gm",
       color: HEX.test(f.color ?? "") ? f.color : planColor,
@@ -148,17 +151,20 @@ export function moveLabel(plan, id, to, { alongLines = true } = {}) {
   const r = (v) => Math.round(v * 10) / 10;
   const next = structuredClone(plan);
   const g = next.features.find((x) => x?.id === id);
+  const spin = nameSpin(plan, g);
   if (typeof g.of === "string" && g.of) {
     const a = anchorOf(normalize(plan).features.find((x) => x.id === g.of));
     if (!a) return plan;
-    const off = [r(to[0] - a[0]), r(to[1] - a[1])];
+    const own = turned([to[0] - a[0], to[1] - a[1]], -spin); // in the turned area's own frame
+    const off = [r(own[0]), r(own[1])];
     if (off[0] || off[1]) g.offset = off;
     else delete g.offset;
   } else g.at = [r(to[0]), r(to[1])];
   if (alongLines) {
     const angle = lineAngleAt(plan, to);
     if (angle !== null) {
-      if (angle) g.angle = angle;
+      const a = spin ? wrapAngle(angle - spin) : angle;
+      if (a) g.angle = a;
       else delete g.angle;
     }
   }
@@ -171,10 +177,26 @@ export function turnLabel(plan, id, angle) {
   if (!f || !Number.isFinite(angle)) return plan;
   const next = structuredClone(plan);
   const g = next.features.find((x) => x?.id === id);
-  const a = wrapAngle(angle);
+  const a = wrapAngle(angle - nameSpin(plan, g)); // a name label's angle is its turned area's own
   if (a) g.angle = a;
   else delete g.angle;
   return next;
+}
+
+/** How far a feature is turned (an area's rot, in degrees), else 0. */
+const rotOf = (f) => (f?.type === "area" && Number.isFinite(f.rot) ? f.rot : 0);
+
+/** A name label's area's turn (0 for a placed label). */
+function nameSpin(plan, label) {
+  if (typeof label?.of !== "string" || !label.of) return 0;
+  return rotOf((plan.features ?? []).find((x) => x?.id === label.of));
+}
+
+/** [x, y] turned by deg degrees (clockwise on the map, y down). */
+function turned([x, y], deg) {
+  if (!deg) return [x, y];
+  const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  return [x * c - y * s, x * s + y * c];
 }
 
 /** The name labels following a feature: their ids. */

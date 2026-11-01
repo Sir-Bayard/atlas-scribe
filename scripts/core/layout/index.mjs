@@ -7,8 +7,8 @@
  * Every random choice is made here, never in the painter, so the same plan always paints the same map, whatever
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
-import { roadWaterCrossings, snapCrossings } from "./crossings.mjs";
-import { normalize, okJoin, okCut, okChimney } from "../plan.mjs";
+import { roadWaterCrossings, snapCrossings, fordDetail } from "./crossings.mjs";
+import { normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
@@ -30,6 +30,7 @@ import { layDock, shoreRuns } from "./docks.mjs";
 import { shoreLife } from "./shores.mjs";
 
 export const LAYOUT_VERSION = 1;
+
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
 /** A building's chimney: the one drawn, unless it's pinned where it stood ({ u, v, variant }). */
@@ -256,8 +257,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
           items.push({ kind: "surface", id: f.id, from: f.id, class: "trodden", poly: shapeToPolygon(f.shape, f.rot, 48), surface: "trodden" });
         } else if (f.class === "park") {
           parks.push(f); // laid out once every road is known, so its paths can meet them
-        } else if (f.class !== "farmstead" && f.class !== "woods" && f.class !== "fields") {
-          notes.push({ level: "warning", id: f.id, message: `"${f.id}": areas of class "${f.class}" aren't drawn yet.` });
+        } else if (f.class !== "farmstead" && f.class !== "woods" && f.class !== "fields" && !NOT_DRAWN_YET.area.includes(f.class)) {
+          notes.push({ level: "warning", id: f.id, message: `"${f.id}": areas of class "${f.class}" aren't drawn yet.` }); // (the checker already says so for a class not drawn yet)
         }
         break;
       default:
@@ -330,11 +331,15 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
   function addProp(f, r) {
     const [x, y] = f.at;
+    const size = Number.isFinite(f.size) && f.size > 0 ? f.size / sq : null; // across, in squares
     if (f.class === "tree") {
-      const species = f.species === "conifer" ? "conifer" : "bare";
-      items.push({ kind: "tree", id: f.id, from: f.id, x, y, species, size: species === "conifer" ? "large" : null, s: species === "bare" ? 0.5 + r.next() * 0.25 : 0.9 + r.next() * 0.6, rot: r.next() * 360, variant: r.int(8) });
+      const species = isConifer(f.species) ? "conifer" : "bare";
+      const s = species === "bare" ? 0.5 + r.next() * 0.25 : 0.9 + r.next() * 0.6; // drawn even when its size is given
+      // Its size: the crown across (the art is drawn 1.1 times its size, the crown filling about three quarters)
+      const sized = size === null ? s : size / ((species === "bare" ? 2.2 * 0.75 : 0.85) * 1.1);
+      items.push({ kind: "tree", id: f.id, from: f.id, x, y, species, size: species === "conifer" ? "large" : null, s: sized, rot: r.next() * 360, variant: r.int(8) });
     } else {
-      items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: r.int(8) });
+      items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: r.int(8), ...(size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45) } : {}) });
     }
   }
 
@@ -367,7 +372,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     for (const k of nearby.reserved.near(x, y, pr)) { const poly = space.reserved[k]; if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false; }
     for (const k of nearby.gardens.near(x, y, pr)) { const poly = space.gardens[k]; if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false; }
     const hr = Math.max(0, half);
-    for (const k of nearby.water.near(x, y, hr)) { const w = space.water[nearby.water.segPath[k]]; if (nearby.water.dist(x, y, k) < half + (w.clears ? w.clears[nearby.water.segIndex[k] - 1] : w.clear)) return false; }
+    // (a pond's or lake's shore by the thing's whole reach, so a farmhouse's corner stays off it too)
+    for (const k of nearby.water.near(x, y, Math.max(hr, rad))) { const w = space.water[nearby.water.segPath[k]]; if (nearby.water.dist(x, y, k) < (w.body ? Math.max(half, rad) : half) + (w.clears ? w.clears[nearby.water.segIndex[k] - 1] : w.clear)) return false; }
     for (const k of nearby.ways.near(x, y, hr)) { const w = space.ways[nearby.ways.segPath[k]]; if (!elsewhere(w) && nearby.ways.dist(x, y, k) < half + w.clear) return false; }
     for (const k of nearby.buildings.near(x, y, Math.max(0, rad * 0.8))) { const b = space.buildings[k]; if (!elsewhere(b) && Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false; }
     return true;
@@ -380,16 +386,20 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const runsSq = items.filter((i) => i.kind === "water" && i.path);
   const quayEdges = [];
   const docks = [];
+  const laid = []; // each quay as laid, to lay again along a moat (below)
   for (const f of plan.features.filter((f) => f.type === "dock")) {
     const d = layDock(f, { runs: runsSq, bodies, sq });
     if (!d) { notes.push({ level: "warning", id: f.id, message: `"${f.id}" is too short to build.` }); continue; }
+    notes.push(...d.notes);
+    if (!d.item) continue;
     items.push(d.item);
     docks.push(d.item);
-    notes.push(...d.notes);
     if (d.way) {
+      const entry = { path: d.way.path, clear: d.way.width / 2 - 0.05, owner: null };
       ways.push(d.way);
-      space.ways.push({ path: d.way.path, clear: d.way.width / 2 - 0.05, owner: null });
+      space.ways.push(entry);
       quayEdges.push(d.edge);
+      laid.push({ f, d, entry, notes: d.notes });
     }
     for (const poly of d.keep) { space.reserved.push(poly); space.zones.push(poly); }
   }
@@ -411,8 +421,11 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Town walls and palisades: their runs, towers and gatehouses, a ditch or moat, and clear ground along them
   // (streets end there, and only roads pass, through gates)
   const wallBands = [];
+  const gatedBy = new Set(); // what has a gate through a wall
   {
-    const roadsSq = [...plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })), ...ways.filter((w) => w.quay).map((w) => ({ id: w.id, path: w.path, width: w.width }))];
+    // (and quays: one with no water near it yet may be moved onto a moat, below, so it gets a gate where it crosses
+    // and keeps towers off it, but doesn't stop the wall where it only runs over it)
+    const roadsSq = [...plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })), ...laid.map((q) => ({ id: q.d.way.id, path: q.d.way.path, width: q.d.way.width, ...(q.d.snapped ? {} : { over: false }) }))];
     const watersSq = [
       ...plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => (f._w ? { id: f.id, path: f.path, width: Math.max(...f._w), widths: f._w } : { id: f.id, path: f.path, width: ft(f.width) })),
       ...bodies.map((b) => ({ id: b.id, path: b.ring, width: 0, body: b.poly, reach: b.keep })),
@@ -421,6 +434,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     for (const f of plan.features.filter(isTownWall)) {
       const r = streamFor(f.id);
       const w = layWall(f, { roads: roadsSq, waters: watersSq, sq, r: r.fork("wall") });
+      for (const g of w.gates) gatedBy.add(g.road);
+      if (!w.runs.length && !w.notes.some((n) => /too short|all gates or water/.test(n.message))) notes.push({ level: "warning", id: f.id, message: `Nothing of "${f.id}" is built: all of it lies on roads or water.` });
       // Each run carries its outer face (where the battlements are) and its inner one
       w.runs.forEach((path, k) => items.push({ kind: "wall", id: w.runs.length === 1 ? f.id : `${f.id}/r${k + 1}`, from: f.id, class: f.class, path, height: ft(f.height), tall: tallOf(f.height ?? 25), thickness: ft(f.thickness), side: w.side, face: offsetPath(path, (w.side * ft(f.thickness)) / 2), back: offsetPath(path, (-w.side * ft(f.thickness)) / 2) }));
       w.ditches.forEach((d, k) => {
@@ -434,7 +449,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         for (const poly of bandPieces(d.path, d.width / 2 + 0.1)) { space.reserved.push(poly); space.zones.push(poly); }
       });
       w.bridges.forEach((b, k) => items.push({ kind: "crossing", id: `${f.id}/b${k + 1}`, from: f.id, class: "bridge", at: b.at, angle: b.angle, length: b.length, width: b.width, frozen: false }));
-      w.towers.forEach((t, k) => addBuilding(t, `${f.id}/t${k + 1}`, r.fork("tower", t.key), f.id)); // its own stream by where it stands
+      // Each tower from its own stream by where it stands; none well off the map
+      const onMap = (t) => !Array.isArray(t.at) || (t.at[0] > -0.5 && t.at[1] > -0.5 && t.at[0] < W + 0.5 && t.at[1] < H + 0.5);
+      w.towers.forEach((t, k) => { if (onMap(t)) addBuilding(t, `${f.id}/t${k + 1}`, r.fork("tower", t.key), f.id); });
+      w.towers = w.towers.filter(onMap);
       for (const poly of bandPieces(f.path, w.band.half)) { space.reserved.push(poly); space.zones.push(poly); }
       wallBands.push({ path: f.path, half: w.band.half });
       notes.push(...w.notes);
@@ -442,6 +460,27 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     }
   }
   const inWallBand = (x, y) => wallBands.some((b) => distanceToPath([x, y], b.path) < b.half);
+
+  // A quay with no water near it until the walls' moats were dug: laid again along the moat (nothing has placed
+  // anything by it yet)
+  const moats = items.filter((i) => i.kind === "water" && i.class === "moat");
+  if (moats.length) for (const q of laid) {
+    if (q.d.snapped || gatedBy.has(q.d.way.id)) continue; // one with a gate stays where it was drawn, through it
+    const again = layDock(q.f, { runs: moats, bodies: [], sq });
+    if (!again?.item || !again.snapped) continue;
+    // Not on the moat's inner bank, between the moat and the wall: the wall and its towers stand there
+    if ([...again.item.path, ...again.item.land].some(([x, y]) => inWallBand(x, y))) continue;
+    Object.assign(q.d.item, again.item);
+    q.d.way.path = q.entry.path = again.way.path;
+    for (const n of q.notes) { const k = notes.indexOf(n); if (k >= 0) notes.splice(k, 1); }
+    notes.push(...again.notes);
+  }
+  // A quay drawn in a district and moved onto the water's edge out of it: the district has nothing to front it
+  for (const { f, d } of laid) {
+    const home = districts.find((x) => pathTouchesPolygon(f.path, x.poly));
+    if (home && !pathTouchesPolygon(d.item.land, home.poly) && !pathTouchesPolygon(d.item.path, home.poly))
+      notes.push({ level: "warning", id: f.id, message: `"${f.id}" was moved onto the water's edge, outside "${home.id}", so no houses there face it. Take "${home.id}" out to the water.` });
+  }
 
   // Parks: open ground that streets and plots keep out of (filled later, once the streets around them are known)
   for (const f of parks) {
@@ -726,6 +765,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const t = items[k];
     if ((t.kind === "tree" || (t.kind === "prop" && t.class === "bush")) && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) items.splice(k, 1);
   }
+
+  // Each ford's stepping stones (and rocks, frozen), once every way is laid
+  const allWays = items.filter((i) => i.kind === "way");
+  for (const c of items) if (c.kind === "crossing" && c.class === "ford") Object.assign(c, fordDetail(c, allWays));
 
   progress(0.85, "Ground");
   items.unshift({ kind: "ground", id: "plan/ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) });

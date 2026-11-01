@@ -37,8 +37,11 @@ function fieldHTML(field, disabled, fonts = []) {
   switch (field.kind) {
     case "enum": {
       const opts = field.values.map((v) => `<option value="${esc(v)}" ${set && field.value === v ? "selected" : ""}>${esc(field.names?.[v] ?? v)}</option>`).join("");
-      // A field that is always set (a kind) has no "default" choice
-      const blank = field.name === "class" ? "" : `<option value="" ${set ? "" : "selected"}>${esc(auto ? `Default (${auto})` : "Default")}</option>`;
+      // A field that is always set (a kind) has no "default" choice; nor has one that sets something else (a building
+      // group's roof sets each building's), which shows what's there when it differs ("mixed") and can't be picked
+      const blank = field.name === "class" ? ""
+        : field.required ? (set ? "" : `<option value="" selected disabled>${esc(auto || "mixed")}</option>`)
+        : `<option value="" ${set ? "" : "selected"}>${esc(auto ? `Default (${auto})` : "Default")}</option>`;
       input = `<select id="${id}" ${data} ${dis}>${blank}${opts}</select>`;
       break;
     }
@@ -128,13 +131,15 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
 
 /**
  * The panel for something the generator made (a house or a district's street), picked on the map: what it is, and
- * Pin, which copies it into the plan so rerolls keep it. gen: { kind: "house" | "street", item }.
+ * Pin, which copies it into the plan so rerolls keep it. gen: { kind: "house" | "street", item }. nameOf: a
+ * feature's name for the words (its name, else its id).
  */
-export function generatedHTML(gen, { working = false } = {}) {
+export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}) {
   const { kind, item } = gen;
+  const where = nameOf(item.from);
   const what = kind === "house"
-    ? `${item.parts.length > 1 ? `A house of ${item.parts.length} parts` : "A house"} the generator built in ${item.from}.`
-    : `A ${item.class === "back" ? "back lane" : item.class === "street" ? "street" : "lane"} the generator laid out in ${item.from}${item.crossings?.length ? `, with ${item.crossings.length === 1 ? "a bridge" : `${item.crossings.length} bridges`}` : ""}.`;
+    ? `${item.parts.length > 1 ? `A house of ${item.parts.length} parts` : "A house"} the generator built in ${where}.`
+    : `A ${item.class === "back" ? "back lane" : item.class === "street" ? "street" : "lane"} the generator laid out in ${where}${item.crossings?.length ? `, with ${item.crossings.length === 1 ? "a bridge" : `${item.crossings.length} bridges`}` : ""}.`;
   const after = kind === "house"
     ? "Pinned, it becomes a fixed building group in the plan, drawn exactly as it is now; you can then name it, label it and change its roofs. The rest of the district still rerolls around it."
     : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";

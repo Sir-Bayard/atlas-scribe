@@ -82,7 +82,8 @@ function edgeNear(p, runs, bodies) {
 /**
  * One dock laid out. f: the plan feature (normalized). runs and bodies: the water as the layout has it. sq: feet a
  * square. Returns { item, way (a quay's, for houses to front and streets to start from), keep (polygons nothing
- * else is placed on: a pier's), edge (a quay's line along the water), notes }, or null when its path is too short.
+ * else is placed on: a pier's), edge (a quay's line along the water), notes, snapped (how many of a quay's points
+ * were moved onto an edge) }, item null when a quay has no shore to build on; or null when its path is too short.
  */
 export function layDock(f, { runs = [], bodies = [], sq }) {
   const notes = [];
@@ -94,7 +95,7 @@ export function layDock(f, { runs = [], bodies = [], sq }) {
   if (!isQuay(f)) {
     const wet = densify(path, 0.25).some((q) => runs.some((w) => pastEdge(q, w) < 0) || bodies.some((b) => pointInPolygon(q, b.poly)));
     if (!wet) notes.push({ level: "warning", id: f.id, message: `"${f.id}" doesn't reach any water, so it stands on dry land.` });
-    return { item: { ...base, path }, way: null, keep: bandPieces(path, width / 2 + 0.1), edge: null, notes };
+    return { item: { ...base, path }, way: null, keep: bandPieces(path, width / 2 + 0.1), edge: null, notes, snapped: 0 };
   }
   // A quay: each point onto the edge nearest it, all on one bank of a river
   const pts = densify(path, 0.5);
@@ -106,36 +107,58 @@ export function layDock(f, { runs = [], bodies = [], sq }) {
     const [ux, uy] = unit(next[0] - prev[0], next[1] - prev[1]);
     return [uy, -ux]; // the quay's own left
   });
+  // Points across a river from the bank most of it is on, or out in the water with no edge near, aren't built: the
+  // longest run of the rest is
+  const sideOf = (e) => ((vote.get(e.key) ?? 1) >= 0 ? 1 : -1);
+  const wetAt = (p) => runs.some((w) => pastEdge(p, w) < 0) || bodies.some((b) => pointInPolygon(p, b.poly));
+  const use = pts.map((p, i) => (near[i] ? !near[i].run || near[i].side === sideOf(near[i]) : !wetAt(p)));
+  let best = [0, 0];
+  for (let i = 0, from = -1; i <= pts.length; i++) {
+    if (i < pts.length && use[i]) { if (from < 0) from = i; continue; }
+    if (from >= 0 && i - from > best[1] - best[0]) best = [from, i];
+    from = -1;
+  }
+  if (best[1] - best[0] < 2) {
+    notes.push({ level: "warning", id: f.id, message: `"${f.id}" lies out in the water or across it, with no shore to build on, so it isn't drawn.` });
+    return { item: null, way: null, keep: [], edge: null, notes, snapped: 0 };
+  }
+  if (best[1] - best[0] < pts.length) notes.push({ level: "warning", id: f.id, message: `Part of "${f.id}" is across the water from the rest, or out in it, so only the longest stretch along one shore is built.` });
+  const keepIdx = (list) => list.slice(best[0], best[1]);
+  const kept = keepIdx(pts), keptNear = keepIdx(near);
   let edge = [], away = [];
-  near.forEach((e, i) => {
+  keptNear.forEach((e, i) => {
     if (!e) { edge.push(null); away.push(null); return; }
     if (e.run) {
-      const s = (vote.get(e.key) ?? 1) >= 0 ? 1 : -1;
+      const s = sideOf(e);
       const { at, left, half } = e.run;
       edge.push([at[0] + left[0] * s * half, at[1] + left[1] * s * half]);
       away.push([left[0] * s, left[1] * s]);
     } else { edge.push(e.at); away.push(e.away); }
   });
   const snapped = edge.filter(Boolean).length;
-  if (!snapped) notes.push({ level: "warning", id: f.id, message: `"${f.id}" isn't along the edge of any water within ${SNAP} squares, so it's drawn as paving where the plan puts it (a town wall's moat doesn't count yet).` });
+  if (!snapped) notes.push({ level: "warning", id: f.id, message: `"${f.id}" isn't along the edge of any water within ${SNAP} squares, so it's drawn as paving where the plan puts it.` });
   // Points with no water near keep their place, paved on the side the rest is
+  const ownK = keepIdx(own);
   let lean = 0;
-  away.forEach((a, i) => { if (a) lean += a[0] * own[i][0] + a[1] * own[i][1]; });
+  away.forEach((a, i) => { if (a) lean += a[0] * ownK[i][0] + a[1] * ownK[i][1]; });
   const sgn = lean < 0 ? -1 : 1;
-  edge = edge.map((e, i) => e ?? pts[i]);
-  away = away.map((a, i) => a ?? [own[i][0] * sgn, own[i][1] * sgn]);
+  edge = edge.map((e, i) => e ?? kept[i]);
+  away = away.map((a, i) => a ?? [ownK[i][0] * sgn, ownK[i][1] * sgn]);
   // Smoothed a little, so the paving doesn't kink where the nearest edge changes
   for (let pass = 0; pass < 2; pass++) away = away.map((a, i) => unit(a[0] * 2 + away[Math.max(0, i - 1)][0] + away[Math.min(away.length - 1, i + 1)][0], a[1] * 2 + away[Math.max(0, i - 1)][1] + away[Math.min(away.length - 1, i + 1)][1]));
   // Points that the moving brought together are one point
   const keep = edge.map((e, i) => i === 0 || Math.hypot(e[0] - edge[i - 1][0], e[1] - edge[i - 1][1]) > 0.05);
   edge = edge.filter((_, i) => keep[i]);
   away = away.filter((_, i) => keep[i]);
-  if (edge.length < 2) return null;
+  if (edge.length < 2) {
+    notes.push({ level: "warning", id: f.id, message: `"${f.id}" comes to almost nothing once it's moved onto the water's edge, so it isn't drawn.` });
+    return { item: null, way: null, keep: [], edge: null, notes, snapped: 0 };
+  }
   const mid = edge.map((e, i) => [e[0] + (away[i][0] * width) / 2, e[1] + (away[i][1] * width) / 2]);
   const land = edge.map((e, i) => [e[0] + away[i][0] * width, e[1] + away[i][1] * width]);
   const item = { ...base, path: mid, edge, land };
   const way = { kind: "way", id: f.id, from: f.id, class: "quay", path: mid, width, surface: "flagstone", ruts: false, quay: true };
-  return { item, way, keep: [], edge, notes };
+  return { item, way, keep: [], edge, notes, snapped };
 }
 
 /**

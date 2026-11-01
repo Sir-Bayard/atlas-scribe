@@ -6,7 +6,7 @@
  * second publish replaces only its own labels and leaves the GM's own drawings alone.
  */
 import { upload, freeName } from "./files.mjs";
-import { LABEL_SIZES } from "../core/plan.mjs";
+import { LABEL_SIZES, isObj } from "../core/plan.mjs";
 import { labelsOf } from "../core/labels.mjs";
 
 const MOD = "atlas-scribe";
@@ -37,12 +37,14 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
     backup = await upload(dir, await freeName(dir, `${scene.name}-${stamp()}`, "json"), new Blob([json], { type: "application/json" }));
   }
 
-  // The thumbnail is named after the scene, so a republish replaces it rather than adding another
+  // The thumbnail is named after the scene, so a republish replaces it rather than adding another. It's made first and
+  // saved only after the last chance to stop, so a cancel never leaves a new thumbnail over the old
   check();
   onProgress(0.3, "Making the thumbnail");
   const id = sceneId ?? foundry.utils.randomID();
-  const thumb = await makeThumb(image, `${folder}/thumbs`, id);
+  const thumbBlob = await thumbOf(image);
   check(); // the last chance to stop: from here the scene is written
+  const thumb = await upload(`${folder}/thumbs`, `${id}.webp`, thumbBlob);
 
   let weather = opts.weather ?? "";
   if (weather && !(weather in (CONFIG.weatherEffects ?? {}))) {
@@ -80,11 +82,11 @@ export async function publish({ plan, image, width, height, folder, sceneId = nu
     created = true;
   }
 
-  // Labels: this plan's earlier labels out, the plan's labels in
+  // Labels: every label AtlasScribe put in this scene out (an earlier map's, whatever plan it came from), the plan's in
   onProgress(0.75, "Placing the labels");
   // The new labels go in before the old ones come out, so a failure never leaves the scene with none
   scene = sceneById(sceneId);
-  const old = scene.drawings.filter((d) => d.getFlag(MOD, "batch") === (plan.id ?? null)).map((d) => d.id);
+  const old = scene.drawings.filter((d) => isObj(d.flags?.[MOD]) && "batch" in d.flags[MOD]).map((d) => d.id);
   const labels = await labelDrawings(plan, sceneById(sceneId), warnings);
   if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", labels);
   if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
@@ -109,18 +111,15 @@ function freeSceneName(name) {
 }
 
 /**
- * A small preview for the scene list, saved in <output>/thumbs as <scene id>.webp (replaced on a republish; the
- * scene list may show the old one until the page reloads). The worker's thumbnail when there is one; else Foundry
- * makes one from the image.
+ * A small preview for the scene list (saved in <output>/thumbs as <scene id>.webp, replaced on a republish; the
+ * scene list may show the old one until the page reloads), as a Blob: the worker's thumbnail when there is one;
+ * else Foundry makes one from the image.
  */
-async function makeThumb(image, dir, id) {
-  let blob = image.thumb ?? null;
-  if (!blob) {
-    const IH = foundry.helpers.media.ImageHelper;
-    const t = await IH.createThumbnail(image.path, { width: THUMB, height: THUMB, format: "image/webp", quality: 0.8 });
-    blob = await (await fetch(t.thumb)).blob();
-  }
-  return upload(dir, `${id}.webp`, blob);
+async function thumbOf(image) {
+  if (image.thumb) return image.thumb;
+  const IH = foundry.helpers.media.ImageHelper;
+  const t = await IH.createThumbnail(image.path, { width: THUMB, height: THUMB, format: "image/webp", quality: 0.8 });
+  return (await fetch(t.thumb)).blob();
 }
 
 /**

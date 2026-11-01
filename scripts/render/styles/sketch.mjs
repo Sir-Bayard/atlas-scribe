@@ -8,7 +8,7 @@
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets } from "../roofs.mjs";
-import { wayDirectionAt, paintRows } from "./textured.mjs";
+import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
 
 /** No blur, so no tile margin. */
 export const MAX_BLUR = 0;
@@ -131,10 +131,9 @@ export function paint(ctx) {
       g.moveTo(X(x) + r, Y(y)); g.arc(X(x), Y(y), r, 0, 2 * Math.PI);
       if (!i) return;
       const [px0, py0] = w.path[i - 1], r0 = Math.max(0.5, ((w.widths[i - 1] + add) / 2) * pp);
-      const dx = X(x) - X(px0), dy = Y(y) - Y(py0), l = Math.hypot(dx, dy);
-      if (!l) return;
-      const nx = -dy / l, ny = dx / l;
-      g.moveTo(X(px0) - nx * r0, Y(py0) - ny * r0); g.lineTo(X(x) - nx * r, Y(y) - ny * r); g.lineTo(X(x) + nx * r, Y(y) + ny * r); g.lineTo(X(px0) + nx * r0, Y(py0) + ny * r0); g.closePath();
+      const band = tangentBand(X(px0), Y(py0), r0, X(x), Y(y), r);
+      if (!band) return;
+      g.moveTo(...band[0]); g.lineTo(...band[1]); g.lineTo(...band[2]); g.lineTo(...band[3]); g.closePath();
     });
     g.fill("nonzero");
   };
@@ -153,7 +152,7 @@ export function paint(ctx) {
     if (c.class === "ford") {
       g.save(); g.fillStyle = mix(col("water.river"), [255, 255, 255], 0.3);
       g.beginPath(); g.ellipse(X(x), Y(y), (c.width ?? 2) * 1.15 * pp, (c.width ?? 2) * 0.62 * pp, a, 0, 2 * Math.PI); g.fill(); g.restore();
-      const [ux, uy] = wayDirectionAt(L, c.at); // the stones run with the road through the ford, as in the textured style
+      const [ux, uy] = c.dir ?? wayDirectionAt(L, c.at); // the stones run with the road through the ford, as in the textured style
       stroke([[x - ux * 1.7, y - uy * 1.7], [x + ux * 1.7, y + uy * 1.7]], 1.25, mix(trodden, [120, 104, 86], 0.4));
     } else {
       g.lineCap = "butt";

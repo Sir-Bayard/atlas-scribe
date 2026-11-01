@@ -148,8 +148,9 @@ function crossings(path, cum, line) {
 }
 
 /**
- * Lays out one town wall or palisade. f: the plan wall (normalized, its path smoothed). roads: [{ id, path, width }]
- * and waters: [{ id, path, width }] in squares (with widths where it varies, or body and its shore's reach for a lake
+ * Lays out one town wall or palisade. f: the plan wall (normalized, its path smoothed). roads: [{ id, path, width,
+ * over }] (over: false, a way that gets gates and keeps towers off it but doesn't stop the wall where it only runs
+ * over it) and waters: [{ id, path, width }] in squares (with widths where it varies, or body and its shore's reach for a lake
  * or the sea, its path then the shore); sq: feet a square; r: the wall's stream. Returns { runs: [path],
  * towers: [building spec], gates: [{ at, road }], ditches: [{ path, width, closed, moat }] (a dry ditch stops short of
  * water, a moat runs on into it), bridges: [crossing spec],
@@ -219,6 +220,22 @@ export function layWall(f, { roads = [], waters = [], sq, r }) {
   // tower at each end, over the wall's last stretch: the water is the defense there. A gate that would fall in it
   // goes too (the road is on a bridge)
   for (const [a, b] of wetStretches(path, cum, closed, (q) => inWater(q, waters, half + 0.05))) iv.push({ a: a - 0.1, b: b + 0.1, water: true, roads: [] });
+  // Where a road passes over the wall without crossing its line (a wide road by a corner, or one running along it),
+  // the wall stops at a tower each side, as at water: nothing is built on the road. Stretches a gate already opens
+  // don't count, nor a road that only ends at the wall (a dead-end street against it)
+  const gated = iv.filter((g) => !g.water).map((g) => [g.a, g.b]);
+  const inGate = (s) => gated.some(([a, b]) => (s >= a && s <= b) || (closed && ((s + L >= a && s + L <= b) || (s - L >= a && s - L <= b))));
+  const onRoad = (q) => roads.some((rd) => rd.over !== false && Array.isArray(rd.path) && rd.path.length >= 2 && passesOver(q, rd.path, (rd.width ?? 1) / 2 + half + 0.05));
+  for (const [a, b] of wetStretches(path, cum, closed, (q) => onRoad(q))) {
+    // Only what lies outside every gate: sampled, as the wet stretches are
+    const n = Math.max(2, Math.ceil((b - a) / 0.2));
+    let from = null;
+    for (let k = 0; k <= n; k++) {
+      const s = a + ((b - a) * k) / n, out = !inGate(wrap(s)) && onRoad(along(path, cum, wrap(s)).at);
+      if (out && from === null) from = s;
+      if ((!out || k === n) && from !== null) { iv.push({ a: from - 0.1, b: (out ? s : s - (b - a) / n) + 0.1, water: true, roads: [] }); from = null; }
+    }
+  }
   // Gaps that overlap, or leave no room for two towers between, are one gap; on an open run, a gap so near an end
   // that only a stub of wall would be left reaches the end
   const room = D + 2 * R + 0.1;
@@ -433,6 +450,22 @@ export function bandPieces(path, half, step = 6) {
   const out = [];
   for (let k = 0; k < n; k++) out.push(...bands([{ path: piece(path, cum, (L * k) / n, (L * (k + 1)) / n), half }]));
   return out.filter((p) => p.length >= 3);
+}
+
+/**
+ * True when a road passes within d of a point somewhere along it, not just at one of its ends (the nearest place on
+ * it isn't its first or last point).
+ */
+function passesOver(q, path, d) {
+  let best = Infinity, end = false;
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i];
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((q[0] - ax) * dx + (q[1] - ay) * dy) / l2)) : 0;
+    const dist = Math.hypot(ax + t * dx - q[0], ay + t * dy - q[1]);
+    if (dist < best) { best = dist; end = (i === 1 && t === 0) || (i === path.length - 1 && t === 1); }
+  }
+  return best < d && !end;
 }
 
 /** True when a point is in water or on its bank or shore, reach squares (half of what stands there) or less from its edge. */
