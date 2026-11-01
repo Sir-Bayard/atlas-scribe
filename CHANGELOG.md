@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**Water**
+- Ponds, lakes and the sea, drawn as shapes with three new tools (Pond, Lake, Sea; a box dragged with the Pond or Lake tool is the oval inside it). A sea's corners near the map's edge go past it, so its outline is the coast. Shores are curved and a little ragged.
+- Shores: sand, pebbles, rocks, grass, marsh or reeds, picked from the seed unless set (a pond's is grass or reeds; a sea's sand, pebbles or rocks). The water is lighter in the shallows and darker farther out, the sea has surf along its coast outside winter, reedy and marshy shores have reeds, and still ponds and lakes have lily pads outside winter.
+- In winter ponds and lakes freeze unless their Frozen setting says otherwise; the sea doesn't.
+- Rivers, streams and canals can widen or narrow: End width is the width at the last point, and the width changes smoothly along the way. A river opens out where it meets a lake or the sea, and flows in with no bank across its mouth.
+- Quays and piers: two new tools. A quay (stone) or wharf (timber) is drawn along the water's edge; its line is moved onto the nearest edge of a river, lake or the sea, it's paved back from the water, and houses face it as they would a street. A pier (stone) or jetty (timber) runs out into the water as drawn.
+- Houses, streets, trees and fields keep off ponds, lakes, the sea and their shores, and a town wall stops at a lake's shore as it does at a river.
+- For plan writers: water classes `pond`, `lake` and `sea` with a `shape`; water fields `endWidth`, `widths` (a width in feet for each point of the path, in place of `width` and `endWidth`) and `shore`; a new feature type `dock` (classes `quay`, `wharf`, `pier`, `jetty`; fields `width` and `material`, stone or wood). `checkPlan` warns about a pond, lake or sea drawn along a path, a river drawn as a shape, and `widths` that don't match the path.
+
+**Lighter lines**
+- Roads no longer have a dark line down the middle (ruts are unchanged), and their worn middles, trodden edges, the outlines around roofs and the dark edge along water are lighter.
+
 **Town walls**
 - Town walls and palisades: two new drawing tools (click a wall's first point again to close it around), and Wall in on a district's panel for a town wall around it. A gate wherever a road crosses (a gatehouse over the road, or a tower each side), an opening where water crosses, and towers at the corners and about every 120 feet (90 for a palisade).
 - Settings: thickness, height, towers (roofed, open with battlements, or some of each), tower shape (round, square or some of each), tower spacing, and what runs along the outside (a dry ditch or a moat, with bridges where the roads cross). A wall picks its own look from its seed unless set.

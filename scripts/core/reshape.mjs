@@ -1,13 +1,14 @@
 /**
- * Reshaping districts, areas, roads, rivers and walls by their points, for the preview window. A road, river or wall
- * has a handle on each point of its path and one in the middle of each stretch (dragging it adds a point there); a
- * point where two paths meet moves for both, and after a road or river moves, the plan's bridges and fords move to
- * where the roads and the water now cross. For districts and areas: a shape given as a list of points or a
- * rect has a handle on each corner (a rect becomes a list of points once one is moved) and one in the middle of each
- * side (dragging it adds a corner there); a circle has one handle on its edge for its radius, an ellipse one on each
- * axis. A shape turned by rot isn't reshaped here yet. Corners two shapes share (within 0.05 squares) move together,
- * and adding or removing a corner on a side two shapes share does it to both, so a shared border stays shared.
- * Every function returns a new plan and leaves the one given alone. Pure: runs anywhere. Numbers are in squares.
+ * Reshaping districts, areas, ponds, lakes, seas, roads, rivers, walls and docks by their points, for the preview
+ * window. A road, river, wall or dock has a handle on each point of its path and one in the middle of each stretch
+ * (dragging it adds a point there); a point where two paths meet moves for both, and after a road or river moves, the
+ * plan's bridges and fords move to where the roads and the water now cross. For districts, areas and water drawn as
+ * a shape: a shape given as a list of points or a rect has a handle on each corner (a rect becomes a list of points
+ * once one is moved) and one in the middle of each side (dragging it adds a corner there); a circle has one handle on
+ * its edge for its radius, an ellipse one on each axis. A shape turned by rot isn't reshaped here yet. Corners two
+ * shapes share (within 0.05 squares) move together, and adding or removing a corner on a side two shapes share does
+ * it to both, so a shared border stays shared. Every function returns a new plan and leaves the one given alone.
+ * Pure: runs anywhere. Numbers are in squares.
  */
 import { isObj } from "./plan.mjs";
 import { rerollable } from "./seeds.mjs";
@@ -27,7 +28,7 @@ function clean(pts) {
 }
 
 /** The types whose paths can be reshaped. */
-const PATHS = new Set(["road", "water", "wall"]);
+const PATHS = new Set(["road", "water", "wall", "dock"]);
 
 /**
  * A feature's shape as handles see it: { kind: "poly", pts } | { kind: "path", pts } | { kind: "circle", c, r } |
@@ -138,7 +139,10 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
         if ((near(p, a) && near(q, b)) || (near(p, b) && near(q, a))) { sides.set(o.f.id, j); break; }
       }
     }
-    return refitAfter(plan, [...sides.keys()], withPoints(plan, [...sides.keys()], (pts, fid) => { pts.splice(sides.get(fid) + 1, 0, [...at]); return pts; }));
+    const next = withPoints(plan, [...sides.keys()], (pts, fid) => { pts.splice(sides.get(fid) + 1, 0, [...at]); return pts; });
+    // A river's width at each point gets one for the new point too: halfway between its neighbors'
+    keepWidths(plan, next, [...sides.keys()], (w, fid) => { const j = sides.get(fid); w.splice(j + 1, 0, (w[j] + w[j + 1]) / 2); });
+    return refitAfter(plan, [...sides.keys()], next);
   }
   const out = structuredClone(plan);
   const f = out.features.find((x) => isObj(x) && x.id === id);
@@ -168,7 +172,26 @@ export function removeCorner(plan, id, i) {
     const inner = pts.slice(1, -1);
     return [...inner, [...inner[0]]];
   };
-  return refitAfter(plan, [...where.keys()], withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? take(pts, where.get(fid)) : null)));
+  const next = withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? take(pts, where.get(fid)) : null));
+  keepWidths(plan, next, [...where.keys()], (w, fid) => w.splice(where.get(fid), 1)); // a river's width there goes with it
+  return refitAfter(plan, [...where.keys()], next);
+}
+
+/**
+ * A river's widths (one for each point of its path) kept in step when a point is added or taken off: for each id,
+ * when the water had one width a point before and its path changed length by one, change (a copy of its widths, and
+ * the id) makes them match again. Changes the plan after in place.
+ */
+function keepWidths(before, after, ids, change) {
+  for (const fid of ids) {
+    const was = (before?.features ?? []).find((f) => isObj(f) && f.id === fid);
+    const now = (after?.features ?? []).find((f) => isObj(f) && f.id === fid);
+    if (!was || !now || was.type !== "water" || !Array.isArray(was.path) || !Array.isArray(now.path)) continue;
+    if (!Array.isArray(was.widths) || was.widths.length !== was.path.length || Math.abs(now.path.length - was.path.length) !== 1) continue;
+    const w = [...was.widths];
+    change(w, fid);
+    if (w.length === now.path.length) now.widths = w;
+  }
 }
 
 /** Where segment a-b crosses c-d, or null. */

@@ -39,6 +39,11 @@ export const ROOFS = [
 export const ROOF_STYLES = ["gable", "hip", "half-hip", "pyramid", "flat", "mansard"];
 export const SURFACES = ["dirt", "slush", "snow", "trodden", "cobble", "gravel", "grass", "mud", "flagstone"];
 
+/** Water along a path, and water drawn as a shape (a body of water); the shores a body of water can have. */
+export const RUNNING = ["stream", "river", "canal"];
+export const BODIES = ["pond", "lake", "sea"];
+export const SHORES = ["sand", "pebbles", "rocks", "grass", "marsh", "reeds"];
+
 /** The wall classes with towers, gates and a clear strip inside: town walls and palisades. */
 export const TOWN_WALLS = ["town", "palisade"];
 
@@ -58,12 +63,27 @@ export const TYPES = {
     },
   },
   water: {
+    // A stream, river or canal runs along a path; a pond, lake or sea is a shape (a sea's corners near the map's edge
+    // go past it, so its outline is the coast)
     geometry: "path|shape",
     classes: ["stream", "river", "canal", "pond", "lake", "sea"],
     fields: {
-      width: num(null, { unit: "ft", min: 1, byClass: { stream: 15, river: 60, canal: 20 } }),
-      frozen: bool(false),
-      straight: bool(false), // drawn straight between its points (a canal, say); else it curves smoothly through them
+      width: num(null, { unit: "ft", min: 1, byClass: { stream: 15, river: 60, canal: 20 }, only: RUNNING }), // at its first point
+      endWidth: num(null, { unit: "ft", min: 1, only: RUNNING }), // at its last point, widening or narrowing smoothly between; else the same all along
+      widths: { kind: "data", default: null, only: RUNNING }, // one width in feet for each point of its path (wins over width and endWidth)
+      shore: { ...oneOf(SHORES, null), only: BODIES, fallback: "picked from its seed" },
+      frozen: { kind: "boolean", default: false, byClass: { pond: null, lake: null } }, // a pond or lake left unset freezes in winter
+      straight: bool(false), // drawn straight between its points (a canal, a stone basin); else it curves smoothly through them
+    },
+  },
+  dock: {
+    // A quay or wharf runs along the water's edge (its line is moved onto the nearest edge, and houses front it); a
+    // pier or jetty runs out into the water
+    geometry: "path",
+    classes: ["quay", "wharf", "pier", "jetty"],
+    fields: {
+      width: num(null, { unit: "ft", min: 3, byClass: { quay: 15, wharf: 15, pier: 15, jetty: 6 } }),
+      material: { ...oneOf(["stone", "wood"], null), byClass: { quay: "stone", wharf: "wood", pier: "stone", jetty: "wood" } },
     },
   },
   crossing: {
@@ -301,6 +321,8 @@ function normalizeFeature(f) {
   for (const [name, spec] of Object.entries(t.fields)) if (out[name] === undefined) out[name] = fieldDefault(spec, out.class);
   if (f.type === "district" && Object.hasOwn(OLD_PROFILES, out.profile)) out.profile = OLD_PROFILES[out.profile];
   if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? 0.1 : 0; // M1 plans said true or false
+  // A stream, river or canal given a shape is drawn as a lake: frozen in winter unless the plan says
+  if (f.type === "water" && !Array.isArray(f.path) && f.shape != null && f.frozen === undefined && RUNNING.includes(out.class)) out.frozen = null;
   if (f.type === "landmark") out.buildings = (Array.isArray(f.buildings) ? f.buildings : []).map((b) => normalizeFeature({ ...(isObj(b) ? b : {}), type: "building" }));
   return out;
 }

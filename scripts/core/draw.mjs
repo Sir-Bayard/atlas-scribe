@@ -6,7 +6,8 @@
  * both). A road, river or wall is drawn point by point; its points snap onto another of its kind (a road onto a
  * road, water onto water, a wall onto a wall) or onto the map's edge. Where a new road crosses water (or a new river
  * or stream crosses a road) with no bridge or ford there yet, one is added: a bridge, or a ford where a track or
- * path crosses a stream. Bridges, fords, props and labels are a single click. Every function
+ * path crosses a stream. A pond, lake or sea is drawn corner by corner as a district is; a quay along the water's edge
+ * and a pier out into the water point by point. Bridges, fords, props and labels are a single click. Every function
  * returns a new plan and leaves the one given alone. Pure: runs anywhere. Numbers are in squares.
  */
 import { isObj, normalize } from "./plan.mjs";
@@ -18,10 +19,12 @@ import { roadWaterCrossings } from "./layout/crossings.mjs";
 import { shapeToPolygon, pointInPolygon, pathTouchesPolygon, distanceToPath, insidePoint, segmentNearPath, pointsAlong, bbox } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 import { lineAngleAt } from "./labels.mjs";
+import { waterEntries, nearWater } from "./water.mjs";
 
 /**
  * The drawing tools. geometry: "shape" (corners or a box), "box" (a box, or a click for a default size), "path"
- * (points), "point" (a click). make: the new feature's own settings.
+ * (points), "point" (a click). make: the new feature's own settings. how: which hint the palette shows, when it isn't
+ * the one for its geometry.
  */
 export const TOOLS = [
   { id: "district", label: "District", icon: "fa-city", geometry: "shape", make: { type: "district", profile: "village" } },
@@ -37,6 +40,11 @@ export const TOOLS = [
   { id: "track", label: "Track", icon: "fa-shoe-prints", geometry: "path", make: { type: "road", class: "track" } },
   { id: "river", label: "River", icon: "fa-water", geometry: "path", make: { type: "water", class: "river" } },
   { id: "stream", label: "Stream", icon: "fa-droplet", geometry: "path", make: { type: "water", class: "stream" } },
+  { id: "pond", label: "Pond", icon: "fa-fish", geometry: "shape", make: { type: "water", class: "pond" } },
+  { id: "lake", label: "Lake", icon: "fa-sailboat", geometry: "shape", make: { type: "water", class: "lake" } },
+  { id: "sea", label: "Sea", icon: "fa-umbrella-beach", geometry: "shape", how: "sea", make: { type: "water", class: "sea" } },
+  { id: "quay", label: "Quay", icon: "fa-anchor", geometry: "path", how: "quay", make: { type: "dock", class: "quay" } },
+  { id: "pier", label: "Pier", icon: "fa-ship", geometry: "path", how: "pier", make: { type: "dock", class: "pier" } },
   { id: "wall", label: "Wall", icon: "fa-dungeon", geometry: "path", make: { type: "wall", class: "drystone" } },
   { id: "hedge", label: "Hedge", icon: "fa-leaf", geometry: "path", make: { type: "wall", class: "hedge" } },
   { id: "townwall", label: "Town wall", icon: "fa-chess-rook", geometry: "path", closes: true, base: "wall", make: { type: "wall", class: "town", straight: true } },
@@ -212,12 +220,10 @@ function addCrossings(plan, f) {
   return added;
 }
 
-/** Is a point in the plan's water, as the layout tests it for gates (half the width and a little)? */
+/** Is a point in the plan's water, as the layout tests it for gates (half the width and a little, or in a lake)? */
 export function waterTest(plan) {
-  const full = normalize(plan);
-  const sq = full.size.ftPerSquare || 25;
-  const ws = full.features.filter((g) => g.type === "water" && Array.isArray(g.path)).map((g) => ({ path: g.path, clear: (g.width ?? 0) / sq / 2 + 0.225 }));
-  return (x, y) => ws.some((w) => distanceToPath([x, y], w.path) < w.clear);
+  const ws = waterEntries(normalize(plan));
+  return (x, y) => ws.some((w) => nearWater([x, y], w));
 }
 
 /**
@@ -314,7 +320,9 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   } else if (box) {
     if (Math.abs(box[2] - box[0]) < 0.1 || Math.abs(box[3] - box[1]) < 0.1) return { error: "Drag a bigger box (at least a tenth of a square each way)." };
     const [x0, y0, x1, y1] = [Math.min(box[0], box[2]), Math.min(box[1], box[3]), Math.max(box[0], box[2]), Math.max(box[1], box[3])].map((v) => Math.round(v * 1000) / 1000);
-    f.shape = { rect: [x0, y0, x1, y1] };
+    // A pond or lake dragged as a box is the oval inside it (a sea's box keeps its straight coast)
+    const r4 = (v) => Math.round(v * 1000) / 1000;
+    f.shape = f.type === "water" && f.class !== "sea" ? { ellipse: [r4((x0 + x1) / 2), r4((y0 + y1) / 2), r4((x1 - x0) / 2), r4((y1 - y0) / 2)] } : { rect: [x0, y0, x1, y1] };
   } else if (tool.geometry === "box") {
     // A click places a building of the tool's size, centered there
     if (!pts[0]) return { error: "Drag a box, or click where it goes." };
@@ -328,7 +336,7 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
     f.shape = shape;
   }
   next.features.push(f);
-  const problem = SHAPED.has(f.type) && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
+  const problem = (SHAPED.has(f.type) || f.type === "water") && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
   if (problem) return { error: problem };
   if (SHAPED.has(f.type) && f.type !== "square") shareSides(next, id);
   const crossings = addCrossings(next, f);

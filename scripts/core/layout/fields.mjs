@@ -97,8 +97,15 @@ function keepOutParts(plan, self = undefined) {
         if (Array.isArray(f.path)) paths.push({ path: f.path, half: ft(f.width) / 2 + KEEP.road });
         break;
       case "water":
-        if (Array.isArray(f.path)) paths.push({ path: f.path, half: ft(f.width) / 2 + KEEP.water });
+        // A stream or river a stretch at a time where its width varies (f._w, from the layout); a lake or the sea as
+        // the layout draws its outline (f._poly), past its shore (f._keep)
+        if (Array.isArray(f.path) && f._w) f.path.slice(1).forEach((b, i) => paths.push({ path: [f.path[i], b], half: Math.max(f._w[i], f._w[i + 1]) / 2 + KEEP.water }));
+        else if (Array.isArray(f.path)) paths.push({ path: f.path, half: ft(f.width) / 2 + KEEP.water });
+        else if (f._poly) polys.push(...grown(f._poly, KEEP.water + (f._keep ?? 0)));
         else if (f.shape) polys.push(...grown(shapeToPolygon(f.shape, f.rot ?? 0, 48), KEEP.water));
+        break;
+      case "dock":
+        if (Array.isArray(f.path)) paths.push({ path: f.path, half: ft(f.width ?? 15) / 2 + KEEP.road });
         break;
       case "wall":
         // A town wall or palisade keeps its clear strip, and its ditch or moat, too
@@ -187,12 +194,12 @@ export function accessLanes(plan) {
   const sq = plan.size.ftPerSquare;
   const [W, H] = plan.size.squares;
   const roads = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path) && f.path.length >= 2);
-  const waters = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path) && f.path.length >= 2).map((f) => ({ path: f.path, half: (f.width ?? 0) / sq / 2, box: bbox(f.path) }));
+  const waters = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path) && f.path.length >= 2).map((f) => ({ path: f.path, half: f._w ? Math.max(...f._w) / 2 : (f.width ?? 0) / sq / 2, box: bbox(f.path) }));
   const byWater = (q, w, d) => q[0] >= w.box[0] - d && q[0] <= w.box[2] + d && q[1] >= w.box[1] - d && q[1] <= w.box[3] + d && distanceToPath(q, w.path) < d;
   // Places a lane may meet a road: on the map, and not at the water's edge (a ford)
   const roadPts = roads.flatMap((r) => pointsAlong(r.path).map((q) => ({ q, half: (r.width ?? 0) / sq / 2 })))
     .filter(({ q }) => q[0] >= 0 && q[1] >= 0 && q[0] <= W && q[1] <= H && !waters.some((w) => byWater(q, w, w.half + 1)));
-  const poly = (f) => { try { return shapeToPolygon(f.shape, f.type === "area" || f.type === "building" || f.type === "water" ? f.rot ?? 0 : 0); } catch { return []; } };
+  const poly = (f) => { if (f._poly) return f._poly; try { return shapeToPolygon(f.shape, f.type === "area" || f.type === "building" || f.type === "water" ? f.rot ?? 0 : 0); } catch { return []; } };
   const roadBox = new Map(roads.map((r) => [r, bbox(r.path)]));
   const districts = plan.features.filter((f) => f.type === "district").map(poly).filter((d) => d.length >= 3);
   const farms = plan.features.filter((f) => f.type === "area" && f.class === "farmstead").map((f) => ({ id: f.id, pts: poly(f) })).filter((x) => x.pts.length >= 3).map((x) => ({ ...x, ring: [...x.pts, x.pts[0]] }));
@@ -203,7 +210,7 @@ export function accessLanes(plan) {
   const solid = [];
   for (const f of plan.features) {
     if (f.type === "district" || f.type === "square" || (f.type === "area" && f.class !== "fields" && f.class !== "woods") || f.type === "building" || (f.type === "water" && !Array.isArray(f.path) && f.shape))
-      solid.push({ id: f.id, poly: poly(f) });
+      solid.push({ id: f.id, poly: poly(f), water: f.type === "water" });
     if (f.type === "landmark") for (const b of f.buildings ?? []) solid.push({ id: f.id, poly: poly({ ...b, type: "building" }) });
   }
   const walls = solid.filter((x) => x.poly.length >= 3).map((x) => ({ ...x, box: bbox(x.poly), ring: [...x.poly, x.poly[0]] }));
@@ -223,7 +230,7 @@ export function accessLanes(plan) {
     const meets = (b, m) => b[2] >= x0 - m && b[0] <= x1 + m && b[3] >= y0 - m && b[1] <= y1 + m;
     if (roads.some((r) => meets(roadBox.get(r), f.class === "park" ? 27.5 : 0.6) && (pathTouchesPolygon(r.path, pts) || (f.class === "park" ? sideAlong(pts, r.path) : r.path.some((q) => distanceToPath(q, ring) < 0.6) || pts.some((q) => distanceToPath(q, r.path) < 0.6))))) continue;
     // What it mustn't run through: anything apart from what stands in it or beside it (a farm's own yard and barns)
-    const own = (x) => x.id === f.id || (meets(x.box, 1) && x.poly.some((q) => pointInPolygon(q, pts) || distanceToPath(q, ring) < 1));
+    const own = (x) => x.id === f.id || (!x.water && meets(x.box, 1) && x.poly.some((q) => pointInPolygon(q, pts) || distanceToPath(q, ring) < 1)); // never a pond beside it
     const blockers = walls.filter((x) => !own(x));
     const blocked = (a, b) => blockers.some((x) => Math.max(a[0], b[0]) >= x.box[0] && Math.min(a[0], b[0]) <= x.box[2] && Math.max(a[1], b[1]) >= x.box[1] && Math.min(a[1], b[1]) <= x.box[3] && pathTouchesPolygon([a, b], x.poly));
     // Where it leaves from: the middle of the yard (the lane starts at its edge), or a park's side middles

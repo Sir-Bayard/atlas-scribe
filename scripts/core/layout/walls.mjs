@@ -10,6 +10,7 @@ import { pointInPolygon, distanceToPath } from "../geom.mjs";
 import { offset, bands } from "../lots/poly.mjs";
 import { roadWaterCrossings, snapTo } from "./crossings.mjs";
 import { TOWN_WALLS } from "../plan.mjs";
+import { pastEdge, bankOf } from "../water.mjs";
 
 export const isTownWall = (f) => f?.type === "wall" && TOWN_WALLS.includes(f.class) && Array.isArray(f.path) && f.path.length >= 2;
 
@@ -148,7 +149,8 @@ function crossings(path, cum, line) {
 
 /**
  * Lays out one town wall or palisade. f: the plan wall (normalized, its path smoothed). roads: [{ id, path, width }]
- * and waters: [{ id, path, width }] in squares; sq: feet a square; r: the wall's stream. Returns { runs: [path],
+ * and waters: [{ id, path, width }] in squares (with widths where it varies, or body and its shore's reach for a lake
+ * or the sea, its path then the shore); sq: feet a square; r: the wall's stream. Returns { runs: [path],
  * towers: [building spec], gates: [{ at, road }], ditches: [{ path, width, closed, moat }] (a dry ditch stops short of
  * water, a moat runs on into it), bridges: [crossing spec],
  * band: { path, half } (what's kept clear), side, closed, notes }. A tower spec is what addBuilding takes, plus `kind`,
@@ -274,7 +276,7 @@ export function layWall(f, { roads = [], waters = [], sq, r }) {
     if (taken.some(([x, y, rr]) => Math.hypot(x - c[0], y - c[1]) < 0.9 * (rr + reach))) return false;
     if (roads.some((rd) => Array.isArray(rd.path) && distanceToPath(c, rd.path) < (rd.width ?? 1) / 2 + reach + 0.02)) return false;
     // A gate's towers stand over the wall's ends beside water, so only towers along the wall are kept off its bank
-    return gate || !waters.some((w) => Array.isArray(w.path) && distanceToPath(c, w.path) < (w.width ?? 1) / 2 + 0.475 + reach);
+    return gate || !waters.some((w) => Array.isArray(w.path) && (w.body || w.widths ? pastEdge(c, w) < bankOf(w) + reach : distanceToPath(c, w.path) < (w.width ?? 1) / 2 + 0.475 + reach));
   };
   const addTower = (at, u, kind, bisector = null) => {
     const tr = r.fork("tower", keyOf(at));
@@ -433,9 +435,9 @@ export function bandPieces(path, half, step = 6) {
   return out.filter((p) => p.length >= 3);
 }
 
-/** True when a point is in water or on its bank, reach squares (half of what stands there) or less from its edge. */
+/** True when a point is in water or on its bank or shore, reach squares (half of what stands there) or less from its edge. */
 function inWater(q, waters, reach) {
-  return waters.some((w) => Array.isArray(w.path) && w.path.length >= 2 && distanceToPath(q, w.path) < (w.width ?? 1) / 2 + 0.475 + reach);
+  return waters.some((w) => Array.isArray(w.path) && w.path.length >= 2 && (w.body || w.widths ? pastEdge(q, w) < bankOf(w) + reach : distanceToPath(q, w.path) < (w.width ?? 1) / 2 + 0.475 + reach));
 }
 
 /**

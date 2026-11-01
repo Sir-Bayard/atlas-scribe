@@ -268,17 +268,17 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
   }
 
-  /** The plan's roads, rivers and walls as drawn on the overlay: [{ id, type, pts, half }] (half: half its width). */
+  /** The plan's roads, rivers, walls and docks as drawn on the overlay: [{ id, type, pts, half }] (half: half its widest). */
   #paths() {
     const plan = normalize(this.#plan);
     const sq = plan.size.ftPerSquare || 25;
-    return plan.features.filter((f) => (f.type === "road" || f.type === "water" || f.type === "wall") && Array.isArray(f.path) && f.path.length >= 2)
-      .map((f) => ({ id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : (Number(f.width) || 10) / sq / 2 }));
+    return plan.features.filter((f) => (f.type === "road" || f.type === "water" || f.type === "wall" || f.type === "dock") && Array.isArray(f.path) && f.path.length >= 2)
+      .map((f) => ({ id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2 }));
   }
 
   /**
-   * Squares, plan buildings, a landmark's buildings and water drawn as a shape (a pond, a lake), outlined faintly so
-   * they can be clicked: [{ id, type, poly }].
+   * Squares, plan buildings and a landmark's buildings, outlined faintly so they can be clicked: [{ id, type, poly }].
+   * (A pond, lake or sea is outlined with the districts and areas, as it can be rerolled.)
    */
   #minor() {
     const plan = normalize(this.#plan);
@@ -291,7 +291,6 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     for (const f of plan.features) {
       if (f.type === "square") add(f.id, f.type, f.shape);
       else if (f.type === "building") add(f.id, f.type, f.shape, f.rot ?? 0);
-      else if (f.type === "water" && !Array.isArray(f.path) && f.shape) add(f.id, f.type, f.shape);
       else if (f.type === "landmark") for (const b of f.buildings ?? []) add(f.id, "landmark", b.shape, b.rot ?? 0);
     }
     return out;

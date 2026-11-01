@@ -22,7 +22,10 @@ const unit = (a, b) => {
   return [dx / l, dy / l];
 };
 
-/** Every place a road crosses water: [{ at, roadDir, waterDir, road, water }]. roads and waters: [{ id, path, width }]. */
+/**
+ * Every place a road crosses water: [{ at, roadDir, waterDir, road, water }]. roads and waters: [{ id, path, width }],
+ * a water with widths (one a point) where it varies (its water is then given the width of the stretch crossed).
+ */
 export function roadWaterCrossings(roads, waters) {
   const out = [];
   for (const r of roads) {
@@ -30,7 +33,7 @@ export function roadWaterCrossings(roads, waters) {
       for (const w of waters) {
         for (let j = 1; j < (w.path?.length ?? 0); j++) {
           const hit = crossAt(r.path[i - 1], r.path[i], w.path[j - 1], w.path[j]);
-          if (hit) out.push({ at: hit.p, roadDir: unit(r.path[i - 1], r.path[i]), waterDir: unit(w.path[j - 1], w.path[j]), road: r, water: w });
+          if (hit) out.push({ at: hit.p, roadDir: unit(r.path[i - 1], r.path[i]), waterDir: unit(w.path[j - 1], w.path[j]), road: r, water: w.widths ? { ...w, width: Math.max(w.widths[j - 1], w.widths[j]) } : w });
         }
       }
     }

@@ -25,6 +25,9 @@ import { isTownWall, layWall, bandPieces, offsetPath } from "./walls.mjs";
 import { buildOnLots } from "../lots/build.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
+import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, frozenOf, keepOf, nearWater, segClears, SHORE_REACH } from "../water.mjs";
+import { layDock, shoreRuns } from "./docks.mjs";
+import { shoreLife } from "./shores.mjs";
 
 export const LAYOUT_VERSION = 1;
 
@@ -126,7 +129,7 @@ function trimAtBuildings(streets, feet) {
 export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Roads, rivers and walls curve through their points (the plan itself is left as it is)
   const asGiven = normalize(rawPlan);
-  const plan = windAlike(smoothPlanPaths(asGiven));
+  const plan = withWater(windAlike(smoothPlanPaths(asGiven)), asGiven);
   const sq = plan.size.ftPerSquare;
   const ft = (v) => (v == null ? null : v / sq);
   const [W, H] = plan.size.squares;
@@ -169,7 +172,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Where the plan's roads cross its water, for its bridges and fords to sit on
   const overWater = roadWaterCrossings(
     plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })),
-    plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })),
+    plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => (f._w ? { id: f.id, path: f.path, width: Math.max(...f._w), widths: f._w } : { id: f.id, path: f.path, width: ft(f.width) })),
   );
   const snapped = snapCrossings(
     plan.features.filter((f) => f.type === "crossing" && Array.isArray(f.at)).map((f) => ({ id: f.id, class: f.class, at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width) })),
@@ -177,6 +180,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   );
   const ways = [];
   const parks = [];
+  const bodies = []; // ponds, lakes and seas
+  const winter = seasonOf(plan) === "winter";
   for (const f of plan.features) {
     switch (f.type) {
       case "road": {
@@ -188,10 +193,30 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         break;
       }
       case "water":
-        if (f.path) {
-          items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width: ft(f.width), frozen: !!f.frozen });
-          space.water.push({ path: f.path, clear: ft(f.width) / 2 + 0.225 });
-        } else notes.push({ level: "warning", id: f.id, message: `"${f.id}": water drawn as an area isn't painted yet; only rivers, streams and canals along a path are.` });
+        if (isRunning(f)) {
+          if (f._w) {
+            // Wider at one end, or opening out into a lake: a width at each point, and the widest for its box
+            const width = Math.max(...f._w);
+            items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width, widths: f._w, frozen: !!f.frozen });
+            space.water.push({ path: f.path, clear: width / 2 + 0.225, clears: segClears(f._w, 0.225) });
+          } else {
+            const width = ft(f.width ?? 60); // a pond, lake or sea along a path is drawn as a river (the checker says so)
+            items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width, frozen: !!f.frozen });
+            space.water.push({ path: f.path, clear: width / 2 + 0.225 });
+          }
+        } else if (f._poly) {
+          // A pond, lake or sea: its shore, and frozen in winter unless the plan says (a sea never freezes unasked)
+          // Its shore's reach is what's painted; things keep clear by keep, which a reroll never changes
+          const shore = f._shore;
+          const reach = SHORE_REACH[shore];
+          const frozen = frozenOf(f, winter);
+          const item = { kind: "water", id: f.id, from: f.id, class: f.class, poly: f._poly, ring: f._ring, shore, reach, keep: f._keep, frozen, surf: f.class === "sea" && !frozen && !winter };
+          items.push(item);
+          bodies.push(item);
+          space.water.push({ path: f._ring, clear: f._keep + 0.15, body: f._poly });
+          space.reserved.push(f._poly);
+          space.zones.push(f._poly);
+        } else notes.push({ level: "warning", id: f.id, message: `"${f.id}" has no outline to draw.` });
         break;
       case "crossing": {
         const c = snapped.get(f.id) ?? { at: f.at, angle: f.angle, length: ft(f.length), width: ft(f.width), snappedTo: null };
@@ -342,7 +367,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     for (const k of nearby.reserved.near(x, y, pr)) { const poly = space.reserved[k]; if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false; }
     for (const k of nearby.gardens.near(x, y, pr)) { const poly = space.gardens[k]; if (!elsewhere(poly) && (pointInPolygon([x, y], poly) || distanceToPath([x, y], closed(poly)) < rad * 0.9)) return false; }
     const hr = Math.max(0, half);
-    for (const k of nearby.water.near(x, y, hr)) if (nearby.water.dist(x, y, k) < half + space.water[nearby.water.segPath[k]].clear) return false;
+    for (const k of nearby.water.near(x, y, hr)) { const w = space.water[nearby.water.segPath[k]]; if (nearby.water.dist(x, y, k) < half + (w.clears ? w.clears[nearby.water.segIndex[k] - 1] : w.clear)) return false; }
     for (const k of nearby.ways.near(x, y, hr)) { const w = space.ways[nearby.ways.segPath[k]]; if (!elsewhere(w) && nearby.ways.dist(x, y, k) < half + w.clear) return false; }
     for (const k of nearby.buildings.near(x, y, Math.max(0, rad * 0.8))) { const b = space.buildings[k]; if (!elsewhere(b) && Math.hypot(b.cx - x, b.cy - y) < (rad + Math.max(b.len, b.dep) * 0.5) * 0.8 + 0.15) return false; }
     return true;
@@ -350,12 +375,48 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
 
 
+  // Quays and wharves along the water's edge (ways that houses front and streets start from), piers and jetties out
+  // into it; then each lake's or sea's shore where no quay covers it, and the reeds and lily pads along it
+  const runsSq = items.filter((i) => i.kind === "water" && i.path);
+  const quayEdges = [];
+  const docks = [];
+  for (const f of plan.features.filter((f) => f.type === "dock")) {
+    const d = layDock(f, { runs: runsSq, bodies, sq });
+    if (!d) { notes.push({ level: "warning", id: f.id, message: `"${f.id}" is too short to build.` }); continue; }
+    items.push(d.item);
+    docks.push(d.item);
+    notes.push(...d.notes);
+    if (d.way) {
+      ways.push(d.way);
+      space.ways.push({ path: d.way.path, clear: d.way.width / 2 - 0.05, owner: null });
+      quayEdges.push(d.edge);
+    }
+    for (const poly of d.keep) { space.reserved.push(poly); space.zones.push(poly); }
+  }
+  for (const b of bodies) {
+    const { runs, quayed } = shoreRuns(b.ring, quayEdges);
+    b.runs = runs;
+    // The shore no quay covers is kept clear: streets end short of it and nothing is placed on it
+    for (const run of runs) for (const poly of bandPieces(run, b.keep)) { space.reserved.push(poly); space.zones.push(poly); }
+    // Where a quay covers the shore, things keep clear of the water's edge only, as along a river
+    if (quayed.some(Boolean)) {
+      const entry = space.water.find((w) => w.body === b.poly);
+      entry.clears = quayed.map((q) => (q ? 0.225 : entry.clear));
+    }
+    const life = shoreLife({ body: b, r: streamFor(b.id).fork("life"), docks, seed: seedOf(plan, b.id), W, H, winter });
+    life.reeds.forEach((t, k) => items.push({ kind: "reed", id: `${b.id}/r${k + 1}`, from: b.id, ...t }));
+    life.lilies.forEach((t, k) => items.push({ kind: "lily", id: `${b.id}/l${k + 1}`, from: b.id, ...t }));
+  }
+
   // Town walls and palisades: their runs, towers and gatehouses, a ditch or moat, and clear ground along them
   // (streets end there, and only roads pass, through gates)
   const wallBands = [];
   {
-    const roadsSq = plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) }));
-    const watersSq = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) }));
+    const roadsSq = [...plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })), ...ways.filter((w) => w.quay).map((w) => ({ id: w.id, path: w.path, width: w.width }))];
+    const watersSq = [
+      ...plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => (f._w ? { id: f.id, path: f.path, width: Math.max(...f._w), widths: f._w } : { id: f.id, path: f.path, width: ft(f.width) })),
+      ...bodies.map((b) => ({ id: b.id, path: b.ring, width: 0, body: b.poly, reach: b.keep })),
+    ];
     const moatFrozen = plan.features.some((f) => f.type === "water" && f.frozen); // a moat freezes with the plan's water
     for (const f of plan.features.filter(isTownWall)) {
       const r = streamFor(f.id);
@@ -407,7 +468,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   progress(0.4, "Districts");
   const dfeats = plan.features.filter((f) => f.type === "district");
   const dlist = dfeats.map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }));
-  const waterAt = (x, y) => space.water.some((w) => distanceToPath([x, y], w.path) < w.clear);
+  const waterAt = (x, y) => space.water.some((w) => nearWater([x, y], w));
   const gates = districtGates(dlist, { roads: ways, inWater: (x, y) => waterAt(x, y) || inWallBand(x, y), seed: plan.seed });
   const radials = plan.features.filter((f) => f.type === "square" && f.radial).map((f) => {
     const poly = shapeToPolygon(f.shape);
@@ -417,7 +478,13 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   });
   // What every district's fill reads besides itself and what's near it (see districtCache), hashed once
   const waterItems = items.filter((i) => i.kind === "water" && i.path);
-  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.seed, sq, W, H, waterItems, space.water, radials])).join(".") : null;
+  // What plots keep off: each stream and river (a stretch at a time where its width varies), and each lake's or sea's
+  // shore where no quay covers it (a quay is a way, which plots front)
+  const lotWater = [
+    ...waterItems.flatMap((w) => (w.widths ? w.path.slice(1).map((b, i) => ({ path: [w.path[i], b], width: Math.max(w.widths[i], w.widths[i + 1]) })) : [w])),
+    ...bodies.flatMap((b) => b.runs.map((path) => ({ path, width: 2 * (b.keep - 0.1) }))),
+  ];
+  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.seed, sq, W, H, waterItems, space.water, radials, bodies.length ? lotWater : 0])).join(".") : null;
   // What was placed before the districts, with each thing's box (the districts add to space as they fill). A district
   // sees only what lies within KEY_MARGIN squares of it, with or without the cache, so its key covers all it reads
   const placed = Object.fromEntries(["reserved", "zones", "plots", "buildings", "ways", "gardens"].map((k) => [k, space[k].map((v) => [v, boxOf(v)])]));
@@ -471,7 +538,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       ftPerSquare: sq, r: r.fork("streets"),
     });
     made.streets = trimAtBuildings(made.streets, around.plots);
-    const surface = d.surface ?? fixedHere[0]?.surface ?? "dirt";
+    const surface = d.surface ?? fixedHere.find((w) => !w.quay)?.surface ?? "dirt";
     const own = [];
     made.streets.forEach((st, k) => {
       const item = { kind: "way", id: `${d.id}/s${k + 1}`, from: d.id, class: st.kind, path: st.path, width: st.width, surface, ruts: false };
@@ -489,7 +556,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // starts there, and its width reaches a little over the shared edge even where this district's street doesn't
     const gateClear = (gates.get(d.id) ?? []).map((g) => shapeToPolygon({ circle: [g.at[0], g.at[1], (g.kind === "lane" ? GATE_WIDTH.lane : GATE_WIDTH.street) / sq / 2 + 0.05] }));
     const keepOff = [...blocked, ...gateClear];
-    const { lots, back } = lotsFor({ district: d, poly, ways: [...nearHere, ...own], water: waterItems, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
+    const { lots, back } = lotsFor({ district: d, poly, ways: [...nearHere, ...own], water: lotWater, blocked: keepOff, ftPerSquare: sq, r: r.fork("lots") });
     const built = buildOnLots({ lots, district: d, ways: [...nearHere, ...own], blocked: keepOff, ftPerSquare: sq, r: r.fork("build") });
     filling = d.id;
     for (const h of built.houses) addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
@@ -560,15 +627,33 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     space.ways.push({ path: lane.path, clear: lane.width / 2 });
   }
 
+  /** Hedge bushes added since item number from that stand in a pond, lake or the sea, or on its shore, taken out again. */
+  const dropWet = (from) => {
+    if (!bodies.length) return;
+    for (let k = items.length - 1; k >= from; k--) if (space.water.some((w) => w.body && nearWater([items[k].x, items[k].y], w))) items.splice(k, 1);
+  };
+
   // Parks, filled now: their paths start where the roads, the districts' streets and their own lanes meet them
   const streets = items.filter((i) => i.kind === "way" && !i.faint && !ways.includes(i));
   for (const f of parks) {
     const park = fillPark({ area: f, r: streamFor(f.id), roads: [...ways, ...lanes.filter((l) => l.from === f.id), ...streets], ftPerSquare: sq });
+    // A pond, lake or the sea on a green: its paths stop at the shore, and no tree or bed stands in the water
+    if (bodies.length) {
+      const wet = (x, y, extra = 0) => space.water.some((w) => w.body && nearWater([x, y], w, extra));
+      park.surface.paths = park.surface.paths.flatMap((w) => dryPieces(w.path, (q) => wet(q[0], q[1], w.width / 2)).map((path) => ({ ...w, path })));
+      park.trees = park.trees.filter((t) => !wet(t.x, t.y, 0.3));
+      park.beds = park.beds.filter((b) => !wet(b.cx, b.cy, Math.hypot(b.w, b.d) / 2));
+      if (park.surface.basin && wet(park.surface.basin.at[0], park.surface.basin.at[1], park.surface.basin.radius)) park.surface.basin = null;
+    }
     items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin });
     park.trees.forEach((t, k) => items.push({ kind: "tree", id: `${f.id}/t${k + 1}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
     park.beds.forEach((garden, k) => items.push({ kind: "surface", id: `${f.id}/g${k + 1}`, from: f.id, class: "garden", garden }));
     // Clipped hedges around the beds: small bushes close together
-    park.hedges.forEach((path, k) => hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: streamFor(f.id).fork("hedge", k), items, step: 0.22, scale: [0.32, 0.08] }));
+    park.hedges.forEach((path, k) => {
+      const before = items.length;
+      hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: streamFor(f.id).fork("hedge", k), items, step: 0.22, scale: [0.32, 0.08] });
+      dropWet(before);
+    });
   }
 
   // Tracks: a district's street that stops at the district's edge carries on as a trodden track out into the land, as
@@ -600,7 +685,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
           dir += (wobble * Math.PI) / 180 / 3;
           const next = [at[0] + Math.cos(dir), at[1] + Math.sin(dir)];
           if (next[0] < 0.5 || next[1] < 0.5 || next[0] > W - 0.5 || next[1] > H - 0.5) break;
-          if (space.water.some((w) => distanceToPath(next, w.path) < w.clear + 0.3)) break;
+          if (space.water.some((w) => nearWater(next, w, 0.3))) break;
           if (fieldItems.some((f) => pointInPolygon(next, f.poly))) break; // at a field's gate
           if (districts.some((o) => o.id !== d.id && pointInPolygon(next, o.poly))) break;
           // A square short of a wood, a yard or a green, so a track never thins the trees at a wood's edge
@@ -628,7 +713,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     notes.push(...fillWoods({ area: f, r: streamFor(f.id), free, items, winter: seasonOf(plan) === "winter" }));
   }
   for (const f of plan.features.filter((f) => f.type === "wall" && f.class === "hedge")) {
+    const before = items.length;
     hedgeBushes({ wall: f, r: streamFor(f.id), items });
+    dropWet(before);
   }
 
   // A tree laid before another feature's street (a green's, or one district's wild tree by the next one's lane) is
@@ -687,4 +774,58 @@ function shrink(poly, by) {
   const [x0, y0, x1, y1] = bbox(poly);
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   return poly.map(([x, y]) => [x + (cx - x) * by, y + (cy - y) * by]);
+}
+
+/**
+ * The plan with its water worked out once, for everything that reads it (the fields and the walls too): each pond's,
+ * lake's and sea's outline (_poly, and _ring closed on its first point), shore (_shore) and how far things keep from
+ * its edge (_keep), and the width at each point (_w, in squares)
+ * of a stream or river that varies in width or opens out into a lake or the sea. given: the plan as it came, its
+ * paths as drawn (smoothed, the layout's are longer). Features are in the same order in both.
+ */
+function withWater(plan, given) {
+  const sq = plan.size.ftPerSquare, [W, H] = plan.size.squares;
+  if (!plan.features.some((f) => f.type === "water")) return plan;
+  const bodies = [];
+  let features = plan.features.map((f) => {
+    if (!isBody(f)) return f;
+    const b = bodyOf(f, { W, H, seed: plan.seed });
+    if (!b) return f;
+    bodies.push(b);
+    return { ...f, _poly: b.poly, _ring: b.ring, _shore: shoreOf(f, rng(seedOf(plan, f.id), f.id).fork("shore")), _keep: keepOf(f) }; // the shore as streamFor(id) draws it
+  });
+  features = features.map((f, i) => {
+    if (!isRunning(f) || f.path.length < 2) return f;
+    const w = widthsOf(f, given.features[i]?.path, sq);
+    const width = Number.isFinite(f.width) ? f.width / sq : null;
+    const mouth = w || width > 0 ? mouthWidths(f.path, w, width, bodies) : null;
+    const ws = mouth ?? w;
+    return ws ? { ...f, _w: ws } : f;
+  });
+  return { ...plan, features };
+}
+
+/**
+ * The pieces of a path that keep out of somewhere (wet(point) is true there), each a square long or more: the path
+ * walked in steps of a tenth of a square, keeping its own points and the last dry step before each cut. The path
+ * itself when it's dry all along.
+ */
+function dryPieces(path, wet) {
+  const pieces = [];
+  let cur = [], last = null, cut = false;
+  const end = () => { if (last && cur.length && cur.at(-1) !== last) cur.push(last); if (cur.length >= 2) pieces.push(cur); cur = []; last = null; };
+  const visit = (q, own) => {
+    if (wet(q)) { cut = true; end(); return; }
+    if (own || !cur.length) cur.push(q);
+    last = q;
+  };
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.1));
+    for (let t = 0; t < n; t++) visit(t ? [a[0] + ((b[0] - a[0]) * t) / n, a[1] + ((b[1] - a[1]) * t) / n] : a, t === 0);
+  }
+  if (path.length) visit(path.at(-1), true);
+  end();
+  if (!cut) return [path];
+  const len = (p) => p.reduce((sum, q, k) => (k ? sum + Math.hypot(q[0] - p[k - 1][0], q[1] - p[k - 1][1]) : 0), 0);
+  return pieces.filter((p) => len(p) >= 1);
 }

@@ -118,9 +118,35 @@ export function paint(ctx) {
 
   // Water and crossings
   progress(0.5, "Water");
-  // Every bank, then the water, so where a stream or moat opens into a river no bank runs across its mouth
-  for (const w of items("water")) stroke(w.path, w.width + 0.95, mix(col(`stone.rough.${s}`), [255, 255, 255], 0.1));
-  for (const w of items("water")) stroke(w.path, w.width, col(w.frozen ? "water.ice" : `water.${w.class}`));
+  // Every bank and shore, then the water, so where a stream or moat opens into a river (or a river into a lake or the
+  // sea) no bank runs across its mouth
+  const runs = items("water").filter((w) => w.path), lakes = items("water").filter((w) => w.poly);
+  // A stream's or river's line: stroked at its width, or (where its width varies) a round end at each point and a
+  // band between each two, all wound the same way so the fill has no gaps
+  const line = (w, add, color) => {
+    if (!w.widths) return stroke(w.path, w.width + add, color);
+    g.fillStyle = color; g.beginPath();
+    w.path.forEach(([x, y], i) => {
+      const r = Math.max(0.5, ((w.widths[i] + add) / 2) * pp);
+      g.moveTo(X(x) + r, Y(y)); g.arc(X(x), Y(y), r, 0, 2 * Math.PI);
+      if (!i) return;
+      const [px0, py0] = w.path[i - 1], r0 = Math.max(0.5, ((w.widths[i - 1] + add) / 2) * pp);
+      const dx = X(x) - X(px0), dy = Y(y) - Y(py0), l = Math.hypot(dx, dy);
+      if (!l) return;
+      const nx = -dy / l, ny = dx / l;
+      g.moveTo(X(px0) - nx * r0, Y(py0) - ny * r0); g.lineTo(X(x) - nx * r, Y(y) - ny * r); g.lineTo(X(x) + nx * r, Y(y) + ny * r); g.lineTo(X(px0) + nx * r0, Y(py0) + ny * r0); g.closePath();
+    });
+    g.fill("nonzero");
+  };
+  for (const w of runs) line(w, 0.95, mix(col(`stone.rough.${s}`), [255, 255, 255], 0.1));
+  for (const b of lakes) for (const r of b.runs ?? [b.ring]) stroke(r, b.reach * 2, col(`shore.${b.shore}.${s}`));
+  for (const w of runs) line(w, 0, col(w.frozen ? "water.ice" : `water.${w.class}`));
+  for (const b of lakes) {
+    fillPoly(b.poly, col(b.frozen ? "water.ice" : `water.${b.class}`));
+    // Lighter in the shallows
+    g.save(); poly(b.poly); g.clip(); stroke(b.ring, b.class === "sea" ? 2 : 1, mix(col(b.frozen ? "water.ice" : `water.${b.class}`), [255, 255, 255], b.frozen ? 0.25 : 0.15)); g.restore();
+  }
+  for (const p of items("lily")) dot(p.x, p.y, p.s * 0.35, "rgb(86,122,62)");
   for (const c of items("crossing")) {
     const a = (c.angle * Math.PI) / 180, half = (c.length ?? 2) / 2;
     const [x, y] = c.at, dx = Math.cos(a) * half, dy = Math.sin(a) * half;
@@ -136,6 +162,17 @@ export function paint(ctx) {
       g.lineCap = "round";
     }
   }
+
+  // Docks: a quay's paving from the water's edge back, or a pier's deck out into the water; then the reeds
+  for (const d of items("dock")) {
+    const deck = d.material === "wood" ? "rgb(128,96,64)" : mix(col("dock"), [255, 255, 255], 0.1);
+    if (d.edge) { fillPoly([...d.edge, ...[...d.land].reverse()], deck); stroke(d.edge, 0.05, "rgb(50,46,44)"); continue; }
+    g.lineCap = "butt";
+    stroke(d.path, d.width + 0.08, "rgb(56,48,40)", 2);
+    stroke(d.path, d.width, deck);
+    g.lineCap = "round";
+  }
+  for (const t of items("reed")) dot(t.x, t.y, t.s * 0.22, "rgb(104,92,58)");
 
   // Town walls and palisades: a shadow, the wall, its walk along the top and battlements along its outer face (the
   // towers are buildings, drawn with the roofs)

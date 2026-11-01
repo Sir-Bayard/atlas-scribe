@@ -27,6 +27,12 @@ function offsetLine(face, center, d) {
   });
 }
 
+/**
+ * How heavy the drawn lines are: a road's dark middle line (its ruts when it has them), its worn middle, its trodden
+ * verge, the outline around roofs, and the dark edge along water. 1 is full strength.
+ */
+const LINES = { center: 0, worn: 0.6, verge: 0.6, eave: 0.75, waterEdge: 0.5 }; // Patrick chose these (31 Oct) over heavier lines
+
 const hasFlat = (b) => (!b.round || b.tower) && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 /** The flat roof's role: stone paving, or planks on a palisade's open tower. */
 const flatRole = (b, s) => (b.flatRoof === "wood" ? `roof.flat.wood.${s}` : `roof.flat.${s}`);
@@ -63,7 +69,13 @@ export function rolesFor(layout) {
       if (i.basin) roles.add(`stone.rough.${s}`).add(s === "winter" ? "water.ice" : "water.pond");
       if (s !== "winter") roles.add("ground.grass.grassy");
     }
-    if (i.kind === "water") { roles.add(`stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`); if (i.frozen) roles.add("water.ice.cracked"); }
+    if (i.kind === "water") {
+      roles.add(i.poly ? `shore.${i.shore}.${s}` : `stone.rough.${s}`).add(i.frozen ? "water.ice" : `water.${i.class}`);
+      if (i.frozen) roles.add("water.ice.cracked");
+    }
+    if (i.kind === "dock") roles.add(`dock.${i.material}.${s}`);
+    if (i.kind === "reed") roles.add("prop.reeds");
+    if (i.kind === "lily") roles.add("prop.lily");
     if (i.kind === "crossing") roles.add(`surface.trodden.${s}`).add(`stone.rough.${s}`).add("water.ice.cracked");
     if (i.kind === "wall") {
       if (i.class === "palisade") roles.add("wood.stake");
@@ -110,6 +122,26 @@ export function paint(ctx) {
   const path = (k, pts) => { k.beginPath(); pts.forEach(([x, y], i) => (i ? k.lineTo(X(x), Y(y)) : k.moveTo(X(x), Y(y)))); };
   const poly = (k, pts) => { path(k, pts); k.closePath(); };
   const strokeLine = (k, pts, w) => { k.lineWidth = w * pp; path(k, pts); k.stroke(); };
+  /**
+   * A line whose width varies (widths, one a point, times mul plus add), filled: a round end at each point and a band
+   * between each two, every piece wound the same way, so they add up with no gaps where they overlap.
+   */
+  const strokeVar = (k, pts, widths, add = 0, mul = 1) => {
+    k.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const x = X(pts[i][0]), y = Y(pts[i][1]), r = Math.max(0, ((widths[i] * mul + add) / 2) * pp);
+      k.moveTo(x + r, y); k.arc(x, y, r, 0, 2 * Math.PI);
+      if (!i) continue;
+      const px = X(pts[i - 1][0]), py = Y(pts[i - 1][1]), r0 = Math.max(0, ((widths[i - 1] * mul + add) / 2) * pp);
+      const dx = x - px, dy = y - py, l = Math.hypot(dx, dy);
+      if (!l) continue;
+      const nx = -dy / l, ny = dx / l;
+      k.moveTo(px - nx * r0, py - ny * r0); k.lineTo(x - nx * r, y - ny * r); k.lineTo(x + nx * r, y + ny * r); k.lineTo(px + nx * r0, py + ny * r0); k.closePath();
+    }
+    k.fill("nonzero");
+  };
+  /** A stream's or river's line at its width (times mul, plus add): stroked when it's the same all along. */
+  const waterLine = (k, w, add = 0, mul = 1) => (w.widths ? strokeVar(k, w.path, w.widths, add, mul) : strokeLine(k, w.path, mul === 1 ? w.width + add : w.width * mul + add));
   /**
    * Draw shapes into the mask, blur it, fill it with a fill, lay it on the map. The shapes are drawn sharp and the
    * mask blurred once (on a second canvas, ctx.blur): a canvas blur filter costs a whole-tile blur per drawing call,
@@ -366,19 +398,17 @@ export function paint(ctx) {
     if (grassLift) soft((k) => { for (const t of tracks) strokeLine(k, t.path, t.width); }, TRODDEN_LIFT, 0.15, 0.6, "screen");
   }
   const ways = items("way").filter((w) => !w.faint);
-  soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, 1);
+  soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, LINES.verge);
   if (grassLift) soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, TRODDEN_LIFT, 0.25, 0.45, "screen"); // no dark rim on the lifted grass
   // Widest roads' surfaces first, as the sketch lays them, so a lane's surface runs over the road it meets
   for (const surf of new Set([...ways].sort((a, b) => b.width - a.width).map((w) => w.surface)))
     soft((k) => { for (const w of ways.filter((w) => w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);
   // A darker worn middle: strong on snow and slush, lighter on summer dirt, which is dark enough already
-  soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width * (w.class === "highway" ? 0.85 : 0.7)); }, "rgb(118,108,96)", 0.2, s === "winter" ? 0.5 : 0.25, "multiply");
-  soft((k) => {
-    for (const w of ways) {
-      if (w.ruts) for (const d of [-0.22, 0.22]) strokeLine(k, offsetPath(w.path, d), 0.07);
-      else strokeLine(k, w.path, 0.06);
-    }
-  }, "rgb(70,62,54)", 0.03, 0.4, "multiply");
+  soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width * (w.class === "highway" ? 0.85 : 0.7)); }, "rgb(118,108,96)", 0.2, (s === "winter" ? 0.5 : 0.25) * LINES.worn, "multiply");
+  // Ruts where a road has them, else (when LINES.center isn't 0) a faint worn line down its middle
+  const rutted = ways.filter((w) => w.ruts);
+  if (rutted.length) soft((k) => { for (const w of rutted) for (const d of [-0.22, 0.22]) strokeLine(k, offsetPath(w.path, d), 0.07); }, "rgb(70,62,54)", 0.03, 0.4, "multiply");
+  if (LINES.center > 0) soft((k) => { for (const w of ways) if (!w.ruts) strokeLine(k, w.path, 0.06); }, "rgb(70,62,54)", 0.03, LINES.center, "multiply");
 
   // Squares
   progress(0.45, "Squares");
@@ -405,15 +435,69 @@ export function paint(ctx) {
 
   // Water: the bank, a dark edge, the water or ice, a cracked line, a darker core
   progress(0.5, "Water");
-  // Every bank first, then every edge, then the water, so where a stream or moat opens into a river no bank runs
-  // across its mouth
-  const waters = items("water").map((w) => ({ w, box: boxOf([w.path], w.width / 2 + 0.5) }));
-  for (const { w, box } of waters) soft((k) => strokeLine(k, w.path, w.width + 0.95), tex(`stone.rough.${s}`, 2), 0.35, 0.8, "source-over", box);
-  for (const { w, box } of waters) soft((k) => strokeLine(k, w.path, w.width + 0.3), "rgb(48,62,80)", 0.12, 0.7, "source-over", box);
+  // Every bank and shore first, then every edge, then the water, so where a stream or moat opens into a river (or a
+  // river into a lake or the sea) no bank runs across its mouth
+  const waters = items("water").filter((w) => w.path).map((w) => ({ w, box: boxOf([w.path], w.width / 2 + 0.5) }));
+  const lakes = items("water").filter((w) => w.poly).map((b) => ({ b, box: boxOf([b.ring], b.reach + 1) }));
+  for (const { w, box } of waters) soft((k) => waterLine(k, w, 0.95), tex(`stone.rough.${s}`, 2), 0.35, 0.8, "source-over", box);
+  for (const { b, box } of lakes) paintShore(b, box);
+  for (const { w, box } of waters) soft((k) => waterLine(k, w, 0.3), "rgb(48,62,80)", 0.12, LINES.waterEdge, "source-over", box);
+  // A lake's dark edge, but not along a beach, which slopes into the water
+  for (const { b, box } of lakes) if (b.shore !== "sand" && b.shore !== "pebbles") soft((k) => strokeLine(k, b.ring, 0.3), "rgb(48,62,80)", 0.12, LINES.waterEdge, "source-over", box);
   for (const { w, box } of waters) {
-    soft((k) => strokeLine(k, w.path, w.width), tex(w.frozen ? "water.ice" : `water.${w.class}`, 2.5), 0.06, 1, "source-over", box);
-    if (w.frozen) soft((k) => strokeLine(k, w.path, w.width * 0.48), tex("water.ice.cracked", 2), 0.2, 0.55, "source-over", box);
+    soft((k) => waterLine(k, w), tex(w.frozen ? "water.ice" : `water.${w.class}`, 2.5), 0.06, 1, "source-over", box);
+    if (w.frozen) soft((k) => waterLine(k, w, 0, 0.48), tex("water.ice.cracked", 2), 0.2, 0.55, "source-over", box);
     soft((k) => strokeLine(k, w.path, 0.25), "rgb(40,60,82)", 0.15, 0.35, "multiply", box);
+  }
+  // Lakes and the sea over the rivers that run into them, each river's water fading out into it
+  for (const { b, box } of lakes) {
+    paintLake(b, box);
+    if (b.frozen) continue;
+    for (const { w, box: wb } of waters) {
+      if (!w.widths || w.frozen || wb[2] < box[0] || wb[0] > box[2] || wb[3] < box[1] || wb[1] > box[3]) continue;
+      soft((k) => { poly(k, b.poly); k.fill(); k.globalCompositeOperation = "source-in"; waterLine(k, w); k.globalCompositeOperation = "source-over"; }, tex(`water.${w.class}`, 2.5), 0.8, 0.5, "source-over", wb);
+    }
+  }
+  for (const p of items("lily")) img("prop.lily", p.variant, p.x, p.y, p.s, p.rot, 0);
+
+  /** A lake's or the sea's shore: a band of its ground out from the water's edge (none where a quay is). */
+  function paintShore(b, box) {
+    const runs = b.runs ?? [b.ring];
+    const band = (k, w) => { for (const r of runs) strokeLine(k, r, w); };
+    soft((k) => band(k, b.reach * 2), tex(`shore.${b.shore}.${s}`, b.shore === "sand" ? 3 : 2), 0.3, 0.9, "source-over", box);
+    // Green shores lifted as the grass is, so they don't rim the water dark
+    if (grassLift && (b.shore === "grass" || b.shore === "marsh" || b.shore === "reeds")) soft((k) => band(k, b.reach * 2), "rgb(75,88,30)", 0.3, 0.45, "screen", box);
+    // Wet ground at the water's edge
+    if (!winter) soft((k) => band(k, b.shore === "sand" || b.shore === "pebbles" ? 0.7 : 0.4), "rgb(112,100,84)", 0.15, b.shore === "sand" ? 0.45 : 0.3, "multiply", box);
+  }
+
+  /** A lake or the sea: the water, deeper away from the shore and lighter in the shallows, surf along a sea's coast; or ice. */
+  function paintLake(b, box) {
+    const fill = (k) => { poly(k, b.poly); k.fill(); };
+    // The shape filled, then only what lies within w/2 of the shore kept (in: true), or only what lies beyond it
+    const nearShore = (w, keepIn, dash = null) => (k) => {
+      fill(k);
+      k.globalCompositeOperation = keepIn ? "source-in" : "destination-out";
+      if (dash) { k.setLineDash(dash.map((v) => v * pp)); k.lineCap = "butt"; }
+      strokeLine(k, b.ring, w);
+      k.setLineDash([]); k.lineCap = "round";
+      k.globalCompositeOperation = "source-over";
+    };
+    soft(fill, tex(b.frozen ? "water.ice" : `water.${b.class}`, b.class === "sea" ? 8 : 3), 0.06, 1, "source-over", box);
+    if (b.frozen) {
+      // Cracked ice in from the shore, and snow drifted along it
+      soft(nearShore(2.4, true), tex("water.ice.cracked", 2), 0.4, 0.45, "source-over", box);
+      soft(nearShore(0.8, true), "rgb(236,239,243)", 0.25, 0.6, "source-over", box);
+      return;
+    }
+    const S = { sea: 2.2, lake: 1.4, pond: 0.7 }[b.class] ?? 1.4;
+    soft(nearShore(S * 2, false), "rgb(40,62,88)", S * 0.5, { sea: 0.3, lake: 0.22, pond: 0.15 }[b.class] ?? 0.22, "multiply", box);
+    soft(nearShore(S, true), "rgb(120,160,150)", S * 0.3, 0.3, "screen", box);
+    if (b.surf) {
+      // Foam where the waves break, and a broken line of it a little way out
+      soft(nearShore(0.3, true), "rgb(240,244,246)", 0.06, 0.55, "source-over", box);
+      soft((k) => { nearShore(1.3, true, [0.6, 0.35, 0.25, 0.5])(k); k.globalCompositeOperation = "destination-out"; strokeLine(k, b.ring, 1.05); k.globalCompositeOperation = "source-over"; }, "rgb(236,242,245)", 0.05, 0.4, "source-over", box);
+    }
   }
 
   // Crossings
@@ -421,6 +505,53 @@ export function paint(ctx) {
   for (const c of items("crossing")) {
     if (c.class === "ford") paintFord(c);
     else paintBridge(c);
+  }
+
+  /** Round posts (r squares in radius) at points, into the mask. */
+  const posts = (k, pts, r) => { k.beginPath(); for (const [x, y] of pts) { k.moveTo(X(x) + r * pp, Y(y)); k.arc(X(x), Y(y), r * pp, 0, 2 * Math.PI); } k.fill(); };
+
+  // Docks: quays and wharves along the water's edge, piers and jetties out into it; then the reeds
+  progress(0.57, "Docks");
+  for (const d of items("dock")) paintDock(d);
+  for (const t of items("reed")) img("prop.reeds", t.variant, t.x, t.y, t.s, t.rot, 0.06);
+
+  function paintDock(d) {
+    const wood = d.material === "wood";
+    const role = tex(`dock.${d.material}.${s}`, wood ? 1.2 : 1.5);
+    if (d.edge) {
+      // Along the edge: paving from the water's edge back to the land, a shadow on the water below it, a coping
+      // along the top of its face (a timber wharf: planks across it on posts)
+      const box = boxOf([d.edge, d.land], 0.6);
+      const strip = (k) => { poly(k, [...d.edge, ...[...d.land].reverse()]); k.fill(); };
+      const out = (dist) => d.edge.map((e, i) => [e[0] - ((d.land[i][0] - e[0]) / d.width) * dist, e[1] - ((d.land[i][1] - e[1]) / d.width) * dist]);
+      soft((k) => strokeLine(k, out(0.08), 0.2), "rgb(25,35,55)", 0.08, 0.45, "source-over", box);
+      if (wood) soft((k) => posts(k, along(out(0.04), 0.9), 0.075), "rgb(44,32,22)", 0.01, 0.95, "source-over", box);
+      soft(strip, role, 0.01, 1, "source-over", box);
+      soft(strip, wood ? "rgb(160,150,140)" : "rgb(176,170,162)", 0.01, 0.3, "multiply", box);
+      if (wood) {
+        g.save(); g.strokeStyle = "rgba(48,34,22,0.55)"; g.lineWidth = Math.max(1, pp * 0.022); g.beginPath();
+        for (const [a, b] of across(d.edge, d.land, 0.14)) { g.moveTo(X(a[0]), Y(a[1])); g.lineTo(X(b[0]), Y(b[1])); }
+        g.stroke(); g.restore();
+      } else soft((k) => strokeLine(k, d.edge, 0.1), "rgb(200,194,184)", 0.01, 0.7, "source-over", box);
+      soft((k) => strokeLine(k, out(0.01), 0.035), "rgb(38,38,42)", 0.01, 0.8, "source-over", box);
+      if (winter) soft(strip, "rgb(236,239,243)", 0.05, 0.45, "source-over", box);
+      return;
+    }
+    // Out into the water: a shadow on the water, posts under a timber deck (planks across it) or a stone one
+    const box = boxOf([d.path], d.width + 0.6);
+    const deck = (k, w) => { k.lineCap = "butt"; strokeLine(k, d.path, w); };
+    soft((k) => { k.save(); k.translate(0.06 * pp, -0.14 * pp); deck(k, d.width); k.restore(); }, "rgb(25,35,55)", 0.08, 0.45, "source-over", box);
+    if (wood) soft((k) => posts(k, [-1, 1].flatMap((side) => along(offsetPath(d.path, (side * d.width) / 2), 0.7)), 0.07), "rgb(44,32,22)", 0.01, 0.95, "source-over", box);
+    else soft((k) => deck(k, d.width + 0.06), "rgb(44,44,48)", 0.01, 0.9, "source-over", box);
+    soft((k) => deck(k, d.width), role, 0.01, 1, "source-over", box);
+    soft((k) => deck(k, d.width), wood ? "rgb(160,150,140)" : "rgb(176,170,162)", 0.01, 0.3, "multiply", box);
+    if (wood) {
+      g.save(); g.strokeStyle = "rgba(48,34,22,0.55)"; g.lineWidth = Math.max(1, pp * 0.022); g.beginPath();
+      for (const [a, b] of across(offsetPath(d.path, d.width / 2), offsetPath(d.path, -d.width / 2), 0.14)) { g.moveTo(X(a[0]), Y(a[1])); g.lineTo(X(b[0]), Y(b[1])); }
+      g.stroke(); g.restore();
+      soft((k) => { for (const side of [-1, 1]) strokeLine(k, offsetPath(d.path, (side * d.width) / 2), 0.03); }, "rgb(40,28,18)", 0.01, 0.8, "source-over", box);
+    } else soft((k) => { for (const side of [-1, 1]) strokeLine(k, offsetPath(d.path, (side * (d.width - 0.08)) / 2), 0.06); }, "rgb(200,194,184)", 0.01, 0.6, "source-over", box);
+    if (winter) soft((k) => deck(k, d.width * 0.9), "rgb(236,239,243)", 0.05, 0.45, "source-over", box);
   }
 
   function paintFord(c) {
@@ -580,7 +711,7 @@ export function paint(ctx) {
     // A mansard's skylight
     if (facets.skylight) paintSkylight(g, facets.skylight, pp, s);
     // The outline: only the eaves and verges, so a wing's roof joins its house's without a seam
-    g.strokeStyle = "rgba(28,28,36,0.85)"; g.lineWidth = Math.max(1, pp * 0.035);
+    g.strokeStyle = `rgba(28,28,36,${0.85 * LINES.eave})`; g.lineWidth = Math.max(1, pp * 0.035 * LINES.eave);
     for (const f of facets) for (const [a2, b2] of f.eaves) line(a2, b2);
     if (facets.finial) {
       g.fillStyle = "rgb(70,62,54)"; g.beginPath(); g.arc(0, 0, Math.max(2, pp * 0.05), 0, 2 * Math.PI); g.fill();
@@ -624,6 +755,40 @@ function pointIn([x, y], poly) {
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;
+}
+
+/** Points every step squares along a path (from half a step in). */
+function along(pts, step) {
+  const out = [];
+  let carry = step / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i], l = Math.hypot(bx - ax, by - ay);
+    let t = carry;
+    while (t <= l) { out.push([ax + ((bx - ax) * t) / l, ay + ((by - ay) * t) / l]); t += step; }
+    carry = t - l;
+  }
+  return out;
+}
+
+/**
+ * Lines across a strip between two paths with as many points (a quay's edge and its landward side, or a pier's two
+ * sides), every step squares along the first: [[a, b]...].
+ */
+function across(a, b, step) {
+  const out = [];
+  let carry = step / 2;
+  for (let i = 1; i < a.length; i++) {
+    const l = Math.hypot(a[i][0] - a[i - 1][0], a[i][1] - a[i - 1][1]);
+    let t = carry;
+    while (t <= l) {
+      const u = l ? t / l : 0;
+      const lerp = (p, q) => [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u];
+      out.push([lerp(a[i - 1], a[i]), lerp(b[i - 1], b[i])]);
+      t += step;
+    }
+    carry = t - l;
+  }
+  return out;
 }
 
 /** A path moved sideways by d squares (left of its direction), for ruts. */

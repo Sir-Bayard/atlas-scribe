@@ -4,7 +4,7 @@
  * come from TYPES in plan.mjs, so a field added there shows up here; FIELD_TEXT gives each its words.
  * Pure: runs in the worker, on the page and under node.
  */
-import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, fieldDefault, isObj, normalize } from "./plan.mjs";
+import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize } from "./plan.mjs";
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
 
 /** The district types the window offers (an old plan's "roadside" reads as a hamlet, "core" as a city). */
@@ -25,9 +25,15 @@ export const FIELD_TEXT = {
   "road.ruts": { label: "Cart ruts", help: "Two worn ruts along the middle" },
   "road.straight": { label: "Straight", help: "Straight lines between its points instead of a smooth curve through them" },
 
-  "water.width": { label: "Width", help: "How wide it is, in feet" },
+  "water.width": { label: "Width", help: "How wide it is at its first point, in feet" },
+  "water.endWidth": { label: "End width", help: "How wide it is at its last point, in feet: it widens or narrows smoothly along the way", auto: "the same all along" },
+  "water.widths": { hidden: true }, // a width at each point, for plans written by hand
+  "water.shore": { label: "Shore", names: { sand: "sand", pebbles: "pebbles", rocks: "rocks", grass: "grass", marsh: "marsh", reeds: "reeds" }, auto: "picked from its seed" },
   "water.frozen": { label: "Frozen" },
   "water.straight": { label: "Straight", help: "Straight lines between its points (a canal) instead of a smooth curve" },
+
+  "dock.width": { label: "Width", help: "How wide it is, in feet" },
+  "dock.material": { label: "Built of", names: { stone: "stone", wood: "timber" } },
 
   "crossing.angle": { label: "Angle", help: "Bridges and fords are turned to their road when one crosses the water nearby", more: true },
   "crossing.length": { label: "Length", help: "In feet; a bridge is made long enough for its water whatever this says" },
@@ -140,8 +146,8 @@ export function fieldsOf(plan, id) {
   const out = [];
   // An unknown class is drawn as the type's first, so the window shows that
   const cls = t.classes ? (t.classes.includes(f.class) ? f.class : t.classes[0]) : undefined;
-  // Water drawn along a path is a stream, river or canal (a pond, lake or sea is drawn as a shape)
-  const kinds = f.type === "water" && Array.isArray(f.path) ? t.classes.filter((c) => c === "stream" || c === "river" || c === "canal") : t.classes;
+  // Water drawn along a path is a stream, river or canal; drawn as a shape, a pond, lake or sea
+  const kinds = f.type === "water" ? t.classes.filter((c) => (Array.isArray(f.path) ? RUNNING : BODIES).includes(c)) : t.classes;
   if (t.classes) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0] });
   // Water drawn as a shape (a pond, a lake) has no width and nothing to straighten
   const shaped = f.type === "water" && !Array.isArray(f.path);
@@ -158,6 +164,7 @@ export function fieldsOf(plan, id) {
     if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? 0.1 : 0; // an M1 plan's
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
     let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);
+    if (f.type === "water" && name === "frozen" && dflt === null) auto = "in winter"; // a pond or lake left unset
     // A label's color and font fall back to the plan's; a name label's text to its feature's name
     if (f.type === "label" && name === "color") { const c = normalize(plan).output.scene.labelColor; auto = /^#[0-9a-f]{6}$/i.test(c ?? "") ? c : "#13202e"; }
     if (f.type === "label" && name === "font") auto = cleanFont(normalize(plan).output.scene.labelFont) ?? "Signika";

@@ -54,7 +54,8 @@ function crossAt(px, py, qx, qy, s) {
 
 /**
  * poly: the district polygon. field: from makeField. roads: [{ path }] the plan's roads (and any streets already
- * there). water: [{ path, clear }] (clear: distance from the center line to keep out of). blocked: polygons
+ * there). water: [{ path, clear }] (clear: distance from the center line to keep out of; clears, one a segment, where
+ * it varies; body, a lake's polygon, its path then its shore). blocked: polygons
  * streets end at and never cross (squares, yards, landmarks). gates: [{ at, nx, ny, kind }] points on the edge
  * shared with another district (nx, ny: the way into this district) where a street of that kind must start, so
  * the two districts' streets meet. borders: the edges shared with other districts, as paths: a street that reaches
@@ -95,14 +96,17 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
 
   /** The water at x, y, with the direction of its nearest stretch: { w, ux, uy }, or null. */
   const waterAt = (x, y) => {
-    for (const w of water)
+    for (const w of water) {
+      // A lake or the sea: anywhere in it (its path is its shore, kept clear of as a river's banks are)
+      if (w.body && pointInPolygon([x, y], w.body)) return { w, ux: 1, uy: 0 };
       for (let i = 0; i < w.path.length - 1; i++) {
         const s = { ax: w.path[i][0], ay: w.path[i][1], bx: w.path[i + 1][0], by: w.path[i + 1][1] };
-        if (distToSeg(x, y, s) < w.clear) {
+        if (distToSeg(x, y, s) < (w.clears ? w.clears[i] : w.clear)) {
           const l = Math.hypot(s.bx - s.ax, s.by - s.ay) || 1;
           return { w, ux: (s.bx - s.ax) / l, uy: (s.by - s.ay) / l };
         }
       }
+    }
     return null;
   };
   const inWater = (x, y) => waterAt(x, y) !== null;
@@ -116,7 +120,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
   const bridgeOver = (x, y, hx, hy, pass, mine) => {
     if (!pass.bridge) return null;
     const here = waterAt(x + hx * step, y + hy * step);
-    if (!here || Math.abs(here.ux * hx + here.uy * hy) > 0.5) return null; // too slanting a crossing
+    if (!here || here.w.body || Math.abs(here.ux * hx + here.uy * hy) > 0.5) return null; // too slanting a crossing, or a lake
     const limit = Math.min(8, here.w.clear * 2 + 1.5);
     for (let d = step; d <= limit; d += step / 2) {
       const fx = x + hx * d, fy = y + hy * d;
@@ -257,7 +261,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
     for (const m of made) {
       let path = smooth(simplify(m.pts, 0.12), 2);
       const ends = ["open", "open"], met = [];
-      // Each end carried on to the street, road or edge it runs towards, if one is near
+      // Each end carried on to the street, road or edge it runs toward, if one is near
       for (const endIx of [0, 1]) {
         const n = path.length;
         const [ex, ey] = endIx ? path[n - 1] : path[0];

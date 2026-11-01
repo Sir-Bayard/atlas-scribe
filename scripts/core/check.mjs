@@ -8,6 +8,7 @@ import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, S
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath, segmentsIntersect } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 import { isTownWall, isClosed, wallReach, towerReach } from "./layout/walls.mjs";
+import { waterEntries, nearWater, okWidths, bodyOf, RUNNING, BODIES } from "./water.mjs";
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
@@ -77,6 +78,7 @@ export function checkPlan(raw) {
   // on the side they share (a hamlet makes no streets of its own, so it needs a road)
   const ways = plan.features.filter((f) => f.type === "road" && isPath(f.path));
   const dfeats = plan.features.filter((f) => f.type === "district" && f.id);
+  const quays = plan.features.filter((f) => f.type === "dock" && (f.class === "quay" || f.class === "wharf") && isPath(f.path)); // houses front a quay as they do a road
   let gates = null;
   const gatesOf = (id) => {
     if (!gates) {
@@ -84,8 +86,8 @@ export function checkPlan(raw) {
       const list = dfeats.map((d) => { try { return { id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }; } catch { return null; } }).filter((d) => d && d.poly.length >= 3);
       // As the layout places them: none on a side that lies in water
       const sqw = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
-      const ws = plan.features.filter((f) => f.type === "water" && Array.isArray(f.path) && f.path.every(isPoint)).map((f) => ({ path: f.path, clear: (isNum(f.width) ? f.width : 0) / sqw / 2 + 0.225 }));
-      const inWater = (x, y) => ws.some((w) => distanceToPath([x, y], w.path) < w.clear);
+      const ws = waterEntries(plan);
+      const inWater = (x, y) => ws.some((w) => nearWater([x, y], w));
       // and none through a town wall (only roads pass it)
       const wb = plan.features.filter((f) => isTownWall(f) && f.path.every(isPoint)).map((f) => ({ path: f.path, half: wallReach(f, sqw) }));
       const blocked = (x, y) => inWater(x, y) || wb.some((b) => distanceToPath([x, y], b.path) < b.half);
@@ -97,7 +99,7 @@ export function checkPlan(raw) {
     if (!PROFILES.includes(d.profile)) err(d.id, "profile", `District "${d.id}" uses the profile "${d.profile}", which this version doesn't know (it knows: ${PROFILES.join(", ")}).`);
     let poly = [];
     try { poly = shapeToPolygon(d.shape); } catch { poly = []; }
-    if (poly.length < 3 || ways.some((r) => pathTouchesPolygon(r.path, poly)) || gatesOf(d.id).length) continue;
+    if (poly.length < 3 || [...ways, ...quays].some((r) => pathTouchesPolygon(r.path, poly)) || gatesOf(d.id).length) continue;
     const hamlet = d.profile === "hamlet" || d.profile === "roadside";
     warn(d.id, "shape", hamlet
       ? `District "${d.id}" is a hamlet with no road or lane running into it, and a hamlet builds only along roads, so nothing will be built there.`
@@ -217,6 +219,16 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   if (g === "buildings") {
     if (need(Array.isArray(raw.buildings) && raw.buildings.length > 0, "buildings", `Landmark "${where}" needs a list of buildings.`))
       f.buildings.forEach((b, j) => checkShape(b.shape, `${where}, building ${j + 1}`, `buildings[${j}].shape`, need, MIN_PART));
+  }
+
+  // Water: a stream, river or canal runs along a path and a pond, lake or sea is a shape; its widths, one a point
+  if (f.type === "water") {
+    if (Array.isArray(f.path) && BODIES.includes(f.class)) warn(f.id, "class", `"${where}" is a ${f.class} drawn along a path, so it's drawn as a river. Give a ${f.class} a shape instead.`);
+    if (!Array.isArray(f.path) && f.shape && RUNNING.includes(f.class)) warn(f.id, "class", `"${where}" is a ${f.class} drawn as a shape, so it's drawn as a lake. Give a ${f.class} a path instead.`);
+    if (!Array.isArray(f.path) && f.shape && checkShape(f.shape, where, "shape", (ok) => ok) && !bodyOf(f, { W: w, H: h, seed: 1 }))
+      warn(f.id, "shape", `"${where}" has nothing left to draw once its corners near the map's edge are moved onto it. Draw it farther from the edge.`);
+    if (raw.widths != null && !(Array.isArray(f.path) && okWidths(raw.widths, f.path.length)))
+      warn(f.id, "widths", `"${where}": widths should be a list with one width in feet (1 or more) for each point of its path; it's ignored.`);
   }
 
   // A pinned building's drawing details, as the generator writes them (anything else is left out, with a warning)

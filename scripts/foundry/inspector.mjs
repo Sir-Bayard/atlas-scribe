@@ -19,7 +19,7 @@ export function kindOf(f) {
   if (f.type === "water") return f.class ?? "stream";
   if (f.type === "road") return f.class ?? "street";
   if (f.type === "wall") return f.class === "hedge" || f.class === "palisade" ? f.class : `${f.class ?? "drystone"} wall`;
-  if (f.type === "crossing" || f.type === "prop") return f.class ?? f.type;
+  if (f.type === "crossing" || f.type === "prop" || f.type === "dock") return f.class ?? f.type;
   return f.type;
 }
 
@@ -217,17 +217,20 @@ const HOW = {
   box: "Drag a box, or click to place one of the usual size.",
   path: "Click each point (double-click or Enter to finish). Points snap onto a road (water onto water, a wall onto a wall) or the map's edge.",
   loop: "Click each point (double-click or Enter to finish, or click the first point to close it around). Points snap onto another wall or the map's edge.",
+  sea: "Click each corner of the water (double-click or Enter to finish), or drag a box. Corners near the map's edge go past it, so the coast is its only shore.",
+  quay: "Click points along the water's edge (double-click or Enter to finish). It's moved onto the nearest edge, and paved back from the water.",
+  pier: "Click from the shore out into the water (double-click or Enter to finish).",
   point: "Click where it goes.",
 };
 
 /** The hint under the palette: how to use the tool, and the points so far. */
 export function howText(tool, points) {
-  return `${HOW[tool.closes ? "loop" : tool.geometry]}${points ? ` ${points} point${points === 1 ? "" : "s"} so far; Backspace removes the last.` : ""} Esc cancels.`;
+  return `${HOW[tool.how ?? (tool.closes ? "loop" : tool.geometry)]}${points ? ` ${points} point${points === 1 ? "" : "s"} so far; Backspace removes the last.` : ""} Esc cancels.`;
 }
 
 /** The drawing palette: a button per tool, the one in use lit, with how to use it and Finish and Cancel. */
 export function paletteHTML(tool, { points = 0, working = false } = {}) {
-  const groups = [["Areas", ["district", "woods", "fields", "park", "farmstead", "yard", "square", "building"]], ["Lines", ["road", "lane", "track", "river", "stream", "wall", "hedge", "townwall", "palisade"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "label"]]];
+  const groups = [["Areas", ["district", "woods", "fields", "park", "farmstead", "yard", "square", "building"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "label"]]];
   const by = new Map(TOOLS.map((t) => [t.id, t]));
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">
