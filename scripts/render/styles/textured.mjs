@@ -93,6 +93,7 @@ export function rolesFor(layout) {
     if (i.kind === "field") roles.add(`field.${i.crop}.${s}`);
     if (i.kind === "tree") roles.add(treeRole(i, s));
     if (i.kind === "prop") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
+    if (i.kind === "prop" && i.class === "ship") roles.add("prop.sail");
     if (i.kind === "smoke") roles.add(`smoke.${smokeTone(i.tint)}`);
     if (i.kind === "surface" && (i.class === "churchyard" || i.class === "lawn" || i.class === "garth" || i.class === "bed" || (i.class === "quarter" && i.lush)) && s !== "winter") roles.add("ground.grass.grassy");
     if (i.kind === "prop" && i.class === "fountain") roles.add(`stone.rough.${s}`).add(s === "winter" ? "water.ice" : "water.pond");
@@ -199,8 +200,9 @@ export function paint(ctx) {
     return a === Infinity ? [-1e9, -1e9, -1e9, -1e9] : [a - pad, b - pad, c + pad, d + pad];
   };
   /** An image (a tree, a cart) size squares wide, turned, with a sun shadow; a plain blob when there's no art. */
-  const img = (role, variant, x, y, size, rot = 0, shadow = 0) => {
-    if (!near(x, y, size + shadow)) return;
+  // (reach: how far the art reaches from its middle, when its long side is longer than size, its width)
+  const img = (role, variant, x, y, size, rot = 0, shadow = 0, reach = size) => {
+    if (!near(x, y, Math.max(size, reach) + shadow)) return;
     const im = art(role, variant);
     g.save();
     g.translate(X(x), Y(y));
@@ -209,6 +211,29 @@ export function paint(ctx) {
     const w = size * pp;
     if (im) g.drawImage(im, -w / 2, -(w * im.height) / im.width / 2, w, (w * im.height) / im.width);
     else { g.fillStyle = fallbackColor(role); g.beginPath(); g.arc(0, 0, w * 0.35, 0, Math.PI * 2); g.fill(); }
+    g.restore();
+  };
+
+  /** A hull in plain shapes (no art): pointed at its bow, its deck lighter, a ship with a mast. rot turns it as its art. */
+  const hull = (x, y, w, L, rot, ship) => {
+    g.save(); g.translate(X(x), Y(y)); g.rotate((rot * Math.PI) / 180);
+    const W2 = (w * pp) / 2, L2 = (L * pp) / 2;
+    const shape = (k) => { g.beginPath(); g.moveTo(0, L2); g.quadraticCurveTo(W2 * 1.05, L2 * 0.45, W2, -L2 * 0.55); g.lineTo(W2 * 0.8, -L2); g.lineTo(-W2 * 0.8, -L2); g.lineTo(-W2, -L2 * 0.55); g.quadraticCurveTo(-W2 * 1.05, L2 * 0.45, 0, L2); g.closePath(); };
+    g.shadowColor = "rgba(20,30,45,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -pp * 0.04;
+    shape(); g.fillStyle = "rgb(92,66,44)"; g.fill();
+    g.shadowColor = "transparent";
+    g.scale(0.78, 0.86); shape(); g.fillStyle = "rgb(150,118,82)"; g.fill();
+    g.strokeStyle = "rgba(70,50,32,0.6)"; g.lineWidth = Math.max(1, pp * 0.015);
+    for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo((-W2 * 0.9 * k) / 3.3, -L2 * 0.9); g.lineTo((-W2 * 0.9 * k) / 3.3, L2 * 0.5); g.stroke(); }
+    if (ship) { g.fillStyle = "rgb(60,44,30)"; g.beginPath(); g.arc(0, L2 * 0.1, Math.max(1, w * pp * 0.08), 0, 2 * Math.PI); g.fill(); }
+    g.restore();
+  };
+  /** A market cross in plain shapes (no art): a stepped stone base and its shaft. */
+  const cross = (x, y, size, rot) => {
+    g.save(); g.translate(X(x), Y(y)); g.rotate((rot * Math.PI) / 180);
+    g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -pp * 0.05;
+    for (const [f, c] of [[1, "rgb(150,144,134)"], [0.72, "rgb(172,166,156)"], [0.45, "rgb(190,184,174)"]]) { g.fillStyle = c; const h = (size * f * pp) / 2; g.fillRect(-h, -h, 2 * h, 2 * h); g.shadowColor = "transparent"; }
+    g.fillStyle = "rgb(120,114,106)"; const t = size * pp * 0.08, a = size * pp * 0.3; g.fillRect(-t / 2, -a, t, 2 * a); g.fillRect(-a * 0.6, -t / 2, a * 1.2, t);
     g.restore();
   };
 
@@ -826,8 +851,36 @@ export function paint(ctx) {
   }
   for (const p of items("prop").filter((p) => p.class !== "bush" && p.class !== "fountain")) {
     const size = PROP_SQUARES[p.class] ?? 0.45;
+    // A windmill's four sails: its art is one pair end to end, drawn twice across each other
+    if (p.class === "sails") {
+      const span = size * (p.scale ?? 1);
+      if (art("prop.sails", p.variant)) for (const turn of [0, 90]) img("prop.sails", p.variant, p.x, p.y, span, p.rot + turn, 0.2);
+      else if (near(p.x, p.y, span)) {
+        // No art: four pale sails on dark stocks
+        g.save(); g.translate(X(p.x), Y(p.y)); g.rotate((p.rot * Math.PI) / 180);
+        g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.2; g.shadowOffsetY = -pp * 0.15;
+        for (const turn of [0, 90]) { g.save(); g.rotate((turn * Math.PI) / 180); g.fillStyle = "rgb(226,218,198)"; g.fillRect((-span / 2) * pp, -span * 0.07 * pp, span * pp, span * 0.14 * pp); g.fillStyle = "rgb(70,54,38)"; g.fillRect((-span / 2) * pp, -span * 0.012 * pp, span * pp, span * 0.024 * pp); g.restore(); }
+        g.restore();
+      }
+      continue;
+    }
+    // A boat or ship: its hull (drawn in plain shapes where there's no art), a ship's sail furled across it
+    if (p.class === "boat" || p.class === "ship") {
+      const w = size * (p.scale ?? 1), L = w * (p.class === "ship" ? 2.75 : 4);
+      if (!near(p.x, p.y, L)) continue;
+      if (art(`prop.${p.class}`, p.variant)) img(`prop.${p.class}`, p.variant, p.x, p.y, w, p.rot, 0.04, L / 2);
+      else hull(p.x, p.y, w, L, p.rot, p.class === "ship");
+      if (p.class === "ship") {
+        const a = ((p.rot + 90) * Math.PI) / 180; // its heading
+        if (art("prop.sail", p.variant)) img("prop.sail", p.variant, p.x + Math.cos(a) * L * 0.08, p.y + Math.sin(a) * L * 0.08, w * 1.25, p.rot, 0.06);
+      }
+      continue;
+    }
+    if (p.class === "cross" && !art("prop.cross", p.variant)) { cross(p.x, p.y, size * (p.scale ?? 1), p.rot); continue; }
     const shadow = { well: 0.1, cart: 0.08, wagon: 0.1 }[p.class] ?? 0.08;
-    img(`prop.${p.class}`, p.variant, p.x, p.y, size * (p.scale ?? 1), p.rot, shadow);
+    // (art longer than it's wide: a wheel 1 by 6, a crane 2 by 4, a wagon 3 by 6, a long stall 2 by 3)
+    const long = { waterwheel: 6, crane: 4, wagon: 2, "stall-long": 1.5, firewood: 3, hay: 2 }[p.class] ?? 1;
+    img(`prop.${p.class}`, p.variant, p.x, p.y, size * (p.scale ?? 1), p.rot, shadow, (size * (p.scale ?? 1) * long) / 2);
   }
   for (const t of [...items("tree")].sort((a, b) => a.y - b.y)) {
     const sz = treeSize(t, s) * t.s * 1.1;

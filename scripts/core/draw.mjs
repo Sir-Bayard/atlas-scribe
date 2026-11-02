@@ -31,10 +31,13 @@ export const TOOLS = [
   { id: "woods", label: "Woods", icon: "fa-tree", geometry: "shape", make: { type: "area", class: "woods" } },
   { id: "fields", label: "Fields", icon: "fa-wheat-awn", geometry: "shape", make: { type: "area", class: "fields" } },
   { id: "park", label: "Park", icon: "fa-seedling", geometry: "shape", make: { type: "area", class: "park" } },
+  { id: "cemetery", label: "Cemetery", icon: "fa-cross", geometry: "shape", make: { type: "area", class: "cemetery" } },
   { id: "farmstead", label: "Farm", icon: "fa-warehouse", geometry: "shape", make: { type: "area", class: "farmstead" } },
   { id: "yard", label: "Yard", icon: "fa-vector-square", geometry: "shape", make: { type: "area", class: "yard" } },
   { id: "square", label: "Square", icon: "fa-square", geometry: "shape", make: { type: "square" } },
   { id: "building", label: "Building", icon: "fa-house", geometry: "box", make: { type: "building" }, size: [30, 20] },
+  { id: "windmill", label: "Windmill", icon: "fa-fan", geometry: "box", round: true, make: { type: "building", use: "windmill", roof: "thatch", height: 45 }, size: [25, 25] },
+  { id: "watermill", label: "Watermill", icon: "fa-gear", geometry: "box", make: { type: "building", use: "watermill", roof: "thatch", height: 30 }, size: [35, 25] },
   { id: "road", label: "Road", icon: "fa-road", geometry: "path", make: { type: "road", class: "street" } },
   { id: "lane", label: "Lane", icon: "fa-route", geometry: "path", make: { type: "road", class: "lane" } },
   { id: "track", label: "Track", icon: "fa-shoe-prints", geometry: "path", make: { type: "road", class: "track" } },
@@ -54,6 +57,11 @@ export const TOOLS = [
   { id: "tree", label: "Tree", icon: "fa-tree", geometry: "point", make: { type: "prop", class: "tree" } },
   { id: "well", label: "Well", icon: "fa-circle-dot", geometry: "point", make: { type: "prop", class: "well" } },
   { id: "cart", label: "Cart", icon: "fa-cart-flatbed", geometry: "point", make: { type: "prop", class: "cart" } },
+  { id: "fountain", label: "Fountain", icon: "fa-faucet-drip", geometry: "point", make: { type: "prop", class: "fountain", size: 20 } },
+  { id: "cross", label: "Market cross", icon: "fa-monument", geometry: "point", make: { type: "prop", class: "cross", size: 12 } },
+  { id: "boat", label: "Boat", icon: "fa-sailboat", geometry: "point", make: { type: "prop", class: "boat" } },
+  { id: "ship", label: "Ship", icon: "fa-ferry", geometry: "point", make: { type: "prop", class: "ship" } },
+  { id: "crane", label: "Crane", icon: "fa-person-digging", geometry: "point", make: { type: "prop", class: "crane" } },
   { id: "label", label: "Label", icon: "fa-font", geometry: "point", make: { type: "label", text: "New label", show: "gm" } },
 ];
 
@@ -322,13 +330,15 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
     const [x0, y0, x1, y1] = [Math.min(box[0], box[2]), Math.min(box[1], box[3]), Math.max(box[0], box[2]), Math.max(box[1], box[3])].map((v) => Math.round(v * 1000) / 1000);
     // A pond or lake dragged as a box is the oval inside it (a sea's box keeps its straight coast)
     const r4 = (v) => Math.round(v * 1000) / 1000;
-    f.shape = f.type === "water" && f.class !== "sea" ? { ellipse: [r4((x0 + x1) / 2), r4((y0 + y1) / 2), r4((x1 - x0) / 2), r4((y1 - y0) / 2)] } : { rect: [x0, y0, x1, y1] };
+    // (a round building, a windmill, is the circle inside it)
+    f.shape = tool.round ? { circle: [r4((x0 + x1) / 2), r4((y0 + y1) / 2), r4(Math.min(x1 - x0, y1 - y0) / 2)] }
+      : f.type === "water" && f.class !== "sea" ? { ellipse: [r4((x0 + x1) / 2), r4((y0 + y1) / 2), r4((x1 - x0) / 2), r4((y1 - y0) / 2)] } : { rect: [x0, y0, x1, y1] };
   } else if (tool.geometry === "box") {
     // A click places a building of the tool's size, centered there
     if (!pts[0]) return { error: "Drag a box, or click where it goes." };
     const [w, d] = tool.size.map((ft) => ft / sq);
     const [cx, cy] = pts[0];
-    f.shape = { rect: [r1(cx - w / 2), r1(cy - d / 2), r1(cx + w / 2), r1(cy + d / 2)] };
+    f.shape = tool.round ? { circle: [r1(cx), r1(cy), r1(Math.min(w, d) / 2)] } : { rect: [r1(cx - w / 2), r1(cy - d / 2), r1(cx + w / 2), r1(cy + d / 2)] };
   } else {
     const shape = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > SAME);
     while (shape.length > 1 && dist(shape[0], shape[shape.length - 1]) <= SAME) shape.pop();

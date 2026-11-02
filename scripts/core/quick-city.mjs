@@ -10,6 +10,7 @@ import { Delaunay } from "../../vendor/d3-delaunay.mjs";
 import { intersect, difference, union, offset, area, centroid, bands } from "./lots/poly.mjs";
 import { pathTouchesPolygon, polygonCrossesItself, polygonsOverlap } from "./geom.mjs";
 import { meander, bends } from "./meander.mjs";
+import { watermill, windmill } from "./mills.mjs";
 
 /**
  * Per size: the map in squares, the wall's mean radius, the wards wanted, pixels a square (so the image stays under
@@ -318,9 +319,11 @@ export function cityPlan(choices, seed) {
   const landArea = land.reduce((s, p) => s + area(p), 0);
 
   // Sectors between neighboring main roads (each road's own line is the edge, out to beyond the wall), split by the
-  // water into pieces
+  // water into pieces; an island in the river is a piece of its own, the main roads crossing it (cut into wedges, it
+  // left slivers too small to build on)
   const far = R * 3;
-  const pieces = [];
+  const pieces = island ? intersect(land, [island]).filter((p) => area(p) > 4) : [];
+  const mainland = island ? difference(land, [island]) : land;
   roads.filter((rd) => rd.angle !== undefined).forEach((rd, k, list) => {
     const next = list[(k + 1) % list.length];
     const cut = (path) => { const i = path.findIndex((p) => Math.hypot(p[0] - C[0], p[1] - C[1]) > R * 1.6); return i < 0 ? path : path.slice(0, i + 1); };
@@ -329,7 +332,7 @@ export function cityPlan(choices, seed) {
     for (let t = a0; t <= a1; t += 0.2) arc.push(add(C, mul(dirOf(t), far)));
     arc.push(add(C, mul(dirOf(a1), far)));
     const wedge = list.length === 1 ? null : [...cut(rd.path), ...arc, ...[...cut(next.path)].reverse().slice(0, -1)];
-    for (const piece of wedge ? intersect([wedge], land) : land) if (area(piece) > 4) pieces.push(piece);
+    for (const piece of wedge ? intersect([wedge], mainland) : mainland) if (area(piece) > 4) pieces.push(piece);
   });
 
   // Wards: each piece cut into Voronoi cells by its share of the wards wanted, the seeds spread out a little
@@ -363,7 +366,7 @@ export function cityPlan(choices, seed) {
   // (a green: the main roads meet on a grass square)
   const square = choices.center === "green"
     ? { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "grass", name: "The green" }
-    : { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "cobble", name: "The market square" };
+    : { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "cobble", market: true, name: "The market square" };
   if (choices.center !== "none") features.push(square);
 
   // Districts: the wards, dense throughout, numbered around from the north
@@ -480,7 +483,7 @@ export function cityPlan(choices, seed) {
   }
 
   // Outside the walls: suburbs along the roads beyond some gates, then farms, fields and woods (the country)
-  const outside = countryside({ choices, C, R, W, H, wallPoly, wall, roads: roads.filter((rd) => rd.angle !== undefined), wet, inWater, river, sea, lake, r: rng(seed, "quick", "city-country") });
+  const outside = countryside({ choices, C, R, W, H, wallPoly, wall, roads: roads.filter((rd) => rd.angle !== undefined), wet, inWater, rivers, sea, lake, r: rng(seed, "quick", "city-country") });
 
   // The name above the city
   const top = Math.min(...wallPoly.map((p) => p[1]));
@@ -691,7 +694,7 @@ const clearOfAll = (pts, polys) => pts.every((p) => !polys.some((q) => inside(p,
  * metropolis: the poor and the crafts that weren't let in), farmsteads by the roads farther out, field systems in the
  * land between the roads (to the map's edge in farmland, a ragged way out in mixed country) and woods. Plan features.
  */
-function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater, r }) {
+function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater, rivers = [], r }) {
   const out = [];
   const metro = choices.size === "metropolis";
   // Kept off: the city (its wall and what lies outside it, a ditch or moat and towers) and the water
@@ -724,10 +727,62 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
     for (let n = 2; out.some((f) => f.name === name); n++) name = `${name.replace(/ [IVX]+$/, "")} ${["", "", "II", "III", "IV", "V", "VI"][n] ?? n}`;
     out.push({ id: `suburb-${suburbs.length}`, type: "district", profile: "village", ...(character !== "homes" ? { character } : {}), name, shape: poly });
   }
+  // Cemeteries outside the walls: one or two (two in a metropolis) beside a main road past the suburbs (their own
+  // stream, so the rest draws as before)
+  const graves = [];
+  {
+    const cr = r.fork("cemeteries"), want = metro ? 2 : cr.chance(0.5) ? 2 : 1;
+    const taken = [city, ...suburbs.map((p) => offset([p], 2)[0] ?? p), ...wet];
+    for (let t = 0; t < 200 && graves.length < want; t++) {
+      const rd = cr.pick(roads), pts = densify(rd.path, 0.5), i0 = pts.findIndex((p) => !inside(p, city));
+      const i = i0 + 6 + cr.int(40), side = cr.chance(0.5) ? 1 : -1;
+      const w = metro ? cr.range(14, 22) : cr.range(10, 16), dd = metro ? cr.range(10, 14) : cr.range(7, 11);
+      if (i0 < 0 || i + 1 >= pts.length) continue;
+      const a = pts[i], b = pts[i + 1], u = [(b[0] - a[0]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1), (b[1] - a[1]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1)], n = [-u[1] * side, u[0] * side];
+      const c = add(a, mul(n, 0.6 + 1.2 + dd / 2));
+      const shape = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => pt(add(add(c, mul(u, (x * w) / 2)), mul(n, (y * dd) / 2))));
+      const test = [c, ...densify([...shape, shape[0]], 1)];
+      if (!test.every(onMap) || !clearOfAll(test, [...taken, ...graves]) || test.some((p) => inWater(p))) continue;
+      if ([...taken, ...graves].some((q) => polygonsOverlap(q, shape))) continue;
+      if (roads.some((rd2) => densify(rd2.path, 0.5).some((q) => inside(q, shape) || distToRing(q, shape) < 0.7))) continue;
+      graves.push(shape);
+      const name = `${cap(compass(Math.atan2(c[1] - C[1], c[0] - C[0])))} Burial Ground`;
+      out.push({ id: `cemetery-${graves.length}`, type: "area", class: "cemetery", name: out.some((f) => f.name === name) ? `${name} II` : name, shape });
+    }
+  }
+  // Mills (their own stream): a watermill on a race beside the river outside the walls (two in a metropolis), and
+  // windmills out among the fields
+  const mills = [];
+  {
+    const mr = r.fork("mills"), taken = [city, ...suburbs.map((p) => offset([p], 2)[0] ?? p), ...graves];
+    const ok = (p, m) => onMap(p) && p[0] > 2 && p[1] > 2 && p[0] < W - 2 && p[1] < H - 2 && clearOfAll([p], taken) && taken.every((q) => distToRing(p, q) > m) && roads.every((rd) => distToPath(p, rd.path) > 0.6 + m + 3) && mills.every((c) => Math.hypot(c[0] - p[0], c[1] - p[1]) > 6);
+    const wantWater = rivers.length ? (metro ? 2 : 1) : 0;
+    for (let k = 0, made = 0; k < wantWater * 2 && made < wantWater; k++) {
+      const rv = rivers[k % rivers.length];
+      const got = watermill({ water: { path: rv.path, width: widestOf(rv) }, ok: (p, m) => ok(p, m) && !inWater(p), want: (c) => distToRing(c, city) < R * 0.5, r: mr.fork("water", k), id: made ? `watermill-${made + 1}` : "watermill" });
+      if (!got) continue;
+      made++;
+      out.push(...got);
+      const [x0, y0, x1, y1] = got[1].shape.rect;
+      mills.push([(x0 + x1) / 2, (y0 + y1) / 2]);
+    }
+    if (choices.surroundings === "farmland" || choices.surroundings === "mixed") {
+      const wr = mr.fork("wind"), want = (metro ? 3 : 2) + wr.int(2);
+      for (let k = 0, made = 0; k < want * 3 && made < want; k++) {
+        const spot = () => { const rd = wr.pick(roads), pts = densify(rd.path, 0.5), i0 = pts.findIndex((p) => !inside(p, city)); if (i0 < 0) return null; const i = Math.min(pts.length - 2, i0 + 10 + wr.int(50)), a = pts[i], b = pts[i + 1], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1, side = wr.chance(0.5) ? 1 : -1, off = 0.6 + wr.range(4, 9); return [a[0] - (d[1] / l) * side * off, a[1] + (d[0] / l) * side * off]; };
+        const got = windmill({ ok: (p, m) => onMap(p) && clearOfAll([p], taken) && taken.every((q) => distToRing(p, q) > m + 2) && roads.every((rd) => distToPath(p, rd.path) > 0.6 + m + 0.5) && mills.every((c) => Math.hypot(c[0] - p[0], c[1] - p[1]) > 8) && !inWater(p) && !wet.some((q) => distToRing(p, q) < 1.5), spot, r: wr.fork(k), id: made ? `windmill-${made + 1}` : "windmill" });
+        if (!got) continue;
+        made++;
+        out.push(...got);
+        const [x0, y0, x1, y1] = got[0].shape.rect;
+        mills.push([(x0 + x1) / 2, (y0 + y1) / 2]);
+      }
+    }
+  }
   if (choices.surroundings === "open") return out;
   const farmish = choices.surroundings === "farmland" || choices.surroundings === "mixed";
   const woodish = choices.surroundings === "woodland" || choices.surroundings === "mixed";
-  const builtUp = [city, ...suburbs.map((p) => offset([p], 1.5)[0] ?? p)];
+  const builtUp = [city, ...suburbs.map((p) => offset([p], 1.5)[0] ?? p), ...graves.map((p) => offset([p], 1.5)[0] ?? p), ...mills.map((c) => [[c[0] - 4, c[1] - 4], [c[0] + 4, c[1] - 4], [c[0] + 4, c[1] + 4], [c[0] - 4, c[1] + 4]])];
   const roadClear = (p, m) => roads.every((rd) => distToPath(p, rd.path) > 0.6 + m);
 
   // Farmsteads beside the roads, beyond the suburbs
@@ -790,7 +845,6 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
   return out;
 }
 
-/** A polygon grown by m (the biggest piece). */
 /** A river's width in feet at each point of its path: its widths, or its width eased to its endWidth along it. */
 function feetOf(rv) {
   if (Array.isArray(rv.widths) && rv.widths.length === rv.path.length) return rv.widths;
@@ -856,7 +910,6 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea })
   const estuary = water === "estuary" && !!sea;
   const endWidth = estuary ? Math.round(width * r.range(1.8, 2.6)) : null;
   const U = dirOf(riverAngle), V = [-U[1], U[0]];
-  const reach = (12 / 2 + 15) / 25; // the town wall's half thickness and its clear strip
   /** Cut where it reaches the sea: a square and a half past the coast. */
   const toSea = (path) => {
     if (!estuary) return path;
@@ -945,7 +998,8 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea })
   if (form === "loop") {
     // Around the city just outside its wall, all but across a neck of land: in from the map's edge, around, and out
     // again beside where it came in (the neck turned toward the side with the most room beyond it)
-    const need = (a) => radiusAt(a) * 1.03 + reach + 0.4 + half + 1.2 + 1;
+    // (the wall's corners stand up to 3% out; its outer half, its towers, the river's half width and its no-build bank)
+    const need = (a) => radiusAt(a) * 1.03 + 12 / 25 / 2 + 0.9 + half + 1.2 + 0.3;
     const room = (a) => toEdge(C, dirOf(a), W, H) - 1.5;
     const dTheta = 1.5 / (R * 1.1);
     const spread = r.range(0.4, 0.6);
@@ -958,12 +1012,13 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea })
     const fits = necks.filter((x) => x.worst <= 0);
     const order = fits.length ? r.shuffle(fits) : necks.sort((a, b) => a.worst - b.worst);
     for (const { n } of order.slice(0, 6)) {
-      const gap = r.range(0.4, 2), ph = r.next() * TAU, lobe = R * r.range(0.04, 0.12), a0 = n + spread, a1 = n + TAU - spread;
+      const gap = r.range(0.3, 1.2), ph = r.next() * TAU, lobe = R * r.range(0.02, 0.05), a0 = n + spread, a1 = n + TAU - spread;
       const arc = [];
       for (let a = a0; a <= a1 + 1e-9; a += dTheta) {
         const e = Math.min(a - a0, a1 - a);
-        let rho = need(a) + gap + lobe * (1 + Math.sin(2 * a + ph * 3)) + 1.2 * (1 + Math.sin(3 * a + ph)) + 0.6 * (1 + Math.sin(7 * a + ph * 2));
-        if (e < 0.6) rho += R * 0.5 * (1 - e / 0.6) ** 2; // (its ends turning out from the city)
+        // (close around the wall, as a city sits tight inside its river's bend)
+        let rho = need(a) + gap + lobe * (1 + Math.sin(2 * a + ph * 3)) + 0.6 * (1 + Math.sin(3 * a + ph)) + 0.3 * (1 + Math.sin(7 * a + ph * 2));
+        if (e < 0.4) rho += R * 0.4 * (1 - e / 0.4) ** 2; // (its ends turning out from the city)
         arc.push(add(C, mul(dirOf(a), Math.min(rho, Math.max(need(a), room(a))))));
       }
       const legB = bends(r, R * 0.8);
@@ -982,6 +1037,7 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea })
   return meanderOnly();
 }
 
+/** A polygon grown by m (the biggest piece). */
 function grown(poly, m) {
   return offset([poly], m).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null) ?? poly;
 }

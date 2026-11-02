@@ -48,6 +48,8 @@ export const FIELD_TEXT = {
 
   "square.surface": { label: "Paving" },
   "square.radial": { label: "Streets ring it", help: "The district's streets circle the square and run out from it" },
+  "square.market": { label: "Market stalls", help: "Stalls in rows across the square, with lanes between, clear of what stands in its middle" },
+  "square.middle": { label: "In its middle", help: "A fountain or a market cross near its middle, clear of the roads through it", names: { fountain: "a fountain", cross: "a market cross", none: "nothing" }, auto: "picked from its seed" },
 
   "building.roof": { label: "Roof" },
   "building.use": { label: "Use", names: USE_NAMES, help: "What it's for: a notable use (an inn, a temple, a trade) gets a hidden label on the scene, for the GM", auto: "a house" },
@@ -90,7 +92,7 @@ export const FIELD_TEXT = {
   "area.style": { label: "Style", names: { green: "village green", formal: "formal garden" }, auto: "village green" },
   "area.system": { label: "Field system", names: { patchwork: "hedged patchwork", strips: "open strips" }, help: "Else picked from its seed", auto: "by seed" },
   "area.fieldSize": { label: "Field size", help: "About how big a field (or a furlong of strips) is, in feet", auto: "by system" },
-  "area.border": { label: "Border", help: "What bounds its fields; else picked from its seed", auto: "by seed" },
+  "area.border": { label: "Border", help: "What bounds its fields, or a cemetery: a hedge, a drystone wall or nothing", auto: "by seed" },
   "area.coverage": { label: "Cultivated", help: "The share of its fields that are farmed; the rest is grass (0 to 1)", auto: "0.65" },
 
   "wall.height": { label: "Height", help: "In feet" },

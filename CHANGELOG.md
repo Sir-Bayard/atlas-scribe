@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Market places, cemeteries, mills and harbors**
+- Market stalls: a square's new Market stalls setting fills it with stalls in rows (awnings of many colors, plain and striped), lanes between and goods set out, clear of the roads through it. Quick Start turns it on for its market square, and a market quarter's square has stalls too.
+- A square's new In its middle setting: a fountain or a market cross near its middle, clear of the roads; left unset, its seed picks (a market square mostly a cross, a paved square often a fountain, a green sometimes a cross).
+- Cemeteries are drawn: a gate where the nearest road meets one, a path across it (and a cross path in a big one), graves in rows with open patches, yews, tombs beside the paths and a chapel in a big one, and a drystone wall or a hedge around it (its Border setting). A Cemetery tool draws one; out in the country a lane comes to its gate. Quick Start gives a town a cemetery at its edge and a city one or two burial grounds outside its walls.
+- Mills: a building used as a windmill gets sails over its cap, and one used as a watermill a wheel on its side facing the water. New Windmill and Watermill tools. Quick Start puts a watermill on a short mill race beside the river by a village or town (sometimes a hamlet) and outside a city's walls, and windmills among the fields.
+- Boats and cranes: rowboats moored along quays, wharves, piers and jetties, ships at the sea's quays and piers, cranes on stone quays, a few ships at anchor off a harbor and rowboats on a river by the houses (none on frozen water). Ships are drawn in plain shapes where FA Nexus has no hull art for you. New Boat, Ship, Crane, Fountain and Market cross tools.
+- City rivers: an island now holds a ward of its own (it was cut into slivers by the main roads), and a river looping around a city runs close around its wall.
+- For plan writers: square fields `market` and `middle`; a cemetery's `border`; prop classes `fountain`, `cross`, `boat`, `ship`, `crane`; building uses `chapel`, `tomb`, `windmill`, `watermill`. Quick Start plans change (markets, mills and cemeteries), and every map with quays, piers or a river by its houses now draws boats.
+
 **Quick Start cities**
 - Quick Start makes a walled city or a metropolis: a wall with a gate for each main road, the main roads meeting at a central market square, a street inside the wall, and wards (Voronoi cells between the main roads) bounded by streets, each an ordinary district you can reroll, lock and reshape.
 - City water: a river through it, a sea coast with a harbor (a quay and piers), a lake shore (a wharf and jetties), or a river meeting the sea.

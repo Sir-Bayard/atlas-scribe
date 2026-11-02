@@ -7,6 +7,7 @@
  * poor quarter's shrine and well. Where it stands depends only on the district's shape and roads, never its seed, so
  * rerolling the district doesn't move it (the seed picks only its small details). Everything in squares. Pure.
  */
+import { marketStalls } from "./market.mjs";
 import { pointInPolygon, distanceToPath, polygonsOverlap } from "../geom.mjs";
 import { centroid, area } from "../lots/poly.mjs";
 import { characterOf } from "../character.mjs";
@@ -203,6 +204,19 @@ export function layAnchor(a, r, ftPerSquare) {
       fountain(-W * 0.3, -H * 0.2, 28);
       { const [x, y] = P(W * 0.3, -H * 0.2); out.props.push({ class: "statue", x, y, rot: a.rot, size: 10 * a.scale }); }
       { const [x, y] = P(-W * 0.3, H * 0.3); out.props.push({ class: "well", x, y, rot: a.rot, size: 8 * a.scale }); }
+      // Stalls in rows across the square, clear of the hall, the fountain, the statue and the well (at true size,
+      // from their own stream, so the rest of the district draws as before)
+      {
+        const local = (p) => { const dx = p[0] - a.at[0], dy = p[1] - a.at[1]; return [dx * ux + dy * uy, dx * nx + dy * ny]; };
+        const marks = out.props.map((p) => [p.x, p.y, (p.size ?? 10) / ftPerSquare / 2 + 0.45]);
+        const inside = (p) => { const [u, v] = local(p); return Math.abs(u) < W / 2 - 0.3 && Math.abs(v) < H / 2 - 0.3; };
+        const clear = (p) => {
+          const [u, v] = local(p);
+          if (Math.abs(u) < sq(90) / 2 + 0.45 && Math.abs(v - H * 0.12) < sq(32) / 2 + 0.45) return false;
+          return marks.every(([x, y, m]) => Math.hypot(p[0] - x, p[1] - y) > m);
+        };
+        for (const x of marketStalls({ at: a.at, angle: a.rot, reach: Math.hypot(W, H) / 2, inside, clear, r: r.fork("stalls"), sq: ftPerSquare })) out.props.push(x);
+      }
       out.radial = { at: a.at, radius: Math.min(W, H) / 2 };
       break;
     }

@@ -8,6 +8,7 @@ import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
 import { cityPlan, CITY_WATER, RIVER_FORMS } from "./quick-city.mjs";
 import { meander, bends } from "./meander.mjs";
+import { watermill, windmill } from "./mills.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
 export const QUICK = {
@@ -271,7 +272,7 @@ export function quickPlan(options = {}) {
   // The center: a square where the roads meet, or a green beside them
   if (choices.center === "square") {
     const surface = choices.size === "town" ? "cobble" : choices.size === "village" ? "gravel" : "trodden";
-    features.push({ id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface, radial: choices.size === "town", name: "The square" });
+    features.push({ id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface, radial: choices.size === "town", market: true, name: "The square" });
   }
   let green = null;
   if (choices.center === "green") {
@@ -348,11 +349,70 @@ export function quickPlan(options = {}) {
   }
 
   // Keep-outs for what goes around the edge: the districts, the green, the roads, the water
+  const millKeep = []; // the mills' races and yards, kept off by everything placed after them
   const clearOfThings = (p, m) => !nearCluster(p, m) && !(green && distToPoly(p, green) < m)
     && roads.every((rd) => distToPath(p, rd.path) > roadHalf(rd) + m)
-    && !(water && distToPath(p, water.path) < water.width / 25 / 2 + m);
+    && !(water && distToPath(p, water.path) < water.width / 25 / 2 + m)
+    && !millKeep.some((k) => (k.poly ? distToPoly(p, k.poly) < m : distToPath(p, k.path) < k.half + m));
   const onMap = (p) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1;
   const clearOf = (p, m) => clearOfThings(p, m) && onMap(p);
+
+  // Mills (their own stream, so the rest of the plan draws as before): a watermill on a race beside the river or
+  // stream by the edge of a village or town (sometimes a hamlet's), and a windmill out among the fields
+  {
+    const mr = r.fork("mills");
+    const wantWater = water && (choices.size !== "hamlet" || mr.chance(0.5));
+    if (wantWater) {
+      const ok = (p, m) => p[0] > 2 && p[1] > 2 && p[0] < W - 2 && p[1] < H - 2 && !nearCluster(p, m + 0.5) && !(green && distToPoly(p, green) < m)
+        && roads.every((rd) => distToPath(p, rd.path) > roadHalf(rd) + m + 3) && distToPath(p, water.path) > water.width / 25 / 2 + 0.9;
+      const made = watermill({ water, ok, want: (c) => cluster.some((poly) => distToPoly(c, poly) < 12), r: mr.fork("water") });
+      if (made) {
+        if (water.frozen) made[0].frozen = true; // (its race freezes with the stream)
+        features.push(...made);
+        const [x0, y0, x1, y1] = made[1].shape.rect;
+        millKeep.push({ path: made[0].path, half: 0.2 + 0.6 }, { path: [[(x0 + x1) / 2, (y0 + y1) / 2], [(x0 + x1) / 2, (y0 + y1) / 2]], half: Math.hypot(x1 - x0, y1 - y0) / 2 + 0.5 });
+      }
+    }
+    const fieldy = choices.surroundings === "farmland" || choices.surroundings === "mixed";
+    const wind = !fieldy ? 0 : choices.size === "town" ? 1 + (mr.chance(0.4) ? 1 : 0) : choices.size === "village" ? (mr.chance(0.6) ? 1 : 0) : 0;
+    const wr = mr.fork("wind");
+    for (let k = 0; k < wind; k++) {
+      // Out past the houses, near a road (a lane comes to its yard)
+      const spot = () => { const rd = wr.pick(roads), i = 1 + wr.int(rd.path.length - 1), t = wr.next(), a = rd.path[i - 1], b = rd.path[i], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1, side = wr.chance(0.5) ? 1 : -1, off = roadHalf(rd) + wr.range(4, 8); return [a[0] + d[0] * t - (d[1] / l) * side * off, a[1] + d[1] * t + (d[0] / l) * side * off]; };
+      const made = windmill({ ok: (p, m) => clearOf(p, m) && !nearCluster(p, 5), spot, r: wr.fork(k), id: k ? `windmill-${k + 1}` : "windmill" });
+      if (made) {
+        features.push(...made);
+        const [x0, y0, x1, y1] = made[0].shape.rect;
+        millKeep.push({ poly: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
+      }
+    }
+  }
+
+  // A town's cemetery: beside a road a little beyond its edge, clear of everything (its own stream, so the rest of
+  // the plan draws as before)
+  let cemetery = null;
+  if (choices.size === "town") {
+    const cr = r.fork("cemetery");
+    // (from the stretches of road just past the houses)
+    const spots = roads.flatMap((rd) => { const pts = densify(rd.path, 0.5); return pts.slice(1).map((q, j) => ({ rd, a: pts[j], b: q })); })
+      .filter(({ a }) => !nearCluster(a, 4) && nearCluster(a, 16));
+    for (let t = 0; t < 250 && !cemetery && spots.length; t++) {
+      const { rd, a, b } = spots[cr.int(spots.length)], side = cr.chance(0.5) ? 1 : -1;
+      const w = cr.range(8, 11), dd = cr.range(6, 8);
+      const d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1, u = [d[0] / l, d[1] / l], n = [-u[1] * side, u[0] * side];
+      const c = add(a, mul(n, roadHalf(rd) + 1.6 + dd / 2));
+      const shape = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => pt(add(add(c, mul(u, (x * w) / 2)), mul(n, (y * dd) / 2))));
+      const edge = shape.flatMap((p, j) => { const q = shape[(j + 1) % 4]; return [0, 0.25, 0.5, 0.75].map((f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); });
+      if (![c, ...edge].every((p) => clearOf(p, 1.2))) continue;
+      if (cluster.some((poly) => distToPoly(c, poly) < dd / 2 + 4)) continue; // (a little way out, not against the houses)
+      if (roads.some((rd2) => rd2.path.some((q) => inside(q, shape)))) continue;
+      cemetery = shape;
+    }
+    if (cemetery) {
+      features.push({ id: "cemetery", type: "area", class: "cemetery", name: "The cemetery", shape: cemetery });
+      millKeep.push({ poly: cemetery }); // (the farms and woods keep off it)
+    }
+  }
 
   // Farmsteads beside the roads, beyond the districts
   const farmish = choices.surroundings === "farmland" || choices.surroundings === "mixed";
@@ -458,6 +518,7 @@ export function quickPlan(options = {}) {
     if (!clearOf(c, rad * 0.8)) continue;
     if (woods.some((w) => Math.hypot(w.c[0] - c[0], w.c[1] - c[1]) < w.rad + rad + 2)) continue;
     if (farms.some((f) => Math.hypot(f.c[0] - c[0], f.c[1] - c[1]) < rad * 1.2 + f.size)) continue;
+    if (cemetery && (distToPoly(c, cemetery) < rad * 1.2 + 2 || inside(c, cemetery))) continue;
     woods.push({ c, rad, blob });
   }
   woods.forEach((w, n) => features.push({ id: `woods-${n + 1}`, type: "area", class: "woods", shape: outline(w.blob) }));
@@ -485,6 +546,7 @@ export function quickPlan(options = {}) {
       ...features.filter((f) => f.type === "square"),
       ...districts.map((d) => ({ id: d.id, type: "district", profile: d.profile, shape: d.poly })),
       ...features.filter((f) => f.type === "area" || f.type === "wall"),
+      ...features.filter((f) => f.type === "building"),
       { id: "name", type: "label", text: name, at: pt(labelAt), show: "gm", size: "huge" },
     ],
     output: { scene: { name, weather: winter ? "snow" : null } },

@@ -18,7 +18,7 @@ export const TRADES = [
 ];
 
 /** Every use a building can have. */
-export const USES = ["house", "shop", "inn", "temple", "mansion", "warehouse", "barracks", "stable", "armory", "workshop", "shed", "store", "guildhall", "customs", "keep", "palace", "market-hall", "shrine", "watch", ...TRADES];
+export const USES = ["house", "shop", "inn", "temple", "mansion", "warehouse", "barracks", "stable", "armory", "workshop", "shed", "store", "guildhall", "customs", "keep", "palace", "market-hall", "shrine", "watch", "chapel", "tomb", "windmill", "watermill", ...TRADES];
 
 /**
  * Per use: label (what labels and the window call it), form (a building of its own, lots/forms.mjs), notable (a
@@ -47,6 +47,10 @@ export const USE_INFO = {
   "market-hall": { label: "Market hall", notable: true },
   shrine: { label: "Shrine", notable: true },
   watch: { label: "Watch post", notable: true },
+  chapel: { label: "Chapel", notable: true },
+  tomb: { label: "Tomb" },
+  windmill: { label: "Windmill", notable: true },
+  watermill: { label: "Watermill", notable: true },
   smithy: { label: "Smithy", notable: true, site: { road: 3, gate: 2, edge: 1, spread: 2 }, fire: true, smoke: "dark", yard: ["anvil", "firewood", "barrel"] },
   farrier: { label: "Farrier", notable: true, site: { road: 3, gate: 3, spread: 2 }, fire: true, smoke: "gray", yard: ["anvil", "hay", "cart"] },
   tannery: { label: "Tannery", notable: true, site: { water: 4, downstream: 3, edge: 2 }, yard: ["rack", "rack", "barrel"], pits: "tan" },

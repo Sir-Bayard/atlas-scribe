@@ -222,7 +222,7 @@ export function accessLanes(plan) {
   const out = [];
   for (const f of plan.features) {
     const farm = f.type === "area" && f.class === "farmstead";
-    const other = (f.type === "area" && (f.class === "yard" || f.class === "park")) || f.type === "square";
+    const other = (f.type === "area" && (f.class === "yard" || f.class === "park" || f.class === "cemetery")) || f.type === "square";
     if (!farm && !other) continue;
     const pts = poly(f);
     if (pts.length < 3) continue;
@@ -260,7 +260,7 @@ export function accessLanes(plan) {
     }
     // Where it leaves from: the middle of the yard (the lane starts at its edge), or a park's side middles
     // (never from a side's middle that's in a river or a pond)
-    const starts = (f.class === "park" ? pts.map((q, i) => { const n = pts[(i + 1) % pts.length]; return { from: [(q[0] + n[0]) / 2, (q[1] + n[1]) / 2], edge: true }; }) : [{ from: c, edge: false }])
+    const starts = (f.class === "park" || f.class === "cemetery" ? pts.map((q, i) => { const n = pts[(i + 1) % pts.length]; return { from: [(q[0] + n[0]) / 2, (q[1] + n[1]) / 2], edge: true }; }) : [{ from: c, edge: false }])
       .filter((st) => !st.edge || (!waters.some((w) => byWater(st.from, w, w.half + 0.3)) && !ponds.some((x) => pointInPolygon(st.from, x.poly))));
     const cands = [];
     for (const st of starts) for (const { q, half } of near) {

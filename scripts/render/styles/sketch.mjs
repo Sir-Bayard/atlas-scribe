@@ -287,7 +287,35 @@ export function paint(ctx) {
   // Props, then trees from north to south
   progress(0.8, "Trees");
   for (const p of items("prop").filter((p) => p.class === "fountain")) { const rad = (0.45 * (p.scale ?? 1)) / 2; dot(p.x, p.y, rad + 0.08, col(`stone.rough.${s}`)); dot(p.x, p.y, rad * 0.85, col(winter ? "water.ice" : "water.pond")); }
-  for (const p of items("prop").filter((p) => p.class !== "bush" && p.class !== "fountain")) dot(p.x, p.y, 0.18 * (p.scale ?? 1), col(`prop.${p.class}`));
+  // Market stalls: their awnings in the art's colors (plain and striped alike), the long ones 2 by 3
+  const AWNING = ["#c9b48c", "#4f6f9a", "#7c5a3f", "#5d7d45", "#7d7a45", "#c27a34", "#6e4f80", "#a5443a", "#e2ddd2"];
+  for (const p of items("prop").filter((p) => p.class === "stall" || p.class === "stall-long")) {
+    const w = 0.4 * (p.scale ?? 1), h = p.class === "stall-long" ? w * 1.5 : w;
+    g.save(); g.translate(X(p.x), Y(p.y)); g.rotate(((p.rot ?? 0) * Math.PI) / 180);
+    g.fillStyle = AWNING[(p.variant ?? 0) % AWNING.length]; g.fillRect((-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
+    g.strokeStyle = "rgba(40,30,20,0.55)"; g.lineWidth = Math.max(1, pp * 0.02); g.strokeRect((-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
+    if ((p.variant ?? 0) >= AWNING.length) { g.fillStyle = "rgba(255,255,255,0.55)"; for (let k = 1; k < 4; k += 2) g.fillRect((-w / 2 + (k * w) / 4) * pp, (-h / 2) * pp, (w / 4) * pp, h * pp); }
+    g.restore();
+  }
+  // A windmill's sails as a cross of four arms; a water wheel as a bar against its wall
+  for (const p of items("prop").filter((p) => p.class === "sails" || p.class === "waterwheel")) {
+    const len = p.class === "sails" ? 2.4 * (p.scale ?? 1) : 0.25 * 6 * (p.scale ?? 1), wid = p.class === "sails" ? len * 0.16 : 0.25 * (p.scale ?? 1);
+    g.save(); g.translate(X(p.x), Y(p.y)); g.fillStyle = p.class === "sails" ? "rgba(225,218,200,0.95)" : "#6b4f36"; g.strokeStyle = "rgba(50,40,30,0.7)"; g.lineWidth = Math.max(1, pp * 0.02);
+    // (the art's long side: across for the sails, down for the wheel, which stands along its wall)
+    const [w, h] = p.class === "sails" ? [len, wid] : [wid, len];
+    for (const turn of p.class === "sails" ? [0, 90] : [0]) { g.save(); g.rotate((((p.rot ?? 0) + turn) * Math.PI) / 180); g.fillRect((-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp); g.strokeRect((-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp); g.restore(); }
+    g.restore();
+  }
+  // Boats and ships as hulls along their heading (the art's long side runs down it), a market cross as its base
+  for (const p of items("prop").filter((p) => p.class === "boat" || p.class === "ship" || p.class === "cross")) {
+    const w = (p.class === "boat" ? 0.2 : p.class === "ship" ? 0.8 : 0.5) * (p.scale ?? 1), L = p.class === "boat" ? w * 4 : p.class === "ship" ? w * 2.75 : w;
+    g.save(); g.translate(X(p.x), Y(p.y)); g.rotate(((p.rot ?? 0) * Math.PI) / 180);
+    g.fillStyle = p.class === "cross" ? "#a39d92" : "#6b4f36"; g.strokeStyle = "rgba(40,30,20,0.7)"; g.lineWidth = Math.max(1, pp * 0.02);
+    if (p.class === "cross") { g.fillRect((-w / 2) * pp, (-w / 2) * pp, w * pp, w * pp); g.strokeRect((-w / 2) * pp, (-w / 2) * pp, w * pp, w * pp); }
+    else { g.beginPath(); g.ellipse(0, 0, (w / 2) * pp, (L / 2) * pp, 0, 0, 2 * Math.PI); g.fill(); g.stroke(); if (p.class === "ship") { g.fillStyle = "#e6dfcc"; g.fillRect((-w * 0.62) * pp, (L * 0.04) * pp, w * 1.24 * pp, w * 0.18 * pp); } }
+    g.restore();
+  }
+  for (const p of items("prop").filter((p) => !["bush", "fountain", "stall", "stall-long", "sails", "waterwheel", "boat", "ship", "cross"].includes(p.class))) dot(p.x, p.y, 0.18 * (p.scale ?? 1), col(`prop.${p.class}`));
   // Sized as the textured style sizes them; leafy trees are crowns, and only in winter are they bare
   const crown = winter ? "rgb(88,104,84)" : col("tree"), leafy = winter ? crown : mix(col("tree"), [120, 150, 60], 0.25), bare = col("tree.bare");
   for (const t of [...items("tree")].sort((a, b) => a.y - b.y)) {

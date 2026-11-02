@@ -101,7 +101,7 @@ export const TYPES = {
   },
   square: {
     geometry: "shape",
-    fields: { surface: oneOf(SURFACES, "cobble"), name: str(), radial: bool(false) },
+    fields: { surface: oneOf(SURFACES, "cobble"), name: str(), radial: bool(false), market: bool(false), middle: { ...oneOf(["fountain", "cross", "none"], null), fallback: "its seed picks one" } },
   },
   building: {
     geometry: "shape",
@@ -165,7 +165,7 @@ export const TYPES = {
       style: { ...oneOf(["green", "formal"], null), only: ["park"] }, // a park's: a village green (the default) or a formal garden
       system: { ...oneOf(["patchwork", "strips"], null), only: ["fields"] }, // a fields area's: enclosed fields or open strips; else picked from its seed
       fieldSize: num(null, { unit: "ft", min: 50, only: ["fields"] }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
-      border: { ...oneOf(["hedge", "drystone", "none"], null), only: ["fields"] }, // a fields area's: what bounds its fields; else picked from its seed
+      border: { ...oneOf(["hedge", "drystone", "none"], null), only: ["fields", "cemetery"], fallback: "its seed picks one" }, // a fields area's or a cemetery's: what bounds it; else picked from its seed
       coverage: num(null, { min: 0, max: 1, only: ["fields"] }), // a fields area's: the share of its fields that are cultivated (0.65 if left out); the rest is grass
     },
   },
@@ -188,7 +188,7 @@ export const TYPES = {
   },
   prop: {
     geometry: "point",
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue"],
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane"],
     fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }) },
   },
   label: {
@@ -216,7 +216,7 @@ export const CONIFERS = ["conifer", "fir", "pine", "spruce", "cedar", "larch", "
 export const isConifer = (species) => typeof species === "string" && CONIFERS.includes(species.trim().toLowerCase());
 
 /** How wide a prop is drawn, in squares, when the plan gives it no size (a prop's size, in feet, sets it). */
-export const PROP_SQUARES = { well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45 };
+export const PROP_SQUARES = { well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };
 
 /** A label's text height in squares, by its size word. */
 export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };
@@ -251,7 +251,7 @@ export const PROFILES = ["hamlet", "village", "town", "city"];
 export const OLD_PROFILES = { roadside: "hamlet", core: "city" };
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
-export const NOT_DRAWN_YET = { area: ["cemetery"] };
+export const NOT_DRAWN_YET = { area: [] };
 
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];
