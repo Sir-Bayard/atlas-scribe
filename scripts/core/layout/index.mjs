@@ -35,8 +35,9 @@ import { shoreLife } from "./shores.mjs";
 import { marketStalls } from "./market.mjs";
 import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
+import { cliffOf } from "../cliffs.mjs";
 
-export const LAYOUT_VERSION = 3;
+export const LAYOUT_VERSION = 4;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
@@ -224,6 +225,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const ways = [];
   const parks = [];
   const bodies = []; // ponds, lakes and seas
+  const cliffBands = []; // { path, half }: the ground each cliff takes
   const winter = seasonOf(plan) === "winter";
   for (const f of plan.features) {
     switch (f.type) {
@@ -284,6 +286,16 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       }
       case "wall":
         if (f.class === "hedge" || isTownWall(f)) break; // hedges are bushes, placed after the fill; town walls just below
+        if (f.class === "cliff") {
+          // A cliff: its face from its top edge down to its toe, rubble at its foot; nothing is built or laid on it
+          if (!Array.isArray(f.path) || f.path.length < 2) break;
+          const c = cliffOf(f, sq, [W, H]);
+          const cr = streamFor(f.id), rock = ["earthy", "slate"].includes(f.rock) ? f.rock : cr.fork("rock").chance(0.6) ? "earthy" : "slate";
+          items.push({ kind: "cliff", id: f.id, from: f.id, path: c.line, taper: c.taper, toe: c.toe, w: c.w, sign: c.sign, rock, height: f.height ?? 30, variant: cr.fork("look").int(2), top: cr.fork("top").int(4) });
+          for (const poly of bandPieces(c.keep.path, c.keep.half)) { space.reserved.push(poly); space.zones.push(poly); }
+          cliffBands.push(c.keep);
+          break;
+        }
         items.push({ kind: "wall", id: f.id, from: f.id, class: f.class, path: f.path, height: ft(f.height) });
         break;
       case "prop":
@@ -686,7 +698,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
   // Town walls and palisades: their runs, towers and gatehouses, a ditch or moat, and clear ground along them
   // (streets end there, and only roads pass, through gates)
-  const wallBands = [];
+  const wallBands = [...cliffBands]; // (a cliff stops things as a wall does)
   const gatedBy = new Set(); // what has a gate through a wall
   const wallGatePts = []; // where the gates stand
   {

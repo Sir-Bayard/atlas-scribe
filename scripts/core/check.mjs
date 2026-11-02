@@ -7,6 +7,7 @@ import { underlayOf } from "./underlay.mjs";
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize, okJoin, okCut, okChimney } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath, segmentsIntersect } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
+import { cliffOf, runsOnFace } from "./cliffs.mjs";
 import { isTownWall, isClosed, wallReach, towerReach } from "./layout/walls.mjs";
 import { waterEntries, nearWater, okWidths, bodyOf, RUNNING, BODIES } from "./water.mjs";
 import { offset, intersect, area as polyArea } from "./lots/poly.mjs";
@@ -19,6 +20,10 @@ function overlapArea(a, b) {
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+/** A road's width in feet when the plan leaves it out (as plan.mjs defaults it). */
+const ROAD_WIDTH_FT = { highway: 30, street: 20, lane: 15, track: 10, path: 5 };
+/** The plan's cliffs with a usable line. */
+const cliffsOf = (plan) => plan.features.filter((f) => f.type === "wall" && f.class === "cliff" && Array.isArray(f.path) && f.path.length >= 2 && f.path.every(isPoint));
 
 export function checkPlan(raw) {
   const out = [];
@@ -96,6 +101,8 @@ export function checkPlan(raw) {
       const inWater = (x, y) => ws.some((w) => nearWater([x, y], w));
       // and none through a town wall (only roads pass it)
       const wb = plan.features.filter((f) => isTownWall(f) && f.path.every(isPoint)).map((f) => ({ path: f.path, half: wallReach(f, sqw) }));
+      // (nor on a cliff)
+      for (const f of cliffsOf(plan)) wb.push(cliffOf(f, sqw).keep);
       const blocked = (x, y) => inWater(x, y) || wb.some((b) => distanceToPath([x, y], b.path) < b.half);
       try { gates = districtGates(list, { roads: ways, inWater: blocked, seed: isNum(plan.seed) ? plan.seed : 1 }); } catch { gates = new Map(); }
     }
@@ -137,6 +144,13 @@ export function checkPlan(raw) {
       // Longer than any crossing, however slanting
       if (best > (2 * (rh + near)) / 0.25) { warn(f.id, "path", `Road "${r.id}" runs along "${f.id}" rather than through it; its towers there are left out. Move the wall or the road apart.`); break; }
     }
+  }
+
+  // Cliffs: no road climbs one
+  // (anywhere on its face: across it or along it; a road ending at its top edge is fine)
+  for (const f of cliffsOf(plan)) {
+    const c = cliffOf(f, isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25, Array.isArray(plan.size.squares) ? plan.size.squares : null);
+    for (const r of ways) if (r.path.every(isPoint) && runsOnFace(r.path, c, (isNum(r.width) ? r.width : ROAD_WIDTH_FT[r.class] ?? 20) / (isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25) / 2)) warn(f.id, "path", `Road "${r.id}" runs over the cliff "${f.id}", and no road can climb a cliff. Bring the road around its end, or end the cliff short of the road.`);
   }
 
   // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)

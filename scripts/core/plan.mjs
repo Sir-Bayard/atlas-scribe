@@ -40,7 +40,7 @@ export const ROOFS = [
  * top with a skylight. A round building always gets a cone.
  */
 export const ROOF_STYLES = ["gable", "hip", "half-hip", "pyramid", "flat", "mansard"];
-export const SURFACES = ["dirt", "slush", "snow", "trodden", "cobble", "gravel", "grass", "mud", "flagstone"];
+export const SURFACES = ["dirt", "slush", "snow", "trodden", "cobble", "gravel", "grass", "mud", "flagstone", "setts", "herringbone", "brick", "tiles"];
 
 /** Water along a path, and water drawn as a shape (a body of water); the shores a body of water can have. */
 export const RUNNING = ["stream", "river", "canal"];
@@ -171,9 +171,9 @@ export const TYPES = {
   },
   wall: {
     geometry: "path",
-    classes: ["drystone", "hedge", "fence", "stone", "town", "palisade"],
+    classes: ["drystone", "hedge", "fence", "stone", "town", "palisade", "cliff"],
     fields: {
-      height: num(null, { unit: "ft", min: 0, byClass: { drystone: 3, hedge: 5, fence: 4, stone: 6, town: 25, palisade: 10 } }),
+      height: num(null, { unit: "ft", min: 0, max: 400, byClass: { drystone: 3, hedge: 5, fence: 4, stone: 6, town: 25, palisade: 10, cliff: 30 } }),
       straight: bool(false), // drawn straight between its points (a town wall's straight runs, say); else it curves
       // Town walls and palisades. A path whose last point is its first is a closed loop, its outside outward; an open
       // run's outside is on its `side` (left or right, going along the path from its first point)
@@ -183,7 +183,10 @@ export const TYPES = {
       towerSpacing: num(null, { unit: "ft", min: 30, byClass: { town: 120, palisade: 90 }, only: TOWN_WALLS }),
       outside: { ...oneOf(["none", "ditch", "moat"], "none"), only: TOWN_WALLS },
       ditchWidth: num(null, { unit: "ft", min: 5, byClass: { town: 20, palisade: 12 }, only: TOWN_WALLS }),
-      side: { ...oneOf(["left", "right"], "left"), only: TOWN_WALLS },
+      side: { ...oneOf(["left", "right"], "left"), only: [...TOWN_WALLS, "cliff"] },
+      // A cliff: its path is its top edge, the drop on its side (the low ground, left or right going along it); its
+      // rock is the stone it's cut in
+      rock: { ...oneOf(["earthy", "slate"], null), only: ["cliff"], fallback: "picked from its seed" },
     },
   },
   prop: {

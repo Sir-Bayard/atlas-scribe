@@ -6,9 +6,11 @@
  */
 import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
-import { cityPlan, CITY_WATER, RIVER_FORMS } from "./quick-city.mjs";
+import { cityPlan, CITY_WATER, RIVER_FORMS, CITY_SHAPES, SHAPE_WATER, SHAPE_FORMS } from "./quick-city.mjs";
 import { meander, bends } from "./meander.mjs";
 import { watermill, windmill } from "./mills.mjs";
+import { PAVINGS, UNPAVED, squareShape } from "./squares.mjs";
+import { crossesCliff } from "./cliffs.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
 export const QUICK = {
@@ -19,10 +21,11 @@ export const QUICK = {
   center: ["square", "green", "none"],
   surroundings: ["mixed", "farmland", "woodland", "open"],
   river: RIVER_FORMS, // a city's river (left out, the seed picks; the dialog shows Any first)
+  shape: CITY_SHAPES, // a city's outline (the same)
 };
 
 /** Choices the dialog leaves on Any unless they're picked, and that only some places use. */
-export const QUICK_ANY = ["river"];
+export const QUICK_ANY = ["river", "shape"];
 
 /**
  * What a choice left out is picked from: the sizes and water a village or town can have (a city is made only when it's
@@ -40,6 +43,7 @@ export const QUICK_LABELS = {
   center: { square: "A market square", green: "A village green", none: "Neither" },
   surroundings: { mixed: "Farms and woods", farmland: "Farmland", woodland: "Woodland", open: "Open ground" },
   river: { meander: "Bending through", island: "Split around an island", loop: "Looping around the city", meeting: "Two rivers meeting" },
+  shape: { compact: "Compact, roughly round", lobed: "Lobed and uneven", promontory: "On a promontory (by the sea or a lake)", shore: "Long, along its shore or river", cliff: "Against a cliff" },
 };
 
 /** Per size: the map in squares, the main and cross roads' classes, the square's radius, the green's size. */
@@ -157,13 +161,21 @@ export function quickPlan(options = {}) {
   if (RIVER_FORMS.includes(options.river)) choices.river = options.river;
   // A city's water left out is any a city can have, a stream is a river there, and a village or town by the sea or a
   // lake has a river for now
+  // Its outline the one asked for when it goes with the water (water left out is picked to go with it), else picked
+  // from those that do
   if (CITIES.includes(choices.size)) {
-    if (!QUICK.water.includes(options.water)) choices.water = rng(seed, "quick", "city-water").pick(CITY_WATER);
+    const asked = CITY_SHAPES.includes(options.shape) ? options.shape : null;
+    // (a river form asked for means a river)
+    if (!QUICK.water.includes(options.water)) choices.water = RIVER_FORMS.includes(options.river) ? "river" : rng(seed, "quick", "city-water").pick(asked ? SHAPE_WATER[asked] : CITY_WATER);
     else if (choices.water === "stream") choices.water = "river";
+    // (and with the river's form, when one is asked for)
+    const fits = CITY_SHAPES.filter((k) => SHAPE_WATER[k].includes(choices.water) && !(choices.water === "river" && RIVER_FORMS.includes(options.river) && SHAPE_FORMS[k] && !SHAPE_FORMS[k].includes(options.river)));
+    choices.shape = asked && fits.includes(asked) ? asked : rng(seed, "quick", "city-shape-pick").pick(fits);
     return cityQuick(choices, seed, options);
   }
   if (!PICK.water.includes(choices.water)) choices.water = "river";
   delete choices.river; // (a city's)
+  delete choices.shape;
   const S = SIZES[choices.size];
   const [W, H] = S.squares;
   const r = rng(seed, "quick", "layout");
@@ -270,9 +282,15 @@ export function quickPlan(options = {}) {
   const nearCluster = (p, m) => cluster.some((poly) => distToPoly(p, poly) < m);
 
   // The center: a square where the roads meet, or a green beside them
+  // (its paving, and its roads', from a stream of its own: a town about half the time paves its main roads and its
+  // square, a village seldom; an unpaved place has a dirt, trodden or gravel square; its shape by its seed too)
+  const sr = r.fork("square");
+  const paved = choices.size === "town" ? sr.chance(0.55) : choices.size === "village" ? sr.chance(0.12) : false;
+  const paving = sr.pick(PAVINGS), bare = choices.size === "hamlet" ? "trodden" : sr.pick(UNPAVED);
   if (choices.center === "square") {
-    const surface = choices.size === "town" ? "cobble" : choices.size === "village" ? "gravel" : "trodden";
-    features.push({ id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface, radial: choices.size === "town", market: true, name: "The square" });
+    const kinds = choices.size === "hamlet" ? ["circle", "irregular"] : choices.size === "village" ? ["circle", "rect", "irregular", "triangle"] : undefined;
+    const sh = squareShape({ r: sr.fork("shape"), C, angle: (theta * Math.PI) / 180, rad: S.square, fork: choices.roads === "fork", kinds });
+    features.push({ id: "square", type: "square", shape: sh.shape, surface: paved ? paving : bare, radial: choices.size === "town" && sh.radial, market: true, name: sh.kind === "street" ? "The market street" : "The square" });
   }
   let green = null;
   if (choices.center === "green") {
@@ -523,6 +541,25 @@ export function quickPlan(options = {}) {
   }
   woods.forEach((w, n) => features.push({ id: `woods-${n + 1}`, type: "area", class: "woods", shape: outline(w.blob) }));
 
+  // Now and then an escarpment out in the country (its own stream, so the rest draws as before): a cliff in from the
+  // map's edge, wandering a little, clear of the place, its roads, its water, its mills and its farms (a wood it may
+  // run through)
+  {
+    const er = rng(seed, "quick", "escarpment");
+    if (er.chance(0.2)) for (let t = 0; t < 60; t++) {
+      const side = er.int(4), u = er.range(0.15, 0.85), len = er.range(15, 35);
+      const start = [[u * W, 0], [W, u * H], [u * W, H], [0, u * H]][side];
+      let h = [90, 180, 270, 0][side] + er.range(-50, 50);
+      const pts = [start];
+      for (let s = 3; s <= len; s += 3) { h += er.range(-14, 14); pts.push(add(pts[pts.length - 1], mul(dirOf(h), 3))); }
+      const dense = densify(pts, 0.5).slice(1);
+      if (!dense.every((p) => p[0] >= 0 && p[1] >= 0 && p[0] <= W && p[1] <= H && clearOfThings(p, 3))) continue;
+      if (roads.some((rd) => crossesCliff(rd.path, pts)) || farms.some((f) => dense.some((p) => Math.hypot(p[0] - f.c[0], p[1] - f.c[1]) < f.size + 2.5))) continue;
+      features.push({ id: "escarpment", type: "wall", class: "cliff", side: er.chance(0.5) ? "left" : "right", height: 5 * Math.round(er.range(20, 40) / 5), path: pts.map(pt) });
+      break;
+    }
+  }
+
   // The name, above the districts and off the cross road
   const top = Math.max(...cluster.flat().map((p) => -((p[0] - C[0]) * V[0] + (p[1] - C[1]) * V[1])));
   const spot = (u) => { const q = at(u, -(top + 1.3)); return [Math.max(3, Math.min(W - 3, q[0])), Math.max(1.5, Math.min(H - 1.5, q[1]))]; };
@@ -541,7 +578,8 @@ export function quickPlan(options = {}) {
     seed,
     ground: winter ? "snow" : "grass",
     features: [
-      ...roads.map((rd) => ({ id: rd.id, type: "road", class: rd.class, path: rd.path.map(pt) })),
+      // (a paved place's main and cross roads are cobbled)
+      ...roads.map((rd) => ({ id: rd.id, type: "road", class: rd.class, ...(paved && rd.class !== "lane" ? { surface: "cobble" } : {}), path: rd.path.map(pt) })),
       ...features.filter((f) => f.type === "water" || f.type === "crossing"),
       ...features.filter((f) => f.type === "square"),
       ...districts.map((d) => ({ id: d.id, type: "district", profile: d.profile, shape: d.poly })),
@@ -573,6 +611,7 @@ function cityQuick(choices, seed, options) {
     output: { pxPerSquare: made.px, scene: { name, weather: winter ? "snow" : null } },
   };
   const kept = { ...choices, seed, name };
+  kept.shape = made.shape;
   if (made.river) kept.river = made.river;
   else delete kept.river;
   return { plan, choices: kept };

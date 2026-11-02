@@ -52,6 +52,7 @@ export const TOOLS = [
   { id: "hedge", label: "Hedge", icon: "fa-leaf", geometry: "path", make: { type: "wall", class: "hedge" } },
   { id: "townwall", label: "Town wall", icon: "fa-chess-rook", geometry: "path", closes: true, base: "wall", make: { type: "wall", class: "town", straight: true } },
   { id: "palisade", label: "Palisade", icon: "fa-tents", geometry: "path", closes: true, make: { type: "wall", class: "palisade" } },
+  { id: "cliff", label: "Cliff", icon: "fa-mountain", geometry: "path", how: "cliff", make: { type: "wall", class: "cliff" } },
   { id: "bridge", label: "Bridge", icon: "fa-bridge", geometry: "point", make: { type: "crossing", class: "bridge" } },
   { id: "ford", label: "Ford", icon: "fa-person-swimming", geometry: "point", make: { type: "crossing", class: "ford" } },
   { id: "tree", label: "Tree", icon: "fa-tree", geometry: "point", make: { type: "prop", class: "tree" } },

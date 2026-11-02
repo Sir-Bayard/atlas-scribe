@@ -19,7 +19,7 @@ export function kindOf(f) {
   if (f.type === "area") return f.class ?? "area";
   if (f.type === "water") return f.class ?? "stream";
   if (f.type === "road") return f.class ?? "street";
-  if (f.type === "wall") return f.class === "hedge" || f.class === "palisade" ? f.class : `${f.class ?? "drystone"} wall`;
+  if (f.type === "wall") return f.class === "hedge" || f.class === "palisade" || f.class === "cliff" ? f.class : `${f.class ?? "drystone"} wall`;
   if (f.type === "crossing" || f.type === "prop" || f.type === "dock") return f.class ?? f.type;
   return f.type;
 }
@@ -240,6 +240,7 @@ const HOW = {
   sea: "Click each corner of the water (double-click or Enter to finish), or drag a box. Corners near the map's edge go past it, so the coast is its only shore.",
   quay: "Click points along the water's edge (double-click or Enter to finish). It's moved onto the nearest edge, and paved back from the water.",
   pier: "Click from the shore out into the water (double-click or Enter to finish).",
+  cliff: "Click points along its top edge (double-click or Enter to finish). The drop is on your left as you go; its Drop setting turns it.",
   point: "Click where it goes.",
 };
 
@@ -250,7 +251,7 @@ export function howText(tool, points) {
 
 /** The drawing palette: a button per tool, the one in use lit, with how to use it and Finish and Cancel. */
 export function paletteHTML(tool, { points = 0, working = false } = {}) {
-  const groups = [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]]];
+  const groups = [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]]];
   const by = new Map(TOOLS.map((t) => [t.id, t]));
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">

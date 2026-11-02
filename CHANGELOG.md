@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Squares, cliffs and city outlines**
+- Squares come in more pavings: cobbles, square setts, flagstones, herringbone brick, brick and stone tiles. A poorer place's square is bare ground (dirt, trodden earth or gravel): a hamlet's always, a village's mostly, a town's about half the time, and only a paved place's main roads are cobbled.
+- Quick Start squares take more shapes: a circle, a rectangle along the main road, an irregular market place, a triangle where the roads fork, or the main road widened into a long market street. A city's market square is a circle, a rectangle or an irregular place, in any of the pavings.
+- Cliffs: a new Cliff tool draws a cliff along its top edge, the drop on its left as it's drawn (its "Drop is on the" setting turns it). Its settings: its height and its rock (earthy brown stone or gray slate). It's painted from Forgotten Adventures' free cliff art (the face, the lip along its top and rubble at its foot; plain stone without the art), and an end inside the map dies away over a few squares. Houses, streets, fields and farm lanes keep off it, and `checkPlan` warns about a road that runs over one.
+- A city's outline: a new Outline choice in Quick Start (left on Any, the seed picks one that suits the water): compact, lobed and uneven, on a promontory (the sea or a lake on three sides, the wall across its neck, a harbor all around), long along its shore or river, or against a cliff (the wall ends at the cliff on each side; the city stands at its foot or on top). Water left on Any is picked to suit the outline (or is a river when you pick a River shape), and a River shape you pick wins over an outline it can't go with.
+- Now and then Quick Start puts an escarpment out in the country of a hamlet, village or town, clear of the place, its roads and its farms.
+- For plan writers: wall class `cliff` with `side` (its low side) and `rock`; square surfaces `setts`, `herringbone`, `brick` and `tiles`. Quick Start plans change: squares, roads' surfaces and city outlines.
+
 **Market places, cemeteries, mills and harbors**
 - Market stalls: a square's new Market stalls setting fills it with stalls in rows (awnings of many colors, plain and striped), lanes between and goods set out, clear of the roads through it. Quick Start turns it on for its market square, and a market quarter's square has stalls too.
 - A square's new In its middle setting: a fountain or a market cross near its middle, clear of the roads; left unset, its seed picks (a market square mostly a cross, a paved square often a fountain, a green sometimes a cross).

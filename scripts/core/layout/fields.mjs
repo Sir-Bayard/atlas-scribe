@@ -17,6 +17,7 @@
  * systems listed before it. Pure: runs anywhere.
  * Numbers are in squares.
  */
+import { cliffOf } from "../cliffs.mjs";
 import { Delaunay } from "../../../vendor/d3-delaunay.mjs";
 import { bands, difference, intersect, union, offset, shapes, area as areaOf, centroid } from "../lots/poly.mjs";
 import { shapeToPolygon, pointInPolygon, bbox, distanceToPath, pathTouchesPolygon, insidePoint, segmentNearPath, pointsAlong } from "../geom.mjs";
@@ -113,7 +114,9 @@ function keepOutParts(plan, self = undefined) {
         break;
       case "wall":
         // A town wall or palisade keeps its clear strip, and its ditch or moat, too
-        if (Array.isArray(f.path)) paths.push({ path: f.path, half: KEEP.wall + (isTownWall(f) ? Math.max(wallReach(f, plan.size.ftPerSquare), wallReachOut(f, plan.size.ftPerSquare)) : 0) });
+        // (a cliff its face and the rubble at its foot)
+        if (Array.isArray(f.path) && f.class === "cliff" && f.path.length >= 2) { const k = cliffOf(f, plan.size.ftPerSquare).keep; paths.push({ path: k.path, half: k.half + KEEP.wall }); }
+        else if (Array.isArray(f.path)) paths.push({ path: f.path, half: KEEP.wall + (isTownWall(f) ? Math.max(wallReach(f, plan.size.ftPerSquare), wallReachOut(f, plan.size.ftPerSquare)) : 0) });
         break;
       case "district":
         polys.push(...marginRound(plan, f));
@@ -219,6 +222,7 @@ export function accessLanes(plan) {
   }
   const walls = solid.filter((x) => x.poly.length >= 3).map((x) => ({ ...x, box: bbox(x.poly), ring: [...x.poly, x.poly[0]] }));
   const townWalls = plan.features.filter((f) => isTownWall(f) && Array.isArray(f.path) && f.path.length >= 2);
+  const cliffs = plan.features.filter((f) => f.type === "wall" && f.class === "cliff" && Array.isArray(f.path) && f.path.length >= 2).map((f) => cliffOf(f, sq).keep);
   const out = [];
   for (const f of plan.features) {
     const farm = f.type === "area" && f.class === "farmstead";
@@ -241,7 +245,8 @@ export function accessLanes(plan) {
     const blockers = walls.filter((x) => !own(x));
     // (nor through a town wall: only the plan's roads get gates)
     const blocked = (a, b) => blockers.some((x) => Math.max(a[0], b[0]) >= x.box[0] && Math.min(a[0], b[0]) <= x.box[2] && Math.max(a[1], b[1]) >= x.box[1] && Math.min(a[1], b[1]) <= x.box[3] && pathTouchesPolygon([a, b], x.poly))
-      || townWalls.some((w) => w.path.some((q, i) => i && crosses(a, b, w.path[i - 1], q)));
+      || townWalls.some((w) => w.path.some((q, i) => i && crosses(a, b, w.path[i - 1], q)))
+      || cliffs.some((k) => segmentNearPath(a, b, k.path, k.half)); // (nor up or down a cliff)
     // Every road point in reach, then those within the detour allowed of the nearest
     const near = roadPts.filter(({ q }) => q[0] >= x0 - LANE_REACH && q[0] <= x1 + LANE_REACH && q[1] >= y0 - LANE_REACH && q[1] <= y1 + LANE_REACH);
     // A yard whose middle is in its pond starts from the dry point in it nearest a road in reach (tried on a grid of

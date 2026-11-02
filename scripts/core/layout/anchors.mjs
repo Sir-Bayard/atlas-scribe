@@ -8,6 +8,7 @@
  * rerolling the district doesn't move it (the seed picks only its small details). Everything in squares. Pure.
  */
 import { marketStalls } from "./market.mjs";
+import { PAVINGS } from "../squares.mjs";
 import { pointInPolygon, distanceToPath, polygonsOverlap } from "../geom.mjs";
 import { centroid, area } from "../lots/poly.mjs";
 import { characterOf } from "../character.mjs";
@@ -122,7 +123,9 @@ export function layAnchor(a, r, ftPerSquare) {
   const W = a.w, H = a.h; // in squares
   const out = { block: rectAt(a.at, W, H, a.rot), radial: null, buildings: [], surfaces: [], props: [], trees: [], walls: [], hedges: [] };
   const fountain = (u, v, ft = 30) => { const [x, y] = P(u, v); out.props.push({ class: "fountain", x, y, rot: a.rot, size: ft * a.scale }); };
-  const plaza = (v0, v1, surface = "cobble", u0 = -W / 2, u1 = W / 2) => out.surfaces.push({ class: "plaza", poly: [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)], surface });
+  // (each centerpiece's square paved in its own way, from a stream of its own)
+  const paving = r.fork("paving").pick(PAVINGS);
+  const plaza = (v0, v1, surface = paving, u0 = -W / 2, u1 = W / 2) => out.surfaces.push({ class: "plaza", poly: [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)], surface });
 
   switch (a.kind) {
     case "temple": {

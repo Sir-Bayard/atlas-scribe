@@ -10,7 +10,7 @@
  */
 
 /** The types whose paths are smoothed. */
-const CURVED = new Set(["road", "water", "wall"]);
+const CURVED = new Set(["road", "water", "wall"]); // (a cliff curves as a road does: its sharp corners rounded off)
 
 /** Turns sharper than this (degrees) stay corners on a wall: a wall's corners are built, its gentle bends drift. */
 const WALL_CORNER = 50;
@@ -164,7 +164,7 @@ function nearestOn(pt, path) {
 export function smoothPlanPaths(plan, step = 1) {
   const features = Array.isArray(plan?.features) ? plan.features : [];
   const curved = (f) => CURVED.has(f?.type) && Array.isArray(f.path) && f.path.length >= 3 && f.straight !== true;
-  const smoothed = new Map(features.filter(curved).map((f) => [f, f.type === "wall" ? smoothPath(f.path, step, WALL_CORNER) : smoothPath(f.path, step, ROAD_CORNER, ROUND)]));
+  const smoothed = new Map(features.filter(curved).map((f) => [f, f.type === "wall" && f.class !== "cliff" ? smoothPath(f.path, step, WALL_CORNER) : smoothPath(f.path, step, ROAD_CORNER, ROUND)]));
   if (!smoothed.size) return plan;
   const pathOf = (f) => smoothed.get(f) ?? f.path;
   const out = features.map((f) => {

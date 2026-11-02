@@ -27,7 +27,7 @@ export const FIELD_TEXT = {
   "*.class": { label: "Kind" },
 
   "road.width": { label: "Width", help: "How wide it is, in feet" },
-  "road.surface": { label: "Surface" },
+  "road.surface": { label: "Surface", names: { dirt: "dirt", slush: "slush", snow: "snow", trodden: "trodden earth", cobble: "cobbles", gravel: "gravel", grass: "grass", mud: "mud", flagstone: "flagstones", setts: "square setts", herringbone: "herringbone brick", brick: "brick", tiles: "stone tiles" } },
   "road.ruts": { label: "Cart ruts", help: "Two worn ruts along the middle" },
   "road.straight": { label: "Straight", help: "Straight lines between its points instead of a smooth curve through them" },
 
@@ -46,7 +46,7 @@ export const FIELD_TEXT = {
   "crossing.width": { label: "Width", help: "In feet; a bridge is made at least as wide as its road" },
   "crossing.frozen": { label: "Frozen" },
 
-  "square.surface": { label: "Paving" },
+  "square.surface": { label: "Paving", names: { dirt: "dirt", slush: "slush", snow: "snow", trodden: "trodden earth", cobble: "cobbles", gravel: "gravel", grass: "grass", mud: "mud", flagstone: "flagstones", setts: "square setts", herringbone: "herringbone brick", brick: "brick", tiles: "stone tiles" } },
   "square.radial": { label: "Streets ring it", help: "The district's streets circle the square and run out from it" },
   "square.market": { label: "Market stalls", help: "Stalls in rows across the square, with lanes between, clear of what stands in its middle" },
   "square.middle": { label: "In its middle", help: "A fountain or a market cross near its middle, clear of the roads through it", names: { fountain: "a fountain", cross: "a market cross", none: "nothing" }, auto: "picked from its seed" },
@@ -103,7 +103,8 @@ export const FIELD_TEXT = {
   "wall.towerSpacing": { label: "Tower spacing", help: "About how far apart its towers stand along a straight run, in feet; there's one at every corner too", more: true },
   "wall.outside": { label: "Outside", names: { none: "nothing", ditch: "a dry ditch", moat: "a moat" }, help: "What runs along its outside" },
   "wall.ditchWidth": { label: "Ditch width", help: "How wide its ditch or moat is, in feet" },
-  "wall.side": { label: "Outside is on the", names: { left: "left", right: "right" }, help: "For a wall that isn't a closed loop: which side is outside, going along it from its first point (a closed loop's outside is outward)", more: true },
+  "wall.side": { label: "Outside is on the", names: { left: "left", right: "right" }, help: "For a wall that isn't a closed loop: which side is outside, going along it from its first point (a closed loop's outside is outward)", more: true, byClass: { cliff: { label: "Drop is on the", help: "Which side of its line the low ground lies, going along it from its first point: its line is the top edge", more: false } } },
+  "wall.rock": { label: "Rock", names: { earthy: "earthy brown stone", slate: "gray slate" }, auto: "picked from its seed" },
 
   "prop.rot": { label: "Turned", help: "Degrees clockwise", notFor: ["tree"] }, // a tree is turned at random
   "prop.species": { label: "Tree", kind: "enum", values: ["conifer", "bare"], names: { conifer: "fir", bare: "leafy" }, auto: "leafy" },
@@ -168,7 +169,7 @@ export function fieldsOf(plan, id) {
   const shaped = f.type === "water" && !Array.isArray(f.path);
   for (const [name, spec] of Object.entries(t.fields)) {
     if (spec.only && !spec.only.includes(cls)) continue;
-    const txt = textOf(f.type, name);
+    const base = textOf(f.type, name), txt = base.byClass?.[cls] ? { ...base, ...base.byClass[cls] } : base; // (a class's own words, a cliff's side, say)
     if (txt.hidden || txt.notFor?.includes(cls)) continue;
     if (shaped && (name === "width" || name === "straight")) continue;
     const kind = txt.kind ?? (spec.kind === "enum" ? "enum" : spec.kind);

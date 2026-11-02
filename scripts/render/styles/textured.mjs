@@ -9,6 +9,7 @@
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
 import { roofFacets } from "../roofs.mjs";
+import { offsetLine as shiftLine } from "../../core/cliffs.mjs";
 export { roofFacets };
 
 /** Roof materials whose winter art already has snow on it; every other roof gets the snow overlay in winter. */
@@ -26,6 +27,12 @@ function offsetLine(face, center, d) {
     return [p[0] + (dx / l) * d, p[1] + (dy / l) * d];
   });
 }
+
+/** Forgotten Adventures' cliff paths: where each face's rock starts and ends down its image (0 to 1), where each
+ * lip's lumps end, and where the rubble starts down the art for under a cliff. */
+const CLIFF_FACE_ROWS = [[0.04, 1.0], [0.18, 0.97]];
+const CLIFF_TOP_ROWS = [0.52, 0.62, 0.65, 0.62];
+const CLIFF_FOOT_ROW = 0.33;
 
 /**
  * How heavy the drawn lines are: a road's dark middle line (its ruts when it has them), its worn middle, its trodden
@@ -84,6 +91,7 @@ export function rolesFor(layout) {
       if (i.class === "town") roles.add(`wall.walk.${s}`);
     }
     if (i.kind === "ditch") roles.add(`surface.dirt.${s}`);
+    if (i.kind === "cliff") { const k = i.rock === "slate" ? ".slate" : ""; roles.add(`cliff.face${k}`).add(`cliff.top${k}`).add(`cliff.foot${k}`); }
     if (i.kind === "building") {
       roles.add(`roof.${i.roof}.${s}`);
       if (hasFlat(i)) roles.add(flatRole(i, s));
@@ -470,6 +478,61 @@ export function paint(ctx) {
     g.strokeStyle = winter ? "rgba(236,240,244,0.7)" : "rgba(120,160,80,0.6)"; g.lineWidth = Math.max(1, 0.06 * pp);
     for (const b of clipped) { path(g, b.path); g.stroke(); }
     g.restore();
+  }
+
+  // Cliffs: rubble at the foot, the face from the top edge down to its toe, the lip along the top, a shadow below
+  for (const c of items("cliff")) {
+    const box = boxOf([c.path, c.toe], c.w * 1.6 + 0.5);
+    if (box[2] < x0 || box[0] > wx1 || box[3] < y0 || box[1] > wy1) continue;
+    const k = c.rock === "slate" ? ".slate" : "";
+    // Shadow the face throws on the low ground
+    soft((q) => strokeLine(q, shiftLine(c.path, (c.taper ?? c.path.map(() => 1)).map((t) => c.sign * (c.w * t + 0.15))), 0.6), "rgb(40,44,56)", 0.25, winter ? 0.25 : 0.4, "multiply", box);
+    // A strip of art along the line: its top edge at `from` squares out from the line toward the low side, its
+    // pixels kpx canvas pixels each, running on along the line from one stretch to the next
+    const T = c.taper ?? c.path.map(() => 1); // (each point's share of the full height: its ends die away)
+    const strip = (im, from, kpx, tall) => {
+      const a0 = shiftLine(c.path, T.map((t) => c.sign * from * t)), a1 = shiftLine(c.path, T.map((t) => c.sign * (from + tall) * t));
+      const pat = g.createPattern(im, "repeat-x");
+      let run = 0;
+      for (let i = 1; i < c.path.length; i++) {
+        const a = c.path[i - 1], b = c.path[i], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy);
+        if (!l) continue;
+        // (each piece reaching a pixel into the next, so no seam shows between them: the art runs on across both)
+        const e = 1.2 / pp, ux = dx / l, uy = dy / l, ex = ux * e, ey = uy * e;
+        const q = [[a0[i - 1][0] - ex, a0[i - 1][1] - ey], [a0[i][0] + ex, a0[i][1] + ey], [a1[i][0] + ex, a1[i][1] + ey], [a1[i - 1][0] - ex, a1[i - 1][1] - ey]];
+        const s0 = run;
+        run += l;
+        // (only the pieces in this tile)
+        if (q.every(([x]) => x < x0) || q.every(([x]) => x > wx1) || q.every(([, y]) => y < y0) || q.every(([, y]) => y > wy1)) continue;
+        const t = (T[i - 1] + T[i]) / 2; // (the art squeezed across where the cliff is lower)
+        const nx = c.sign * uy, ny = -c.sign * ux; // (toward its low side)
+        const ox = X(a[0]) + nx * from * t * pp - ux * s0 * pp, oy = Y(a[1]) + ny * from * t * pp - uy * s0 * pp;
+        pat.setTransform(new DOMMatrix([ux * kpx, uy * kpx, nx * kpx * t, ny * kpx * t, ox, oy]));
+        g.fillStyle = pat;
+        poly(g, q);
+        g.fill();
+      }
+    };
+    // The art's rows: where each face's rock starts and ends (its height in image rows, 0 to 1), where each lip's
+    // lumps end, and where the rubble starts under the cliff: so the rock runs from the line to the toe whichever it is
+    const fv = (c.variant ?? 0) % CLIFF_FACE_ROWS.length, [r0, r1] = CLIFF_FACE_ROWS[fv];
+    const face = art(`cliff.face${k}`, fv), foot = art(`cliff.foot${k}`, 0), top = art(`cliff.top${k}`, c.top ?? 0);
+    const tall = c.w / (r1 - r0); // (squares a face image's height spans)
+    const kpx = face ? (tall * pp) / face.height : 0;
+    if (foot && face) { const t = (foot.height * kpx) / pp; strip(foot, c.w * 0.92 - CLIFF_FOOT_ROW * t, kpx, t); }
+    if (face) strip(face, -r0 * tall, kpx, tall);
+    else {
+      // No art: the face in plain stone, darker toward its foot, with strokes down it
+      const band = (q) => { poly(q, [...c.path, ...[...c.toe].reverse()]); q.fill(); };
+      soft(band, fallbackColor(`cliff.face${k}`), 0.01, 1, "source-over", box);
+      soft((q) => { poly(q, [...shiftLine(c.path, T.map((t) => c.sign * c.w * 0.5 * t)), ...[...c.toe].reverse()]); q.fill(); }, "rgb(70,64,58)", 0.1, 0.4, "multiply", box);
+      g.save(); g.strokeStyle = "rgba(50,46,42,0.5)"; g.lineWidth = Math.max(1, 0.03 * pp);
+      for (let i = 0; i < c.path.length; i++) if (i % 2 === 0) { g.beginPath(); g.moveTo(X(c.path[i][0]), Y(c.path[i][1])); g.lineTo(X(c.toe[i][0]), Y(c.toe[i][1])); g.stroke(); }
+      g.restore();
+    }
+    if (top && face) { const t = (top.height * kpx) / pp, e = CLIFF_TOP_ROWS[(c.top ?? 0) % CLIFF_TOP_ROWS.length]; strip(top, c.w * 0.1 - e * t, kpx, t); }
+    else soft((q) => strokeLine(q, c.path, 0.08), "rgb(60,54,48)", 0.02, 0.7, "source-over", box);
+    if (winter) soft((q) => strokeLine(q, shiftLine(c.path, -c.sign * 0.05), 0.2), "rgb(236,239,243)", 0.06, 0.7, "source-over", box);
   }
 
   // Walls and hedges

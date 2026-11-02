@@ -1410,7 +1410,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
     const content = `<div class="atlas-scribe as-quick">
         <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Leave empty for a made-up name"></div>
-        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}${QUICK.river ? select("river", "River (a city)") : ""}
+        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}${QUICK.river ? select("river", "River (a city)") : ""}${QUICK.shape ? select("shape", "Outline (a city)") : ""}
         <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
         <p class="hint">Everything it makes can be changed afterwards.</p>
       </div>`;

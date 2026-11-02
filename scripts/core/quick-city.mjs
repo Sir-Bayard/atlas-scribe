@@ -11,6 +11,8 @@ import { intersect, difference, union, offset, area, centroid, bands } from "./l
 import { pathTouchesPolygon, polygonCrossesItself, polygonsOverlap } from "./geom.mjs";
 import { meander, bends } from "./meander.mjs";
 import { watermill, windmill } from "./mills.mjs";
+import { PAVINGS, squareShape } from "./squares.mjs";
+import { cliffOf, cliffWidth, offsetLine } from "./cliffs.mjs";
 
 /**
  * Per size: the map in squares, the wall's mean radius, the wards wanted, pixels a square (so the image stays under
@@ -29,6 +31,25 @@ export const CITY_WATER = ["river", "coast", "lake", "estuary", "none"];
  * rivers meeting in it.
  */
 export const RIVER_FORMS = ["meander", "island", "loop", "meeting"];
+
+/**
+ * The outlines a city can take: compact (roughly round), lobed (swelling and narrowing in lobes), on a promontory
+ * (the sea or a lake on three sides, the wall across its neck), along a shore or a river (long and narrow, lying
+ * along it), or against a cliff (its wall ending at the cliff, the city at its foot or on top of it).
+ */
+export const CITY_SHAPES = ["compact", "lobed", "promontory", "shore", "cliff"];
+
+/** The river forms a long city's river or one by a cliff can take (the others take any). */
+export const SHAPE_FORMS = { shore: ["meander", "island", "meeting"], cliff: ["meander", "meeting"] };
+
+/** The water each outline goes with. */
+export const SHAPE_WATER = {
+  compact: CITY_WATER,
+  lobed: CITY_WATER,
+  promontory: ["coast", "lake"],
+  shore: ["river", "coast", "lake", "estuary"],
+  cliff: ["none", "river", "coast", "lake"],
+};
 
 const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
 const mul = (a, k) => [a[0] * k, a[1] * k];
@@ -149,31 +170,64 @@ export function cityPlan(choices, seed) {
   const winter = choices.season === "winter";
   const water = CITY_WATER.includes(choices.water) ? choices.water : "river";
   const features = [];
-  const C = [W / 2 + r.range(-0.05, 0.05) * W, H / 2 + r.range(-0.05, 0.05) * H];
+  const C0 = [W / 2 + r.range(-0.05, 0.05) * W, H / 2 + r.range(-0.05, 0.05) * H];
   const R = S.R;
+  // Its outline (one that doesn't go with its water is lobed), from a stream of its own, so a compact city draws as
+  // it always has
+  const shape = CITY_SHAPES.includes(choices.shape) && SHAPE_WATER[choices.shape].includes(water) ? choices.shape : choices.shape ? "lobed" : "compact";
+  const sp = rng(seed, "quick", "city-shape");
 
   // Which way the sea or the lake lies, and the river's line
-  const seaward = r.next() * TAU;
-  const riverAngle = water === "estuary" ? seaward + r.range(-0.4, 0.4) : r.next() * Math.PI;
+  let seaward = r.next() * TAU;
+  let riverAngle = water === "estuary" ? seaward + r.range(-0.4, 0.4) : r.next() * Math.PI;
+  // (a long city lies along the map's long side, and its shore or river with it)
+  if (shape === "shore") {
+    if (water === "river") riverAngle = sp.range(-0.3, 0.3);
+    else {
+      seaward = (sp.chance(0.5) ? 1 : -1) * (Math.PI / 2) + sp.range(-0.3, 0.3);
+      if (water === "estuary") riverAngle = seaward + sp.range(-0.3, 0.3);
+    }
+  }
+  // (a city on a promontory sits a little out to sea from the map's middle, so there's room for the country behind)
+  const C = shape === "promontory" ? add(C0, mul(dirOf(seaward), R * 0.25)) : C0;
 
   // The wall: a ring of straight runs between corners, its radius swelling and narrowing slowly around the city
   const a2 = r.range(0.04, 0.1), p2 = r.next() * TAU, a3 = r.range(0.03, 0.07), p3 = r.next() * TAU, stretch = r.range(1, 1.18), tilt = r.next() * Math.PI;
+  // A lobed city swells and narrows more, in more lobes; a long one is an ellipse along its shore or river
+  const lobes = shape === "lobed" ? [[sp.range(0.1, 0.18), 2], [sp.range(0.08, 0.14), 3], [sp.range(0.05, 0.1), 4], [sp.range(0.03, 0.06), 5]].map(([amp, n]) => [amp, n, sp.next() * TAU]) : [];
+  const longWay = water === "river" ? riverAngle : seaward + Math.PI / 2;
+  const longR = Math.min(R * sp.range(1.4, 1.6), toEdge(C, dirOf(longWay), W, H) - 16, toEdge(C, dirOf(longWay + Math.PI), W, H) - 16), shortR = R * sp.range(0.68, 0.76);
   const radiusAt = (a) => {
+    if (shape === "shore") return (1 / Math.hypot(Math.cos(a - longWay) / longR, Math.sin(a - longWay) / shortR)) * (1 + a3 * 0.5 * Math.sin(3 * a + p3));
     const along = Math.cos(a - tilt) ** 2 * stretch + Math.sin(a - tilt) ** 2; // a little longer one way
-    return R * along * (1 + a2 * Math.sin(2 * a + p2) + a3 * Math.sin(3 * a + p3));
+    let k = 1 + a2 * Math.sin(2 * a + p2) + a3 * Math.sin(3 * a + p3);
+    for (const [amp, n, ph] of lobes) k += amp * Math.sin(n * a + ph);
+    return R * along * Math.max(0.55, k);
   };
-  const corners = choices.size === "metropolis" ? 22 + r.int(6) : 14 + r.int(5);
-  const wallPoly = Array.from({ length: corners }, (_, k) => {
+  const corners = (choices.size === "metropolis" ? 22 + r.int(6) : 14 + r.int(5)) + (shape === "lobed" || shape === "shore" ? 6 + sp.int(4) : 0);
+  let wallPoly = Array.from({ length: corners }, (_, k) => {
     const a = (k + r.range(-0.3, 0.3)) * (TAU / corners);
     return pt(add(C, mul(dirOf(a), radiusAt(a) * r.range(0.97, 1.03))));
   });
+
+  // A promontory: the land around the city's middle, smaller than its wall (so the wall stands in the water but where
+  // it crosses the neck), and a neck of land back to the shore
+  const headland = shape === "promontory" ? (() => {
+    const U = dirOf(seaward), V = [-U[1], U[0]], f = sp.range(0.8, 0.86), nw = R * sp.range(0.3, 0.42);
+    const blob = Array.from({ length: 36 }, (_, k) => { const a = (k / 36) * TAU; return add(C, mul(dirOf(a), radiusAt(a) * f * sp.range(0.97, 1.03))); });
+    const neck = [];
+    for (let s = 0; s <= R * 3; s += 4) neck.push(add(add(C, mul(U, -s)), mul(V, nw * (1 + 0.6 * (s / (R * 3)) ** 2) * sp.range(0.92, 1.08))));
+    for (let s = R * 3; s >= 0; s -= 4) neck.push(add(add(C, mul(U, -s)), mul(V, -nw * (1 + 0.6 * (s / (R * 3)) ** 2) * sp.range(0.92, 1.08))));
+    return union([blob, neck]);
+  })() : null;
 
   // Water as polygons (to keep the wards off it) and as plan features
   const wet = []; // polygons nothing is built in
   let river = null, sea = null, lake = null;
   if (water === "coast" || water === "estuary") {
     // A coast across the map, square to the seaward direction, cutting the city a good way out from the center
-    const d = R * r.range(0.5, 0.72), U = dirOf(seaward), V = [-U[1], U[0]];
+    // (behind the middle, for a promontory: the sea all around it but its neck)
+    const d0 = R * r.range(0.5, 0.72), d = headland ? -R * sp.range(0.95, 1.1) : d0, U = dirOf(seaward), V = [-U[1], U[0]];
     const mid = add(C, mul(U, d));
     const span = Math.hypot(W, H);
     const line = [];
@@ -182,23 +236,28 @@ export function cityPlan(choices, seed) {
     const far = line.map((p) => add(p, mul(U, span))).reverse();
     const clip = intersect([[...line, ...far]], [[[0, 0], [W, 0], [W, H], [0, H]]]);
     const big = clip.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-    if (big) {
-      sea = outline(big);
+    const open = big && headland ? biggest(difference([big], headland)) : big;
+    if (open) {
+      sea = outline(open);
       wet.push(grown(sea, 0.5)); // (the layout curves and roughens a body's shore by up to half a square)
       features.push({ id: "sea", type: "water", class: "sea", shape: sea });
     }
   }
   if (water === "lake") {
     const U = dirOf(seaward);
-    const ra = R * r.range(0.6, 0.8), rb = ra * r.range(0.6, 0.85), spin = seaward + r.range(-0.6, 0.6);
-    const lc = add(C, mul(U, R * r.range(0.95, 1.15) + rb * 0.3));
-    const n = 18, shape = [];
+    let ra = R * r.range(0.6, 0.8), rb = ra * r.range(0.6, 0.85), spin = seaward + r.range(-0.6, 0.6);
+    let lc = add(C, mul(U, R * r.range(0.95, 1.15) + rb * 0.3));
+    // (a promontory's lake wraps around it: wide across, its middle just out from the city's)
+    if (headland) { ra = R * sp.range(1.25, 1.35); rb = R * sp.range(0.98, 1.08); spin = seaward + Math.PI / 2; lc = add(C, mul(U, R * 0.1)); }
+    // (a long city's lake lies along it, its near shore well into the city's side)
+    else if (shape === "shore") { ra = longR * sp.range(1.0, 1.15); rb = R * sp.range(0.4, 0.5); spin = longWay; lc = add(C, mul(U, shortR * sp.range(0.55, 0.75) + rb)); }
+    const n = headland ? 30 : 18, ring = [];
     for (let k = 0; k < n; k++) {
       const t = (k / n) * TAU, rr = r.range(0.9, 1.08);
       const p = [Math.cos(t) * ra * rr, Math.sin(t) * rb * rr];
-      shape.push(add(lc, [p[0] * Math.cos(spin) - p[1] * Math.sin(spin), p[0] * Math.sin(spin) + p[1] * Math.cos(spin)]));
+      ring.push(add(lc, [p[0] * Math.cos(spin) - p[1] * Math.sin(spin), p[0] * Math.sin(spin) + p[1] * Math.cos(spin)]));
     }
-    const clip = intersect([shape], [[[2, 2], [W - 2, 2], [W - 2, H - 2], [2, H - 2]]]);
+    const clip = intersect(headland ? difference([ring], headland) : [ring], [[[2, 2], [W - 2, 2], [W - 2, H - 2], [2, H - 2]]]);
     const big = clip.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
     if (big) {
       lake = outline(big);
@@ -210,10 +269,10 @@ export function cityPlan(choices, seed) {
   // same"), the choice's or picked by the seed. A river meeting the sea takes a form that can reach it
   let rivers = [], island = null, form = null;
   if (water === "river" || water === "estuary") {
-    const forms = water === "estuary" ? ["meander", "island", "meeting"] : RIVER_FORMS;
+    const forms = water === "estuary" ? ["meander", "island", "meeting"] : SHAPE_FORMS[shape] ?? RIVER_FORMS;
     // (a loop can't reach the sea: it bends through instead)
     form = choices.river === "loop" && water === "estuary" ? "meander" : forms.includes(choices.river) ? choices.river : forms[rng(seed, "quick", "river-form").int(forms.length)];
-    const made = riverForm({ form, water, r: rng(seed, "quick", "river"), C, R, W, H, S, radiusAt, riverAngle, sea });
+    const made = riverForm({ form, water, r: rng(seed, "quick", "river"), C, R, W, H, S, radiusAt, riverAngle, sea, bendSize: shape === "shore" || shape === "cliff" ? R * 0.6 : R });
     rivers = made.rivers.map((rv) => ({ ...rv, path: rv.path.map(pt) }));
     island = made.island;
     form = made.form;
@@ -237,6 +296,41 @@ export function cityPlan(choices, seed) {
       wet.push(Array.from({ length: 16 }, (_, k) => add(e, mul(dirOf((k / 16) * TAU), rad))));
     }
   }
+  // A cliff across the map behind the city, clear of the water; the wall ends at it and nothing is built on it
+  let cliff = null, cutLine = null, cliffAway = null, cliffKeep = null; // (cliffAway: the way from the city across the cliff)
+  if (shape === "cliff") {
+    let sides = [sp.next() * TAU];
+    if (sea || lake) sides = [seaward + Math.PI];
+    else if (river) {
+      // (on the other side of the middle from the river)
+      const n = dirOf(riverAngle + Math.PI / 2), near = densify(river.path, 1).filter((p) => Math.hypot(p[0] - C[0], p[1] - C[1]) < R * 1.2);
+      const lean = near.reduce((s, p) => s + (p[0] - C[0]) * n[0] + (p[1] - C[1]) * n[1], 0);
+      sides = lean > 0 ? [riverAngle - Math.PI / 2, riverAngle + Math.PI / 2] : [riverAngle + Math.PI / 2, riverAngle - Math.PI / 2];
+    }
+    const foot = sp.chance(0.55), height = 5 * Math.round(sp.range(40, 70) / 5), rock = sp.chance(0.6) ? "earthy" : "slate";
+    found: for (const B of sides) for (const dc of [0.55, 0.62, 0.7, 0.8]) {
+      const U = dirOf(B), V = [-U[1], U[0]], mid = add(C, mul(U, radiusAt(B) * dc)), span = Math.hypot(W, H), line = [];
+      let off = 0;
+      for (let s = -span; s <= span; s += 5) { off = Math.max(-2.5, Math.min(2.5, off + sp.range(-1.2, 1.2))); line.push(add(add(mid, mul(V, s)), mul(U, off))); }
+      const run = onMapRuns(line, W, H).sort((a, b) => along(b).at(-1) - along(a).at(-1))[0];
+      if (!run) continue;
+      const pts = densify(run, 1);
+      if (rivers.some((rv) => pathsCross(run, rv.path) || pts.some((p) => distToPath(p, rv.path) < widestOf(rv) / 25 / 2 + 3))) continue;
+      if ([sea, lake].some((q) => q && pts.some((p) => inside(p, q)))) continue;
+      // (its line runs with the middle on its right: the city at its foot is on its low side, on top on its high side)
+      cliff = { id: "cliff", type: "wall", class: "cliff", side: foot ? "right" : "left", height, rock, path: simplify(run, 0.15).map(pt) };
+      // The city stops at its toe (at its foot) or just back from its top edge, with room for the tower at the wall's end
+      cutLine = offsetLine(run, -((foot ? cliffWidth(height, 25) : 0) + 1.4));
+      const beyond = [...cutLine, ...[...cutLine].reverse().map((p) => add(p, mul(U, span)))];
+      const kept = biggest(difference([wallPoly], [beyond]));
+      if (!kept || area(kept) < area(wallPoly) * 0.5) { cliff = null; continue; }
+      wallPoly = outline(kept);
+      cliffAway = U;
+      cliffKeep = cliffOf(cliff, 25, [W, H]).keep;
+      wet.push(...bands([{ path: cliffKeep.path, half: cliffKeep.half + 0.5 }]));
+      break found;
+    }
+  }
   const inWater = (p) => wet.some((q) => inside(p, q));
 
   // Gates: spread around the land side of the wall, none toward the sea or the lake. Each main road runs from the
@@ -244,7 +338,7 @@ export function cityPlan(choices, seed) {
   // when it stays out of the sea and the lake and crosses the river squarely enough (at 40 degrees or more). Gates
   // stand at least a share of an even spacing apart, the share eased when the land side is narrow
   const gateCount = S.gates[choices.roads] ?? S.gates.through;
-  const blocked = (a) => (sea || lake ? apart(a, seaward) < 1.15 : false);
+  const blocked = (a) => (headland ? apart(a, seaward + Math.PI) > 0.6 : sea || lake ? apart(a, seaward) < 1.15 : false);
   const roadAt = (a) => {
     const U = dirOf(a), V = [-U[1], U[0]];
     const wallAt = radiusAt(a);
@@ -281,6 +375,9 @@ export function cityPlan(choices, seed) {
       const path = roadAt(a);
       if ((sea || lake) && densify(path, 0.5).some((p) => inside(p, sea ?? lake))) continue;
       if (!crossesWell(path)) continue;
+      // (none up or down the cliff, and none at the wall's end by it)
+      // (none up or down the cliff or along its face, and none at the wall's end by it)
+      if (cliff && (densify(path, 0.5).some((p) => distToPath(p, cliffKeep.path) < cliffKeep.half + 0.9) || distToPath(add(C, mul(dirOf(a), radiusAt(a))), cutLine) < 5)) continue;
       // (its gate clear of where a river passes the wall, where the wall stops at a tower each side)
       const gateAt = add(C, mul(dirOf(a), radiusAt(a)));
       if (rivers.some((rv) => distToPath(gateAt, rv.path) < widestOf(rv) / 25 / 2 + 3.5)) continue;
@@ -303,18 +400,25 @@ export function cityPlan(choices, seed) {
   let land = ringPoly ? difference([ringPoly], wet) : [];
   // A metropolis keeps its old wall: a smaller ring around the old town, the wards cut by its line (half its reach in
   // from it inside, half out from it outside), the main roads passing through it at its own gates
-  let oldWall = null, oldPoly = null;
+  let oldWall = null, oldPoly = null, oldCut = null;
   if (choices.size === "metropolis") {
     const n = 10 + r.int(4), f = r.range(0.48, 0.56);
     oldPoly = Array.from({ length: n }, (_, k) => {
       const a = (k + r.range(-0.3, 0.3)) * (TAU / n);
       return pt(add(C, mul(dirOf(a), radiusAt(a) * f * r.range(0.95, 1.05))));
     });
+    if (cutLine) {
+      // (stopping short of the cliff too)
+      const pulled = offsetLine(cutLine, -4.5), beyond = [...pulled, ...[...pulled].reverse().map((p) => add(p, mul(cliffAway, Math.hypot(W, H))))];
+      const kept = biggest(difference([oldPoly], [beyond]));
+      if (kept) { oldPoly = outline(kept); oldCut = pulled; }
+    }
     const reach = (12 / 2 + 15) / 25 + 0.15;
     const innerLand = intersect(land, offset([oldPoly], -reach));
     const outerLand = difference(land, offset([oldPoly], reach));
     land = [...innerLand, ...outerLand];
-    oldWall = { id: "old-wall", type: "wall", class: "town", path: [...oldPoly, oldPoly[0]], straight: true, outside: "none", towers: "roofed" };
+    const oldRun = oldCut ? openRun(oldPoly, oldCut) : null;
+    oldWall = { id: "old-wall", type: "wall", class: "town", path: oldRun ? oldRun.path : [...oldPoly, oldPoly[0]], ...(oldRun ? { side: oldRun.side } : {}), straight: true, outside: "none", towers: "roofed" };
   }
   const landArea = land.reduce((s, p) => s + area(p), 0);
 
@@ -364,9 +468,13 @@ export function cityPlan(choices, seed) {
 
   // The central square, where the main roads meet
   // (a green: the main roads meet on a grass square)
+  // (its paving and shape from a stream of its own: a circle, a rectangle or an irregular market place)
+  const sr = rng(seed, "quick", "city-square");
+  const spin = sr.next() * Math.PI, main = roads.find((rd) => rd.angle !== undefined); // (a rectangle lies along a main road)
+  const sh = squareShape({ r: sr.fork("shape"), C, angle: main ? main.angle : spin, rad: S.square, kinds: ["circle", "rect", "irregular"] });
   const square = choices.center === "green"
     ? { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "grass", name: "The green" }
-    : { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "cobble", market: true, name: "The market square" };
+    : { id: "square", type: "square", shape: sh.shape, surface: sr.pick(PAVINGS), market: true, name: "The market square" };
   if (choices.center !== "none") features.push(square);
 
   // Districts: the wards, dense throughout, numbered around from the north
@@ -399,7 +507,6 @@ export function cityPlan(choices, seed) {
   })).filter((d) => d.shape.length >= 3);
   // Last repairs: an outline that crosses itself is untangled (its biggest piece kept), and where two wards still
   // overlap (a road meeting a river's bank at a shallow angle can leave a sliver both claim) the smaller gives way
-  const biggest = (ps) => ps.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
   const inset = (poly) => offset([poly], -0.03);
   for (const d of districts) if (polygonCrossesItself(d.shape)) { const u = biggest(union([d.shape])); if (u) d.shape = tidyRing(outline(u)); }
   for (let i = 0; i < districts.length; i++) for (let j = i + 1; j < districts.length; j++) {
@@ -407,7 +514,7 @@ export function cityPlan(choices, seed) {
     const shared = intersect(inset(a.shape), inset(b.shape)).reduce((n, p) => n + area(p), 0);
     if (shared <= 0.02) continue;
     const [small, big] = area(a.shape) < area(b.shape) ? [a, b] : [b, a];
-    const left = biggest(difference([small.shape], [big.shape]));
+    const left = biggest(difference([small.shape], offset([big.shape], 0.06) ?? [big.shape])); // (a little past its edge, so rounding the corners to a tenth can't bring them back over)
     small.shape = left ? tidyRing(outline(left)) : [];
   }
   for (let k = districts.length - 1; k >= 0; k--) if (districts[k].shape.length < 3 || area(districts[k].shape) < 4 || polygonCrossesItself(districts[k].shape)) districts.splice(k, 1);
@@ -425,7 +532,9 @@ export function cityPlan(choices, seed) {
   const citadel = assignCharacters({ districts, C, R, S, size: choices.size, sea, lake, rivers, island, ringPoly, oldPoly, gateRoads: roads.filter((rd) => rd.angle !== undefined), allRoads: roads.map((rd) => rd.path), r: rng(seed, "quick", "city-wards") });
 
   // The town wall, closed, straight between its corners; a moat where it's by a river, else a ditch or none
-  const wall = { id: "town-wall", type: "wall", class: "town", path: [...wallPoly, wallPoly[0]], straight: true, outside: form === "loop" ? "none" : river ? (r.chance(0.6) ? "moat" : "ditch") : r.pick(["none", "ditch", "ditch", "moat"]) };
+  // (against a cliff: open, from the cliff around to the cliff)
+  const wallRun = cutLine ? openRun(wallPoly, cutLine) : null;
+  const wall = { id: "town-wall", type: "wall", class: "town", path: wallRun ? wallRun.path : [...wallPoly, wallPoly[0]], ...(wallRun ? { side: wallRun.side } : {}), straight: true, outside: form === "loop" ? "none" : river ? (r.chance(0.6) ? "moat" : "ditch") : r.pick(["none", "ditch", "ditch", "moat"]) };
 
   // Bridges wherever a road crosses the river
   const crossingsOut = [];
@@ -490,8 +599,9 @@ export function cityPlan(choices, seed) {
   const label = { at: pt([Math.max(6, Math.min(W - 6, C[0])), Math.max(1.5, top - 3)]) };
 
   return {
-    W, H, px: S.px, center: C, wallPoly, ringPoly, river: form,
+    W, H, px: S.px, center: C, wallPoly, ringPoly, river: form, shape: cliff || shape !== "cliff" ? shape : "compact",
     features: [
+      ...(cliff ? [cliff] : []),
       ...roads.map(({ angle, ...rd }) => rd),
       ...features.filter((f) => f.type === "water"),
       ...crossingsOut,
@@ -905,7 +1015,7 @@ function onMapRuns(path, W, H) {
  * sea runs from inland to a square and a half past the coast, widening as it goes. Returns { rivers (plan water
  * features, the main river first), island (the polygon between two arms, or null), form (the one made) }.
  */
-function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea }) {
+function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea, bendSize = R }) {
   const width = Math.round(r.range(55, 80)), half = width / 25 / 2;
   const estuary = water === "estuary" && !!sea;
   const endWidth = estuary ? Math.round(width * r.range(1.8, 2.6)) : null;
@@ -922,7 +1032,7 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea })
   const line = (through) => {
     let best = null, bestClear = -Infinity;
     for (let t = 0; t < 12; t++) {
-      const b = bends(r, R, { gentle: through });
+      const b = bends(r, through ? R : bendSize, { gentle: through }); // (shorter bends along a long city or by a cliff, so it keeps to its course)
       if (through) { b.swing2 *= 0.35; b.wave2 *= 1.5; }
       const off = through ? R * r.range(-0.06, 0.06) : (r.chance(0.5) ? 1 : -1) * R * r.range(0.15, 0.32);
       const path = toSea(meander(add(C, mul(V, off)), riverAngle, W, H, b));
@@ -1035,6 +1145,24 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea })
     return meanderOnly();
   }
   return meanderOnly();
+}
+
+/** The biggest of some polygons, or null. */
+const biggest = (ps) => (ps ?? []).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
+
+/**
+ * A closed outline cut off along a line, as an open run: from where it leaves the line around to where it comes
+ * back. Returns { path, side (its outside, for a wall: away from the inside) } or null when it never touches the line.
+ */
+function openRun(poly, line) {
+  const n = poly.length, on = poly.map((p) => distToPath(p, line) < 0.15);
+  const start = on.findIndex((v, i) => v && !on[(i + 1) % n]);
+  if (start < 0) return null;
+  const path = [poly[start]];
+  for (let k = 1; k <= n; k++) { const i = (start + k) % n; path.push(poly[i]); if (on[i]) break; }
+  // The inside is on its left when a point just left of its first stretch's middle lies inside
+  const [a, b] = path, l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, m = [(a[0] + b[0]) / 2 + ((b[1] - a[1]) / l) * 0.3, (a[1] + b[1]) / 2 - ((b[0] - a[0]) / l) * 0.3];
+  return { path, side: inside(m, poly) ? "right" : "left" };
 }
 
 /** A polygon grown by m (the biggest piece). */

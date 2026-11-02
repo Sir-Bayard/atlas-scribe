@@ -120,6 +120,22 @@ export function paint(ctx) {
   const boundWidth = { hedge: 0.08, balk: 0.12, clipped: 0.16 };
   for (const b of items("boundary")) stroke(b.path, boundWidth[b.class] ?? 0.04, boundColor[b.class] ?? boundColor.fence);
   for (const w of items("wall").filter((w) => !w.thickness)) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
+  // Cliffs: the face shaded from its top edge to its toe, hatched down the slope, the top edge drawn hard
+  for (const c of items("cliff")) {
+    fillPoly([...c.path, ...[...c.toe].reverse()], c.rock === "slate" ? "rgb(128,130,134)" : "rgb(150,136,116)");
+    g.save(); g.strokeStyle = "rgba(60,52,44,0.55)"; g.lineWidth = Math.max(1, 0.03 * pp);
+    let carry = 0;
+    for (let i = 1; i < c.path.length; i++) {
+      const a = c.path[i - 1], b = c.path[i], ta = c.toe[i - 1], tb = c.toe[i], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let t = carry; t < l; t += 0.22) {
+        const f = t / l, p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], q = [ta[0] + (tb[0] - ta[0]) * f, ta[1] + (tb[1] - ta[1]) * f], long = Math.round(t / 0.22) % 2 ? 1 : 0.6;
+        g.beginPath(); g.moveTo(X(p[0]), Y(p[1])); g.lineTo(X(p[0] + (q[0] - p[0]) * long), Y(p[1] + (q[1] - p[1]) * long)); g.stroke();
+      }
+      carry = Math.max(0, 0.22 - ((l - carry) % 0.22)) % 0.22;
+    }
+    g.restore();
+    stroke(c.path, 0.06, "rgb(70,60,50)");
+  }
   const bush = winter ? "rgb(104,98,90)" : mix(col("bush"), [30, 50, 25], 0.1);
   for (const b of items("prop", "bush")) dot(b.x, b.y, (b.scale ?? 0.5) * 0.45, bush);
 
