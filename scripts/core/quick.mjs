@@ -149,7 +149,7 @@ function placeName(r, water) {
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "quick-start";
 
 /**
- * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, name, seed } (any left out
+ * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, river, shape, name, seed } (any left out
  * is picked from the seed; seed itself defaults to 1). Returns { plan, choices }: choices are the ones used.
  */
 export function quickPlan(options = {}) {
@@ -289,7 +289,7 @@ export function quickPlan(options = {}) {
   const paving = sr.pick(PAVINGS), bare = choices.size === "hamlet" ? "trodden" : sr.pick(UNPAVED);
   if (choices.center === "square") {
     const kinds = choices.size === "hamlet" ? ["circle", "irregular"] : choices.size === "village" ? ["circle", "rect", "irregular", "triangle"] : undefined;
-    const sh = squareShape({ r: sr.fork("shape"), C, angle: (theta * Math.PI) / 180, rad: S.square, fork: choices.roads === "fork", kinds });
+    const sh = squareShape({ r: sr.fork("shape"), C, angle: (theta * Math.PI) / 180, rad: S.square, fork: choices.roads === "fork", kinds, arms: arms.map((a) => Math.atan2(a[1][1] - a[0][1], a[1][0] - a[0][0])) });
     features.push({ id: "square", type: "square", shape: sh.shape, surface: paved ? paving : bare, radial: choices.size === "town" && sh.radial, market: true, name: sh.kind === "street" ? "The market street" : "The square" });
   }
   let green = null;

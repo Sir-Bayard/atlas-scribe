@@ -1,14 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+Walled cities. Quick Start makes a city or a metropolis with its wall, gates, wards, harbor, citadel and country around it, and every district can have a character and its centerpiece. Also new: water (ponds, lakes, the sea, quays and piers), town walls, cliffs, more kinds of squares, market stalls, cemeteries, mills and boats.
 
 **Squares, cliffs and city outlines**
 - Squares come in more pavings: cobbles, square setts, flagstones, herringbone brick, brick and stone tiles. A poorer place's square is bare ground (dirt, trodden earth or gravel): a hamlet's always, a village's mostly, a town's about half the time, and only a paved place's main roads are cobbled.
 - Quick Start squares take more shapes: a circle, a rectangle along the main road, an irregular market place, a triangle where the roads fork, or the main road widened into a long market street. A city's market square is a circle, a rectangle or an irregular place, in any of the pavings.
 - Cliffs: a new Cliff tool draws a cliff along its top edge, the drop on its left as it's drawn (its "Drop is on the" setting turns it). Its settings: its height and its rock (earthy brown stone or gray slate). It's painted from Forgotten Adventures' free cliff art (the face, the lip along its top and rubble at its foot; plain stone without the art), and an end inside the map dies away over a few squares. Houses, streets, fields and farm lanes keep off it, and `checkPlan` warns about a road that runs over one.
-- A city's outline: a new Outline choice in Quick Start (left on Any, the seed picks one that suits the water): compact, lobed and uneven, on a promontory (the sea or a lake on three sides, the wall across its neck, a harbor all around), long along its shore or river, or against a cliff (the wall ends at the cliff on each side; the city stands at its foot or on top). Water left on Any is picked to suit the outline (or is a river when you pick a River shape), and a River shape you pick wins over an outline it can't go with.
+- A city's outline: a new Outline choice in Quick Start (left on Any, the seed picks one that suits the water): compact, lobed and uneven, on a promontory (the sea or a lake on three sides, the wall across its neck, a harbor all around; its gates all face the neck, so it has one or two), long along its shore or river, or against a cliff (the wall ends at the cliff on each side; the city stands at its foot or on top). Water left on Any is picked to suit the outline (or is a river when you pick a River shape), and a River shape you pick wins over an outline it can't go with.
 - Now and then Quick Start puts an escarpment out in the country of a hamlet, village or town, clear of the place, its roads and its farms.
-- For plan writers: wall class `cliff` with `side` (its low side) and `rock`; square surfaces `setts`, `herringbone`, `brick` and `tiles`. Quick Start plans change: squares, roads' surfaces and city outlines.
+- A triangle square at a fork has a corner between each two roads, so each road leaves through the middle of a side. A city against a cliff gets the gates its Roads choice asks for even by the sea or a lake. A metropolis's old wall is drawn in where it would run along the street inside the town wall.
+- A cliff can be clicked anywhere on its face in the window, and a cliff's ends snap onto other cliffs, not onto walls (nor a wall's onto a cliff).
+- `checkPlan` warns about a boat or ship drawn on dry land, a setting given to a class that doesn't use it (a cliff's `outside`, say), and a cliff too short to read as one; it no longer stops on a shape with a missing corner.
+- In the window: a river's Width or End width changed by hand replaces its widths at each point (a Quick Start city's river has them, so the two settings did nothing); Centerpiece is shown only for a character that has one; a cliff's or wall's corners, and a pond's, lake's or sea's, snap to and move with their own kind only; hints name a feature by its name; Quick Start says when an Outline or River you picked couldn't be made and another was used.
+- A city's river around an island where it meets the sea now has the market square on the island (it ran through the square), and a city's river keeps clear of a rectangular square's corners. A city's burial grounds are placed past its suburbs, so most cities get one or two (many got none). Quick Start farms are tested at more points against the roads and water, which moves a farm in a few existing seeds.
+- For plan writers: wall class `cliff` with `side` (its low side) and `rock`; surfaces `setts`, `herringbone`, `brick` and `tiles` (for squares, roads and a district's streets). A wall's `height` is now at most 400 feet and a prop's `size` at most 500 (a bigger number stops the render). `checkPlan` warns about a wall that crosses itself, a road running along a wall rather than through it, a boat or ship on dry land, and a sea with nothing left of it on the map. Quick Start plans change: squares, roads' surfaces and city outlines.
 
 **Market places, cemeteries, mills and harbors**
 - Market stalls: a square's new Market stalls setting fills it with stalls in rows (awnings of many colors, plain and striped), lanes between and goods set out, clear of the roads through it. Quick Start turns it on for its market square, and a market quarter's square has stalls too.
@@ -16,7 +23,6 @@
 - Cemeteries are drawn: a gate where the nearest road meets one, a path across it (and a cross path in a big one), graves in rows with open patches, yews, tombs beside the paths and a chapel in a big one, and a drystone wall or a hedge around it (its Border setting). A Cemetery tool draws one; out in the country a lane comes to its gate. Quick Start gives a town a cemetery at its edge and a city one or two burial grounds outside its walls.
 - Mills: a building used as a windmill gets sails over its cap, and one used as a watermill a wheel on its side facing the water. New Windmill and Watermill tools. Quick Start puts a watermill on a short mill race beside the river by a village or town (sometimes a hamlet) and outside a city's walls, and windmills among the fields.
 - Boats and cranes: rowboats moored along quays, wharves, piers and jetties, ships at the sea's quays and piers, cranes on stone quays, a few ships at anchor off a harbor and rowboats on a river by the houses (none on frozen water). Ships are drawn in plain shapes where FA Nexus has no hull art for you. New Boat, Ship, Crane, Fountain and Market cross tools.
-- City rivers: an island now holds a ward of its own (it was cut into slivers by the main roads), and a river looping around a city runs close around its wall.
 - For plan writers: square fields `market` and `middle`; a cemetery's `border`; prop classes `fountain`, `cross`, `boat`, `ship`, `crane`; building uses `chapel`, `tomb`, `windmill`, `watermill`. Quick Start plans change (markets, mills and cemeteries), and every map with quays, piers or a river by its houses now draws boats.
 
 **Quick Start cities**
@@ -24,7 +30,7 @@
 - City water: a river through it, a sea coast with a harbor (a quay and piers), a lake shore (a wharf and jetties), or a river meeting the sea.
 - A city's river bends through it, splits around an island at its heart, loops around it outside the wall (all but a neck of land), or meets a second river inside the walls. A new River choice picks the shape; left on Any, the seed picks.
 - Quick Start rivers and streams in villages, hamlets and towns now bend through the country instead of running nearly straight. Existing Quick Start seeds get different rivers, and the farms and fields around them move with them.
-- Wards get characters by the city's geography, varied by the seed: market and temple at the center, docks on the water, the garrison against the wall by a gate (often walled in as a citadel with its own gate), the nobles on the quiet side, crafts and the poor by the wall and downstream, merchants along the main roads, homes in between. Each ward is named (Market Ward, High Ward, North Ward and so on).
+- Wards get characters by the city's geography, varied by the seed: market and temple at the center, docks on the water, the garrison against the wall by a gate (sometimes walled in as a citadel with its own gate), the nobles on the quiet side, crafts and the poor by the wall and downstream, merchants along the main roads, homes in between. Each ward is named (Market Ward, High Ward, North Ward and so on).
 - A metropolis keeps its old inner wall around the old town, with more wards, gates and suburbs.
 - Outside the walls: suburbs along the roads beyond some gates, farmsteads, fields and woods.
 - Every district of type City now builds up its block middles with houses and yards on trodden ground, and its lanes run across its main streets only (except around a radial square), so its blocks are bigger and fuller. Quick Start town cores change with this.
@@ -50,23 +56,21 @@
 **Water**
 - Ponds, lakes and the sea, drawn as shapes with three new tools (Pond, Lake, Sea; a box dragged with the Pond or Lake tool is the oval inside it). A sea's corners near the map's edge go past it, so its outline is the coast. Shores are curved and a little ragged.
 - Shores: sand, pebbles, rocks, grass, marsh or reeds, picked from the seed unless set (a pond's is grass or reeds; a sea's sand, pebbles or rocks). The water is lighter in the shallows and darker farther out, the sea has surf along its coast outside winter, reedy and marshy shores have reeds, and still ponds and lakes have lily pads outside winter.
-- In winter ponds and lakes freeze unless their Frozen setting says otherwise; the sea doesn't.
+- In winter ponds and lakes freeze unless their Frozen setting says otherwise; the sea doesn't, but has ice along its shore.
 - Rivers, streams and canals can widen or narrow: End width is the width at the last point, and the width changes smoothly along the way. A river opens out where it meets a lake or the sea, and flows in with no bank across its mouth.
-- Quays and piers: two new tools. A quay (stone) or wharf (timber) is drawn along the water's edge; its line is moved onto the nearest edge of a river, lake or the sea, it's paved back from the water, and houses face it as they would a street. A pier (stone) or jetty (timber) runs out into the water as drawn.
+- Quays and piers: two new tools. A quay (stone) or wharf (timber) is drawn along the water's edge; its line is moved onto the nearest edge of a river, lake or the sea (onto the bank most of it is on, or a town wall's moat), it's paved back from the water, and houses face it as they would a street; one out in open water isn't drawn, and one moved out of the district it was drawn in says so. A pier (stone) or jetty (timber) runs out into the water as drawn.
 - Houses, streets, trees and fields keep off ponds, lakes, the sea and their shores, and a town wall stops at a lake's shore as it does at a river.
 - For plan writers: water classes `pond`, `lake` and `sea` with a `shape`; water fields `endWidth`, `widths` (a width in feet for each point of the path, in place of `width` and `endWidth`) and `shore`; a new feature type `dock` (classes `quay`, `wharf`, `pier`, `jetty`; fields `width` and `material`, stone or wood). `checkPlan` warns about a pond, lake or sea drawn along a path, a river drawn as a shape, and `widths` that don't match the path.
 
 **Fixes**
-- Quays: one drawn across a river is built on the bank most of it is on (it used to jump the water); one out in open water isn't drawn; one along a town wall's moat is moved onto the moat's edge; one moved out of the district it was drawn in says so. In winter, open water has ice along its shore.
-- Farms by ponds: a farmhouse's corner keeps off a pond's shore, and a farm with a pond in its middle still gets a lane to the road.
-- Town walls: a farm's lane never runs through a town wall (only roads get gates), no tower stands well off the map, and where a road passes over a wall without crossing it (a wide road by a corner) the wall stops at a tower each side. A park's lane never starts in a river.
+- A farm's lane never runs through a town wall (only roads get gates), and a park's lane never starts in a river.
 - Fields keep clear of the trees, wells and carts a plan places. A plan tree's species can be any conifer's name (pine, fir, spruce and so on), and a prop's Size (in feet) now sets how big it's drawn.
 - A village green stands out from the fields around it in summer.
-- A river that changes width sharply between two far-apart points no longer shows a notch.
 - Labels: a name label on a turned area turns with it; a label's angle can be any number of degrees (370 reads as 10).
 - In the window: a Stop button while a slow map draws; a click on a label's text picks the label rather than a well or cart under it; hints name districts by name; a building group whose roofs differ shows "mixed" rather than a Default that did nothing; the underlay's see-through slider no longer jumps back when the map finishes drawing; a scene publish canceled after the map was saved says where the map is.
 - Publishing into a scene replaces every label AtlasScribe put there before, whatever plan made them, and a canceled publish no longer leaves a new thumbnail behind.
-- A cemetery is reported once, not twice.
+- Cities: a ward too narrow for its centerpiece along its main road takes it turned a quarter, or smaller (down to about half size), so far fewer wards go without one; a centerpiece beside a slanting road is fitted more finely, which moves it a little on some maps. A notable building that finds no plot deep enough tries the district's shallower plots (a city's are shallow), and an inn with still no room for a building of its own takes over a house on its best plot, so towns and cities that missed an inn now have one. A citadel's wall keeps off the market square. A city's village green (and any square given a grass surface) is painted as grass; it was a plain pale fill. A Quick Start city where a river splits around an island near the sea keeps its harbor inside the wall more often, and has its docks on the river when the sea lies beyond it. A plot that wraps around another plot is left for its street, so plots no longer overlap there.
+- A district or cemetery whose shape has no area no longer stops the map; the window's progress bar moves through the districts of a big city.
 
 **Lighter lines**
 - Roads no longer have a dark line down the middle (ruts are unchanged), and their worn middles, trodden edges, the outlines around roofs and the dark edge along water are lighter.
@@ -80,7 +84,7 @@
 - For plan writers: wall classes `town` and `palisade`; fields `thickness`, `towers`, `towerShape`, `towerSpacing`, `outside`, `ditchWidth` and `side` (an open run's outside, left or right going along it). A wall whose last point is its first is closed. `checkPlan` warns about a closed wall no road crosses (it has no gate).
 
 **Faster on big maps**
-- Big maps lay out several times faster, and every map lays out exactly as before. A town scaled up to 200 by 152 squares takes about 1.5 seconds instead of about 6, four towns side by side on a 200 by 200 map about 2.5 instead of about 7, and a 400 by 304 map under 10 instead of over a minute. Painting the image is unchanged: on a big map it's most of the wait (about 25 seconds for 200 by 152 squares at 50 pixels a square).
+- Big maps lay out several times faster (the speed-up itself changes no map). A town scaled up to 200 by 152 squares takes about 1.5 seconds instead of about 6, four towns side by side on a 200 by 200 map about 2.5 instead of about 7, and a 400 by 304 map under 10 instead of over a minute. Painting the image is unchanged: on a big map it's most of the wait (about 25 seconds for 200 by 152 squares at 50 pixels a square).
 
 ## 0.4.0
 

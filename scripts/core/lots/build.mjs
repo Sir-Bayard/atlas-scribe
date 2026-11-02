@@ -540,7 +540,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       }
     }
     const things = [...(info.yard ?? []), ...(y.inn ? ["wagon", "hay", "barrel"] : [])];
-    const n = Math.min(things.length + yr.int(2), 5);
+    const extra = yr.int(2), n = things.length ? Math.min(things.length + extra, 5) : 0; // (a use with no yard things leaves none)
     for (let k = 0; k < n; k++) {
       const cls = things[k % things.length];
       const p = spot(sq(cls === "wagon" || cls === "cart" ? 7 : 3));

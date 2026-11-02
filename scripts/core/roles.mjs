@@ -26,6 +26,8 @@ const COLORS = {
   "surface.herringbone": "#a2694e",
   "surface.brick": "#9a5a44",
   "surface.tiles": "#b3ada2",
+  "surface.grass": "#8fa36a",
+  "surface.grass.winter": "#dde2e2",
   overlay: "rgba(255,255,255,0)",
   cliff: "#7d7466",
   "cliff.face.slate": "#6f7276",

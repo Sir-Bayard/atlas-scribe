@@ -156,7 +156,7 @@ export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}
   const after = fixed
     ? `${where}'s centerpiece, made by its Centerpiece setting: it stays where it is through rerolls while that's on, so it can't be pinned. Turn the setting off to give its ground to houses.`
     : kind === "house"
-    ? "Pinned, it becomes a fixed building group in the plan, drawn exactly as it is now; you can then name it, label it and change its roofs. The rest of the district still rerolls around it."
+    ? "Pinned, it becomes a fixed building group in the plan, its buildings drawn exactly as they are now (a walled yard or grounds around them aren't kept); you can then name it, label it and change its roofs. The rest of the district still rerolls around it."
     : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";
   return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
       <header>

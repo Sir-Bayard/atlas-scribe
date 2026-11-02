@@ -64,10 +64,10 @@ export function handlesOf(plan) {
     if (!e) continue;
     if (e.kind === "poly" || e.kind === "path") {
       e.pts.forEach((p, i) => {
-        out.push({ id: f.id, kind: "corner", i, at: p, path: e.kind === "path", type: f.type });
+        out.push({ id: f.id, kind: "corner", i, at: p, path: e.kind === "path", type: f.type, family: familyOf(f) });
         if (e.kind === "path" && i === e.pts.length - 1) return; // a path's last point has no stretch after it
         const q = e.pts[(i + 1) % e.pts.length];
-        out.push({ id: f.id, kind: "mid", i, at: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], path: e.kind === "path", type: f.type });
+        out.push({ id: f.id, kind: "mid", i, at: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], path: e.kind === "path", type: f.type, family: familyOf(f) });
       });
     } else if (e.kind === "circle") out.push({ id: f.id, kind: "radius", i: 0, at: [e.c[0] + e.r, e.c[1]] });
     else {
@@ -81,6 +81,15 @@ export function handlesOf(plan) {
 /** The point-list shapes and paths in a plan: [{ f, pts, path }]. */
 const polys = (plan) => (plan?.features ?? []).map((f) => ({ f, e: editableShape(f) })).filter((x) => x.e?.kind === "poly" || x.e?.kind === "path").map((x) => ({ f: x.f, pts: x.e.pts, path: x.e.kind === "path" }));
 
+/**
+ * What a feature's points snap to and move with: paths of their own type (a cliff with cliffs, never a wall), and
+ * shapes with shapes (ponds, lakes and seas with each other, districts and areas with each other).
+ */
+export function familyOf(f) {
+  if (Array.isArray(f?.path)) return f.type === "wall" && f.class === "cliff" ? "cliff" : f.type;
+  return f?.type === "water" ? "body" : "shape";
+}
+
 /** The other shapes' corners at the same place as this corner: [{ id, i }]. */
 export function partnersOf(plan, id, i) {
   const all = polys(plan);
@@ -89,7 +98,7 @@ export function partnersOf(plan, id, i) {
   const out = [];
   // Paths share points with paths of their own type (a road with roads, never with a river or a wall), shapes with
   // shapes: a district corner on a road's point doesn't drag the road
-  for (const o of all) if (o !== me && o.path === me.path && (!me.path || o.f.type === me.f.type)) o.pts.forEach((p, j) => { if (near(p, me.pts[i])) out.push({ id: o.f.id, i: j }); });
+  for (const o of all) if (o !== me && o.path === me.path && familyOf(o.f) === familyOf(me.f)) o.pts.forEach((p, j) => { if (near(p, me.pts[i])) out.push({ id: o.f.id, i: j }); });
   // A ring's first and last points are one point
   if (me.path) me.pts.forEach((p, j) => { if (j !== i && near(p, me.pts[i])) out.push({ id: me.f.id, i: j }); });
   return out;
@@ -134,6 +143,7 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
     // Every shape with a side from a to b (either way around) gets the new corner on it
     const sides = new Map();
     for (const o of polys(plan)) {
+      if (familyOf(o.f) !== familyOf(me.f)) continue; // (only its own kind shares a side)
       for (let j = 0; j < (o.path ? o.pts.length - 1 : o.pts.length); j++) {
         const p = o.pts[j], q = o.pts[(j + 1) % o.pts.length];
         if ((near(p, a) && near(q, b)) || (near(p, b) && near(q, a))) { sides.set(o.f.id, j); break; }

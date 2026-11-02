@@ -18,9 +18,10 @@ const r2 = (v) => Math.round(v * 100) / 100;
 /**
  * A square's shape: { kind, shape (a plan shape: { circle } or a polygon), radial (whether streets should ring it) }.
  * r: a stream; C: its middle; angle: the main road's direction there (radians); rad: about how far it reaches from
- * its middle; fork: the roads fork there (a triangle is likely); kinds: the shapes to pick from.
+ * its middle; fork: the roads fork there (a triangle is likely); kinds: the shapes to pick from; arms: the directions
+ * (radians) the roads leave its middle, for a triangle's corners.
  */
-export function squareShape({ r, C, angle, rad, fork = false, kinds = SQUARE_SHAPES }) {
+export function squareShape({ r, C, angle, rad, fork = false, kinds = SQUARE_SHAPES, arms = null }) {
   const roll = r.next(), jit = Array.from({ length: 8 }, () => r.range(0.78, 1.18)), turn = r.range(-0.25, 0.25), long = r.range(1.9, 2.6);
   const pool = kinds.filter((k) => k !== "triangle" || fork);
   // A fork leans to a triangle; else each shape about as likely
@@ -39,9 +40,12 @@ export function squareShape({ r, C, angle, rad, fork = false, kinds = SQUARE_SHA
       return { kind, shape: Array.from({ length: n }, (_, k) => { const a = angle + turn + ((k + (jit[k % 8] - 1) * 0.6) / n) * 2 * Math.PI, d = rad * jit[(k + 3) % 8]; return [r2(C[0] + Math.cos(a) * d), r2(C[1] + Math.sin(a) * d)]; }), radial: true };
     }
     case "triangle": {
-      // One side across the main road, the point up the fork
-      const d = rad * 1.35;
-      return { kind, shape: [0, 1, 2].map((k) => { const a = angle + Math.PI + turn * 0.5 + (k * 2 * Math.PI) / 3; return [r2(C[0] + Math.cos(a) * d), r2(C[1] + Math.sin(a) * d)]; }), radial: false };
+      // A corner between each two of the three roads, so each road leaves through the middle of a side (without the
+      // roads' directions: one side across the main road)
+      const d = rad * 1.35, TAU = 2 * Math.PI;
+      const sorted = Array.isArray(arms) && arms.length === 3 ? arms.map((a) => ((a % TAU) + TAU) % TAU).sort((a, b) => a - b) : null;
+      const corners = sorted ? sorted.map((a, k) => { const b = k < 2 ? sorted[k + 1] : sorted[0] + TAU; return (a + b) / 2 + turn * 0.15; }) : [0, 1, 2].map((k) => angle + Math.PI + turn * 0.5 + (k * TAU) / 3);
+      return { kind, shape: corners.map((a) => [r2(C[0] + Math.cos(a) * d), r2(C[1] + Math.sin(a) * d)]), radial: false };
     }
     case "street": {
       // The main road widened into a long market place

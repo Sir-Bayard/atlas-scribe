@@ -8,7 +8,8 @@ export const DEG = Math.PI / 180;
 /** A plan shape (polygon array, { rect }, { circle }, { ellipse }) as a polygon, turned by rot degrees about its center. */
 export function shapeToPolygon(shape, rot = 0, segments = 32) {
   let pts;
-  if (Array.isArray(shape)) pts = shape.map((p) => [p[0], p[1]]);
+  // (a corner that isn't a point is left out: checkPlan reports it)
+  if (Array.isArray(shape)) pts = shape.filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])).map((p) => [p[0], p[1]]);
   else if (shape?.rect) {
     const [x0, y0, x1, y1] = shape.rect;
     pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];

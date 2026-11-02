@@ -138,11 +138,14 @@ export function snapCorner(plan, p, tol) {
  * isn't snapped onto a road: the road is drawn curved, and the wall's end would miss it.)
  * Returns { at, kind: "path" | "edge" | null, id }.
  */
-export function snapEnd(plan, type, p, tol) {
+export function snapEnd(plan, type, p, tol, cls = null) {
   const kinds = [type];
+  // (a cliff onto cliffs only, and other walls never onto a cliff)
+  const cliff = (f) => f.type === "wall" && f.class === "cliff";
   let best = null;
   for (const f of plan?.features ?? []) {
     if (!isObj(f) || !kinds.includes(f.type) || !Array.isArray(f.path)) continue;
+    if (type === "wall" && cliff(f) !== (cls === "cliff")) continue;
     for (let i = 1; i < f.path.length; i++) {
       const { at } = onSegment(p, f.path[i - 1], f.path[i]);
       const d = dist(p, at);

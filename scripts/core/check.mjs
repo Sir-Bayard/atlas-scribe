@@ -129,15 +129,20 @@ export function checkPlan(raw) {
     }
     const sq = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25;
     const near = Math.max((isNum(f.thickness) ? f.thickness : 12) / sq / 2 + 0.3, towerReach(f, sq) + 0.02); // where towers would stand in it
+    const wb = f.path.reduce((b, p) => [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])], [Infinity, Infinity, -Infinity, -Infinity]);
     for (const r of ways) {
       const rh = (isNum(r.width) ? r.width : 20) / sq / 2;
+      // (a road nowhere near the wall can't run along it)
+      const m = rh + near + 0.5, rb = r.path.reduce((b, p) => [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])], [Infinity, Infinity, -Infinity, -Infinity]);
+      if (rb[2] < wb[0] - m || rb[0] > wb[2] + m || rb[3] < wb[1] - m || rb[1] > wb[3] + m) continue;
       // Points every half square along the road that lie on the wall, away from where it crosses
       let run = 0, best = 0;
       for (let i = 1; i < r.path.length; i++) {
         const [a, b] = [r.path[i - 1], r.path[i]], l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(l / 0.5));
         for (let k = 0; k < n; k++) {
           const q = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n];
-          run = distanceToPath(q, f.path) < rh + near ? run + l / n : 0;
+          const inBox = q[0] >= wb[0] - m && q[0] <= wb[2] + m && q[1] >= wb[1] - m && q[1] <= wb[3] + m;
+          run = inBox && distanceToPath(q, f.path) < rh + near ? run + l / n : 0;
           best = Math.max(best, run);
         }
       }
@@ -146,15 +151,25 @@ export function checkPlan(raw) {
     }
   }
 
-  // Cliffs: no road climbs one
+  // Boats and ships afloat: one drawn on dry land is said so (the layout draws it where it's put)
+  {
+    const afloat = plan.features.filter((f) => f.type === "prop" && (f.class === "boat" || f.class === "ship") && isPoint(f.at));
+    if (afloat.length) {
+      const ws = waterEntries(plan, 0);
+      for (const f of afloat) if (!ws.some((w) => nearWater(f.at, w, 0.3))) warn(f.id, "at", `The ${f.class} "${f.id}" stands on dry land. Move it onto the water.`);
+    }
+  }
+
+  // Cliffs: long enough to read as one, and no road climbs one
   // (anywhere on its face: across it or along it; a road ending at its top edge is fine)
   for (const f of cliffsOf(plan)) {
+    if (f.path.slice(1).reduce((n, p, i) => n + Math.hypot(p[0] - f.path[i][0], p[1] - f.path[i][1]), 0) < 0.5) { warn(f.id, "path", `The cliff "${f.id}" is under half a square long, too short to read as a cliff. Give it points farther apart.`); }
     const c = cliffOf(f, isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25, Array.isArray(plan.size.squares) ? plan.size.squares : null);
     for (const r of ways) if (r.path.every(isPoint) && runsOnFace(r.path, c, (isNum(r.width) ? r.width : ROAD_WIDTH_FT[r.class] ?? 20) / (isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 25) / 2)) warn(f.id, "path", `Road "${r.id}" runs over the cliff "${f.id}", and no road can climb a cliff. Bring the road around its end, or end the cliff short of the road.`);
   }
 
   // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)
-  for (const f of plan.features.filter((f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape))) {
+  for (const f of plan.features.filter((f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape) && f.shape.every(isPoint))) {
     const pts = f.shape.filter((p, k) => !(k === f.shape.length - 1 && k > 0 && p[0] === f.shape[0][0] && p[1] === f.shape[0][1]));
     if (pts.length >= 3 && polygonCrossesItself(pts)) warn(f.id, "shape", `"${f.id}"'s outline crosses itself or repeats a corner, so what's inside it is unclear. Give its corners in order around the edge.`);
   }
@@ -162,7 +177,9 @@ export function checkPlan(raw) {
   // Districts that overlap: the shared part is filled by both, so their houses stand on each other's
   // (each drawn in a little first, along its own outline, so neighbors sharing a side don't count, whatever their
   // shape: drawing in toward the middle of the box around it would push a bent district's far side out)
-  const dpolys = plan.features.filter((f) => f.type === "district").map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape) })).filter((d) => d.poly.length >= 3)
+  // (a shape that can't be read is reported with its feature already, and left out here)
+  const safePoly = (shape, rot) => { try { return shapeToPolygon(shape, rot) ?? []; } catch { return []; } };
+  const dpolys = plan.features.filter((f) => f.type === "district").map((d) => ({ id: d.id, poly: safePoly(d.shape) })).filter((d) => d.poly.length >= 3)
     .map((d) => { let inner; try { inner = offset([d.poly], -0.03); } catch { inner = null; } return { ...d, inner: inner?.length ? inner : [shrink(d.poly)], box: bbox(d.poly) }; });
   const meets = (a, b) => a.box[0] <= b.box[2] && b.box[0] <= a.box[2] && a.box[1] <= b.box[3] && b.box[1] <= a.box[3];
   for (let i = 0; i < dpolys.length; i++)
@@ -173,8 +190,8 @@ export function checkPlan(raw) {
   // Buildings that overlap each other
   const footprints = [];
   for (const f of plan.features) {
-    if (f.type === "building" && f.shape) footprints.push({ id: f.id, poly: shapeToPolygon(f.shape, f.rot) });
-    if (f.type === "landmark") f.buildings.forEach((b, j) => b.shape && footprints.push({ id: `${f.id}`, part: j, poly: shapeToPolygon(b.shape, b.rot) }));
+    if (f.type === "building" && f.shape) footprints.push({ id: f.id, poly: safePoly(f.shape, f.rot) });
+    if (f.type === "landmark") f.buildings.forEach((b, j) => b?.shape && footprints.push({ id: `${f.id}`, part: j, poly: safePoly(b.shape, b.rot) }));
   }
   // Shrunk once each, sorted by left edge, and only pairs whose boxes meet are compared (fast for thousands)
   const fps = footprints.filter((f) => f.poly.length >= 3).map((f) => { const poly = shrink(f.poly); return { ...f, poly, box: bbox(poly) }; });
@@ -271,7 +288,12 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   });
 
   // Fields: numbers in range, values from their lists, nothing unknown
-  for (const [name, spec] of Object.entries(t.fields)) checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
+  for (const [name, spec] of Object.entries(t.fields)) {
+    checkField(f.id, name, `"${where}"`, name, spec, f[name], { err, warn }, f.type === "label" ? "the default will be used" : undefined);
+    // (a setting only some classes use, given to another: nothing reads it)
+    if (Array.isArray(spec.only) && t.classes?.includes(f.class) && !spec.only.includes(f.class) && raw[name] !== undefined && raw[name] !== null)
+      warn(f.id, name, `"${where}": ${name} does nothing on a ${f.type} of class ${f.class}, so it's ignored.`);
+  }
   if (f.type === "label" && !String(f.text ?? "").trim() && !f.of) warn(f.id, "text", `Label "${where}" has no text.`);
   if (f.type === "label" && typeof f.font === "string" && f.font.trim() && !/^[\p{L}\p{N} _.-]+$/u.test(f.font.trim())) warn(f.id, "font", `Label "${where}": the font "${f.font}" isn't a plain font name; the plan's will be used.`);
   if (f.type === "label" && typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id, "color", `Label "${where}": color "${f.color}" should be a color like #13202e; the plan's will be used.`);

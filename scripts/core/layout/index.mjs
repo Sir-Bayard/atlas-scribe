@@ -871,7 +871,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Districts: generated streets first (each district's own, meeting its neighbors' at gates on shared edges),
   // then houses along every road, street and lane that runs into it
   progress(0.4, "Districts");
-  const dfeats = plan.features.filter((f) => f.type === "district");
+  // (a district whose shape makes no polygon is left out: the checker warns of it)
+  const dfeats = plan.features.filter((f) => f.type === "district" && shapeToPolygon(f.shape).length >= 3);
   const dlist = dfeats.map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) }));
   const waterAt = (x, y) => space.water.some((w) => nearWater([x, y], w));
   const gates = districtGates(dlist, { roads: ways, inWater: (x, y) => waterAt(x, y) || inWallBand(x, y), seed: plan.seed });
@@ -921,13 +922,16 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // What was placed before the districts, with each thing's box (the districts add to space as they fill). A district
   // sees only what lies within KEY_MARGIN squares of it, with or without the cache, so its key covers all it reads
   const placed = Object.fromEntries(["reserved", "zones", "plots", "buildings", "ways", "gardens"].map((k) => [k, space[k].map((v) => [v, boxOf(v)])]));
-  for (const d of dfeats) {
+  for (const [dk, d] of dfeats.entries()) {
+    if (dk) progress(0.4 + (0.15 * dk) / dfeats.length, "Districts"); // (a metropolis has dozens)
     const { poly } = dlist.find((x) => x.id === d.id);
     const fixedHere = ways.filter((w) => pathTouchesPolygon(w.path, poly));
     // Roads running just outside the edge too, so plots and houses keep off them
     const ring = closed(poly);
     const nearHere = [...fixedHere, ...ways.filter((w) => !fixedHere.includes(w) && (w.path.some((p) => distanceToPath(p, ring) < w.width / 2 + 0.5) || poly.some((p) => distanceToPath(p, w.path) < w.width / 2 + 0.5)))];
-    const borders = dlist.filter((o) => o.id !== d.id && o.streetSpacing).flatMap((o) => sharedEdges(poly, o.poly));
+    // (each neighbor's shared edges worked out once: the street borders, and the key)
+    const edgesWith = dlist.filter((o) => o.id !== d.id).map((o) => [o, sharedEdges(poly, o.poly)]);
+    const borders = edgesWith.filter(([o]) => o.streetSpacing).flatMap(([, e]) => e);
     const [bx0, by0, bx1, by1] = bbox(poly);
     const near = ([, b]) => !b || (b[0] <= bx1 + KEY_MARGIN && b[2] >= bx0 - KEY_MARGIN && b[1] <= by1 + KEY_MARGIN && b[3] >= by0 - KEY_MARGIN);
     const around = Object.fromEntries(Object.entries(placed).map(([k, list]) => [k, list.filter(near).map(([v]) => v)]));
@@ -942,7 +946,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const overlaps = [...touching].some((k) => k.startsWith(`${d.id}|`));
     let key = null;
     if (cache && !overlaps) {
-      key = hash128(keyJSON([shared, d, seedOf(plan, d.id), notables.get(d.id) ?? null, planUsesIn.get(d.id) ?? null, [...roadIds], gates.get(d.id) ?? [], borders, dlist.filter((o) => o.id !== d.id).flatMap((o) => sharedEdges(poly, o.poly)), nearHere, around])).join(".");
+      key = hash128(keyJSON([shared, d, seedOf(plan, d.id), notables.get(d.id) ?? null, planUsesIn.get(d.id) ?? null, [...roadIds], gates.get(d.id) ?? [], borders, edgesWith.flatMap(([, e]) => e), nearHere, around])).join(".");
     }
     if (key && districtCache.has(key)) {
       cacheStats.hits++;
@@ -1221,6 +1225,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   function layCemetery(f) {
     const r = streamFor(f.id);
     const c = fillCemetery({ area: f, r, roads: [...ways, ...lanes.filter((l) => l.from === f.id), ...streets], ftPerSquare: sq });
+    if (c.surface.poly.length < 3) return; // (a shape with no area: nothing to lay out)
     // What's there already keeps its place: roads, water of any kind, buildings, props and trees (the plan's and
     // the generator's), each by its own size; the cemetery's paths are cut at water, its graves, yews, tombs, chapel,
     // wall and hedge left out where they'd stand on any of it
@@ -1427,7 +1432,9 @@ const closed = (poly) => [...poly, poly[0]];
  */
 function windAlike(plan) {
   const signed = (p) => p.reduce((s, [x1, y1], i) => { const [x2, y2] = p[(i + 1) % p.length]; return s + x1 * y2 - x2 * y1; }, 0);
-  const turn = (f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape) && f.shape.length >= 3 && signed(f.shape) < 0;
+  // (a corner that isn't a point is left out, as shapeToPolygon leaves it out)
+  const good = (shape) => shape.filter((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]));
+  const turn = (f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape) && good(f.shape).length >= 3 && signed(good(f.shape)) < 0;
   return plan.features.some(turn) ? { ...plan, features: plan.features.map((f) => (turn(f) ? { ...f, shape: [...f.shape].reverse() } : f)) } : plan;
 }
 

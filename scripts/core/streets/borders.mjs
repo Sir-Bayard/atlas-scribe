@@ -23,6 +23,10 @@ function distToPolyEdge([x, y], poly) {
 
 /** The stretches of a's edge that lie along b's edge, as paths (in a's order). */
 export function sharedEdges(a, b) {
+  // (none where their boxes lie apart)
+  const box = (p) => [Math.min(...p.map((q) => q[0])), Math.min(...p.map((q) => q[1])), Math.max(...p.map((q) => q[0])), Math.max(...p.map((q) => q[1]))];
+  const [ax0, ay0, ax1, ay1] = box(a), [bx0, by0, bx1, by1] = box(b);
+  if (ax0 > bx1 + TOUCH || bx0 > ax1 + TOUCH || ay0 > by1 + TOUCH || by0 > ay1 + TOUCH) return [];
   const runs = [];
   let run = null, firstSample = null;
   for (let i = 0; i < a.length; i++) {

@@ -116,6 +116,9 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
         const pieces = difference(intersect(band, [slab]), claimed);
         const piece = pieces.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
         if (!piece || area(piece) < 0.05) continue;
+        // A piece that wraps around a plot already claimed (its cut came back around it, at a lane's end) has that plot as
+        // a hole, which the largest ring alone would cover: left for the street it faces
+        if (pieces.some((h) => h !== piece && pointInPolygon(h[0], piece))) continue;
         // A piece cut on the run's extension that barely touches this street is left for the street it does face
         // (on a curving block, the extension runs on past the corner along another street's frontage)
         if (frontOn({ poly: piece }, run) < fmin * 0.3) continue;

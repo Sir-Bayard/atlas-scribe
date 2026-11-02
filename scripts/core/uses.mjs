@@ -244,9 +244,9 @@ export function planUses({ district, lots, ways, want = [], ctx, water = [], roa
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) out2.push(...(grid.get(`${cx + i},${cy + j}`) ?? []));
     return out2;
   };
-  const sr = r.fork("sites");
+  const sites = r.fork("sites");
   /** How well a plot suits a use: the higher the better. */
-  const score = (i, use) => {
+  const score = (i, use, sr = sites) => {
     const s = USE_INFO[use]?.site ?? {};
     const f = info[i];
     let v = sr.next() * 0.6; // a little chance, so two equal plots don't always fall the same way
@@ -274,38 +274,50 @@ export function planUses({ district, lots, ways, want = [], ctx, water = [], roa
   /** Gives the best free plot (or plots, for a building of its own) to a use. */
   // A temple is bigger in a town or city, and biggest in a temple district: it wants more frontage
   const bigger = (use) => (use !== "temple" ? 1 : ({ town: 1.5, city: 1.8 }[district.profile] ?? 1) * (characterOf(district) === "temple" ? 1.6 : 1));
+  // (the depth that two plots in five here reach)
+  const deepest = [...lots].map((l) => l.depth ?? 0).sort((a, b) => b - a)[Math.floor(lots.length * 0.4)] ?? 0;
   const give = (use) => {
     const u = USE_INFO[use];
-    const need = sq((u.minFt ?? 0) * bigger(use)), deep = sq((u.deepFt ?? 0) * (use === "temple" ? Math.sqrt(bigger(use)) : 1));
+    const need = sq((u.minFt ?? 0) * bigger(use)), full = sq((u.deepFt ?? 0) * (use === "temple" ? Math.sqrt(bigger(use)) : 1));
     const wet = WET.has(use) && water.length > 0;
-    const cands = [];
-    for (let i = 0; i < lots.length; i++) {
-      if (taken.has(i) || lots[i].depth < deep) continue;
-      if (wet && !(info[i].water < sq(300))) continue; // tanners, dyers and fullers work by the water
-      let pick = [i];
-      if (u.form) {
-        // Plots joined along the street until wide enough, centered on this one where it can
-        const row = run(i);
-        let lo = row.indexOf(i), hi = lo, width = lots[i].frontage;
-        while (width < need && hi - lo + 1 < Math.ceil((u.join ?? 1) * bigger(use))) {
-          const left = lo > 0 && !taken.has(row[lo - 1]) && lots[row[lo - 1]].depth >= deep ? lots[row[lo - 1]].frontage : -1;
-          const right = hi < row.length - 1 && !taken.has(row[hi + 1]) && lots[row[hi + 1]].depth >= deep ? lots[row[hi + 1]].frontage : -1;
-          if (left < 0 && right < 0) break;
-          if (right >= left) { hi++; width += right; } else { lo--; width += left; }
+    /** The plots it could take, best first, and the best that take it, with plots at least deep. */
+    const attempt = (deep, sr = sites) => {
+      const cands = [];
+      for (let i = 0; i < lots.length; i++) {
+        if (taken.has(i) || lots[i].depth < deep) continue;
+        if (wet && !(info[i].water < sq(300))) continue; // tanners, dyers and fullers work by the water
+        let pick = [i];
+        if (u.form) {
+          // Plots joined along the street until wide enough, centered on this one where it can
+          const row = run(i);
+          let lo = row.indexOf(i), hi = lo, width = lots[i].frontage;
+          while (width < need && hi - lo + 1 < Math.ceil((u.join ?? 1) * bigger(use))) {
+            const left = lo > 0 && !taken.has(row[lo - 1]) && lots[row[lo - 1]].depth >= deep ? lots[row[lo - 1]].frontage : -1;
+            const right = hi < row.length - 1 && !taken.has(row[hi + 1]) && lots[row[hi + 1]].depth >= deep ? lots[row[hi + 1]].frontage : -1;
+            if (left < 0 && right < 0) break;
+            if (right >= left) { hi++; width += right; } else { lo--; width += left; }
+          }
+          if (width < need * (use === "temple" ? 0.7 : 1)) continue; // a temple turned into its plots needs less
+          pick = row.slice(lo, hi + 1);
         }
-        if (width < need * (use === "temple" ? 0.7 : 1)) continue; // a temple turned into its plots needs less
-        pick = row.slice(lo, hi + 1);
+        cands.push({ v: score(i, use, sr), pick });
       }
-      cands.push({ v: score(i, use), pick });
-    }
-    cands.sort((a, b) => b.v - a.v);
-    // The best plots that take it (a building of its own is tried on the next best where it doesn't fit)
-    let best = null, made = null;
-    for (const c of cands.slice(0, u.form && tryForm ? 6 : 1)) {
-      if (u.form && tryForm) { made = tryForm(use, u.form, c.pick); if (!made) continue; }
-      best = c;
-      break;
-    }
+      cands.sort((a, b) => b.v - a.v);
+      // The best plots that take it (a building of its own is tried on the next best where it doesn't fit)
+      for (const c of cands.slice(0, u.form && tryForm ? 6 : 1)) {
+        if (u.form && tryForm) { const made = tryForm(use, u.form, c.pick); if (made) return { best: c, made, cands }; continue; }
+        return { best: c, made: null, cands };
+      }
+      return { best: null, made: null, cands };
+    };
+    // Plots as deep as it wants; where none take it, plots only as deep as many of the district's own go (a city's are
+    // shallow: a notable building there is laid out on joined plots along the street instead)
+    const first = attempt(full), got = first.best || deepest >= full ? first : attempt(deepest, sites.fork("shallow", use)); // (its own stream: a retry that fails changes nothing after it)
+    let { best } = got;
+    const { made } = got, cands = got.cands.length ? got.cands : first.cands;
+    // (an inn with still no room for a building of its own takes over a house on the best plot)
+    let plain = false;
+    if (!best && use === "inn" && cands.length) { best = { pick: [cands[0].pick[Math.floor(cands[0].pick.length / 2)]] }; plain = true; }
     if (!best) return false;
     for (const k of best.pick) taken.set(k, use);
     const at = info[best.pick[Math.floor(best.pick.length / 2)]].c;
@@ -313,7 +325,7 @@ export function planUses({ district, lots, ways, want = [], ctx, water = [], roa
     const key = cellKey(at[0], at[1]);
     if (!grid.has(key)) grid.set(key, []);
     grid.get(key).push({ use, at });
-    if (u.form) out.sites.push({ use, form: u.form, lots: best.pick, made });
+    if (u.form && !plain) out.sites.push({ use, form: u.form, lots: best.pick, made });
     else out.useOf.set(best.pick[0], use);
     if (u.fire) for (const k of best.pick) for (const j of [k - 1, k, k + 1]) if (j >= 0 && j < lots.length) out.noThatch.add(j);
     return true;

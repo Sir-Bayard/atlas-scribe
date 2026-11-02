@@ -7,7 +7,11 @@
 import { USES, TRADES, useLabel } from "./uses.mjs";
 import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize, isConifer } from "./plan.mjs";
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
-import { CHARACTERS, CHARACTER_LABELS } from "./character.mjs";
+import { CHARACTERS, CHARACTER_LABELS, characterOf } from "./character.mjs";
+import { BLOCKS } from "./layout/anchors.mjs";
+
+/** The characters that have a centerpiece. */
+const ANCHORED = new Set(Object.keys(BLOCKS));
 
 /** What the window calls each use, trade and district character. */
 const USE_NAMES = Object.fromEntries(USES.map((u) => [u, useLabel(u).toLowerCase()]));
@@ -171,6 +175,8 @@ export function fieldsOf(plan, id) {
     if (spec.only && !spec.only.includes(cls)) continue;
     const base = textOf(f.type, name), txt = base.byClass?.[cls] ? { ...base, ...base.byClass[cls] } : base; // (a class's own words, a cliff's side, say)
     if (txt.hidden || txt.notFor?.includes(cls)) continue;
+    // (a centerpiece only where the district's character has one, and not in a hamlet)
+    if (f.type === "district" && name === "anchor" && (!ANCHORED.has(characterOf(f)) || f.profile === "hamlet" || f.profile === "roadside")) continue;
     if (shaped && (name === "width" || name === "straight")) continue;
     const kind = txt.kind ?? (spec.kind === "enum" ? "enum" : spec.kind);
     const values = txt.values ?? spec.values;
@@ -273,6 +279,9 @@ export function setField(plan, id, name, raw) {
     else delete g[name];
   } else if (value === undefined) delete g[name];
   else g[name] = value;
+  // A river's width at each point (a Quick Start city's) gives way to a width or end width set in the window, which
+  // would otherwise do nothing (not to one reset, or entered again as it was)
+  if (g.type === "water" && (name === "width" || name === "endWidth") && value !== undefined && value !== f[name]) delete g.widths;
   // A wood's character and its tree count are two ways to say how thick it is: the one set last wins (the count used
   // to win whatever the density said, so an older wood's density did nothing)
   if (g.type === "area" && g.class === "woods" && value !== undefined) {

@@ -18,6 +18,7 @@ import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, 
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
 import { addFeature, snapCorner, snapEnd, toolOf, wallIn } from "../core/draw.mjs";
+import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -277,7 +278,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const plan = normalize(this.#plan);
     const sq = plan.size.ftPerSquare || 25;
     return plan.features.filter((f) => (f.type === "road" || f.type === "water" || f.type === "wall" || f.type === "dock") && Array.isArray(f.path) && f.path.length >= 2)
-      .map((f) => ({ id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2 }));
+      // (a cliff along the middle of its face, as wide as the face, so it's picked anywhere on it)
+      .map((f) => (f.type === "wall" && f.class === "cliff" ? { id: f.id, type: f.type, pts: offsetLine(f.path, (lowSign(f.side) * cliffWidth(f.height, sq)) / 2), half: cliffWidth(f.height, sq) / 2 } : { id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2 }));
   }
 
   /**
@@ -465,7 +467,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asOutlines" class="${this.#outlines ? "as-on" : ""}"><i class="fa-solid fa-draw-polygon"></i> Outlines</button>
-          <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip="Drag corners and points to reshape districts, areas, roads, rivers and walls; drag the dot in a side's middle to add one; alt-click or right-click one to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
+          <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip="Drag corners and points to reshape districts, areas, roads, rivers, walls, ponds, lakes, seas and docks; drag the dot in a side's middle to add one; alt-click or right-click one to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
           <button type="button" data-action="asFit" data-tooltip="Fit the map to the window (or double-click it)"><i class="fa-solid fa-expand"></i> Fit</button>
           <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
@@ -709,13 +711,15 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (gen) return `The generator made this ${gen.kind} in ${this.#nameOf(gen.item.from)}. Pin it to keep it when ${this.#nameOf(gen.item.from)} is rerolled. Click elsewhere to finish.`;
     if (this.#selected) {
       const has = this.#handles.some((h) => h.id === this.#selected);
+      const f = featureOf(this.#plan, this.#selected), name = this.#nameOf(this.#selected);
+      // (roads, rivers, walls and cliffs curve through their points; docks are drawn straight between theirs)
+      const how = f?.straight || f?.type === "dock" ? "straight between them" : "as a smooth curve through them";
       if (has && this.#handles.some((h) => h.id === this.#selected && h.path))
-        return `Drag ${this.#selected}'s points to move it (the dot in a stretch's middle adds a point; right-click a point to remove it). It's drawn ${featureOf(this.#plan, this.#selected)?.straight ? "straight between them" : "as a smooth curve through them"}. Click elsewhere to finish.`;
-      if (has) return `Drag ${this.#selected}'s corners to reshape it (the dot in a side's middle adds a corner; right-click a corner to remove it). Click elsewhere to finish.`;
-      const f = featureOf(this.#plan, this.#selected);
+        return `Drag ${name}'s points to move it (the dot in a stretch's middle adds a point; right-click a point to remove it). It's drawn ${how}. Click elsewhere to finish.`;
+      if (has) return `Drag ${name}'s corners to reshape it (the dot in a side's middle adds a corner; right-click a corner to remove it). Click elsewhere to finish.`;
       return (f?.type === "district" || f?.type === "area") && Number(f.rot)
-        ? `${this.#selected} is turned (it has a rot), and can't be reshaped here yet. Its settings are in the panel.`
-        : `${this.#selected}'s settings are in the panel. Click elsewhere to finish.`;
+        ? `${name} is turned (it has a rot), and can't be reshaped here yet. Its settings are in the panel.`
+        : `${name}'s settings are in the panel. Click elsewhere to finish.`;
     }
     if (this.#shapes) return "Drag a corner or a road's point to reshape; points shared by two districts or two roads move together. A turned area can't be reshaped here yet.";
     return "A quick sketch in plain colors. Click anything to see its settings and reshape it; scroll to zoom, drag to move.";
@@ -860,8 +864,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const moving = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
       let best = null, bestD = 10 / px; // within 10 screen pixels
       for (const o of this.#corners) {
-        // Roads snap to roads (rivers to rivers, walls to walls), districts and areas to districts and areas
-        if (moving.has(o.id) || !!o.path !== !!e.h.path || (e.h.path && o.type !== e.h.type)) continue;
+        // Roads snap to roads (rivers to rivers, walls to walls, cliffs to cliffs), districts and areas to each other, and
+        // ponds, lakes and seas to each other
+        if (moving.has(o.id) || o.family !== e.h.family) continue;
         const d = Math.hypot(o.at[0] - to[0], o.at[1] - to[1]);
         if (d < bestD) { bestD = d; best = o.at; }
       }
@@ -1199,7 +1204,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #snapped(at) {
     const t = this.#tool, make = toolOf(t.id).make, geo = toolOf(t.id).geometry;
     if (geo === "shape") return snapCorner(this.#plan, at, this.#tolerance());
-    if (geo === "path") return snapEnd(this.#plan, make.type, at, this.#tolerance());
+    if (geo === "path") return snapEnd(this.#plan, make.type, at, this.#tolerance(), make.class ?? null);
     return { at: [Math.round(at[0] * 10) / 10, Math.round(at[1] * 10) / 10], kind: null };
   }
 
@@ -1427,7 +1432,15 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const opts = { ...chosen, seed: Number(chosen.seed) || seed };
     for (const k of Object.keys(QUICK)) if (!opts[k]) delete opts[k];
     if (!(await this.#mayReplace(before))) return;
-    const { plan } = this.#host.quick(opts);
+    const { plan, choices } = this.#host.quick(opts);
+    // An outline or a river form that couldn't be made (it doesn't go with the water or the other choices, or there's no
+    // room for it) is replaced: say so
+    for (const [k, what] of [["shape", "outline"], ["river", "river"]]) {
+      if (opts[k] && (choices?.size === "city" || choices?.size === "metropolis") && choices[k] !== opts[k]) {
+        const name = (v) => (LABELS[k]?.[v] ?? v ?? "none").toLowerCase();
+        ui.notifications.info(`The ${what} "${name(opts[k])}" couldn't be made here (with ${(LABELS.water?.[choices.water] ?? choices.water).toLowerCase()} and your other choices), so ${choices[k] ? `"${name(choices[k])}" was used instead` : "there's none"}.`);
+      }
+    }
     try {
       await this.show(plan);
     } catch (e) {

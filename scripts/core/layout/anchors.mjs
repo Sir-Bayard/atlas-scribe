@@ -22,7 +22,7 @@ const SCALE = { hamlet: 0.5, village: 0.7, town: 1, city: 1.15 };
  * Each anchor's block in feet (w along the district's axis, h across) and how it's laid out (see layAnchor).
  * Before GRAND and the profile's scale.
  */
-const BLOCKS = {
+export const BLOCKS = {
   temple: { w: 180, h: 240 },
   nobles: { w: 190, h: 220 },
   market: { w: 170, h: 120 },
@@ -60,14 +60,19 @@ export function anchorFor({ district, poly, roads = [], water = [], blocked = []
   const [cx, cy] = centroid(poly);
   const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  for (const shrink of [1, 0.85, 0.7]) {
-    const w = (B.w * scale * shrink) / ftPerSquare, h = (B.h * scale * shrink) / ftPerSquare;
+  // (turned a quarter at each size, then smaller, down to about half, before a ward goes without: a city's wards are
+  // crowded with streets)
+  for (const shrink of [1, 0.85, 0.7, 0.55]) for (const turn of [0, 90]) {
+    const w = (B.w * scale * shrink) / ftPerSquare, h = (B.h * scale * shrink) / ftPerSquare, rt = rot + turn;
     const half = Math.hypot(w, h) / 2;
+    // (how far the turned block reaches from its middle, across and down)
+    const c = Math.abs(Math.cos(rt * DEG)), sn = Math.abs(Math.sin(rt * DEG));
+    const ex = (w * c + h * sn) / 2, ey = (w * sn + h * c) / 2;
     let pick = null;
     const step = Math.max(0.5, Math.min(w, h) / 6);
-    for (let y = y0 + h / 2; y <= y1 - h / 2 + 1e-9; y += step) for (let x = x0 + w / 2; x <= x1 - w / 2 + 1e-9; x += step) {
+    for (let y = y0 + ey; y <= y1 - ey + 1e-9; y += step) for (let x = x0 + ex; x <= x1 - ex + 1e-9; x += step) {
       if (Math.hypot(x - cx, y - cy) > half * 4 + 10 && pick) continue;
-      const box = rectAt([x, y], w, h, rot);
+      const box = rectAt([x, y], w, h, rt);
       if (!box.every((p) => pointInPolygon(p, poly))) continue;
       // Clear of roads by their width, and of water and whatever was placed before (a square, a park, a building)
       const roadGap = Math.min(Infinity, ...roads.map((r) => distanceToPath([x, y], r.path) - r.width / 2));
@@ -79,7 +84,7 @@ export function anchorFor({ district, poly, roads = [], water = [], blocked = []
       const score = mid + (kind === "market" || kind === "docks" ? Math.max(0, roadGap - 1) * 0.6 : 0);
       if (!pick || score < pick.score) pick = { score, at: [x, y] };
     }
-    if (pick) return { at: pick.at, rot, w, h, kind, scale: scale * shrink };
+    if (pick) return { at: pick.at, rot: rt, w, h, kind, scale: scale * shrink };
   }
   return null;
 }

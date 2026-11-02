@@ -205,14 +205,14 @@ const api = {
   },
 
   /**
-   * Quick Start without the window: a plan from { size, season, water, roads, center, surroundings, name, seed }
+   * Quick Start without the window: a plan from { size, season, water, roads, center, surroundings, river, shape, name, seed }
    * (any left out is picked from the seed). Returns { plan, choices }. The choices are listed in api.quickChoices.
    */
   quickPlan(options = {}) {
     return quickPlan(options);
   },
 
-  /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings, river (a city's) }. */
+  /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings, river and shape (a city's) }. */
   get quickChoices() {
     return structuredClone(QUICK);
   },

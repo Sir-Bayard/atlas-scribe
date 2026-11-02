@@ -30,7 +30,7 @@ export function rerollPlan(plan, ids = null) {
   for (const id of wanted) {
     const f = features.find((x) => isObj(x) && x.id === id);
     if (!f) { skipped.push({ id, why: "there's no feature with that id" }); continue; }
-    if (!rerollable(f)) { skipped.push({ id, why: `a ${f.type ?? "feature"} has nothing to reroll (only districts and areas do)` }); continue; }
+    if (!rerollable(f)) { skipped.push({ id, why: `a ${f.type ?? "feature"} has nothing to reroll (only districts, areas, ponds, lakes and seas do)` }); continue; }
     if (locked.has(id)) { skipped.push({ id, why: "it's locked" }); continue; }
     if (!isObj(out.seeds)) out.seeds = {};
     out.seeds[id] = 1 + rng(seedOf(out, id), "reroll", id).int(2 ** 31 - 2);
