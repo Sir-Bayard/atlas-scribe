@@ -11,7 +11,7 @@ import { roadWaterCrossings, snapCrossings, fordDetail } from "./crossings.mjs";
 import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
-import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap } from "../geom.mjs";
+import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap, spansAt } from "../geom.mjs";
 import { BoxGrid, SegGrid } from "../spatial.mjs";
 import { seasonOf } from "../roles.mjs";
 import { seedOf } from "../seeds.mjs";
@@ -23,7 +23,7 @@ import { sharedEdges } from "../streets/borders.mjs";
 import { lotsFor, lotTypeOf } from "../lots/index.mjs";
 import { isTownWall, layWall, bandPieces, offsetPath } from "./walls.mjs";
 import { buildOnLots } from "../lots/build.mjs";
-import { centroid, shapes } from "../lots/poly.mjs";
+import { centroid, shapes, offset, area } from "../lots/poly.mjs";
 import { notablesFor, planUses, useLabel, USE_INFO, CLUTTER_FT } from "../uses.mjs";
 import { LOOK, characterOf, lookOf } from "../character.mjs";
 import { anchorFor, layAnchor } from "./anchors.mjs";
@@ -37,13 +37,25 @@ import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf } from "../cliffs.mjs";
 
-export const LAYOUT_VERSION = 5;
+export const LAYOUT_VERSION = 6;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
 /** A building's chimney: the one drawn, unless it's pinned where it stood ({ u, v, variant }). */
 const chimneyOf = (b, drawn) => (drawn && okChimney(b.chimneyAt) ? { u: b.chimneyAt.u, v: b.chimneyAt.v, variant: b.chimneyAt.variant } : drawn);
 const tallOf = (heightFt) => Math.max(0, (Number(heightFt) - 20) / 20);
+
+/**
+ * A row house's chimney ({ u, v, variant }, shares of its box from its middle): on its ridge, near one end (the far
+ * end when far), so it stands on the roof whatever the footprint's shape.
+ */
+function ridgeChimney(poly, cx, cy, len, rot, far, variant) {
+  const a = (rot * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const local = poly.map(([x, y]) => [(x - cx) * c + (y - cy) * s, -(x - cx) * s + (y - cy) * c]);
+  const [x0, x1] = spansAt(local, 0).reduce((b, sp) => (!b || sp[1] - sp[0] > b[1] - b[0] ? sp : b), null) ?? [-len / 2, len / 2];
+  const mid = (x0 + x1) / 2, x = mid + (far ? -1 : 1) * 0.32 * (x1 - x0);
+  return { u: len > 0 ? x / len : 0, v: 0, variant };
+}
 
 /** How far along a ray (from, unit dir) it meets the segment a-b, or null. */
 function rayHit([ox, oy], [dx, dy], [ax, ay], [bx, by]) {
@@ -329,7 +341,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const given = asGiven.features.find((f) => f.id === w.id)?.path;
       if (!given || given.length < 3) continue;
       for (const b of feet) {
-        const foot = shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot);
+        const foot = footOf(b);
         const ring = [...foot, foot[0]];
         const gap = (path) => Math.min(...foot.map((p) => distanceToPath(p, path)), ...path.map((p) => (pointInPolygon(p, foot) ? 0 : distanceToPath(p, ring))));
         if (gap(w.path) < w.width / 2 && gap(given) >= w.width / 2)
@@ -373,8 +385,19 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
   /** Adds a building item and keeps space clear around it. r: the stream for its own small choices. */
   function addBuilding(b, id, r, from = id) {
-    let cx, cy, len, dep, round = false;
-    if (b.shape?.circle) {
+    let cx, cy, len, dep, round = false, poly = null;
+    if (Array.isArray(b.shape) && shapeToPolygon(b.shape).length >= 3) {
+      // A footprint of any shape (a city row house, fitted to its plot), turned by rot as any shape is: drawn under a
+      // gable whose ridge runs the way it's turned, so it's measured in that frame, its box centered on its middle
+      poly = shapeToPolygon(b.shape, b.rot ?? 0);
+      const a = ((b.rot ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+      const us = poly.map(([x, y]) => x * ux + y * uy), vs = poly.map(([x, y]) => -x * uy + y * ux);
+      const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
+      const um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+      cx = um * ux - vm * uy; cy = um * uy + vm * ux; len = u1 - u0; dep = v1 - v0;
+      // (a gable or a flat roof: a polygon takes no other form, and says so when the plan asked for one)
+      if (b.roofStyle && b.roofStyle !== "gable" && b.roofStyle !== "flat") notes.push({ level: "warning", id, message: `"${id}": a building of any other shape than a rectangle is drawn with a gable (or flat), not a ${b.roofStyle} roof.` });
+    } else if (b.shape?.circle) {
       // A round building (a tower, a dovecote): drawn under a cone
       const [x, y, rad] = b.shape.circle;
       cx = x; cy = y; len = dep = 2 * rad; round = true;
@@ -384,27 +407,31 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     } else {
       const [x0, y0, x1, y1] = bbox(shapeToPolygon(b.shape));
       cx = (x0 + x1) / 2; cy = (y0 + y1) / 2; len = x1 - x0; dep = y1 - y0;
-      notes.push({ level: "warning", id, message: `"${id}": only rectangular and round buildings are drawn so far; this one is drawn as its bounding box.` });
+      notes.push({ level: "warning", id, message: `"${id}": only rectangular, round and polygon buildings are drawn so far; this one is drawn as its bounding box.` });
     }
     const roof = b.roof ?? "slate";
     const v = r.int(8); // drawn even when given, so the stream stays the same
     const cc = r.chance(0.75), cv = r.chance(0.5), ci = r.int(8); // the chimney's, likewise (a landmark's buildings share a stream)
     const item = {
       kind: "building", id, from, cx, cy, len, dep, rot: b.rot ?? 0, roof, variant: b.variant ?? v, tall: tallOf(b.height ?? 20),
-      roofStyle: round ? (b.tower && b.roofStyle === "flat" ? "flat" : "cone") : b.roofStyle ?? "gable", // see ROOF_STYLES; a round building's is a cone (an open tower's flat)
+      roofStyle: round ? (b.tower && b.roofStyle === "flat" ? "flat" : "cone") : poly ? (b.roofStyle === "flat" ? "flat" : "gable") : b.roofStyle ?? "gable", // see ROOF_STYLES; a round building's is a cone (an open tower's flat), a polygon's a gable or flat
+      ...(poly ? { poly } : {}),
       ...(round ? { round: true } : {}),
       ...(b.tower ? { tower: true, ...(b.crenels ? { crenels: true } : {}), ...(b.flatRoof ? { flatRoof: b.flatRoof } : {}) } : {}),
       ...(b.join ? { join: b.join } : {}), // a wing's ends that run into another roof (valleys there, no hip)
       ...(b.cut ? { cut: b.cut } : {}), // hips that start in from their corner, where a flush wing covers it
-      chimney: chimneyOf(b, (b.chimney ?? cc) && !round ? { u: 0.3, v: cv ? -0.2 : 0.2, variant: ci } : null),
+      // (a row house's stands on its ridge, near one end of it)
+      chimney: chimneyOf(b, (b.chimney ?? cc) && !round ? (poly ? ridgeChimney(poly, cx, cy, len, b.rot ?? 0, cv, ci) : { u: 0.3, v: cv ? -0.2 : 0.2, variant: ci }) : null),
       ...(b.name ? { name: b.name } : {}),
       ...(b.use ? { use: b.use } : {}),
       ...(b.grand ? { grand: true } : {}),
     };
     items.push(item);
     space.buildings.push(item);
-    const foot = round ? shapeToPolygon({ circle: [cx, cy, len / 2] }) : shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot);
-    const kept = grow(foot, 0.4);
+    const foot = round ? shapeToPolygon({ circle: [cx, cy, len / 2] }) : poly ?? shapeToPolygon({ rect: [cx - len / 2, cy - dep / 2, cx + len / 2, cy + dep / 2] }, item.rot);
+    // (a polygon's grown by a true offset: pushing its corners out from its middle would pull a notch's sides in)
+    // (its outer ring: the biggest, as a C closing up around its gap leaves a hole too)
+    const kept = poly ? offset([poly], 0.4).reduce((a, p) => (!a || area(p) > area(a) ? p : a), null) ?? grow(foot, 0.4) : grow(foot, 0.4);
     for (const o of [item, foot, kept]) owner.set(o, from);
     space.reserved.push(kept);
     space.plots.push(foot);
@@ -431,8 +458,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     for (const k of nearby.gardens.near(cx, cy, reach)) { const g = space.gardens[k]; if (!elsewhere(g) && polygonsOverlap(pts, g)) return false; }
     return true;
   }
-  /** A building item's footprint (a round one's square box). */
+  /** A building item's footprint (a round one's square box; a row house's own outline). */
   function footOf(b) {
+    if (b.poly) return b.poly;
     return b.round ? shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot) : shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot);
   }
 
@@ -776,7 +804,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const a = w.path[i - 1], b = w.path[i], d = distanceToPath(at, [a, b]);
       if (d < best && d < Math.max(x1 - x0, y1 - y0) / 2) { best = d; angle = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI; }
     }
-    const fixedBuildings = items.filter((i) => i.kind === "building").map((b) => shapeToPolygon({ rect: [b.cx - b.len / 2, b.cy - b.dep / 2, b.cx + b.len / 2, b.cy + b.dep / 2] }, b.rot));
+    const fixedBuildings = items.filter((i) => i.kind === "building").map(footOf);
     // (each plan prop or tree by its own size; walls, hedges and fences as lines)
     const fixedProps = items.filter((i) => i.kind === "prop" || i.kind === "tree").map((q) => ({ x: q.x, y: q.y, r: q.kind === "tree" ? 0.5 : ((PROP_SQUARES[q.class] ?? 0.45) * (q.scale ?? 1)) / 2 }));
     const lines = items.filter((i) => (i.kind === "wall" || i.kind === "boundary") && Array.isArray(i.path));
@@ -1152,7 +1180,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       }));
       while (districtCache.size > DISTRICT_CACHE_SIZE) districtCache.delete(districtCache.keys().next().value);
     };
-    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} ${own.length === 1 ? "street or lane" : "streets and lanes"}, ${made.bridges.length} ${made.bridges.length === 1 ? "bridge" : "bridges"}, ${lots.length - uses.sites.reduce((n, st) => n + st.lots.length - 1, 0)} plots, ${built.houses.filter((h) => !h.wing).length} houses (${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
+    notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} ${own.length === 1 ? "street or lane" : "streets and lanes"}, ${made.bridges.length} ${made.bridges.length === 1 ? "bridge" : "bridges"}, ${lots.length - uses.sites.reduce((n, st) => n + st.lots.length - 1, 0)} plots, ${built.houses.filter((h) => !h.wing).length} houses (${built.houses.filter((h) => !h.wing && (h.shape === "row" || (h.shape === "steps" && Array.isArray(h.building.shape)))).length} in rows; ${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
     for (const use of uses?.missed ?? []) notes.push({ level: "info", id: d.id, message: `"${d.name ?? d.id}" had no room for its ${useLabel(use).toLowerCase()}.` });
     for (const use of uses?.dry ?? []) notes.push({ level: "info", id: d.id, message: `"${d.name ?? d.id}" has no water near for its ${useLabel(use).toLowerCase()}, so it has none.` });
     remember();
@@ -1282,9 +1310,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         const l = Math.hypot(p[0] - q[0], p[1] - q[1]) || 1;
         let dir = Math.atan2(p[1] - q[1], p[0] - q[0]);
         if (pointInPolygon([p[0] + ((p[0] - q[0]) / l) * 1.5, p[1] + ((p[1] - q[1]) / l) * 1.5], poly)) continue; // runs back in
-        // A house by the lane's end: a track (wider than a lane) would clip it
+        // A house by the lane's end (the district's own or one pinned there): a track (wider than a lane) would clip it
         const trackHalf = 10 / sq / 2 + 0.02;
-        if (items.some((b) => b.kind === "building" && b.from === d.id && Math.abs(b.cx - p[0]) < Math.max(b.len, b.dep) + 1 && Math.abs(b.cy - p[1]) < Math.max(b.len, b.dep) + 1 && (pointInPolygon(p, footOf(b)) || distanceToPath(p, closed(footOf(b))) < trackHalf))) continue;
+        if (items.some((b) => b.kind === "building" && Math.abs(b.cx - p[0]) < Math.max(b.len, b.dep) + 1 && Math.abs(b.cy - p[1]) < Math.max(b.len, b.dep) + 1 && (pointInPolygon(p, footOf(b)) || distanceToPath(p, closed(footOf(b))) < trackHalf))) continue;
         const path = [p];
         let at = p, joined = false;
         for (let k = 0; k < want; k++) {

@@ -7,7 +7,7 @@
  * paint(ctx) takes the same ctx as the other styles; art is never asked for.
  */
 import { fallbackColor } from "../../core/roles.mjs";
-import { roofFacets } from "../roofs.mjs";
+import { roofFacets, outlineOf } from "../roofs.mjs";
 import { offset, union, difference, intersect, bands, shapes } from "../../core/lots/poly.mjs";
 import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
 
@@ -437,7 +437,7 @@ export function paint(ctx) {
     const sh = 0.14 + 0.12 * (b.tall || 0);
     g.save(); g.translate(X(b.cx) + sh * 0.35 * pp, Y(b.cy) - sh * pp); g.rotate((b.rot * Math.PI) / 180);
     if (b.round) { g.beginPath(); g.arc(0, 0, (Math.min(b.len, b.dep) * pp) / 2, 0, 2 * Math.PI); g.fill(); }
-    else g.fillRect((-b.len * pp) / 2, (-b.dep * pp) / 2, b.len * pp, b.dep * pp);
+    else { g.beginPath(); outlineOf(b).forEach(([x, y], k) => (k ? g.lineTo(x * pp, y * pp) : g.moveTo(x * pp, y * pp))); g.closePath(); g.fill(); }
     g.restore();
   }
   for (const b of buildings) {
@@ -475,7 +475,7 @@ export function paint(ctx) {
     g.strokeStyle = rgb(P.ink, 0.9); g.lineWidth = inkW;
     for (const f of facets) for (const [a, b2] of f.eaves) seg(a, b2);
     // (a flat roof has no eaves: its outline inked all around)
-    if (facets.some((f) => f.flat) && !b.round) g.strokeRect((-b.len / 2) * pp, (-b.dep / 2) * pp, b.len * pp, b.dep * pp);
+    if (facets.some((f) => f.flat) && !b.round && !b.poly) g.strokeRect((-b.len / 2) * pp, (-b.dep / 2) * pp, b.len * pp, b.dep * pp);
     if (facets.finial) { g.fillStyle = rgb(P.ink); g.beginPath(); g.arc(0, 0, Math.max(1.2, pp * 0.04), 0, 2 * Math.PI); g.fill(); }
     g.restore();
   }

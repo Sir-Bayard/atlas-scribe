@@ -38,6 +38,50 @@ export function rotateAbout([x, y], [cx, cy], deg) {
   return [cx + dx * c - dy * s, cy + dx * s + dy * c];
 }
 
+/**
+ * Where the line y = m runs inside a polygon: its stretches, [x0, x1] each, left to right (one for a plain footprint,
+ * two across a U's arms). Where a row house's ridge runs.
+ */
+export function spansAt(poly, m) {
+  // (taken a hair above the line and a hair below, and only where both are inside: an edge lying on the line, or a
+  // corner touching it, then counts the same whichever side of it the shape lies)
+  const ys = poly.map((p) => p[1]), e = Math.max(1e-9, (Math.max(...ys) - Math.min(...ys)) * 1e-6);
+  const above = crossings(poly, m - e), below = crossings(poly, m + e);
+  const out = [];
+  for (const [a0, a1] of above) for (const [b0, b1] of below) {
+    const x0 = Math.max(a0, b0), x1 = Math.min(a1, b1);
+    if (x1 - x0 > 1e-9) out.push([x0, x1]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+
+/** Where the line y = m runs inside a polygon, the line clear of its corners. */
+function crossings(poly, m) {
+  const xs = [];
+  for (let k = 0; k < poly.length; k++) {
+    const p = poly[k], q = poly[(k + 1) % poly.length];
+    // (each edge counts its lower end and not its upper, so a corner on the line is counted once)
+    if ((p[1] <= m) !== (q[1] <= m)) xs.push(p[0] + ((m - p[1]) / (q[1] - p[1])) * (q[0] - p[0]));
+  }
+  xs.sort((a, b) => a - b);
+  const out = [];
+  for (let k = 0; k + 1 < xs.length; k += 2) if (xs[k + 1] - xs[k] > 1e-9) out.push([xs[k], xs[k + 1]]);
+  return out;
+}
+
+/**
+ * A polygon on the map as a plan shape turned by rot: the same corners turned back by rot about the middle of their
+ * box in that frame, so shapeToPolygon(unturn(poly, rot), rot) gives poly again (a pinned row house's footprint,
+ * whose turn is the way its ridge runs).
+ */
+export function unturn(poly, rot) {
+  const a = rot * DEG, ux = Math.cos(a), uy = Math.sin(a);
+  const us = poly.map(([x, y]) => x * ux + y * uy), vs = poly.map(([x, y]) => -x * uy + y * ux);
+  const um = (Math.min(...us) + Math.max(...us)) / 2, vm = (Math.min(...vs) + Math.max(...vs)) / 2;
+  const mid = [um * ux - vm * uy, um * uy + vm * ux];
+  return poly.map((p) => rotateAbout(p, mid, -rot));
+}
+
 /** [x0, y0, x1, y1] around a list of points. */
 export function bbox(pts) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;

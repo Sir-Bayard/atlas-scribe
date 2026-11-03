@@ -17,7 +17,8 @@ export const CHARACTER_LABELS = {
 /**
  * Per character, changes to its profile's plot numbers (see LOT_TYPES) and street numbers (see DISTRICT_TYPES).
  * lots: frontage, depth and houseDepth multiply the profile's ranges; cover and setback are ranges in their own
- * right, or { add } to shift the profile's; outbuilding, croft and merge are shares (number) or { add };
+ * right, or { add } to shift the profile's; outbuilding, croft, merge and rows are shares (number) or { add } or
+ * { mul };
  * shapes and extras: each share multiplied (mul) then raised (add), kept between 0 and 1; roofs: weights multiplied
  * by name (missing names unchanged), add: new weights; styles: weights multiplied likewise; fill: a mix of its own.
  * gardens: the share of houses with a tended garden when the district doesn't say. streets: spacing, width and the
@@ -34,7 +35,7 @@ export const CHARACTER = {
   // Wide plots and big houses around courtyards, warehouses at the back, tile and slate
   merchants: {
     lots: {
-      frontage: 1.35, depth: 1.1, houseDepth: 1.15, merge: { add: 0.15 }, croft: 0,
+      frontage: 1.35, depth: 1.1, houseDepth: 1.15, merge: { add: 0.15 }, croft: 0, rows: { mul: 0.5 },
       shapes: { L: { add: 0.05 }, U: { add: 0.1 }, court: { add: 0.18 } },
       extras: { dormers: { add: 0.15 }, bay: { add: 0.08 }, turret: { add: 0.05 }, rear: { add: 0.25 } },
       roofs: { mul: { thatch: 0.1, "wood-shingle": 0.4, "wood-shingle-light": 0.4 }, add: { "tile-red": 1 } },
@@ -54,7 +55,7 @@ export const CHARACTER = {
   // Long, plain buildings close together by the water, yards and no gardens
   docks: {
     lots: {
-      frontage: 1.2, depth: 0.8, cover: { min: 0.8 }, setback: [0, 5], outbuilding: { add: 0.2 }, croft: 0,
+      frontage: 1.2, depth: 0.8, cover: { min: 0.8 }, setback: [0, 5], outbuilding: { add: 0.2 }, croft: 0, rows: 0,
       shapes: { L: { mul: 0.6 }, U: { mul: 0.3 }, court: { mul: 0.3 } }, extras: { dormers: { mul: 0.3 }, turret: 0, bay: 0, rear: { add: 0.2 } },
       roofs: { mul: { thatch: 0.2 }, add: { "wood-shingle-dark": 1 } },
       styles: { mul: { gable: 1.5, mansard: 0.2, "half-hip": 0.5 } },
@@ -66,7 +67,7 @@ export const CHARACTER = {
   // Big houses set back in their grounds, gardens and orchards, wide calm streets
   nobles: {
     lots: {
-      frontage: 2.2, depth: 1.3, houseDepth: 1.25, cover: [0.45, 0.7], setback: [20, 45], merge: { add: 0.2 }, outbuilding: 0.5, croft: 0,
+      frontage: 2.2, depth: 1.3, houseDepth: 1.25, cover: [0.45, 0.7], setback: [20, 45], merge: { add: 0.2 }, outbuilding: 0.5, croft: 0, rows: 0,
       shapes: { L: { add: 0.1 }, U: { add: 0.2 }, court: { add: 0.25 } },
       extras: { turret: { add: 0.15 }, dormers: { add: 0.2 }, bay: { add: 0.2 }, steps: { mul: 0.5 } },
       roofs: { mul: { thatch: 0, "wood-shingle": 0.1, "wood-shingle-dark": 0.1, "wood-shingle-light": 0.1 }, add: { "slate-blue": 1, "tile-red": 1 } },
@@ -80,7 +81,7 @@ export const CHARACTER = {
   // Quiet plots around the temple: houses set back a little, gardens, slate and tile
   temple: {
     lots: {
-      frontage: 1.4, setback: { add: [5, 15] }, croft: 0,
+      frontage: 1.4, setback: { add: [5, 15] }, croft: 0, rows: 0,
       shapes: { court: { add: 0.15 }, U: { add: 0.05 } },
       roofs: { mul: { thatch: 0.2, "wood-shingle": 0.5 }, add: { slate: 1 } },
       fill: { garden: 0.45, orchard: 0.25, trees: 0.3 },
@@ -103,7 +104,7 @@ export const CHARACTER = {
   // Big ranges around yards, straight wide streets, no gardens
   garrison: {
     lots: {
-      frontage: 1.5, depth: 1.2, houseDepth: 1.1, cover: { min: 0.7 }, merge: { add: 0.15 }, outbuilding: { add: 0.2 }, croft: 0,
+      frontage: 1.5, depth: 1.2, houseDepth: 1.1, cover: { min: 0.7 }, merge: { add: 0.15 }, outbuilding: { add: 0.2 }, croft: 0, rows: 0,
       shapes: { L: { add: 0.1 }, U: { add: 0.2 }, court: { add: 0.3 } },
       extras: { bay: 0, dormers: 0, turret: { mul: 0.5 }, steps: 0 },
       roofs: { mul: { thatch: 0.2, "wood-shingle-light": 0.3 }, add: { slate: 1 } },
@@ -235,7 +236,7 @@ export function withCharacterLots(T, character) {
     ...T,
     frontage: scaled(T.frontage, c.frontage), depth: scaled(T.depth, c.depth), houseDepth: scaled(T.houseDepth, c.houseDepth),
     cover: ranged(T.cover, c.cover).map(clamp01), setback: ranged(T.setback, c.setback),
-    outbuilding: share(T.outbuilding, c.outbuilding), croft: share(T.croft, c.croft), merge: share(T.merge ?? 0, c.merge),
+    outbuilding: share(T.outbuilding, c.outbuilding), croft: share(T.croft, c.croft), merge: share(T.merge ?? 0, c.merge), rows: share(T.rows ?? 0, c.rows),
     shapes: shares(T.shapes, c.shapes), extras: shares(T.extras, c.extras),
     roofs: L.roofs ?? weights(T.roofs, c.roofs), palette: L.roofs ? Object.keys(L.roofs).length : T.palette, styles: weights(T.styles, c.styles),
     fill: L.sheds ? withSheds(c.fill ?? T.fill, L.sheds) : c.fill ?? T.fill, wild: c.wild !== undefined ? (T.wild ?? 1.5) * c.wild : T.wild,

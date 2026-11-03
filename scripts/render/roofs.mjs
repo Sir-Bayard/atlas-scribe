@@ -8,20 +8,74 @@
  *   a ridge cap; parapet: for a flat roof, { w, joined: { start, end }, crenels, and for a round tower round: true and R };
  *   skylight: { cx, cy, len, dep } or null.
  *
+ * A building with a footprint of its own (b.poly, a city row house) is drawn by rowFacets.
+ *
  * Every form assumes equal pitches, so hips and valleys run at 45 degrees in plan (Tom Cartos-style roofs). A wing's
  * end that runs into another roof (b.join.start: the -x end, b.join.end: +x) has no hip or gable: its slopes carry on
  * half its width past the end and meet in a point, forming the valleys where it joins the other roof.
  */
+
+import { spansAt } from "../core/geom.mjs";
 
 /** How far a half-hip's small hip reaches down its end, as a share of the half width. */
 const HALF_HIP = 0.42;
 
 export function roofFacets(b) {
   if (b.round) return b.tower && b.roofStyle === "flat" ? roundFlatFacets(b) : coneFacets(b);
+  if (Array.isArray(b.poly) && b.poly.length >= 3) return rowFacets(b);
   const style = b.roofStyle ?? "gable";
   if (style === "flat") return flatFacets(b);
   if (style === "mansard" && !b.join) return mansardFacets(b);
   return slopedFacets(b, style === "mansard" ? "hip" : style);
+}
+
+/**
+ * A building's outline in its own frame: its footprint polygon (a row house's, b.poly, given on the map), else its
+ * rectangle. (A round building's is its box: the styles draw it as a circle.)
+ */
+export function outlineOf(b) {
+  if (Array.isArray(b.poly) && b.poly.length >= 3) {
+    const a = ((b.rot ?? 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    return b.poly.map(([x, y]) => { const dx = x - b.cx, dy = y - b.cy; return [dx * c + dy * s, -dx * s + dy * c]; });
+  }
+  const A = b.len / 2, B = b.dep / 2;
+  return [[-A, -B], [A, -B], [A, B], [-A, B]];
+}
+
+/** The part of a polygon on one side of the line y = m (side -1: above it, 1: below), Sutherland-Hodgman. */
+function clipY(poly, m, side) {
+  const inside = (p) => side * (p[1] - m) >= 0;
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    if (inside(p)) out.push(p);
+    if (inside(p) !== inside(q)) { const t = (m - p[1]) / (q[1] - p[1]); out.push([p[0] + t * (q[0] - p[0]), m]); }
+  }
+  return out.length >= 3 ? out : [];
+}
+
+/**
+ * A row house: any footprint under a gable whose ridge runs along x (the street) through the middle of its depth
+ * (a row's ends are party walls, so it takes no hips: a hipped form is drawn as a gable; a flat roof stays flat).
+ * Its two slopes are the footprint cut along the ridge; every edge of the footprint is an eave or verge, so each
+ * house in a row is outlined on its own and the party walls between them show.
+ */
+function rowFacets(b) {
+  const poly = outlineOf(b);
+  // (a flat-roofed row: one flat piece, outlined all around)
+  if (b.roofStyle === "flat") return finish([{ poly, down: [0, 0], eaveAngle: 0, eaves: poly.map((p, k) => [p, poly[(k + 1) % poly.length]]), flat: true }]);
+  const ys = poly.map((p) => p[1]), m = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const edges = poly.map((p, k) => [p, poly[(k + 1) % poly.length]]);
+  // The ridge: along the line y = m where it runs inside the footprint (across a U's arms, a stretch over each; the
+  // longest is the ridge, and each gets a ridge cap)
+  const spans = spansAt(poly, m).map(([x0, x1]) => [[x0, m], [x1, m]]);
+  const ridge = spans.reduce((a, s) => (!a || s[1][0] - s[0][0] > a[1][0] - a[0][0] ? s : a), null);
+  const front = clipY(poly, m, -1), back = clipY(poly, m, 1);
+  const out = [
+    { poly: front, down: [0, -1], eaveAngle: 0, eaves: edges, flat: false },
+    { poly: back, down: [0, 1], eaveAngle: 0, eaves: [], flat: false },
+  ];
+  return finish(out, { ridge, caps: spans });
 }
 
 /** Drops empty facets and sets each slope's eaveAngle from its downslope (the builders leave it 0). */

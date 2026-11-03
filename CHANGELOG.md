@@ -9,6 +9,14 @@
 - The nobles' palace is drawn as a palace: a walled precinct entered by a gate with a pier each side, a paved court of honor with a fountain between two wings running out from the main range, square pavilions at the corners and a domed one at the middle, and formal gardens behind on the same axis (beds edged with box either side of a broad walk, a basin, rows of trees).
 - For plan writers: the top-level `style` (`illustrated` or `textured`) and `output.dressing` (true or false). `checkPlan` warns about dressing that isn't true or false, or asked of a textured map. A layout now carries each district's outline (`district` items), the map's `title` and `dressing`.
 
+**Denser cities**
+- A city's busy quarters are built up in continuous rows. Each plot's house takes the plot's whole street front, fitted to it (following a curving street), under a roof whose ridge runs along the street, and the party walls between the houses show. At a corner, or where a plot runs through to a street behind, the row turns and carries on along that street too. A wide row is sometimes built in two sections, the second shallower under a roof of its own. Behind the rows are yards with sheds, gardens and trees, and now and then a back range closing a small court. A busy ward is now about half roofs (it was about a third).
+- Homes, market, crafts and poor quarters build in rows, and about half of a merchants' quarter; the nobles, temple, garrison and docks keep their own houses, as does a district whose own roof forms leave out the gable. Towns and villages are not built in rows.
+- Deeper houses: a house kept shallow to leave room for wings it then had no room for now takes its plot's full depth, and a house narrows in finer steps before its plot is left as a yard. Most visible in cities; houses everywhere move a little.
+- A plan building's shape can now be any polygon (it was drawn as its bounding box): it is drawn under a gable whose ridge runs the way the building is turned. A pinned row house keeps its own outline.
+- A track out to the fields from a lane's end keeps clear of a pinned house there, as it does of the district's own.
+- For plan writers: a building's `shape` may be a list of points, turned by `rot` as any shape is, its ridge along the turn. A row house's layout item carries `poly`, its outline on the map. Every city plan and Quick Start city draws differently, and cached layouts are redrawn.
+
 ## 0.5.0
 
 Walled cities. Quick Start makes a city or a metropolis with its wall, gates, wards, harbor, citadel and country around it, and every district can have a character and its centerpiece. Also new: water (ponds, lakes, the sea, quays and piers), town walls, cliffs, more kinds of squares, market stalls, cemeteries, mills and boats.

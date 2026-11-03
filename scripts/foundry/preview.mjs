@@ -312,7 +312,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (genCache.has(r.pinnables)) return genCache.get(r.pinnables);
     const out = {
       houses: r.pinnables.houses.map((h) => ({ ...h, polys: h.parts.map((p) => {
-        try { return p.round ? shapeToPolygon({ circle: [p.cx, p.cy, p.len / 2] }) : shapeToPolygon({ rect: [p.cx - p.len / 2, p.cy - p.dep / 2, p.cx + p.len / 2, p.cy + p.dep / 2] }, p.rot ?? 0); } catch { return []; }
+        try { if (Array.isArray(p.poly) && p.poly.length >= 3) return p.poly; return p.round ? shapeToPolygon({ circle: [p.cx, p.cy, p.len / 2] }) : shapeToPolygon({ rect: [p.cx - p.len / 2, p.cy - p.dep / 2, p.cx + p.len / 2, p.cy + p.dep / 2] }, p.rot ?? 0); } catch { return []; }
       }).filter((q) => q.length >= 3) })),
       streets: r.pinnables.streets,
     };

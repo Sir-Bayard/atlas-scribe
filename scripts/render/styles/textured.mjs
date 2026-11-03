@@ -8,7 +8,7 @@
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
-import { roofFacets } from "../roofs.mjs";
+import { roofFacets, outlineOf } from "../roofs.mjs";
 import { offsetLine as shiftLine } from "../../core/cliffs.mjs";
 export { roofFacets };
 
@@ -820,7 +820,7 @@ export function paint(ctx) {
       const sh = 0.35 + 0.3 * (b.tall || 0);
       k.save(); k.translate(X(b.cx) + sh * 0.3 * pp, Y(b.cy) - sh * pp); k.rotate((b.rot * Math.PI) / 180);
       if (b.round) { k.beginPath(); k.arc(0, 0, (Math.min(b.len, b.dep) * pp) / 2, 0, 2 * Math.PI); k.fill(); }
-      else k.fillRect((-b.len * pp) / 2, (-b.dep * pp) / 2, b.len * pp, b.dep * pp);
+      else { k.beginPath(); outlineOf(b).forEach(([x, y], n) => (n ? k.lineTo(x * pp, y * pp) : k.moveTo(x * pp, y * pp))); k.closePath(); k.fill(); }
       k.restore();
     }
   }, "rgb(28,38,58)", 0.12, 0.45, "source-over", boxOf([buildings.map((b) => [b.cx, b.cy])], reachB));

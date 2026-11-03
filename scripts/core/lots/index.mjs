@@ -28,7 +28,9 @@ import { SegGrid, finitePaths } from "../spatial.mjs";
  * a long roof, a round corner turret, a long house built in stepped sections, a square shed being round, and a range
  * at the far end of a long plot (rear); fill: what the back of a plot behind the yard holds (a strip garden, an
  * orchard in rows, a few trees, open ground) by share;
- * wild: the spacing, in squares, of trees scattered over ground no plot takes (beyond the back lanes, inside blocks).
+ * wild: the spacing, in squares, of trees scattered over ground no plot takes (beyond the back lanes, inside blocks);
+ * rows: the chance a plot's house is a row house, the plot's whole street front under one roof, turning along a
+ * second street at a corner (Patrick, 2 Nov: city quarters built up as continuous frontages, yards behind).
  */
 export const LOT_TYPES = {
   hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, shapes: { L: 0.25, T: 0.1, U: 0, court: 0 }, extras: { bay: 0.1, dormers: 0.05, turret: 0, steps: 0.2, roundShed: 0.25 },
@@ -37,8 +39,8 @@ export const LOT_TYPES = {
     roofs: { slate: 4, "wood-shingle": 2, thatch: 2, "slate-blue": 1, "tile-red": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 3, styles: { hip: 0.4, "half-hip": 0.2, gable: 0.4 }, fill: { orchard: 0.25, trees: 0.45, open: 0.3 }, wild: 1.4 },
   town: { frontage: [25, 40], depth: [200, 240], cover: [0.9, 1], houseDepth: [25, 40], setback: [0, 0], outbuilding: 0.15, croft: 0, bounds: false, merge: 0.12, shapes: { L: 0.35, T: 0.1, U: 0.1, court: 0.08 }, extras: { bay: 0, dormers: 0.25, turret: 0.08, steps: 0.5, roundShed: 0.05, rear: 0.45 },
     roofs: { slate: 3, "slate-blue": 2, "slate-purple": 1, "tile-red": 2, "tile-orange": 1, "tile-brown": 1, "wood-shingle-dark": 1 }, palette: 4, styles: { gable: 0.7, hip: 0.2, "half-hip": 0.05, flat: 0.05 }, fill: { garden: 0.3, orchard: 0.25, trees: 0.3, open: 0.15 }, wild: 1.8 },
-  city: { frontage: [18, 30], depth: [55, 90], cover: [1, 1], houseDepth: [36, 58], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.45, T: 0.1, U: 0.1, court: 0.05 }, extras: { bay: 0, dormers: 0.2, turret: 0.1, steps: 0.6, roundShed: 0 },
-    roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 }, fill: { sheds: 0.8, trees: 0.1, open: 0.1 }, wild: 2.5 },
+  city: { frontage: [18, 30], depth: [55, 90], cover: [1, 1], houseDepth: [36, 58], setback: [0, 0], outbuilding: 0, croft: 0, bounds: false, merge: 0.1, shapes: { L: 0.45, T: 0.1, U: 0.1, court: 0.05 }, extras: { bay: 0, dormers: 0.2, turret: 0.1, steps: 0.6, roundShed: 0, rear: 0.5 }, rows: 1,
+    roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 }, fill: { sheds: 0.5, garden: 0.2, trees: 0.2, open: 0.1 }, wild: 2.5 },
 };
 
 /** A district's plot numbers: its profile's, with its character's changes. */

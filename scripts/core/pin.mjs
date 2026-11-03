@@ -6,7 +6,7 @@
  * Pure: runs in the worker, on the page and under node.
  */
 import { freeId } from "./draw.mjs";
-import { distanceToPath } from "./geom.mjs";
+import { distanceToPath, unturn } from "./geom.mjs";
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -49,9 +49,11 @@ export function pinnables(layout) {
 
 /** One generated building as a plan building: its footprint, turn, roof, height and the details of how it was drawn. */
 function asPlanBuilding(b) {
+  // (a row house keeps its own outline: a polygon, its ridge along its turn)
   const out = b.round
     ? { shape: { circle: [r3(b.cx), r3(b.cy), r3(b.len / 2)] } }
-    : { shape: { rect: [r3(b.cx - b.len / 2), r3(b.cy - b.dep / 2), r3(b.cx + b.len / 2), r3(b.cy + b.dep / 2)] }, roofStyle: b.roofStyle };
+    : Array.isArray(b.poly) && b.poly.length >= 3 ? { shape: unturn(b.poly, b.rot ?? 0).map(([x, y]) => [r3(x), r3(y)]), roofStyle: b.roofStyle }
+      : { shape: { rect: [r3(b.cx - b.len / 2), r3(b.cy - b.dep / 2), r3(b.cx + b.len / 2), r3(b.cy + b.dep / 2)] }, roofStyle: b.roofStyle };
   // A tower (a watch post) stays one: its flat roof inside a parapet, with its battlements
   if (b.tower) { out.tower = true; if (b.crenels) out.crenels = true; if (b.round) out.roofStyle = b.roofStyle; }
   out.rot = r3(b.rot ?? 0);
