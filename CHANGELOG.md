@@ -14,8 +14,9 @@
 - Homes, market, crafts and poor quarters build in rows, and about half of a merchants' quarter; the nobles, temple, garrison and docks keep their own houses, as does a district whose own roof forms leave out the gable. Towns and villages are not built in rows.
 - Deeper houses: a house kept shallow to leave room for wings it then had no room for now takes its plot's full depth, and a house narrows in finer steps before its plot is left as a yard. Most visible in cities; houses everywhere move a little.
 - A plan building's shape can now be any polygon (it was drawn as its bounding box): it is drawn under a gable whose ridge runs the way the building is turned. A pinned row house keeps its own outline.
+- A district's centerpiece no longer always stands in its middle with every street ringing it and leading out from it. It stands in the middle, off to one side or at the district's edge (often on a main road), picked from the map's seed, and the streets near one off to the side mostly follow the district's main roads. A new Centerpiece place setting picks it for a district. Rerolling a district still leaves its centerpiece where it is.
 - A track out to the fields from a lane's end keeps clear of a pinned house there, as it does of the district's own.
-- For plan writers: a building's `shape` may be a list of points, turned by `rot` as any shape is, its ridge along the turn. A row house's layout item carries `poly`, its outline on the map. Every city plan and Quick Start city draws differently, and cached layouts are redrawn.
+- For plan writers: a district's `anchorAt` (`middle`, `side` or `edge`; left out, the plan's seed picks). A building's `shape` may be a list of points, turned by `rot` as any shape is, its ridge along the turn. A row house's layout item carries `poly`, its outline on the map. Every city plan and Quick Start city draws differently, and cached layouts are redrawn.
 
 ## 0.5.0
 

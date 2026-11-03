@@ -4,14 +4,21 @@
  * open ground around them; the square steers the district's streets toward it). A temple quarter's cathedral with
  * its cloister and yard, the nobles' palace with its forecourt and formal garden, the market square and its hall, a
  * merchants' or crafts guildhall, the docks' customs house with cranes, the garrison's keep on its parade ground, the
- * poor quarter's shrine and well. Where it stands depends only on the district's shape and roads, never its seed, so
- * rerolling the district doesn't move it (the seed picks only its small details). Everything in squares. Pure.
+ * poor quarter's shrine and well. Where it stands depends only on the district's shape, roads and place in the plan
+ * (its Centerpiece place, or one picked from the plan's seed and its id), never its own seed, so rerolling the
+ * district doesn't move it (that seed picks only its small details). Not every district is built around it (Patrick,
+ * 2 Nov: "sometimes it'd be nice if maybe the center feature was on the side of the district"): it stands in the
+ * middle, off to one side, or at the district's edge, often on a main road. Everything in squares. Pure.
  */
 import { marketStalls } from "./market.mjs";
 import { PAVINGS } from "../squares.mjs";
 import { pointInPolygon, distanceToPath, polygonsOverlap } from "../geom.mjs";
 import { centroid, area } from "../lots/poly.mjs";
 import { characterOf } from "../character.mjs";
+import { rng } from "../rng.mjs";
+import { ANCHOR_PLACES } from "../plan.mjs";
+/** How far out from the district's middle each place aims, as a share of the way to its edge. */
+const REACH = { middle: 0, side: 0.5, edge: 0.88 };
 
 const DEG = Math.PI / 180;
 /** How much bigger than life a landmark is drawn (the old city views' convention). */
@@ -40,12 +47,15 @@ const rectAt = ([x, y], w, h, rot) => {
 
 /**
  * Where a district's anchor stands: the block (w by h squares, turned to the district's main road) that fits inside
- * it, clear of its roads, water and anything placed, nearest its middle (a market's nearest a road). district: the
- * plan feature; poly: its polygon; roads: [{ path, width }] in or beside it; water: [{ path, clear }]; blocked:
- * polygons it must keep off; ftPerSquare. Returns { at, rot, w, h, kind } or null (no character with an anchor, a
- * hamlet, or no room).
+ * it, clear of its roads, water and anything placed, nearest the spot its place aims at (a market's and the docks'
+ * nearest a road too). The place: the district's anchorAt, else picked from the plan's seed and the district's id
+ * (in the middle a third of the time, off to one side or at its edge otherwise), toward the nearest main road more
+ * often than not, else a way of its own. district: the plan feature; poly: its polygon; roads: [{ path, width }] in
+ * or beside it; water: [{ path, clear }]; blocked: polygons it must keep off; ftPerSquare; seed: the plan's; margin:
+ * how far off the district's edge one off to the side keeps, where it can, so its ring street fits. Returns
+ * { at, rot, w, h, kind, place } or null (no character with an anchor, a hamlet, or no room).
  */
-export function anchorFor({ district, poly, roads = [], water = [], blocked = [], ftPerSquare }) {
+export function anchorFor({ district, poly, roads = [], water = [], blocked = [], ftPerSquare, seed = 1, margin = 0 }) {
   const kind = characterOf(district);
   const B = BLOCKS[kind];
   if (!B || district.anchor === false || district.profile === "hamlet" || district.profile === "roadside") return null;
@@ -58,6 +68,32 @@ export function anchorFor({ district, poly, roads = [], water = [], blocked = []
     if (l > best && pointInPolygon([(ax + bx) / 2, (ay + by) / 2], poly)) { best = l; rot = Math.atan2(by - ay, bx - ax) / DEG; }
   }
   const [cx, cy] = centroid(poly);
+  // The spot it aims at: the middle, or out from it toward a main road or a way of its own, partway to the edge
+  const pr = rng(seed, district.id ?? "", "anchor-place");
+  const roll = pr.next(), toRoad = pr.next() < 0.6, turnTo = pr.next() * 2 * Math.PI; // (all drawn, so each stays put)
+  const place = ANCHOR_PLACES.includes(district.anchorAt) ? district.anchorAt : roll < 0.34 ? "middle" : roll < 0.67 ? "side" : "edge";
+  let dir = [Math.cos(turnTo), Math.sin(turnTo)], roadAt = Infinity;
+  if (toRoad && roads.length) {
+    let near = null;
+    for (const w of roads) {
+      const d = distanceToPath([cx, cy], w.path);
+      if (!near || d < near.d) near = { d, w };
+    }
+    // (the way from the middle to the nearest point of the nearest road)
+    let bestP = null, bestD = Infinity;
+    for (let i = 1; i < near.w.path.length; i++) {
+      const [ax, ay] = near.w.path[i - 1], [bx, by] = near.w.path[i], l2 = (bx - ax) ** 2 + (by - ay) ** 2 || 1;
+      const t = Math.max(0, Math.min(1, ((cx - ax) * (bx - ax) + (cy - ay) * (by - ay)) / l2)), px = ax + t * (bx - ax), py = ay + t * (by - ay);
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestD) { bestD = d; bestP = [px, py]; }
+    }
+    if (bestP && bestD > 1e-6) { dir = [(bestP[0] - cx) / bestD, (bestP[1] - cy) / bestD]; roadAt = bestD; }
+  }
+  // (aimed at a road, it stops short of it, by its own half depth and a square, rather than run on past it)
+  const half0 = (Math.max(B.w, B.h) * scale) / ftPerSquare / 2;
+  const far = Math.min(reachOut(poly, [cx, cy], dir) * REACH[place], Number.isFinite(roadAt) ? Math.max(0, roadAt - half0 - 1) : Infinity);
+  const tx = cx + dir[0] * far, ty = cy + dir[1] * far;
+  const ring = [...poly, poly[0]];
   const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
   // (turned a quarter at each size, then smaller, down to about half, before a ward goes without: a city's wards are
@@ -71,7 +107,7 @@ export function anchorFor({ district, poly, roads = [], water = [], blocked = []
     let pick = null;
     const step = Math.max(0.5, Math.min(w, h) / 6);
     for (let y = y0 + ey; y <= y1 - ey + 1e-9; y += step) for (let x = x0 + ex; x <= x1 - ex + 1e-9; x += step) {
-      if (Math.hypot(x - cx, y - cy) > half * 4 + 10 && pick) continue;
+      if (Math.hypot(x - tx, y - ty) > half * 4 + 10 && pick) continue;
       const box = rectAt([x, y], w, h, rt);
       if (!box.every((p) => pointInPolygon(p, poly))) continue;
       // Clear of roads by their width, and of water and whatever was placed before (a square, a park, a building)
@@ -79,14 +115,44 @@ export function anchorFor({ district, poly, roads = [], water = [], blocked = []
       if (roads.some((r) => r.path.some((p) => pointInPolygon(p, box)) || box.some((p, k) => distanceToPath(p, r.path) < r.width / 2 + 0.2) || segHits(box, r.path))) continue;
       if (water.some((wt) => box.some((p) => distanceToPath(p, wt.path) < (wt.clear ?? 0) + 0.3) || wt.path.some((p) => pointInPolygon(p, box)))) continue;
       if (blocked.some((b) => polygonsOverlap(box, b))) continue;
-      // Nearest the middle; a market and the docks' square want a road beside them
-      const mid = Math.hypot(x - cx, y - cy);
-      const score = mid + (kind === "market" || kind === "docks" ? Math.max(0, roadGap - 1) * 0.6 : 0);
+      // Nearest the spot it aims at; a market and the docks' square want a road beside them
+      const mid = Math.hypot(x - tx, y - ty);
+      // (off to the side, a spot too near the district's edge for its ring street is taken only if there's no other)
+      const tight = place !== "middle" && margin > 0 && box.some((p) => distanceToPath(p, ring) < margin) ? 1e3 : 0;
+      const score = mid + tight + (kind === "market" || kind === "docks" ? Math.max(0, roadGap - 1) * 0.6 : 0);
       if (!pick || score < pick.score) pick = { score, at: [x, y] };
     }
-    if (pick) return { at: pick.at, rot: rt, w, h, kind, scale: scale * shrink };
+    if (!pick) continue;
+    // Off to one side or at the edge, its front (where its approach street runs out) faces the nearest road, else the
+    // district's middle, not the district's edge (half a turn leaves its block where it is)
+    let face = rt;
+    if (place !== "middle") {
+      const [px, py] = pick.at;
+      let to = [cx - px, cy - py], best = Math.max(w, h) / 2 + 6; // (a road within a few squares of its block)
+      for (const w of roads) for (let i = 1; i < w.path.length; i++) {
+        const [ax, ay] = w.path[i - 1], [bx, by] = w.path[i], l2 = (bx - ax) ** 2 + (by - ay) ** 2 || 1;
+        const t = Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / l2)), qx = ax + t * (bx - ax), qy = ay + t * (by - ay);
+        const d = Math.hypot(qx - px, qy - py);
+        if (d < best) { best = d; to = [qx - px, qy - py]; }
+      }
+      if (Math.sin(rt * DEG) * to[0] - Math.cos(rt * DEG) * to[1] < 0) face = rt + 180;
+    }
+    return { at: pick.at, rot: face, w, h, kind, scale: scale * shrink, place };
   }
   return null;
+}
+
+/** How far from a point a ray goes before it leaves the polygon (its first crossing of an edge; 0 if none). */
+function reachOut(poly, [px, py], [dx, dy]) {
+  let best = Infinity;
+  for (let k = 0; k < poly.length; k++) {
+    const [ax, ay] = poly[k], [bx, by] = poly[(k + 1) % poly.length];
+    const ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = ((ax - px) * ey - (ay - py) * ex) / den, u = ((ax - px) * dy - (ay - py) * dx) / den;
+    if (t > 0 && u >= 0 && u <= 1) best = Math.min(best, t);
+  }
+  return Number.isFinite(best) ? best : 0;
 }
 
 /** True when a point is inside a convex quadrilateral. */

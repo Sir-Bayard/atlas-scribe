@@ -72,6 +72,7 @@ export const FIELD_TEXT = {
   "district.character": { label: "Character", names: CHARACTER_NAMES, help: "What it's for: shifts its plots, house shapes, gardens, roofs and streets (homes changes nothing)" },
   "district.trades": { label: "Trades", names: TRADE_NAMES, help: "The trades worked there, each placed by its own rule (tanners by the water, smiths by the roads)", auto: "none, or a crafts district's mix" },
   "district.anchor": { label: "Centerpiece", help: "Its character's great building on its own square, placed first so the streets lead to it: a cathedral, a palace, the market square and hall, a guildhall, a customs house, a keep, a shrine" },
+  "district.anchorAt": { label: "Centerpiece place", names: { middle: "In the middle", side: "Off to one side", edge: "At its edge" }, help: "Where its centerpiece stands: in the middle, its streets ringing it and leading out from it; off to one side; or at its edge, often on a main road", auto: "picked from the map's seed" },
   "district.notable": { label: "Notable buildings", help: "A temple, an inn and a smithy of its own, as a place its size would have" },
   "district.gardens": { label: "Gardens", help: "The share of houses with a tended garden (0 to 1)", auto: "its character's" },
   "district.density": { label: "Built up", help: "Below 1, some plots are left empty (0 to 1)", more: true },
@@ -178,7 +179,8 @@ export function fieldsOf(plan, id) {
     const base = textOf(f.type, name), txt = base.byClass?.[cls] ? { ...base, ...base.byClass[cls] } : base; // (a class's own words, a cliff's side, say)
     if (txt.hidden || txt.notFor?.includes(cls)) continue;
     // (a centerpiece only where the district's character has one, and not in a hamlet)
-    if (f.type === "district" && name === "anchor" && (!ANCHORED.has(characterOf(f)) || f.profile === "hamlet" || f.profile === "roadside")) continue;
+    if (f.type === "district" && (name === "anchor" || name === "anchorAt") && (!ANCHORED.has(characterOf(f)) || f.profile === "hamlet" || f.profile === "roadside")) continue;
+    if (f.type === "district" && name === "anchorAt" && f.anchor === false) continue; // (no centerpiece, no place for it)
     if (shaped && (name === "width" || name === "straight")) continue;
     const kind = txt.kind ?? (spec.kind === "enum" ? "enum" : spec.kind);
     const values = txt.values ?? spec.values;

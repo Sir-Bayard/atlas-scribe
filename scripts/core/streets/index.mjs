@@ -57,7 +57,7 @@ function axisOf(roads) {
 
 /**
  * district: the plan feature (profile, bend, spacing, axis). poly: its polygon. roads: [{ path }] the plan's roads
- * touching it. water: [{ path, clear }]. radials: [{ at, radius }] radial squares. blocked: polygons streets stop
+ * touching it. water: [{ path, clear }]. radials: [{ at, radius, pull? }] radial squares (pull: how far, in street spacings, they turn the streets; 1.2 if left out). blocked: polygons streets stop
  * at (squares, yards, landmarks). gates: this district's gates (districtGates). borders: its edges shared with
  * other districts. ftPerSquare. r: the district's stream. Returns { streets: [{ path, kind, width, ends }],
  * bridges, field } (in squares), or nothing for a hamlet.
@@ -76,7 +76,7 @@ export function streetsFor({ district, poly, roads, water = [], radials = [], bl
       // Shared edges: both districts line up with them, so streets cross them nearly square and meet cleanly
       ...borders.map((path) => ({ path, reach: spacing * 0.6 })),
     ],
-    radials: radials.map((s) => ({ at: s.at, radius: s.radius, reach: spacing * 1.2 })),
+    radials: radials.map((s) => ({ at: s.at, radius: s.radius, reach: spacing * (s.pull ?? 1.2) })), // (a centerpiece off to one side pulls its streets around it less far)
     axis: district.axis ?? axisOf(roads),
     bend: district.bend ?? type.bend,
     seed: r.int(2 ** 31),

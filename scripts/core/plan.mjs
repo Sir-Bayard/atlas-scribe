@@ -10,6 +10,9 @@
 import { CHARACTERS } from "./character.mjs";
 import { USES, TRADES } from "./uses.mjs";
 
+/** Where in its district a centerpiece may stand (a district's anchorAt; left out, the plan's seed picks). */
+export const ANCHOR_PLACES = ["middle", "side", "edge"];
+
 export const PLAN_VERSION = 1;
 
 /**
@@ -136,6 +139,7 @@ export const TYPES = {
       trades: listOf(TRADES), // the trades worked there, each sited by its rule (a crafts district picks some if none are given)
       notable: bool(true), // a temple, an inn and a smithy of its own, as a place its size would have
       anchor: bool(true), // its character's landmark on its own square (a temple quarter's cathedral, the nobles' palace)
+      anchorAt: { ...oneOf(ANCHOR_PLACES, null), fallback: "its place is picked from the map's seed" }, // where it stands: in the middle, off to one side, at the edge; else picked from the plan's seed
       gardens: num(null, { min: 0, max: 1 }), // the share of houses with a tended garden, else its character's (true and false still read)
       density: num(1, { min: 0, max: 1 }),
       surface: oneOf(SURFACES, null), // its streets' surface; else the surface of a road through it

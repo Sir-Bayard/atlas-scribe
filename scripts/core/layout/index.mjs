@@ -1000,7 +1000,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const r = streamFor(d.id);
     // Its anchor first, the landmark its character is known by, on its own square: the streets lead to it and the
     // plots keep off it (where it stands hangs on the district's shape and roads, not its seed)
-    const anchorAt = anchorFor({ district: d, poly, roads: nearHere, water: space.water, blocked: [...around.zones, ...around.plots], ftPerSquare: sq });
+    const anchorAt = anchorFor({ district: d, poly, roads: nearHere, water: space.water, blocked: [...around.zones, ...around.plots], ftPerSquare: sq, seed: plan.seed, margin: (sq ? (typeOf(d).streets?.width ?? 15) / sq : 0.6) + 0.15 });
     const anchor = anchorAt ? layAnchor(anchorAt, r.fork("anchor"), sq) : null;
     // A band along a path (half its width each side) that stays in the district, off water, the plan's roads, squares,
     // yards and buildings: where the anchor's ring and approach streets may run
@@ -1056,7 +1056,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const grow = anchorRing ? ringWidth + 0.05 : ringWidth / 2 + 0.05;
     const streetStop = anchor ? shapeToPolygon({ rect: [anchor.center[0] - anchor.w / 2 - grow, anchor.center[1] - anchor.h / 2 - grow, anchor.center[0] + anchor.w / 2 + grow, anchor.center[1] + anchor.h / 2 + grow] }, anchor.rot) : null;
     const made = streetsFor({
-      district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, { ...anchor.radial, anchor: true }] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
+      district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, { ...anchor.radial, anchor: true, ...(anchorAt.place !== "middle" ? { pull: 0.5 } : {}) }] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
     made.streets = trimAtBuildings(made.streets, around.plots);
