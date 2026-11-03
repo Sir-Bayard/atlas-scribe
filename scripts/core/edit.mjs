@@ -5,7 +5,7 @@
  * Pure: runs in the worker, on the page and under node.
  */
 import { USES, TRADES, useLabel } from "./uses.mjs";
-import { TYPES, SURFACES, SEASONS, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize, isConifer } from "./plan.mjs";
+import { TYPES, SURFACES, SEASONS, STYLES, ROOFS, OLD_PROFILES, RUNNING, BODIES, fieldDefault, isObj, normalize, isConifer } from "./plan.mjs";
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
 import { CHARACTERS, CHARACTER_LABELS, characterOf } from "./character.mjs";
 import { BLOCKS } from "./layout/anchors.mjs";
@@ -129,6 +129,8 @@ export const FIELD_TEXT = {
 export const PLAN_FIELDS = [
   { path: "name", label: "Name", kind: "string" },
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
+  { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)" }, help: "Illustrated draws the map in ink and color, with no art needed; textured paints it from Forgotten Adventures art in FA Nexus, made for battle maps" },
+  { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose, a scale bar and the map's name, painted on the map (illustrated style)" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },

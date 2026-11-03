@@ -167,42 +167,53 @@ export function layAnchor(a, r, ftPerSquare) {
       break;
     }
     case "nobles": {
-      // A gravel forecourt, the palace around its court, a formal garden behind
-      const front = -H / 2 + sq(45);
-      plaza(-H / 2, front, "gravel");
-      fountain(0, (-H / 2 + front) / 2, 26);
-      const pw = sq(140), pd = sq(30), wl = sq(60);
-      const pv = front + sq(6) + pd / 2;
-      out.buildings.push({ key: "palace", spec: spec(0, pv, pw, pd, { roof: "tile-green", roofStyle: "hip", height: 50, use: "palace" }) });
-      for (const s of [-1, 1]) out.buildings.push({ key: s < 0 ? "wing1" : "wing2", spec: spec(s * (pw / 2 - pd / 2), pv + pd / 2 + wl / 2 - 0.05, wl, pd, { roof: "tile-green", roofStyle: "hip", height: 44, use: "palace", join: { start: true, inset: 0.05 } }, 90) });
-      // A domed pavilion over the middle of the front
-      { const [x, y] = P(0, pv - pd / 2); out.buildings.push({ key: "dome", spec: { shape: { circle: [x, y, sq(14)] }, rot: a.rot, roof: "tile-green", roofStyle: "cone", height: 70, chimney: false, grand: true, use: "palace" } }); }
-      out.surfaces.push({ class: "lawn", poly: [P(-W / 2, front), P(W / 2, front), P(W / 2, H / 2), P(-W / 2, H / 2)] });
-      // The formal garden behind: a gravel parterre, lawn beds edged with clipped box, topiary at their corners, a
-      // fountain where the walks cross and a row of trees down each side
-      const g0 = pv + pd / 2 + wl + sq(6), g1 = H / 2 - sq(6);
-      if (g1 - g0 > sq(30)) {
-        const gu0 = -W / 2 + sq(16), gu1 = W / 2 - sq(16);
+      // A palace as a palace reads from above: a walled precinct entered by a gate on the street, a court of honor
+      // between two wings running out from the main range toward it, pavilions at the corners and a domed one at the
+      // middle, and formal gardens behind on the same axis
+      const gate = sq(26), m = sq(10); // (the gate's width; the precinct's margin inside its wall)
+      const pw = W - 2 * m - sq(8), pd = sq(34), court = sq(70), wt = sq(28);
+      const c0 = -H / 2 + m, c1 = c0 + court; // the court, from just inside the gate to the main range
+      const pv = c1 + pd / 2;
+      out.buildings.push({ key: "palace", spec: spec(0, pv, pw, pd, { roof: "tile-green", roofStyle: "hip", height: 54, use: "palace" }) });
+      // The wings along the court's sides, joined to the main range
+      for (const s of [-1, 1]) out.buildings.push({ key: s < 0 ? "wing1" : "wing2", spec: spec(s * (pw / 2 - wt / 2), (c0 + sq(4) + c1) / 2 + 0.02, c1 - c0 - sq(4), wt, { roof: "tile-green", roofStyle: "hip", height: 46, use: "palace", join: { end: true, inset: 0.05 } }, 90) });
+      // Pavilions: at the main range's ends (a little proud of it) and at the wings' ends by the gate, square with
+      // pyramid roofs; a domed one projecting into the court from the middle of the main range
+      const pav = sq(40), wpav = sq(32);
+      for (const s of [-1, 1]) out.buildings.push({ key: s < 0 ? "pav1" : "pav2", spec: spec(s * (pw / 2 - pav / 2 + sq(4)), pv, pav, pav + sq(6), { roof: "tile-green", roofStyle: "pyramid", height: 62, use: "palace" }) });
+      for (const s of [-1, 1]) out.buildings.push({ key: s < 0 ? "pav3" : "pav4", spec: spec(s * (pw / 2 - wt / 2), c0 + sq(4) + wpav / 2, wpav, wpav, { roof: "tile-green", roofStyle: "pyramid", height: 56, use: "palace" }) });
+      out.buildings.push({ key: "front", spec: spec(0, c1 - sq(6), sq(54), sq(16), { roof: "tile-green", roofStyle: "hip", height: 58, use: "palace" }) });
+      { const [x, y] = P(0, pv + sq(2)); out.buildings.push({ key: "dome", spec: { shape: { circle: [x, y, sq(16)] }, rot: a.rot, roof: "tile-green", roofStyle: "cone", height: 80, chimney: false, grand: true, use: "palace" } }); }
+      // The court of honor: paved, a fountain on the axis
+      plaza(c0, c1, "flagstone", -pw / 2 + wt, pw / 2 - wt);
+      plaza(-H / 2, c0, "flagstone", -gate / 2, gate / 2); // (the way in through the gate)
+      fountain(0, c0 + court * 0.42, 30);
+      // The gardens behind: lawn, a parterre of beds either side of a broad walk on the axis, a basin, trees in rows
+      const g0 = pv + pd / 2 + sq(8), g1 = H / 2 - m;
+      out.surfaces.push({ class: "lawn", poly: [P(-W / 2 + m, g0 - sq(4)), P(W / 2 - m, g0 - sq(4)), P(W / 2 - m, H / 2 - m), P(-W / 2 + m, H / 2 - m)] });
+      if (g1 - g0 > sq(40)) {
+        const gu0 = -W / 2 + m + sq(14), gu1 = W / 2 - m - sq(14), walk = sq(14), edge = sq(6);
         plaza(g0, g1, "gravel", gu0, gu1);
-        const walk = sq(10), edge = sq(5);
-        const cols = gu1 - gu0 > sq(150) ? 3 : 2, rows = g1 - g0 > sq(70) ? 2 : 1;
-        const bw = (gu1 - gu0 - 2 * edge - (cols - 1) * walk) / cols, bh = (g1 - g0 - 2 * edge - (rows - 1) * walk) / rows;
-        for (let c = 0; c < cols; c++) for (let rr = 0; rr < rows; rr++) {
-          const u0 = gu0 + edge + c * (bw + walk), v0 = g0 + edge + rr * (bh + walk);
-          const bed = [P(u0, v0), P(u0 + bw, v0), P(u0 + bw, v0 + bh), P(u0, v0 + bh)];
+        const rows = g1 - g0 > sq(90) ? 3 : 2, half = (gu1 - gu0 - walk) / 2 - edge;
+        const bh = (g1 - g0 - 2 * edge - (rows - 1) * sq(10)) / rows;
+        for (const side of [-1, 1]) for (let rr = 0; rr < rows; rr++) {
+          const u0 = side < 0 ? gu0 + edge : walk / 2, v0 = g0 + edge + rr * (bh + sq(10));
+          const bed = [P(u0, v0), P(u0 + half, v0), P(u0 + half, v0 + bh), P(u0, v0 + bh)];
           out.surfaces.push({ class: "bed", poly: bed });
           out.hedges.push([...bed, bed[0]]);
-          for (const [cu, cv] of [[u0, v0], [u0 + bw, v0], [u0 + bw, v0 + bh], [u0, v0 + bh]]) { const [x, y] = P(cu, cv); out.props.push({ class: "topiary", x, y, rot: a.rot, size: 9 * a.scale }); }
-          { const [x, y] = P(u0 + bw / 2, v0 + bh / 2); out.props.push({ class: "topiary", x, y, rot: a.rot, size: 12 * a.scale }); }
+          for (const [cu, cv] of [[u0, v0], [u0 + half, v0], [u0 + half, v0 + bh], [u0, v0 + bh]]) { const [x, y] = P(cu, cv); out.props.push({ class: "topiary", x, y, rot: a.rot, size: 9 * a.scale }); }
         }
-        fountain((gu0 + gu1) / 2, (g0 + g1) / 2, 30);
-        for (const su of [-W / 2 + sq(8), W / 2 - sq(8)]) for (let v = g0 + sq(6); v < g1; v += sq(22)) {
+        fountain(0, (g0 + g1) / 2, 24); // (on the broad walk, clear of the beds)
+        for (const su of [-W / 2 + m + sq(6), W / 2 - m - sq(6)]) for (let v = g0 + sq(10); v < g1 - sq(4); v += sq(20)) {
           const [x, y] = P(su, v);
           out.trees.push({ x, y, s: 0.5 + r.next() * 0.1, rot: r.next() * 360, variant: r.int(8) });
         }
       }
-      out.walls.push([P(-W / 2, -H / 2 + 0.1), P(-W / 2, H / 2), P(W / 2, H / 2), P(W / 2, -H / 2 + 0.1)]);
-      out.radial = { at: P(0, (-H / 2 + front) / 2), radius: W / 2.5 };
+      // The precinct's wall all around, open at the gate, with a pier each side of it
+      // (the wall stops at each pier)
+      out.walls.push([P(-gate / 2 - sq(8), -H / 2 + 0.1), P(-W / 2 + 0.1, -H / 2 + 0.1), P(-W / 2 + 0.1, H / 2 - 0.1), P(W / 2 - 0.1, H / 2 - 0.1), P(W / 2 - 0.1, -H / 2 + 0.1), P(gate / 2 + sq(8), -H / 2 + 0.1)]);
+      for (const s of [-1, 1]) out.buildings.push({ key: s < 0 ? "pier1" : "pier2", spec: spec(s * (gate / 2 + sq(4)), -H / 2 + sq(4), sq(8), sq(8), { roof: "slate", roofStyle: "pyramid", height: 22, use: "palace" }) });
+      out.radial = { at: P(0, (c0 + c1) / 2), radius: W / 2.5 };
       break;
     }
     case "market": {

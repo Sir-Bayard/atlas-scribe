@@ -2,12 +2,13 @@
  * Publishing: a rendered map becomes a Foundry scene. A new scene is created unless the GM names one to update.
  * Before an existing scene is changed, all of it is saved as JSON to <output>/backups; updating keeps the scene's
  * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
- * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature), so a
- * second publish replaces only its own labels and leaves the GM's own drawings alone.
+ * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
+ * title), so a second publish replaces only its own labels and title and leaves the GM's own drawings and tiles alone.
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
 import { labelsOf, useLabelsOf } from "../core/labels.mjs";
+import { titleBox, paintTitle } from "../render/styles/illustrated.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -19,7 +20,7 @@ const FONT = { min: 8, max: 256 };
  * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
  * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
  * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
- * before anything is written. Returns { sceneId, created, backup, thumb, labels, warnings }.
+ * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, warnings } (title: whether a dressed map's name went in as a hidden tile).
  */
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
@@ -92,8 +93,26 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", labels);
   if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
 
+  // The map's name on a dressed map: a cartouche on a tile of its own, hidden until the GM shows it to the players
+  // (the old one out once the new one is in)
+  onProgress(0.9, "Placing the title");
+  // (an old one comes out only when a new one went in, or the map no longer has one; never on a failure)
+  const oldTitles = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "title" in t.flags[MOD]).map((t) => t.id);
+  const wanted = plan.style === "illustrated" && plan.output.dressing === true && typeof plan.name === "string" && plan.name.trim() !== "";
+  let title = false;
+  if (wanted && !layout) warnings.push("The map's name wasn't made into a tile (the map couldn't be laid out again); the scene keeps the one it had.");
+  else {
+    try {
+      const data = wanted ? await titleTile(plan, layout, sceneById(sceneId), sceneId, folder) : null;
+      if (data) { await sceneById(sceneId).createEmbeddedDocuments("Tile", [data]); title = true; }
+      if ((title || !wanted) && oldTitles.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldTitles);
+    } catch (e) {
+      warnings.push(`The map's name couldn't be made into a tile (${e.message}).`);
+    }
+  }
+
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, warnings };
 }
 
 /** The scene with this id, or an error: every write checks the scene is still there. */
@@ -161,6 +180,31 @@ async function labelDrawings(plan, scene, warnings, layout) {
     if (!known) warnings.push(`The font "${font}" isn't one Foundry knows, so labels in it may show in another.`);
   }
   return out;
+}
+
+/**
+ * A dressed map's cartouche as Tile data, hidden, over the corner kept for it (saved in <output>/titles as <scene id>.webp), or null
+ * when the map isn't dressed or has no name.
+ */
+async function titleTile(plan, layout, scene, sceneId, folder) {
+  const pps = plan.output.pxPerSquare;
+  const m = new OffscreenCanvas(8, 8).getContext("2d");
+  const measure = (text, f) => { m.font = `italic ${Math.max(4, Math.round(f * pps))}px serif`; return m.measureText(text).width / pps; };
+  const box = titleBox(layout, measure);
+  if (!box) return null;
+  const c = new OffscreenCanvas(Math.max(1, Math.ceil(box.w * pps)), Math.max(1, Math.ceil(box.h * pps)));
+  paintTitle(c.getContext("2d"), layout, box, pps);
+  const blob = await c.convertToBlob({ type: "image/webp", quality: 0.92 });
+  // (named after the scene, as its thumbnail is, so an update replaces it rather than adding another)
+  const path = await upload(`${folder}/titles`, `${sceneId}.webp`, blob);
+  const { sceneX, sceneY } = scene.dimensions;
+  return {
+    texture: { src: path },
+    x: Math.round(sceneX + box.x * pps), y: Math.round(sceneY + box.y * pps),
+    width: c.width, height: c.height,
+    hidden: true,
+    flags: { [MOD]: { title: plan.id ?? null } },
+  };
 }
 
 function stamp() {

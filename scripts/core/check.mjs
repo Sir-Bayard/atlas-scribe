@@ -56,7 +56,7 @@ export function checkPlan(raw) {
   if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square; 25 suits a village or town).");
   if (!isNum(plan.seed) && !(typeof plan.seed === "string" && plan.seed)) err(null, "seed", "seed must be a number.");
   for (const [name, values] of [["season", SEASONS], ["style", STYLES], ["ground", SURFACES]])
-    if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "textured" : "a plain fill"} will be used.`);
+    if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "illustrated" : "a plain fill"} will be used.`);
 
   // The image: Foundry's grid needs a whole number of pixels, 20 or more; WebP stops at 16383 px a side
   const pps = plan.output.pxPerSquare;
@@ -71,7 +71,9 @@ export function checkPlan(raw) {
   }
   if (!(isNum(plan.output.quality) && plan.output.quality > 0 && plan.output.quality <= 1)) err(null, "output.quality", `output.quality is ${plan.output.quality}; it should be a number above 0, up to 1.`);
   if (plan.output.format !== "webp") warn(null, "output.format", `output.format "${plan.output.format}" isn't supported yet; the map is saved as WebP.`);
-  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene"].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
+  if (raw.output?.dressing !== undefined && typeof raw.output.dressing !== "boolean") warn(null, "output.dressing", `output.dressing should be true or false; it's left off.`);
+  else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style !== "illustrated") warn(null, "output.dressing", `Map dressing is drawn only in the illustrated style; this map is ${plan.style}.`);
+  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing"].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
 
   // Ids: present, simple, unique
   const seen = new Map();

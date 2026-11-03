@@ -472,7 +472,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
         <div class="as-pv-tools as-pv-scene">
-          <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip="${scene ? "Paint the map with your art and update the scene made from this plan (it's backed up first)" : "Paint the map with your art and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
+          <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip="${scene ? "Draw the map and update the scene made from this plan (it's backed up first)" : "Draw the map and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
           ${this.#publishing ? `<button type="button" data-action="asCancel" data-tooltip="Stop painting (no scene is made or changed)"><i class="fa-solid fa-xmark"></i> Cancel</button>` : ""}
           ${scene && !this.#publishing ? `<button type="button" data-action="asView" data-tooltip="Go to the scene"><i class="fa-solid fa-eye"></i></button>` : ""}
         </div>
@@ -1592,7 +1592,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     try {
       const res = await this.#host.publish(plan, { scene: scene?.id ?? null });
       const made = game.scenes.get(res?.scene?.sceneId);
-      ui.notifications.info(`AtlasScribe: ${res?.scene?.created ? "made the scene" : "updated the scene"} ${made?.name ?? ""} in ${Math.round((res?.ms ?? 0) / 1000)} s.`);
+      ui.notifications.info(`AtlasScribe: ${res?.scene?.created ? "made the scene" : "updated the scene"} ${made?.name ?? ""} in ${Math.round((res?.ms ?? 0) / 1000)} s.${res?.scene?.title ? " The map's name is a hidden tile: show it to the players from the Tiles controls when you're ready." : ""}`);
       // Why the map looks as it does, when it isn't as asked: art that couldn't be had, settings the scene didn't take
       // (when no art could be had at all, the note says so, and listing every kind would add nothing)
       const n = res?.missingArt?.length ?? 0;

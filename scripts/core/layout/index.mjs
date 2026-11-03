@@ -37,7 +37,7 @@ import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf } from "../cliffs.mjs";
 
-export const LAYOUT_VERSION = 4;
+export const LAYOUT_VERSION = 5;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
@@ -1367,7 +1367,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   for (const c of items) if (c.kind === "crossing" && c.class === "ford") Object.assign(c, fordDetail(c, allWays));
 
   progress(0.85, "Ground");
-  items.unshift({ kind: "ground", id: "plan/ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) });
+  items.unshift({ kind: "ground", id: "plan/ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) },
+    // (each district's outline, for a style that draws the built-up ground as one mass)
+    ...dfeats.map((d) => ({ kind: "district", id: `${d.id}/outline`, from: d.id, profile: d.profile, character: characterOf(d), poly: dlist.find((x) => x.id === d.id).poly })));
 
   const layout = {
     atlasScribe: LAYOUT_VERSION,
@@ -1375,6 +1377,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     size: { squares: [W, H], ftPerSquare: sq },
     season: seasonOf(plan),
     style: plan.style,
+    title: typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null,
+    dressing: plan.output.dressing === true,
     sun: plan.sun,
     pxPerSquare: plan.output.pxPerSquare,
     items,

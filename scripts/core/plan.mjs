@@ -258,7 +258,8 @@ export const NOT_DRAWN_YET = { area: [] };
 
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];
-export const STYLES = ["textured"];
+/** Styles: illustrated (drawn, no art: settlements' maps), textured (Forgotten Adventures art: for battle maps). */
+export const STYLES = ["illustrated", "textured"];
 
 /** Limits on the image: Foundry's smallest grid, the largest WebP side, and the size some graphics cards stop at. */
 export const OUTPUT_LIMITS = { minPxPerSquare: 20, maxSide: 16383, warnSide: 8192 };
@@ -268,7 +269,6 @@ const DEFAULTS = {
   kind: "settlement",
   season: "summer",
   sun: "high-south",
-  style: "textured",
   seed: 1,
   ground: "grass",
 };
@@ -310,6 +310,7 @@ export function fieldDefault(spec, cls) {
 export function normalize(plan) {
   const p = structuredClone(isObj(plan) ? plan : {});
   for (const [k, v] of Object.entries(DEFAULTS)) p[k] ??= v;
+  p.style ??= p.kind === "battle" ? "textured" : "illustrated"; // (a settlement drawn, a battle map in its art)
   p.atlasScribe ??= PLAN_VERSION;
   // Containers of the wrong kind are replaced (the checker reports them), so nothing downstream trips on them
   if (!isObj(p.size)) p.size = {};
@@ -323,6 +324,7 @@ export function normalize(plan) {
   p.output.pxPerSquare ??= 50;
   p.output.format ??= "webp";
   p.output.quality ??= 0.86;
+  p.output.dressing ??= false; // a frame, compass rose, scale bar and the map's name, painted on (illustrated style)
   if (!isObj(p.output.scene)) p.output.scene = {};
   for (const [k, spec] of Object.entries(SCENE)) p.output.scene[k] ??= spec.default;
   p.output.scene.name ??= p.name ?? p.id ?? "Map";

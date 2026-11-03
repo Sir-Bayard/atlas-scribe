@@ -284,7 +284,7 @@ const api = {
    * "all"). image: the result of render, or a path. scene: the id of a scene to update instead of creating one.
    * AtlasScribe only updates scenes it made, unless force is true; all of the scene is backed up to
    * <output>/backups first, its name is kept, and the labels AtlasScribe added to it before (from whatever plan)
-   * are replaced. Returns { sceneId, created, backup, thumb, labels, warnings }.
+   * are replaced; a dressed map's name goes in as a hidden tile the GM can show. Returns { sceneId, created, backup, thumb, labels, title, warnings }.
    */
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**The illustrated style**
+- Maps are now drawn in a new illustrated style, which needs no art: one light palette with ink lines along every edge, a settlement's built-up ground as one pale mass (crisp inside a town wall, fading out into the fields elsewhere), roofs in two tones with inked eaves, streets in the tone and marks of their paving (gray cobbles with faint stones, tan dirt lanes, speckled gravel, setts, flagstones, brick and herringbone for squares), better paving running through a junction, a square's paving carried out to its streets and the house fronts around it (small corners left between them are paved too), bridges drawn as the road carried over the water between inked parapets, fields marked by their crop (close furrows on plowed land, broken rows of stubble, stippled ripe grain, grass tufts on pasture and fallow), clumped tree canopies (bare branches in winter), water with inked banks and a deeper middle (a dashed ripple down a river, lines following the shore of a lake or the sea), and a faint paper grain. Lines wander a little, as if drawn by hand. It paints a city in about five seconds.
+- A plan's new Style setting picks illustrated or textured. A settlement is illustrated unless its plan says textured; a battle map (when they come) is textured. Existing plans with no style are now drawn illustrated: set Style to textured to paint them from FA Nexus as before.
+- Map dressing: a new plan setting (Map dressing) adds a ruled frame with ticks every ten squares, a compass rose and a scale bar in feet (a round length about a fifth of the map across, saying what one square is) in the map's emptiest corners, and the map's name on a cartouche in another corner, as a tile of its own that Make scene adds hidden, so the GM can show it to the players when they're ready. Quick Start turns it on for a city or metropolis.
+- The nobles' palace is drawn as a palace: a walled precinct entered by a gate with a pier each side, a paved court of honor with a fountain between two wings running out from the main range, square pavilions at the corners and a domed one at the middle, and formal gardens behind on the same axis (beds edged with box either side of a broad walk, a basin, rows of trees).
+- For plan writers: the top-level `style` (`illustrated` or `textured`) and `output.dressing` (true or false). `checkPlan` warns about dressing that isn't true or false, or asked of a textured map. A layout now carries each district's outline (`district` items), the map's `title` and `dressing`.
+
 ## 0.5.0
 
 Walled cities. Quick Start makes a city or a metropolis with its wall, gates, wards, harbor, citadel and country around it, and every district can have a character and its centerpiece. Also new: water (ponds, lakes, the sea, quays and piers), town walls, cliffs, more kinds of squares, market stalls, cemeteries, mills and boats.

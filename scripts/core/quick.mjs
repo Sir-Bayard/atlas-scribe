@@ -608,7 +608,7 @@ function cityQuick(choices, seed, options) {
     seed,
     ground: winter ? "snow" : "grass",
     features: [...made.features, { id: "name", type: "label", text: name, at: made.label.at, show: "gm", size: "huge" }],
-    output: { pxPerSquare: made.px, scene: { name, weather: winter ? "snow" : null } },
+    output: { pxPerSquare: made.px, dressing: true, scene: { name, weather: winter ? "snow" : null } }, // (a city's map dressed: frame, compass, scale)
   };
   const kept = { ...choices, seed, name };
   kept.shape = made.shape;

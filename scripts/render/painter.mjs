@@ -3,12 +3,13 @@
  * the style's widest blur, and stitched; patterns are anchored to the map, so the joins don't show.
  */
 import * as textured from "./styles/textured.mjs";
+import * as illustrated from "./styles/illustrated.mjs";
 
-export const STYLES = { textured };
+export const STYLES = { illustrated, textured };
 
-/** The style module for a layout (textured until the others exist). */
+/** The style module for a layout (illustrated when its style is one this version doesn't know). */
 export function styleOf(layout) {
-  return STYLES[layout.style] ?? STYLES.textured;
+  return STYLES[layout.style] ?? STYLES.illustrated;
 }
 
 /**
