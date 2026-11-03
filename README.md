@@ -8,7 +8,7 @@ It's system agnostic and GM only.
 
 ## Status
 
-**Early development.** Villages, towns and walled cities work (0.5.0): make one with Quick Start, change anything on the map in the AtlasScribe window, and make it a scene. Next is the illustrated style and denser cities (in progress), then battle maps; the first full release, 1.0.0, comes when settlements, cities and battle maps all work.
+**Early development.** Villages, towns and walled cities work (0.6.0): make one with Quick Start, change anything on the map in the AtlasScribe window, and make it a scene, drawn in the illustrated style with no art needed. Next is battle maps; the first full release, 1.0.0, comes when settlements, cities and battle maps all work.
 
 What's done and what's planned, in order:
 
@@ -16,8 +16,8 @@ What's done and what's planned, in order:
 2. Done: Quick Start, a hamlet, village or town from a few choices, with generated streets, plots, houses, fields and woods.
 3. Done: editing on the map. Reroll, lock and reshape districts, areas, roads, rivers and walls, change anything's settings, draw new features, place, move and turn labels, pin generated houses and streets, and trace over an image, all in the window.
 4. Done: cities. Faster layout on big maps; town walls with towers and gates, ditches, moats and palisades; ponds, lakes and the sea, rivers that widen, quays and piers; district character, what each building is used for, and trades; Quick Start cities and metropolises cut into wards; market places, cemeteries, mills and harbors; squares in many pavings, cliffs, and city outlines (lobed, on a promontory, along a shore or river, against a cliff).
-5. In progress: the illustrated style, settlements and cities drawn as a map (ink lines, one light palette, streets by their paving, fields by their crop, a frame, compass rose and scale bar on a city), needing no art; and denser cities, their busy quarters built up in continuous rows of houses along the streets.
-6. Battle maps built as Foundry content: tiles, walls, doors, lights and regions, painted from map art.
+5. Done: the illustrated style, settlements and cities drawn as a map (ink lines, one light palette, streets by their paving, fields by their crop, a frame, compass rose and scale bar on a city), needing no art; and denser cities, their busy quarters built up in continuous rows of houses along the streets.
+6. Next: battle maps built as Foundry content: tiles, walls, doors, lights and regions, painted from map art.
 7. Art for everyone: use any folder of map art, not only FA Nexus (1.0.0).
 
 ## Making a map

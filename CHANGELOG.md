@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+Maps drawn as maps. Settlements and cities are now drawn in an illustrated style that needs no art (ink lines, one light palette, streets by their paving, fields by their crop), with a frame, compass rose, scale bar and a name tile you can reveal to players, and a city's busy quarters are built up in continuous rows of houses along their streets.
 
 **The illustrated style**
 - Maps are now drawn in a new illustrated style, which needs no art: one light palette with ink lines along every edge, a settlement's built-up ground as one pale mass (crisp inside a town wall, fading out into the fields elsewhere), roofs in two tones with inked eaves, streets in the tone and marks of their paving (gray cobbles with faint stones, tan dirt lanes, speckled gravel, setts, flagstones, brick and herringbone for squares), better paving running through a junction, a square's paving carried out to its streets and the house fronts around it (small corners left between them are paved too), bridges drawn as the road carried over the water between inked parapets, fields marked by their crop (close furrows on plowed land, broken rows of stubble, stippled ripe grain, grass tufts on pasture and fallow), clumped tree canopies (bare branches in winter), water with inked banks and a deeper middle (a dashed ripple down a river, lines following the shore of a lake or the sea), and a faint paper grain. Lines wander a little, as if drawn by hand. It paints a city in about five seconds.
@@ -11,7 +13,7 @@
 
 **Denser cities**
 - A city's busy quarters are built up in continuous rows. Each plot's house takes the plot's whole street front, fitted to it (following a curving street), under a roof whose ridge runs along the street, and the party walls between the houses show. At a corner, or where a plot runs through to a street behind, the row turns and carries on along that street too. A wide row is sometimes built in two sections, the second shallower under a roof of its own. Behind the rows are yards with sheds, gardens and trees, and now and then a back range closing a small court. A busy ward is now about half roofs (it was about a third).
-- Homes, market, crafts and poor quarters build in rows, and about half of a merchants' quarter; the nobles, temple, garrison and docks keep their own houses, as does a district whose own roof forms leave out the gable. Towns and villages are not built in rows.
+- Homes, market, crafts and poor quarters build in rows, and about half of a merchants' quarter; the nobles, temple, garrison and docks keep their own houses. Towns and villages are not built in rows. A row's roof is a gable, or flat where the house's form would be flat: its ends are party walls, so it takes no hips (a district's own roof forms still apply to its other buildings).
 - Deeper houses: a house kept shallow to leave room for wings it then had no room for now takes its plot's full depth, and a house narrows in finer steps before its plot is left as a yard. Most visible in cities; houses everywhere move a little.
 - A plan building's shape can now be any polygon (it was drawn as its bounding box): it is drawn under a gable whose ridge runs the way the building is turned. A pinned row house keeps its own outline.
 - A district's centerpiece no longer always stands in its middle with every street ringing it and leading out from it. It stands in the middle, off to one side or at the district's edge (often on a main road), picked from the map's seed, and the streets near one off to the side mostly follow the district's main roads. A new Centerpiece place setting picks it for a district. Rerolling a district still leaves its centerpiece where it is.
