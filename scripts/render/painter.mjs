@@ -4,18 +4,25 @@
  */
 import * as textured from "./styles/textured.mjs";
 import * as illustrated from "./styles/illustrated.mjs";
+import * as battle from "./styles/battle.mjs";
 
 export const STYLES = { illustrated, textured };
 
-/** The style module for a layout (illustrated when its style is one this version doesn't know). */
+/**
+ * The style module for a layout: a battle map's own, whatever style its plan names (a settlement's styles are drawn
+ * for its scale); else its style (illustrated when its style is one this version doesn't know).
+ */
 export function styleOf(layout) {
+  if (layout.kind === "battle") return battle;
   return STYLES[layout.style] ?? STYLES.illustrated;
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt }: thumb
- * is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colors),
- * brokenArt the roles any file failed for (painted with fewer variants, or plain).
+ * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt, overheads }:
+ * thumb is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colors),
+ * brokenArt the roles any file failed for (painted with fewer variants, or plain), overheads the pieces a style paints
+ * apart to lie over the map as tiles (a battle map's roofs and tree crowns): [{ name, kind, x, y, width, height (px,
+ * from the map's corner), elevation, blob }], empty for a style without them.
  * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
  */
 export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
@@ -85,26 +92,45 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     }
   }
 
-  for (const bmp of loaded.values()) bmp?.close();
-
-  progress(0.92, "Saving the image");
+  progress(0.9, "Saving the image");
   const blob = await out.convertToBlob({ type: "image/webp", quality });
-  progress(0.98, "Making the thumbnail");
-  const thumb = await thumbnail(out, THUMB);
+  progress(0.94, "Making the thumbnail");
+  const th = thumbCanvas(out, THUMB);
   out.width = out.height = 1;
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, ms: Math.round(performance.now() - t0) };
+
+  // Overhead pieces: each painted on a canvas of its own, as big as its box, laid onto the thumbnail, saved and let go
+  // before the next, so only one is held at a time
+  const pieces = style.overheads?.(layout) ?? [];
+  const overheads = [];
+  for (const [k, piece] of pieces.entries()) {
+    progress(0.95 + (0.04 * k) / pieces.length, "Roofs and trees");
+    const [bx0, by0, bx1, by1] = piece.box;
+    const x = Math.floor(bx0 * pp), y = Math.floor(by0 * pp);
+    const w = Math.max(1, Math.min(W, Math.ceil(bx1 * pp)) - x), h = Math.max(1, Math.min(H, Math.ceil(by1 * pp)) - y);
+    const c = new OffscreenCanvas(w, h);
+    style.paintOverhead({ g: c.getContext("2d"), W: w, H: h, pp, layout, art: getArt }, { ...piece, box: [x / pp, y / pp, bx1, by1] });
+    th.g.drawImage(c, th.ox + x * th.k, th.oy + y * th.k, w * th.k, h * th.k);
+    overheads.push({ name: piece.name, kind: piece.kind, x, y, width: w, height: h, elevation: piece.elevation, blob: await c.convertToBlob({ type: "image/webp", quality: Math.max(quality, 0.9) }) });
+    c.width = c.height = 1;
+  }
+  for (const bmp of loaded.values()) bmp?.close();
+  const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, ms: Math.round(performance.now() - t0) };
 }
 
 /** Thumbnail size, as Foundry makes them. */
 const THUMB = 300;
 
-/** A size by size WebP of the map's middle, scaled to cover (as Foundry's own scene thumbnails are). */
-async function thumbnail(src, size) {
+/**
+ * The scene list's thumbnail: a size by size canvas of the map's middle, scaled to cover (as Foundry's own scene
+ * thumbnails are). Returns { canvas, g, k, ox, oy }: k and ox, oy place map pixels on it, for laying overhead pieces on.
+ */
+function thumbCanvas(src, size) {
   const k = Math.max(size / src.width, size / src.height);
   const w = src.width * k, h = src.height * k;
-  const c = new OffscreenCanvas(size, size);
-  const g = c.getContext("2d");
+  const canvas = new OffscreenCanvas(size, size);
+  const g = canvas.getContext("2d");
   g.imageSmoothingQuality = "high";
   g.drawImage(src, (size - w) / 2, (size - h) / 2, w, h);
-  return c.convertToBlob({ type: "image/webp", quality: 0.8 });
+  return { canvas, g, k, ox: (size - w) / 2, oy: (size - h) / 2 };
 }

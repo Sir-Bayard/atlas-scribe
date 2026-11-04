@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+**Battle maps**
+- A plan with `kind: "battle"` (5 feet a square) is now drawn as a battle map, painted from Forgotten Adventures art at its own scale: bright grass with a second grass and clover in broad patches, ground worn around the buildings, paved streets inside crisp stone curbs (square setts on streets, flagstones on a main road; cobbles and herringbone read as noise at this scale), dirt lanes, flagstone squares, wooden floors inside the buildings (stone in a temple or a smithy), stone bridges, gardens in tilled rows and one low sun casting every shadow to the northwest.
+- Its buildings are built big enough to fight in: a few houses to a street front rather than the true dozen, each district keeping its own roofs and roof forms. Plot lines are left off; instead a house gets a fenced yard behind it, square to it, with a gate in its back fence, kept clear of streets, other buildings, water and other yards. A walled yard (a churchyard, a manor's grounds) is walled around in straight runs with a gate on its street side.
+- Roofs and tree crowns lie over the map as tiles of their own, so tokens can go inside: a house's roof (with its wings) fades when a token walks in under it, and a tree's crown opens around a token beneath it. Render saves them beside the map, in a folder named after it, and Make scene (or `publish` with render's result) places them; a republish replaces AtlasScribe's own and leaves the GM's tiles alone.
+- For plan writers: a battle map is drawn in its own style whatever its plan's `style` says. A layout now carries `kind` and `seed`, a building its `group` (a house and its wings) and a main house `main`; render's result has `overheads` and publish's result `overheads` (how many tiles it placed).
+
 ## 0.6.0
 
 Maps drawn as maps. Settlements and cities are now drawn in an illustrated style that needs no art (ink lines, one light palette, streets by their paving, fields by their crop), with a frame, compass rose, scale bar and a name tile you can reveal to players, and a city's busy quarters are built up in continuous rows of houses along their streets.

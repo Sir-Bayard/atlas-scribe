@@ -43,9 +43,27 @@ export const LOT_TYPES = {
     roofs: { slate: 3, "slate-blue": 2, "slate-purple": 2, "tile-red": 2, "tile-orange": 1, "tile-tan": 1 }, palette: 4, styles: { gable: 0.6, hip: 0.2, flat: 0.12, mansard: 0.08 }, fill: { sheds: 0.5, garden: 0.2, trees: 0.2, open: 0.1 }, wild: 2.5 },
 };
 
-/** A district's plot numbers: its profile's, with its character's changes. */
+/**
+ * Plot numbers on a battle map (5 ft squares), in feet, over a profile's own: a house big enough to fight in, so a few
+ * to a street front rather than the true dozen (Patrick, 3 Nov: "some artistic fantasy map combat license"). Its roofs,
+ * roof forms and what the back of a plot holds stay the profile's, so a corner zoomed from a map keeps that map's look.
+ * No rows (a row's whole street front under one roof is a hall at this scale), no double plots, crofts or extras.
+ */
+export const BATTLE_LOTS = {
+  hamlet: { frontage: [55, 80], depth: [60, 90], cover: [0.55, 0.8], houseDepth: [30, 40], setback: [10, 20], outbuilding: 0.5, wild: 2.5 },
+  village: { frontage: [45, 70], depth: [55, 80], cover: [0.65, 0.9], houseDepth: [30, 40], setback: [5, 10], outbuilding: 0.4, wild: 3 },
+  town: { frontage: [35, 55], depth: [45, 70], cover: [0.9, 1], houseDepth: [30, 45], setback: [0, 5], outbuilding: 0.4, wild: 3 },
+  city: { frontage: [35, 50], depth: [45, 65], cover: [1, 1], houseDepth: [35, 45], setback: [0, 0], outbuilding: 0.2, wild: 3 },
+};
+const BATTLE_FIXED = { croft: 0, merge: 0, rows: 0, bounds: true, shapes: { L: 0.3, T: 0.05, U: 0, court: 0 }, extras: { bay: 0, dormers: 0, turret: 0, steps: 0, roundShed: 0, rear: 0 } };
+
+/** A district's plot numbers: its profile's (at battle size on a battle map), with its character's changes. */
 export function lotTypeOf(district) {
-  return withCharacterLots(LOT_TYPES[OLD_PROFILES[district.profile] ?? district.profile] ?? LOT_TYPES.village, characterOf(district));
+  const profile = OLD_PROFILES[district.profile] ?? district.profile;
+  const T = LOT_TYPES[profile] ?? LOT_TYPES.village;
+  if (!district.battleScale) return withCharacterLots(T, characterOf(district));
+  // (a character still scales a battle plot's sizes, but brings back no rows, double plots or extras)
+  return { ...withCharacterLots({ ...T, ...(BATTLE_LOTS[profile] ?? BATTLE_LOTS.village), ...BATTLE_FIXED }, characterOf(district)), ...BATTLE_FIXED };
 }
 
 const dist2seg = ([x, y], [ax, ay], [bx, by]) => {

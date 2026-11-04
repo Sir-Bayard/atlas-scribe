@@ -3,7 +3,8 @@
  * Before an existing scene is changed, all of it is saved as JSON to <output>/backups; updating keeps the scene's
  * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
  * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
- * title), so a second publish replaces only its own labels and title and leaves the GM's own drawings and tiles alone.
+ * title; a battle map's roof and tree tiles: overhead, kind), so a second publish replaces only its own labels, title
+ * and overhead tiles and leaves the GM's own drawings and tiles alone.
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
@@ -20,7 +21,7 @@ const FONT = { min: 8, max: 256 };
  * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
  * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
  * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
- * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, warnings } (title: whether a dressed map's name went in as a hidden tile).
+ * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map).
  */
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
@@ -111,8 +112,50 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     }
   }
 
+  // A battle map's roofs and tree crowns, as tiles over the map: a roof fades when a token walks in under it, a crown
+  // opens around a token beneath it. The new ones go in before the old ones (AtlasScribe's, from any plan) come out; a
+  // map given by its path alone has none to give, so the scene keeps those it had
+  onProgress(0.95, "Placing the roofs and trees");
+  const oldOver = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "overhead" in t.flags[MOD]).map((t) => t.id);
+  let overheads = 0;
+  if (Array.isArray(image.overheads)) {
+    let placed = false;
+    try {
+      const { sceneX, sceneY } = sceneById(sceneId).dimensions;
+      const tiles = image.overheads.map((o) => overheadTile(o, sceneX, sceneY, plan.id ?? null));
+      if (tiles.length) await sceneById(sceneId).createEmbeddedDocuments("Tile", tiles);
+      overheads = tiles.length;
+      placed = true;
+      if (oldOver.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldOver);
+    } catch (e) {
+      warnings.push(placed ? `The roofs and trees from the last map couldn't be taken out (${e.message}); delete the old ones from the Tiles controls.` : `The roofs and trees couldn't be placed over the map (${e.message}).`);
+    }
+  } else if (oldOver.length) warnings.push("The roofs and trees over the map were left as they were: they come only with a map rendered for the scene.");
+  else if (layout?.kind === "battle") warnings.push("This battle map's roofs and trees weren't placed: they come only with a map rendered for the scene.");
+
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, warnings };
+}
+
+/** How see-through an overhead tile is while a token is under it: a roof nearly gone, a tree's crown thinned. */
+const OVERHEAD_ALPHA = { roof: 0.12, canopy: 0.25 };
+
+/**
+ * An overhead piece (render's { path, kind, x, y, width, height, elevation }, in px from the map's corner) as Tile
+ * data. A tile's x and y are its middle (Foundry 14 anchors tiles at their center). A roof fades as a whole when a
+ * token is under it; a tree's crown opens in a circle around the token.
+ */
+function overheadTile(o, sceneX, sceneY, plan) {
+  const M = CONST.TILE_OCCLUSION_MODES;
+  return {
+    texture: { src: o.path },
+    x: Math.round(sceneX + o.x + o.width / 2), y: Math.round(sceneY + o.y + o.height / 2),
+    width: o.width, height: o.height,
+    elevation: o.elevation,
+    occlusion: { modes: [o.kind === "roof" ? M.FADE : M.RADIAL], alpha: OVERHEAD_ALPHA[o.kind] ?? 0.25 },
+    locked: true,
+    flags: { [MOD]: { overhead: plan, kind: o.kind } },
+  };
 }
 
 /** The scene with this id, or an error: every write checks the scene is still there. */

@@ -157,7 +157,8 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   const spacious = Math.max(0, Math.min(1, district.spacious ?? 0));
   const density = district.density ?? 1;
   const gardenShare = gardenShareOf(district);
-  const out = { houses: [], outbuildings: [], gardens: [], crofts: [], bounds: [], trees: [], props: [], surfaces: [], pits: [], kilns: [], walls: [] };
+  // (wallSite: the site each wall walls in, by its main house's id, one for each of walls)
+  const out = { houses: [], outbuildings: [], gardens: [], crofts: [], bounds: [], trees: [], props: [], surfaces: [], pits: [], kilns: [], walls: [], wallSite: [] };
 
   const workUse = (u) => u && u !== "house" && u !== "shop" && u !== "magic-shop";
   const yards = []; // the yards of plots put to a trade: { i, use, at, from, to, width }
@@ -210,6 +211,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     // (and no stub where a curving side is broken into short pieces)
     if (site.form === "temple" || made.grounds) out.walls.push(...edgesOff(lot.poly, (mid) => onWayEdge(mid) || byBlocked(mid)).filter((w) => w.reduce((s, q, i) => s + (i ? Math.hypot(q[0] - w[i - 1][0], q[1] - w[i - 1][1]) : 0), 0) >= 0.15));
     out.walls.push(...made.walls);
+    while (out.wallSite.length < out.walls.length) out.wallSite.push(base);
     if (made.yard) yards.push({ i: site.lots[0], poly: lot.poly, use: site.use, ...made.yard, rot: Math.atan2(lot.along[1], lot.along[0]) / (Math.PI / 180), parts: made.parts.map((p) => partCorners(p.building)) });
   }
   // Plot lines: off unless the district's plotLines is true (Patrick, 24 Oct, from a side-by-side render: plots show by

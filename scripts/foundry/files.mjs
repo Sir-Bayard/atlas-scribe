@@ -30,9 +30,23 @@ export async function freeName(dir, base, ext) {
   return name;
 }
 
-/** Uploads a Blob to dir/name and returns its path. Throws if Foundry doesn't confirm the upload. */
-export async function upload(dir, name, blob) {
+/** A free folder name in a folder: name, else name-2, name-3 and so on (as freeName, for folders). */
+export async function freeDir(dir, base) {
+  const safe = String(base).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "folder";
   await ensureDir(dir);
+  const listing = await FP().browse("data", dir);
+  const taken = new Set((listing.dirs ?? []).map((f) => decodeURIComponent(f.split("/").pop()).toLowerCase()));
+  let name = safe;
+  for (let n = 2; taken.has(name); n++) name = `${safe}-${n}`;
+  return name;
+}
+
+/**
+ * Uploads a Blob to dir/name and returns its path. Throws if Foundry doesn't confirm the upload. ready: the folder is
+ * known to be there (made by ensureDir just before), so it isn't looked for again.
+ */
+export async function upload(dir, name, blob, { ready = false } = {}) {
+  if (!ready) await ensureDir(dir);
   const file = new File([blob], name, { type: blob.type || "application/octet-stream" });
   const res = await FP().upload("data", dir, file, {}, { notify: false });
   const path = res?.path;

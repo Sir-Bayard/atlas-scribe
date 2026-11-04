@@ -36,8 +36,9 @@ import { marketStalls } from "./market.mjs";
 import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf } from "../cliffs.mjs";
+import { battleYards } from "./battle.mjs";
 
-export const LAYOUT_VERSION = 6;
+export const LAYOUT_VERSION = 7;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
@@ -187,6 +188,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const asGiven = normalize(rawPlan);
   const plan = withWater(windAlike(smoothPlanPaths(asGiven)), asGiven);
   const sq = plan.size.ftPerSquare;
+  // A battle map's districts build at battle size (lots/index.mjs, BATTLE_LOTS), and its yards are laid after (battle.mjs)
+  const battle = plan.kind === "battle";
+  // (only the plan's kind says so: a district can't ask for it)
+  for (const f of plan.features) if (f.type === "district") { if (battle) f.battleScale = true; else delete f.battleScale; }
   const ft = (v) => (v == null ? null : v / sq);
   const [W, H] = plan.size.squares;
   const notes = [];
@@ -946,7 +951,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const lessPlanned = (list, have = {}) => { const left = { ...have }; return list.filter((u) => !(left[u] > 0 && left[u]--)); };
   /** Counts of small things less those the plan already has. */
   const reduceBy = (want, have = {}) => Object.fromEntries(Object.entries(want).map(([k, n]) => [k, Math.max(0, n - (have[k] ?? 0))]));
-  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.seed, sq, W, H, waterItems, space.water, radials, bodies.length ? lotWater : 0, wind])).join(".") : null;
+  const shared = cache ? hash128(keyJSON([LAYOUT_VERSION, plan.kind, plan.seed, sq, W, H, waterItems, space.water, radials, bodies.length ? lotWater : 0, wind])).join(".") : null;
   // What was placed before the districts, with each thing's box (the districts add to space as they fill). A district
   // sees only what lies within KEY_MARGIN squares of it, with or without the cache, so its key covers all it reads
   const placed = Object.fromEntries(["reserved", "zones", "plots", "buildings", "ways", "gardens"].map((k) => [k, space[k].map((v) => [v, boxOf(v)])]));
@@ -1107,7 +1112,14 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     filling = d.id;
     if (anchor) addAnchor(d, anchor, r.fork("anchor-fill"));
     const smoky = [];
-    for (const h of built.houses) { const item = addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id); if (h.smoke) smoky.push([item, h.smoke]); }
+    // (a house and its wings share a group, so a style can treat them as one: one roof tile on a battle map)
+    let main = null;
+    for (const h of built.houses) {
+      const item = addBuilding(h.building, `${d.id}/h-${h.id}`, h.r, d.id);
+      if (!h.wing) { main = item.id; item.main = true; }
+      item.group = main ?? item.id;
+      if (h.smoke) smoky.push([item, h.smoke]);
+    }
     for (const o of built.outbuildings) addBuilding(o.building, `${d.id}/o-${o.id}`, o.r, d.id);
     // Smoke from a forge's, kiln's or oven's chimney (or its middle), drifting with the map's wind
     for (const [b, tint] of smoky) {
@@ -1127,7 +1139,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       addGraves(d, x.poly, t?.building.rot ?? 0, graveCount(d, false), r.fork("graves", x.poly.length, Math.round(x.poly[0][0] * 10)));
     }
     built.pits.forEach((x, k) => items.push({ kind: "pit", id: `${d.id}/p${k + 1}`, from: d.id, ...x }));
-    built.walls.forEach((path, k) => items.push({ kind: "wall", id: `${d.id}/v${k + 1}`, from: d.id, class: "stone", path, height: 5 / sq }));
+    built.walls.forEach((path, k) => items.push({ kind: "wall", id: `${d.id}/v${k + 1}`, from: d.id, class: "stone", path, height: 5 / sq, ...(battle ? { lot: built.wallSite[k] ?? true } : {}) }));
     built.props.forEach((x, k) => items.push({ kind: "prop", id: `${d.id}/q${k + 1}`, from: d.id, class: x.class, x: x.x, y: x.y, rot: x.rot, variant: x.variant, scale: (CLUTTER_FT[x.class] ?? 6) / sq / (PROP_SQUARES[x.class] ?? 0.45) }));
     built.gardens.forEach((garden, k) => {
       items.push({ kind: "surface", id: `${d.id}/g${k + 1}`, from: d.id, class: "garden", garden });
@@ -1136,7 +1148,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       space.gardens.push(gp);
     });
     built.crofts.forEach((poly, k) => items.push({ kind: "surface", id: `${d.id}/c${k + 1}`, from: d.id, class: "croft", poly }));
-    built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
+    // (a plot's lines read as stray fences at battle size: its yard is fenced instead, after)
+    if (!battle) built.bounds.forEach((b, k) => items.push({ kind: "boundary", id: `${d.id}/f${k + 1}`, from: d.id, class: b.class, path: b.path }));
     // Trees in the plots: orchards in rows and trees about the yards
     built.trees.forEach((t, k) => items.push({ kind: "tree", id: `${d.id}/y${k + 1}`, from: d.id, x: t.x, y: t.y, species: t.species ?? "bare", size: t.size ?? null, s: t.s, rot: t.rot, variant: t.variant }));
     // Ground no plot takes (beyond the back lanes, the middle of big blocks): trees scattered evenly (Poisson-disk),
@@ -1394,6 +1407,15 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const allWays = items.filter((i) => i.kind === "way");
   for (const c of items) if (c.kind === "crossing" && c.class === "ford") Object.assign(c, fordDetail(c, allWays));
 
+  if (battle) {
+    battleYards(items, W, H);
+    // What the battle style doesn't draw yet (it comes with later steps of battle maps)
+    const NOT_YET = { field: "fields", cliff: "cliffs", ditch: "ditches", dock: "quays and piers", reed: "reeds", lily: "lily pads", pit: "pits", kiln: "kilns" };
+    const NOT_YET_SURFACE = { park: "parks", bed: "flower beds", farmyard: "farmyards", croft: "crofts" };
+    const missing = [...new Set(items.map((i) => NOT_YET[i.kind] ?? (i.kind === "surface" ? NOT_YET_SURFACE[i.class] : i.kind === "boundary" && i.class === "clipped" ? "clipped hedges" : null)).filter(Boolean))];
+    if (missing.length) notes.push({ level: "warning", id: "plan", message: `A battle map doesn't draw ${missing.join(", ")} yet; they're left off this map.` });
+  }
+
   progress(0.85, "Ground");
   items.unshift({ kind: "ground", id: "plan/ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) },
     // (each district's outline, for a style that draws the built-up ground as one mass)
@@ -1402,6 +1424,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const layout = {
     atlasScribe: LAYOUT_VERSION,
     plan: plan.id ?? null,
+    kind: plan.kind,
+    seed: plan.seed, // (for a style's own noise, which must be the same in every tile)
     size: { squares: [W, H], ftPerSquare: sq },
     season: seasonOf(plan),
     style: plan.style,

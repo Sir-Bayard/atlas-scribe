@@ -4,7 +4,7 @@
  * world is GM only. One job runs at a time; cancel() stops it between any two steps (and mid-paint).
  */
 import { WorkerClient } from "./foundry/worker-client.mjs";
-import { upload, freeName } from "./foundry/files.mjs";
+import { upload, freeName, freeDir, ensureDir } from "./foundry/files.mjs";
 import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
@@ -66,16 +66,16 @@ function planOrThrow(input) {
   return checked;
 }
 
-/** { path, width, height, thumb? } for an image: from render's result, or measured from its file. */
+/** { path, width, height, thumb?, overheads? } for an image: from render's result, or measured from its file. */
 async function imageInfo(image) {
   if (image && typeof image === "object" && image.path && image.width && image.height)
-    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null };
+    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null };
   const path = typeof image === "string" ? image : image?.path;
   if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
   const res = await fetch(new URL(path, window.location.href));
   if (!res.ok) throw new Error(`AtlasScribe: couldn't load the map image ${path}`);
   const bmp = await createImageBitmap(await res.blob());
-  const info = { path, width: bmp.width, height: bmp.height, thumb: null };
+  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null };
   bmp.close();
   return info;
 }
@@ -223,7 +223,9 @@ const api = {
    * are painted in plain colors and listed in missingArt), paint, save.
    * With publish: true the map is then published (see publish; scene and force as there). If publishing fails,
    * the error carries the saved map's result as error.result.
-   * Returns { path, width, height, tiles, ms, layout, missingArt, notes, artNotes, warnings }, and scene when
+   * A battle map's roofs and tree crowns are saved too, each its own image in a folder beside the map, for publish to
+   * lay over it as tiles: overheads lists them ({ path, kind, x, y, width, height, elevation }; empty for other maps).
+   * Returns { path, width, height, tiles, ms, layout, overheads, missingArt, notes, artNotes, warnings }, and scene when
    * published.
    */
   async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
@@ -245,16 +247,34 @@ const api = {
         const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
         if (img.brokenArt?.length) forgetArt(); // a file that failed may have gone: ask FA Nexus again next time
         check();
-        let path = null;
+        let path = null, overheads = [];
         if (save) {
           bar.update(0.97, "Saving");
           const dir = `${outputFolder()}/maps`;
-          path = await upload(dir, await freeName(dir, plan.id ?? "map", "webp"), img.blob);
+          const name = await freeName(dir, plan.id ?? "map", "webp");
+          path = await upload(dir, name, img.blob);
+          // A battle map's roofs and tree crowns: beside the map, in a folder of their own named after it (never one
+          // already there, which an older scene may use). Should that fail, the error says where the map was saved
+          if (img.overheads?.length) {
+            try {
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-overhead`)}`;
+              await ensureDir(sub);
+              for (const [k, o] of img.overheads.entries()) {
+                check();
+                bar.update(0.97 + (0.03 * k) / img.overheads.length, "Saving the roofs and trees");
+                overheads.push({ path: await upload(sub, `${o.name}.webp`, o.blob, { ready: true }), kind: o.kind, x: o.x, y: o.y, width: o.width, height: o.height, elevation: o.elevation });
+              }
+            } catch (e) {
+              // (overheads null, not empty: a scene published from this keeps the roofs and trees it had)
+              e.result = { path, width: img.width, height: img.height, layout, overheads: null };
+              throw e;
+            }
+          }
         }
         const ms = Math.round(performance.now() - t0);
         bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
         result = {
-          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout,
+          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           notes: [...layout.notes.map((n) => n.message), ...notes],
           artNotes: notes, // why art is missing (FA Nexus not active, say)
@@ -284,7 +304,8 @@ const api = {
    * "all"). image: the result of render, or a path. scene: the id of a scene to update instead of creating one.
    * AtlasScribe only updates scenes it made, unless force is true; all of the scene is backed up to
    * <output>/backups first, its name is kept, and the labels AtlasScribe added to it before (from whatever plan)
-   * are replaced; a dressed map's name goes in as a hidden tile the GM can show. Returns { sceneId, created, backup, thumb, labels, title, warnings }.
+   * are replaced; a dressed map's name goes in as a hidden tile the GM can show, and a battle map's roofs and tree crowns
+   * (render's overheads) as tiles over it. Returns { sceneId, created, backup, thumb, labels, title, overheads, warnings }.
    */
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();
