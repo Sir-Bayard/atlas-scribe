@@ -200,7 +200,8 @@ async function titleTile(plan, layout, scene, sceneId, folder) {
   const { sceneX, sceneY } = scene.dimensions;
   return {
     texture: { src: path },
-    x: Math.round(sceneX + box.x * pps), y: Math.round(sceneY + box.y * pps),
+    // (a tile's x and y are its middle: Foundry 14 anchors tiles at their center)
+    x: Math.round(sceneX + box.x * pps + c.width / 2), y: Math.round(sceneY + box.y * pps + c.height / 2),
     width: c.width, height: c.height,
     hidden: true,
     flags: { [MOD]: { title: plan.id ?? null } },
