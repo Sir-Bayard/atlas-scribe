@@ -483,7 +483,11 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const [x0, y0, x1, y1] = bbox(pts);
       const [mx, my] = [(x0 + x1) / 2, (y0 + y1) / 2];
       const inset = pts.map(([x, y]) => { const dx = mx - x, dy = my - y, l = Math.hypot(dx, dy) || 1, t = Math.min(0.08, l * 0.4) / l; return [x + dx * t, y + dy * t]; });
-      return near2.some(([p, b]) => b[0] < x1 && b[2] > x0 && b[1] < y1 && b[3] > y0 && polygonsOverlap(inset, p));
+      // (on a battle map half a square off them: a plot's buildings keep half a square in from its edge, so a shed
+      // here is a square from them)
+      const probe = battle ? apartBy(pts, 0.5) : inset;
+      const [g0, h0, g1, h1] = battle ? bbox(probe) : [x0, y0, x1, y1];
+      return near2.some(([p, b]) => b[0] < g1 && b[2] > g0 && b[1] < h1 && b[3] > h0 && polygonsOverlap(probe, p));
     };
     const [cx0, cy0] = centroid(piece);
     let dir = [1, 0], bd = Infinity;
@@ -499,8 +503,16 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const us = piece.map(([x, y]) => (x - cx0) * ux + (y - cy0) * uy), vs = piece.map(([x, y]) => (x - cx0) * nxv + (y - cy0) * nyv);
     const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
     const ext = (range) => (range[0] + r.next() * (range[1] - range[0])) / sq;
-    const gap = B.gap / sq;
+    // (a battle map's sheds a square apart at least, and a square off any other building: Patrick, 6 Nov)
+    const gap = battle ? Math.max(B.gap / sq, 1) : B.gap / sq;
     const placed = [];
+    const roomy = (pts) => {
+      if (!battle) return true;
+      const far = apartBy(pts, 1);
+      const [x0, y0, x1, y1] = bbox(far);
+      for (const k of nearby.buildings.near((x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0) / 2)) if (polygonsOverlap(far, footOf(space.buildings[k]))) return false;
+      return true;
+    };
     // Corners in the piece, none of its corners (or a hole's) poking in, and no hole under it
     const inside = (pts) => pts.every((p) => pointInPolygon(p, piece)) && !piece.some((p) => pointInPolygon(p, pts)) && !holes.some((h) => polygonsOverlap(h, pts)) && !onPlot(pts);
     let n = 0, m = 0;
@@ -513,7 +525,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [x + ux * (a * ll) / 2 + nxv * (b * dd) / 2, y + uy * (a * ll) / 2 + nyv * (b * dd) / 2]);
         // Now and then a gap is left open: a yard with the quarter's clutter, or (a close) a garden or an orchard
         const open = r.next() < (B.gardens ? 0.4 : 0.15);
-        if (!open && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
+        if (!open && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts) && roomy(pts)) {
           placed.push(pts);
           addBuilding({ shape: { rect: [x - ll / 2, y - dd / 2, x + ll / 2, y + dd / 2] }, rot, roof: pickRoof(d, r, palette), variant: r.int(8), roofStyle: ownStyles(d).length ? ownStyles(d)[r.int(ownStyles(d).length)] : "gable", height: 15, chimney: B.use === "house" ? undefined : false, use: B.use }, `${d.id}/o-b${k}-${++n}`, r.fork("b", n), d.id);
         } else if (open && B.gardens && inside(pts) && !placed.some((q) => polygonsOverlap(q, pts)) && rectFree(pts)) {
@@ -1006,7 +1018,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // Its anchor first, the landmark its character is known by, on its own square: the streets lead to it and the
     // plots keep off it (where it stands hangs on the district's shape and roads, not its seed)
     const anchorAt = anchorFor({ district: d, poly, roads: nearHere, water: space.water, blocked: [...around.zones, ...around.plots], ftPerSquare: sq, seed: plan.seed, margin: (sq ? (typeOf(d).streets?.width ?? 15) / sq : 0.6) + 0.15 });
-    const anchor = anchorAt ? layAnchor(anchorAt, r.fork("anchor"), sq) : null;
+    const anchor = anchorAt ? layAnchor(anchorAt, r.fork("anchor"), sq, { apart: battle ? 1.05 : 0 }) : null;
     // A band along a path (half its width each side) that stays in the district, off water, the plan's roads, squares,
     // yards and buildings: where the anchor's ring and approach streets may run
     // (bandWhy says what's in the way: "road" when it's only a plan road, which can stand in for the street; skip: a
@@ -1467,6 +1479,11 @@ function cutWhere(path, hit) {
   }
   const len = (p) => p.reduce((s, q, i) => s + (i ? Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0), 0);
   return out.filter((p) => p.length >= 2 && len(p) >= 0.1);
+}
+
+/** A footprint grown by d all around, square at its corners: the room a building keeps about it. */
+function apartBy(poly, d) {
+  return offset([poly], d).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null) ?? poly;
 }
 
 /** A polygon pushed out from its center by a margin (rough, for keeping clear; fine for convex shapes). */

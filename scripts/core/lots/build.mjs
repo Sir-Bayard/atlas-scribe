@@ -5,7 +5,7 @@
  */
 import { pointInPolygon, polygonsOverlap, unturn, shapeToPolygon } from "../geom.mjs";
 import { lotTypeOf } from "./index.mjs";
-import { intersect, area, difference, offset } from "./poly.mjs";
+import { intersect, area, difference, offset, union } from "./poly.mjs";
 import { ROOFS, ROOF_STYLES } from "../plan.mjs";
 import { SegGrid, finitePaths } from "../spatial.mjs";
 import { gardenShare as gardenShareOf, characterOf, LOOK } from "../character.mjs";
@@ -57,6 +57,17 @@ const fitsIn = (pts, poly) => {
   const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   return pts.every(([x, y]) => pointInPolygon([cx + (x - cx) * 0.96, cy + (y - cy) * 0.96], poly));
 };
+/** A footprint grown by d all around (square corners), as the room a building keeps about it. */
+const grown = (pts, d) => offset([pts], d).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null) ?? pts;
+/** As fitsIn, but a fixed hair (0.03 of a square) inside, however big the rectangle: a battle map's spacing holds. */
+const fitsTight = (pts, poly) => {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return pts.every(([x, y]) => {
+    const d = Math.hypot(x - cx, y - cy);
+    const k = d > 0.03 ? (d - 0.03) / d : 0;
+    return pointInPolygon([cx + (x - cx) * k, cy + (y - cy) * k], poly);
+  });
+};
 
 /**
  * lots: from lotsFor. district: the plan feature. ways: [{ id, path, width }]. blocked: polygons to keep clear of
@@ -89,7 +100,30 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   const onWayEdge = grid
     ? (mid) => { let hit = false; grid.eachNear(mid[0], mid[1], maxHalf + 0.1, (p, d) => { if (Math.abs(d - ways[p].width / 2) < 0.1) hit = true; }); return hit; }
     : (mid) => ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1);
-  const fits = (pts, poly) => fitsIn(pts, poly) && clearOfWays(pts) && !blocked.some((b) => polygonsOverlap(pts, b));
+  // Battle maps: buildings a square apart, so there's always room to walk between two (Patrick, 6 Nov). Each keeps
+  // half a square off its plot's sides and back (its front still meets the street: roomOf), and a shed or stable a
+  // whole square off what else stands on its plot (clearHere)
+  const apart = district.battleScale ? 1 : 0;
+  // (and a square off a named building, square or yard kept clear inside a block, where the plot runs around it)
+  const keepOff = apart ? blocked.filter((b) => b.length >= 3).map((b) => grown(b, apart)) : blocked;
+  const fits = (pts, poly) => !!poly && (apart ? fitsTight : fitsIn)(pts, poly) && clearOfWays(pts) && !keepOff.some((b) => polygonsOverlap(pts, b));
+  /** Where a plot's buildings may stand: the plot, or on a battle map the plot kept half a square in from its sides and back. */
+  const roomOf = (lot) => {
+    if (!apart) return lot.poly;
+    const h = apart / 2 + 0.03; // (and the hair fitsTight allows)
+    const [ax, ay] = lot.front.a, [bx, by] = lot.front.b, [nx, ny] = lot.inward;
+    const L = Math.hypot(bx - ax, by - ay);
+    const keep = offset([lot.poly], -h);
+    // (the front, half a square short of each end, kept right to the street)
+    let pieces = keep;
+    if (L > 2 * h) {
+      const ux = (bx - ax) / L, uy = (by - ay) / L;
+      const p0 = [ax + ux * h, ay + uy * h], p1 = [bx - ux * h, by - uy * h], deep = h + 0.05;
+      const band = [[p0[0] - nx, p0[1] - ny], [p1[0] - nx, p1[1] - ny], [p1[0] + nx * deep, p1[1] + ny * deep], [p0[0] + nx * deep, p0[1] + ny * deep]];
+      pieces = union(keep, intersect([lot.poly], [band]));
+    }
+    return pieces.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
+  };
   /**
    * A city row's parts on a plot, each { poly, rot, depth }: the plot's front, as deep as d, then (twice at most)
    * the longest stretch of what's left of it along a street (its side at a corner, its back on a plot through the
@@ -189,7 +223,8 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     const lot = joinLots(picks.map((k) => lots[k]));
     const sr = r.fork("site", use, picks[0]);
     const roofPick = pickWeighted(sr.next(), palette), stylePick = pickWeighted(sr.next(), styles);
-    const made = layForm({ form, lot, use, fits: (pts) => fits(pts, lot.poly), sq, r: sr, roof: roofPick, safeRoof, style: stylePick, ownStyles: Array.isArray(district.roofStyles) && district.roofStyles.length > 0, profile: district.profile, character, variant: sr.int(8) });
+    const room = roomOf(lot);
+    const made = layForm({ form, lot, use, fits: (pts) => fits(pts, room), sq, r: sr, roof: roofPick, safeRoof, style: stylePick, ownStyles: Array.isArray(district.roofStyles) && district.roofStyles.length > 0, profile: district.profile, character, variant: sr.int(8) });
     return made ? { ...made, lot, sr } : null;
   };
   const uses = usesFor ? usesFor(tryForm) : null;
@@ -265,7 +300,9 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     // Whether a spot behind the house is clear of what's already on this plot (a corner row's other wing), and wholly
     // in the plot whatever its shape (its corners in it aren't enough on a plot with a notch, where a row next door
     // is built right up to the edge)
-    const clearHere = (pts) => ![...out.houses.slice(firstHouse), ...out.outbuildings.slice(firstOut)].some((h) => polygonsOverlap(partCorners(h.building), pts)) && intersect([pts], [lot.poly]).reduce((s, q) => s + area(q), 0) > area(pts) * 0.995;
+    // (gap: how far it keeps off them, for a building of its own: a shed a square off the house on a battle map)
+    const clearHere = (pts, gap = 0) => ![...out.houses.slice(firstHouse), ...out.outbuildings.slice(firstOut)].some((h) => polygonsOverlap(gap ? grown(partCorners(h.building), gap) : partCorners(h.building), pts)) && intersect([pts], [lot.poly]).reduce((s, q) => s + area(q), 0) > area(pts) * 0.995;
+    const room = roomOf(lot); // where its buildings may stand (the plot, kept off its neighbors on a battle map)
     let house = null;
     // A city row: the house takes the plot's whole front, fitted to it, under a roof whose ridge runs along the
     // street; where the plot also meets a street at its side or back (a corner plot, a plot through the block) the
@@ -314,13 +351,15 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       const winged = roll0 < (S0.L ?? 0) + (S0.T ?? 0) + (S0.U ?? 0) + (S0.court ?? 0) && lot.frontage * cover * 0.98 >= sq(22);
       const plain = plainDepth;
       const depths = winged ? [Math.min(hd, lot.depth * 0.45), plain, plain * 0.75] : [plain, plain * 0.75];
+      // (on a battle map no narrower than three squares, room to fight in: a plot too tight is left a yard)
+      const least = apart ? [3, 3] : [sq(12), sq(10)];
       search: for (const depth of depths) {
-        if (depth < sq(12)) continue;
-        for (let w = lot.frontage * cover * 0.98; w > sq(10); w *= 0.92) {
+        if (depth < least[0]) continue;
+        for (let w = lot.frontage * cover * 0.98; w > least[1]; w *= 0.92) {
           for (const slide of [0, 0.15, -0.15, 0.3, -0.3]) {
             const off = slide * lot.frontage;
             const cx = mx + nx * (sb + depth / 2) + ux * off, cy = my + ny * (sb + depth / 2) + uy * off;
-            if (!fits(corners(cx, cy, w, depth, dir), lot.poly)) continue;
+            if (!fits(corners(cx, cy, w, depth, dir), room)) continue;
             house = { cx, cy, w, depth, off, rot, dir };
             break search;
           }
@@ -363,13 +402,13 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       }
       const rectOf = (q) => { const a = (q.rot * Math.PI) / 180; return corners(q.cx, q.cy, q.len, q.dep, [Math.cos(a), Math.sin(a)]); };
       // Every part must fit the plot, or the house stays a plain block
-      const ok = parts.every((q) => fits(rectOf(q), lot.poly));
+      const ok = parts.every((q) => fits(rectOf(q), room));
       const shape = ok ? kind : null;
       // A house kept shallow for wings that didn't fit takes its plot's full depth after all, where that fits
       if (!shape && depth < plainDepth - 1e-6) for (const d2 of [plainDepth, plainDepth * 0.85]) {
         if (d2 <= depth + 1e-6) break;
         const x2 = mx + nx * (sb + d2 / 2) + ux * house.off, y2 = my + ny * (sb + d2 / 2) + uy * house.off;
-        if (fits(corners(x2, y2, w, d2, dir), lot.poly)) { cx = x2; cy = y2; depth = d2; Object.assign(house, { cx, cy, depth }); reach = sb + depth; break; }
+        if (fits(corners(x2, y2, w, d2, dir), room)) { cx = x2; cy = y2; depth = d2; Object.assign(house, { cx, cy, depth }); reach = sb + depth; break; }
       }
       // A winged house's roof runs into its wings': a mansard or pyramid becomes a hip there; flat stays flat
       if (shape && (style === "mansard" || style === "pyramid")) style = "hip";
@@ -422,7 +461,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         const bw = Math.min(w * 0.4, sq(10 + dr.next() * 6), depth * 0.95), bd = Math.min(sb * 0.8, sq(5 + dr.next() * 4));
         const [ox, oy] = at((dr.next() - 0.5) * (w - bw) * 0.5, -(depth / 2 + bd / 2 - 0.05));
         const q = { cx: ox, cy: oy, len: bd + 0.05, dep: bw, rot: rot + 90 };
-        if (bd >= sq(4) && fits(rectOf(q), lot.poly)) {
+        if (bd >= sq(4) && fits(rectOf(q), room)) {
           bay = q;
           push(q, `${base}b`, { roofStyle: style === "gable" ? "gable" : "hip", join: { ...joinOf(q), inset: 0.075 } });
           placed.push(rectOf(q));
@@ -456,7 +495,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         for (const side of [first, -first]) {
           const [ox, oy] = at(side * (w / 2 - tr * 0.4), (front ? -1 : 1) * (depth / 2 - tr * 0.4));
           const sqr = corners(ox, oy, 2 * tr, 2 * tr, dir);
-          if (!fits(sqr, lot.poly) || placed.some((p) => polygonsOverlap(sqr, p))) continue;
+          if (!fits(sqr, room) || placed.some((p) => polygonsOverlap(sqr, p))) continue;
           out.houses.push({ id: `${base}t`, lot: i, wing: true, r: lr.fork("turret"), building: { shape: { circle: [ox, oy, tr] }, rot, roof, variant, roofStyle: "cone", height: 30, chimney: false, use } });
           if (!front) reach = Math.max(reach, sb + depth + tr * 0.6); // a turret at the back pushes the yard back
           break;
@@ -484,7 +523,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       const side = oSide * Math.max(0, lot.frontage - ow) * 0.8;
       const back = behind + sq(8);
       const cx = mx + nx * (back + od / 2) + ux * side, cy = my + ny * (back + od / 2) + uy * side;
-      if (behind + od < lot.depth * 0.9 && fits(corners(cx, cy, ow, od, [ux, uy]), lot.poly) && clearHere(corners(cx, cy, ow, od, [ux, uy]))) {
+      if (behind + od < lot.depth * 0.9 && fits(corners(cx, cy, ow, od, [ux, uy]), room) && clearHere(corners(cx, cy, ow, od, [ux, uy]), apart)) {
         // A square shed under a pyramid roof, or now and then a round one (a dovecote) under a cone
         const square = Math.abs(ow / od - 1) < 0.15, round = square && oRound;
         const shape = round ? { circle: [cx, cy, Math.min(ow, od) / 2] } : { rect: [cx - ow / 2, cy - od / 2, cx + ow / 2, cy + od / 2] };
@@ -499,7 +538,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       const rw = Math.min(lot.frontage * 0.85, sq(16 + dr.next() * 12)), rd = sq(14 + dr.next() * 8);
       const back = lot.depth - rd / 2 - sq(2);
       const cx = mx + nx * back, cy = my + ny * back;
-      if (fits(corners(cx, cy, rw, rd, [ux, uy]), lot.poly) && clearHere(corners(cx, cy, rw, rd, [ux, uy]))) {
+      if (fits(corners(cx, cy, rw, rd, [ux, uy]), room) && clearHere(corners(cx, cy, rw, rd, [ux, uy]), apart)) {
         rearAt = back - rd / 2;
         out.outbuildings.push({ id: `l${lot.block}-${i}r`, lot: i, r: lr.fork("rear"), building: { shape: { rect: [cx - rw / 2, cy - rd / 2, cx + rw / 2, cy + rd / 2] }, rot: ang, roof, variant, roofStyle: "gable", height: 18, chimney: false, use: working ? "workshop" : uses?.rear ?? "stable" } });
       }
@@ -567,7 +606,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
             const cx = mx + nx * (t + dd / 2) + ux * off, cy = my + ny * (t + dd / 2) + uy * off;
             const pts = corners(cx, cy, w, dd, [ux, uy]);
             // (wholly in the plot, whatever its shape: a row next door is built right up to its edge)
-            if (t + dd <= end && fits(pts, lot.poly) && !rects.some((q) => polygonsOverlap(q, pts)) && clearHere(pts)) {
+            if (t + dd <= end && fits(pts, room) && !rects.some((q) => polygonsOverlap(apart ? grown(q, apart) : q, pts)) && clearHere(pts, apart)) {
               out.outbuildings.push({ id: `l${lot.block}-${i}k${++n}`, lot: i, r: fr.fork("shed", n), building: { shape: { rect: [cx - w / 2, cy - dd / 2, cx + w / 2, cy + dd / 2] }, rot: ang, roof: pickWeighted(fr.next(), palette), variant: fr.int(8), roofStyle: ownStyle ?? "gable", height: 15, chimney: false, use: B.use } });
               rects.push(pts);
             }

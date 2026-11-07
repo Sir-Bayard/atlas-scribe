@@ -8,14 +8,14 @@
  *    nearest a street.
  * Everything in squares. Pure: runs anywhere.
  */
-import { shapeToPolygon, pointInPolygon, distanceToPath } from "../geom.mjs";
+import { shapeToPolygon, pointInPolygon, distanceToPath, polygonsOverlap } from "../geom.mjs";
+import { union, offset, signedArea, shapes } from "../lots/poly.mjs";
 
 /**
  * How deep a yard is tried, in squares, deepest first; how far it keeps from a street's edge and from other buildings;
  * its gate's half width; its least width.
  */
 export const YARD = { depths: [5, 4, 3, 2.5], offStreet: 0.7, offBuilding: 0.4, gate: 0.6, minWidth: 3 };
-/** A walled yard's gate: half its width, in squares, and the shortest side that takes one. */
 /**
  * A walled yard's wall: its gate's half width and the shortest side that takes one, in squares; how far it keeps off a
  * street's center beyond half the street's width (its own half thickness and the curb), and how near its ends that's
@@ -93,6 +93,7 @@ function gated(ring0, ways) {
  * (the site they wall in, the same for all of one site's) and the main house of each plot marked `main`. W, H: the map's size in squares.
  */
 export function battleYards(items, W, H) {
+  battleGroups(items);
   const ways = items.filter((i) => i.kind === "way" && !i.faint && Array.isArray(i.path) && i.path.length >= 2);
   const water = items.filter((i) => i.kind === "water");
   const nearWay = (p, extra) => ways.some((w) => distanceToPath(p, w.path) < (w.width ?? 1) / 2 + extra);
@@ -193,5 +194,160 @@ export function battleYards(items, W, H) {
     items.push({ kind: "surface", id: `${b.id}/yard`, from: b.from, class: "backyard", poly });
     fences.forEach((path, k) => items.push({ kind: "boundary", id: `${b.id}/yard-f${k + 1}`, from: b.from, class: "fence", path }));
   }
-  return { yards: yards.length, walls: walls.length };
+  const shells = buildingShells(items);
+  return { yards: yards.length, walls: walls.length, shells };
+}
+
+/**
+ * How high a roof sits, in feet: an ordinary building's at 10, a tower's or a tall building's (a temple, a keep) at 20
+ * (Patrick, 6 Nov). A roof is seen from the street as Foundry reveals a raised surface, more of it the lower it is.
+ */
+export const ROOF_HEIGHT = { low: 10, tall: 20 };
+/** A building group's roof height: tall when any part is a tower or stands 40 ft or more (a layout's `tall` 1 or more). */
+export const roofHeight = (parts) => (parts.some((b) => b.tower || b.tall >= 1) ? ROOF_HEIGHT.tall : ROOF_HEIGHT.low);
+
+/** A building's walls: their thickness in squares (the art's band), a door's width, a window's. */
+export const SHELL = { thickness: 0.3, door: 1, wideDoor: 2, window: 0.5, windowEvery: 2.6, cornerKeep: 0.45 };
+const STONE_USES = new Set(["temple", "shrine", "keep", "watch", "tower", "chapel", "guildhall", "customs", "palace", "market-hall"]);
+const hashOf = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
+
+/**
+ * A battle map's building groups, one for each building that stands as one (one roof tile, one set of walls): a
+ * group's parts that touch (a house and its wings) stay together, those that don't (an inn's stable across its
+ * yard) each become a group of their own, and a centerpiece's or a plan landmark's parts (a pinned house), which come
+ * without a group, are joined as they touch. Sets each building's `group`; the group that holds a plot's main house keeps its name.
+ */
+export function battleGroups(items) {
+  const buildings = items.filter((i) => i.kind === "building");
+  const byKey = new Map();
+  for (const b of buildings) {
+    // (a plan landmark's parts, and a pinned house's, are ids <landmark>/1, /2... from it)
+    const part = typeof b.from === "string" && b.id.startsWith(`${b.from}/`) && /^\d+$/.test(b.id.slice(b.from.length + 1));
+    const k = b.group ?? b.id.match(/^(.*\/h-anchor\d+)(w\d+)?$/)?.[1] ?? (part ? b.from : b.id);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(b);
+  }
+  for (const [k, parts] of byKey) {
+    if (parts.length === 1) { parts[0].group = k; continue; }
+    // (parts a hair apart count as touching: a wing is set into the house it joins)
+    const feet = parts.map((b) => offset([footprint(b)], 0.02).reduce((a, q) => (!a || Math.abs(signedArea(q)) > Math.abs(signedArea(a)) ? q : a), null) ?? footprint(b));
+    const root = parts.map((_, i) => i);
+    const find = (i) => (root[i] === i ? i : (root[i] = find(root[i])));
+    for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) if (find(i) !== find(j) && polygonsOverlap(feet[i], feet[j])) root[find(j)] = find(i);
+    const sets = new Map();
+    parts.forEach((b, i) => { const r = find(i); if (!sets.has(r)) sets.set(r, []); sets.get(r).push(b); });
+    const named = [...sets.values()].find((set) => set.some((b) => b.main || b.id === k)) ?? [...sets.values()][0];
+    for (const set of sets.values()) for (const b of set) b.group = set === named ? k : set[0].id;
+  }
+}
+
+/**
+ * Each building's walls, as rings of segments (wall, door, window) a half thickness inside its footprint, so the roof
+ * covers them: a front door on the side nearest a street, a back door into its yard (or, around a courtyard, one into
+ * the courtyard), windows along the walls clear of corners, doors and neighbors. Items `shell` are added, one for each
+ * piece a group's walls make (its id the group's, then /shell, /shell2...); returns how many.
+ */
+export function buildingShells(items) {
+  const ways = items.filter((i) => i.kind === "way" && !i.faint && Array.isArray(i.path) && i.path.length >= 2);
+  const buildings = items.filter((i) => i.kind === "building");
+  const groups = new Map();
+  for (const b of buildings) { const k = b.group ?? b.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(b); }
+  const yards = new Map(items.filter((i) => i.kind === "surface" && i.class === "backyard").map((y) => [y.id.replace(/\/yard$/, ""), y]));
+  const T = SHELL.thickness;
+  const biggest = (list) => list.reduce((a, b) => (!a || Math.abs(signedArea(b.outer)) > Math.abs(signedArea(a.outer)) ? b : a), null);
+  let n = 0;
+  for (const [g, parts] of groups) {
+    const main = parts.find((b) => b.main) ?? parts[0];
+    if (parts.every((b) => b.round)) continue; // (towers and round sheds: later)
+    // The group's outline (a courtyard a hole in it), its walls' line half a thickness in: a piece for each part of
+    // that line (a narrow neck may split it), the biggest first
+    const pieces = shapes(offset(union(parts.map(footprint)).filter((r) => signedArea(r) !== 0), -T / 2)).filter((p) => Math.abs(signedArea(p.outer)) > 1);
+    pieces.sort((a, b) => Math.abs(signedArea(b.outer)) - Math.abs(signedArea(a.outer)));
+    const shed = main.use === "shed" || (/\/o-/.test(main.id) && !main.use);
+    const use = main.use ?? (shed ? "shed" : "house");
+    const material = STONE_USES.has(use) || main.tower ? "stone" : shed || use === "stable" || use === "barn" ? "wood" : use === "smithy" ? "stonewood" : "timber";
+    const h = hashOf(g);
+    pieces.forEach((piece, k) => {
+      const sgn = Math.sign(signedArea(piece.outer));
+      // (points on a straight line dropped)
+      const tidy = (ring) => ring.filter((p, i) => { const a = ring[(i - 1 + ring.length) % ring.length], c = ring[(i + 1) % ring.length]; return Math.abs((p[0] - a[0]) * (c[1] - a[1]) - (p[1] - a[1]) * (c[0] - a[0])) > 1e-4; });
+      const rings = [piece.outer, ...piece.holes].map(tidy).filter((r) => r.length >= 3);
+      // Each ring's sides; a hole runs the other way around, so the same rule finds the building's side of it
+      const ringEdges = rings.map((ring, ri) => ring.map((a, i) => {
+        const b = ring[(i + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+        const inward = sgn > 0 ? [-u[1], u[0]] : [u[1], -u[0]];
+        const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const street = ri ? Infinity : Math.min(Infinity, ...ways.map((w) => distanceToPath(mid, w.path) - (w.width ?? 0) / 2));
+        const out = [mid[0] - inward[0] * (T + 0.35), mid[1] - inward[1] * (T + 0.35)];
+        const against = buildings.some((o) => !parts.includes(o) && pointInPolygon(out, footprint(o)));
+        return { a, b, L, u, inward, mid, street, against, court: ri > 0, open: [] };
+      }));
+      ringEdges.forEach((edges) => edges.forEach((e, i) => { e.prev = edges[(i - 1 + edges.length) % edges.length]; e.next = edges[(i + 1) % edges.length]; }));
+      const edges = ringEdges.flat();
+      // Front door: the free outer side nearest a street (a long side if one is about as near)
+      const doorW = use === "temple" && k === 0 ? SHELL.wideDoor : SHELL.door;
+      const roomy = (e, w) => !e.against && e.L >= w + 2 * SHELL.cornerKeep;
+      const free = ringEdges[0].filter((e) => roomy(e, doorW));
+      if (free.length) {
+        const front = free.reduce((a, b) => (b.street + (b.L < 2.5 ? 1.5 : 0) < a.street + (a.L < 2.5 ? 1.5 : 0) ? b : a));
+        const room = front.L / 2 - doorW / 2 - SHELL.cornerKeep;
+        front.open.push({ type: "door", at: front.L / 2 + (h - 0.5) * room * 0.8, w: doorW, side: "front" });
+        // Back door: into the yard, toward one end
+        const yard = k === 0 ? yards.get(main.id) : null;
+        if (yard) {
+          const c = yard.poly.reduce((s, p) => [s[0] + p[0] / yard.poly.length, s[1] + p[1] / yard.poly.length], [0, 0]);
+          const back = ringEdges[0].filter((e) => e !== front && roomy(e, SHELL.door)).reduce((a, b) => (!a || Math.hypot(b.mid[0] - c[0], b.mid[1] - c[1]) < Math.hypot(a.mid[0] - c[0], a.mid[1] - c[1]) ? b : a), null);
+          // (toward one end, but clear of its corner)
+          const lo = SHELL.cornerKeep + SHELL.door / 2;
+          if (back) back.open.push({ type: "door", at: Math.min(back.L - lo, Math.max(lo, back.L * (h < 0.5 ? 0.3 : 0.7))), w: SHELL.door, side: "back" });
+        }
+      }
+      // A courtyard's door, in its longest side
+      for (const ring of ringEdges.slice(1)) {
+        const side = ring.filter((e) => roomy(e, SHELL.door)).reduce((a, b) => (!a || b.L > a.L ? b : a), null);
+        if (side) side.open.push({ type: "door", at: side.L / 2, w: SHELL.door, side: "court" });
+      }
+      // Windows: every so far along each free side, clear of its corners and doors (none in a shed)
+      if (!shed) for (const e of edges.filter((e) => !e.against)) {
+        const count = Math.floor((e.L - 2 * SHELL.cornerKeep) / SHELL.windowEvery);
+        for (let i = 0; i < count; i++) {
+          const at = e.L / 2 + (i - (count - 1) / 2) * SHELL.windowEvery;
+          if (e.open.some((o) => Math.abs(o.at - at) < o.w / 2 + SHELL.window / 2 + 0.4)) continue;
+          if (at - SHELL.window / 2 < SHELL.cornerKeep || at + SHELL.window / 2 > e.L - SHELL.cornerKeep) continue;
+          e.open.push({ type: "window", at, w: SHELL.window });
+        }
+      }
+      // The rings as segments; a wall piece at a corner is cut along the corner's bisector (a mitered joint), so the
+      // art of two sides meets cleanly: `clip` is the piece's outline, a thickness either side of its line (and more)
+      const walls = [];
+      const miter = (e, which) => {
+        const o = which === 0 ? e.prev : e.next;
+        const p = which === 0 ? e.a : e.b;
+        // (the joint line runs through the corner along the sum of the two sides' inward normals)
+        const m = [e.inward[0] + o.inward[0], e.inward[1] + o.inward[1]], ml = Math.hypot(m[0], m[1]) || 1;
+        const d = T / Math.max(0.2, m[0] / ml * e.inward[0] + m[1] / ml * e.inward[1]);
+        return [[p[0] + (m[0] / ml) * d, p[1] + (m[1] / ml) * d], [p[0] - (m[0] / ml) * d, p[1] - (m[1] / ml) * d]];
+      };
+      const clipOf = (e, t0, t1, c0, c1) => {
+        const P = (t, v) => [e.a[0] + e.u[0] * t + e.inward[0] * v, e.a[1] + e.u[1] * t + e.inward[1] * v];
+        const s0 = c0 ? miter(e, 0) : [P(t0, T), P(t0, -T)], s1 = c1 ? miter(e, 1) : [P(t1, T), P(t1, -T)];
+        return [s0[0], s1[0], s1[1], s0[1]];
+      };
+      for (const e of edges) {
+        const P = (t) => [e.a[0] + e.u[0] * t, e.a[1] + e.u[1] * t];
+        let t = 0;
+        for (const o of e.open.sort((x, y) => x.at - y.at)) {
+          const t0 = o.at - o.w / 2, t1 = o.at + o.w / 2;
+          if (t0 > t + 1e-6) walls.push({ type: "wall", a: P(t), b: P(t0), inward: e.inward, corner: [t === 0, false], clip: clipOf(e, t, t0, t === 0, false) });
+          walls.push({ type: o.type, a: P(t0), b: P(t1), inward: e.inward, side: o.side });
+          t = t1;
+        }
+        if (t < e.L - 1e-6) walls.push({ type: "wall", a: P(t), b: P(e.L), inward: e.inward, corner: [t === 0, true], clip: clipOf(e, t, e.L, t === 0, true) });
+      }
+      items.push({ kind: "shell", id: k ? `${g}/shell${k + 1}` : `${g}/shell`, from: main.from, group: g, use, material, thickness: T, variant: Math.floor(h * 1000), walls });
+      n++;
+    });
+  }
+  return n;
 }

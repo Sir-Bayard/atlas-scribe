@@ -183,9 +183,10 @@ function segHits(box, path) {
  * surface }], props: [{ class, x, y, rot, size }] (size across in feet), trees: [{ x, y, s, species, size }],
  * walls: [path], hedges: [path] (clipped box), approach: [point, direction] (a
  * street runs out from there to the town) }. a: from anchorFor; r: the
- * district's stream for its details; ftPerSquare.
+ * district's stream for its details; ftPerSquare. apart: the least gap, in squares, between its buildings that
+ * stand apart (a battle map's square, so there's room to walk between; 0 elsewhere).
  */
-export function layAnchor(a, r, ftPerSquare) {
+export function layAnchor(a, r, ftPerSquare, { apart = 0 } = {}) {
   const sq = (ft) => (ft * a.scale) / ftPerSquare; // feet in the anchor's own (grand) scale
   const ux = Math.cos(a.rot * DEG), uy = Math.sin(a.rot * DEG), nx = -uy, ny = ux;
   const P = (u, v) => [a.at[0] + ux * u + nx * v, a.at[1] + uy * u + ny * v];
@@ -212,7 +213,7 @@ export function layAnchor(a, r, ftPerSquare) {
       { const [x, y] = P(L / 2 + sq(4), nv); out.buildings.push({ key: "apse", spec: { shape: { circle: [x, y, Wn / 2] }, rot: a.rot, roof: "tile-green", roofStyle: "cone", height: 50, chimney: false, grand: true, use: "temple" } }); }
       for (const s of [-1, 1]) out.buildings.push({ key: s < 0 ? "tower1" : "tower2", spec: spec(-L / 2 + Ws / 2 - sq(2), nv + s * (Wn / 2 + Ws / 2 - sq(6)), Ws, Ws, { roof: "tile-green", roofStyle: "pyramid", height: 95, use: "temple" }) });
       // The cloister: four ranges around a square garden, behind the nave
-      const cv0 = nv + Tx + sq(4), cs = Math.min(sq(70), H / 2 - cv0 - sq(4));
+      const cv0 = nv + Tx + Math.max(sq(4), apart), cs = Math.min(sq(70), H / 2 - cv0 - sq(4));
       if (cs > sq(40)) {
         const cu = -L * 0.15, t = sq(14);
         const c = cv0 + cs / 2;

@@ -305,7 +305,8 @@ const api = {
    * AtlasScribe only updates scenes it made, unless force is true; all of the scene is backed up to
    * <output>/backups first, its name is kept, and the labels AtlasScribe added to it before (from whatever plan)
    * are replaced; a dressed map's name goes in as a hidden tile the GM can show, and a battle map's roofs and tree crowns
-   * (render's overheads) as tiles over it. Returns { sceneId, created, backup, thumb, labels, title, overheads, warnings }.
+   * (render's overheads) as tiles over it, with its walls, doors, windows and roof regions. Returns { sceneId, created,
+   * backup, thumb, labels, title, overheads, walls, roofs, warnings }.
    */
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();

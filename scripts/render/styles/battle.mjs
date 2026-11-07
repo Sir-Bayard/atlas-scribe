@@ -14,7 +14,7 @@
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
 import { makeNoise } from "../../core/noise.mjs";
-import { footprint } from "../../core/layout/battle.mjs";
+import { footprint, roofHeight } from "../../core/layout/battle.mjs";
 import { paintRoof } from "./textured.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
@@ -33,13 +33,32 @@ const UNPAVED = { dirt: "surface.dirt", gravel: "surface.gravel", trodden: "surf
 /** A building's floor: stone in a temple, a smithy or a tower; boards elsewhere, in one of two woods. */
 const STONE_FLOORS = new Set(["temple", "smithy", "watch", "shrine", "tower", "keep", "chapel"]);
 
-/** Overhead tiles' heights, in feet above the ground: a roof over a one-story wall, a tree's crown above it. */
-export const OVERHEAD_ELEVATION = { roof: 20, canopy: 30 };
+/** A tree crown's tile height, in feet above the ground: above any roof (a roof's own: roofHeight). */
+export const OVERHEAD_ELEVATION = { canopy: 30 };
 /** Trees are gathered onto canopy tiles about this many squares across (a tile per tree would be hundreds). */
 const CANOPY_CELL = 24;
 
 /** A tree's art role in a season (as the textured style's). */
 const treeRole = (t, s) => (t.species === "bare" ? (s === "winter" ? "tree.bare.winter" : `tree.deciduous.${s}`) : `tree.conifer.${t.size ?? "large"}.${s}`);
+/**
+ * Where a path art strip's band lies across its image: its middle row and its height in rows, measured once from the
+ * art (rows whose mean alpha is over half), so a wall can be stretched to its thickness whatever the art's band.
+ */
+const BANDS = new WeakMap();
+function bandOf(im) {
+  if (BANDS.has(im)) return BANDS.get(im);
+  let band = { mid: im.height / 2, h: im.height * 0.25 };
+  try {
+    const w = Math.min(im.width, 400), c = new OffscreenCanvas(w, im.height), k = c.getContext("2d");
+    k.drawImage(im, 0, 0, w, im.height, 0, 0, w, im.height);
+    const d = k.getImageData(0, 0, w, im.height).data, rows = [];
+    for (let y = 0; y < im.height; y++) { let s = 0; for (let x = 0; x < w; x++) s += d[(y * w + x) * 4 + 3]; if (s / w > 128) rows.push(y); }
+    if (rows.length) band = { mid: (rows[0] + rows.at(-1) + 1) / 2, h: rows.at(-1) - rows[0] + 1 };
+  } catch { /* (an image the canvas can't read: the guess above) */ }
+  BANDS.set(im, band);
+  return band;
+}
+
 /** A hedge's bushes: bare in winter, in leaf otherwise (as the textured style's). */
 const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
 /** A tree's crown across, in squares: a broadleaf four to six, a fir by its size. */
@@ -76,6 +95,9 @@ export function rolesFor(layout) {
       if (i.roofStyle === "flat" || i.roofStyle === "mansard") roles.add(i.flatRoof === "wood" ? `roof.flat.wood.${s}` : `roof.flat.${s}`);
     }
     if (i.kind === "tree") roles.add(treeRole(i, s));
+    if (i.kind === "shell") { roles.add(`wall.${i.material}`); if (i.walls.some((w) => w.type === "window")) roles.add("window.small"); }
+    if (i.kind === "boundary" && i.class === "fence") roles.add("fence.wood");
+    if (i.kind === "wall" && i.class === "stone") roles.add("fence.stone");
     if (i.kind === "wall" && i.class === "palisade") roles.add("wood.stake");
     if (i.kind === "prop" && i.class === "fountain") roles.add(s === "winter" ? "water.ice" : "water.pond");
     if (i.kind === "prop" && i.class !== "grave" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
@@ -177,6 +199,28 @@ export function paint(ctx) {
   };
   /** A crisp fill straight onto the map. */
   const fill = (shape, style, alpha = 1) => { g.save(); g.globalAlpha = alpha; g.fillStyle = style; g.strokeStyle = style; shape(g); g.restore(); };
+  /**
+   * A path art strip (FA's "_Path" art: a band along the middle of a 200 px tall image, repeating along its length)
+   * laid along a to b, its pattern starting at a (so tiles agree), carried ext0 and ext1 squares past each end.
+   */
+  const stripPatterns = new Map();
+  const strip = (im, a, b, ext0 = 0, ext1 = 0, phase = 0, { width = null, clip = null } = {}) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    if (L < 1e-3) return;
+    g.save();
+    if (clip) { poly(g, clip); g.clip(); }
+    // (width: the band's thickness in squares, the art stretched across to it; else the art's own)
+    const band = bandOf(im), ky = width ? (width * ART_PX) / band.h : 1;
+    g.translate(X(a[0]), Y(a[1])); g.rotate(Math.atan2(dy, dx)); g.scale(pp / ART_PX, (pp / ART_PX) * ky);
+    // (one pattern for each image: a map has hundreds of wall pieces)
+    let p = stripPatterns.get(im);
+    if (!p) stripPatterns.set(im, (p = g.createPattern(im, "repeat-x")));
+    p.setTransform(new DOMMatrix().translate(-phase * ART_PX, -band.mid));
+    g.fillStyle = p;
+    g.fillRect(-ext0 * ART_PX, -band.mid, (L + ext0 + ext1) * ART_PX, im.height);
+    g.restore();
+  };
+  const stripPath = (im, path, phase = 0) => { let t = phase; for (let i = 1; i < path.length; i++) { strip(im, path[i - 1], path[i], i > 1 ? 0.05 : 0, 0, t); t += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); } };
   /** A rectangle w by d squares around cx, cy, turned rot degrees, as a polygon on the map (so a pattern stays anchored). */
   const rectAt = (cx, cy, w, d, rot) => {
     const a = (rot * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
@@ -283,8 +327,10 @@ export function paint(ctx) {
   const fences = items("boundary").filter((b) => Array.isArray(b.path) && b.path.length >= 2 && b.class !== "hedge" && b.class !== "balk" && b.class !== "clipped" && meets(bboxOf(b.path), 1));
   if (fences.length) {
     soft((k) => { for (const f of fences) stroke(k, f.path.map(([x, y]) => [x - 0.1, y - 0.1]), 0.35, "butt"); }, "rgb(16,20,30)", { blur: 0.08, alpha: 0.35, box: boxAround(fences.map((f) => bboxOf(f.path)), 0.4) });
-    fill((k) => { for (const f of fences) stroke(k, f.path, 0.14, "butt"); }, tex("wood.fence"));
-    fill((k) => {
+    const fenceArt = art("fence.wood");
+    if (fenceArt) for (const f of fences) stripPath(fenceArt, f.path);
+    else fill((k) => { for (const f of fences) stroke(k, f.path, 0.14, "butt"); }, tex("wood.fence"));
+    if (!fenceArt) fill((k) => {
       for (const f of fences) for (let i = 1; i < f.path.length; i++) {
         const [a, b] = [f.path[i - 1], f.path[i]], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
         for (let t = 0; t <= l + 1e-6; t += Math.max(0.5, l / Math.max(1, Math.round(l / 1.5)))) { const x = a[0] + ((b[0] - a[0]) * t) / (l || 1), y = a[1] + ((b[1] - a[1]) * t) / (l || 1); k.fillRect(X(x - 0.1), Y(y - 0.1), 0.2 * pp, 0.2 * pp); }
@@ -298,7 +344,12 @@ export function paint(ctx) {
     soft((k) => { for (const w of walls) stroke(k, w.path.map(([x, y]) => [x - 0.15, y - 0.15]), thick(w) + 0.25, "butt"); }, "rgb(16,20,30)", { blur: 0.12, alpha: 0.4, box: boxAround(walls.map((w) => bboxOf(w.path)), Math.max(...walls.map(thick)) / 2 + 0.5) });
     // (stone, or a palisade's logs)
     const wood = walls.filter((w) => w.class === "palisade"), stone = walls.filter((w) => w.class !== "palisade");
-    if (stone.length) fill((k) => { for (const w of stone) stroke(k, w.path, thick(w), "butt"); }, tex(`stone.rough.${s}`));
+    // (a yard's low wall from fence art where there is some; a town wall, thicker, stays a stone fill)
+    const lowArt = art("fence.stone");
+    const low = lowArt ? stone.filter((w) => !(w.thickness > 0.6)) : [];
+    for (const w of low) stripPath(lowArt, w.path);
+    const high = stone.filter((w) => !low.includes(w));
+    if (high.length) fill((k) => { for (const w of high) stroke(k, w.path, thick(w), "butt"); }, tex(`stone.rough.${s}`));
     if (wood.length) fill((k) => { for (const w of wood) stroke(k, w.path, thick(w), "butt"); }, tex("wood.stake"));
   }
 
@@ -311,8 +362,8 @@ export function paint(ctx) {
     fill((k) => { k.beginPath(); k.arc(X(f.x), Y(f.y), 0.4 * pp, 0, 2 * Math.PI); k.fill(); }, tex("stone.curb"));
   }
 
-  // 9. Buildings: their shadows, floors, a soft contact shadow along their walls, and the walls (half a square thick,
-  // plain until the walls are made from art)
+  // 9. Buildings: their shadows, floors, a soft contact shadow along their walls, and the walls (from wall and window
+  // art, or plain without it)
   progress(0.55, "Buildings");
   if (feet.length) soft((k) => {
     for (const { b, f } of feet) {
@@ -324,8 +375,35 @@ export function paint(ctx) {
   if (feet.length) {
     const outlines = (k, w) => { k.lineWidth = w * pp; k.lineJoin = "miter"; for (const { f } of feet) { poly(k, f); k.stroke(); } };
     soft((k) => outlines(k, 0.8), "rgb(10,12,18)", { blur: 0.25, alpha: 0.35, box: boxAround(feet.map((x) => x.bb), 0.4) });
+  }
+  // Each building's walls from wall art (its shell: walls and windows; a door's gap is left for the scene's door), or
+  // plain strokes along its footprint without art
+  const shells = items("shell").filter((sh) => meets(bboxOf(sh.walls.flatMap((w) => [w.a, w.b])), 1));
+  const noShell = feet.filter(({ b }) => !shells.some((sh) => sh.group === (b.group ?? b.id)));
+  if (noShell.length) {
+    const outlines = (k, w) => { k.lineWidth = w * pp; k.lineJoin = "miter"; for (const { f } of noShell) { poly(k, f); k.stroke(); } };
     fill((k) => outlines(k, 0.5), "rgb(70,58,46)");
     fill((k) => outlines(k, 0.34), "rgb(150,132,108)");
+  }
+  for (const sh of shells) {
+    const im = art(`wall.${sh.material}`, sh.variant);
+    const win = art("window.small", sh.variant);
+    const half = sh.thickness / 2, phase = (sh.variant % 7) * 0.37;
+    for (const w of sh.walls.filter((x) => x.type === "wall")) {
+      if (im) strip(im, w.a, w.b, w.corner?.[0] ? sh.thickness : 0, w.corner?.[1] ? sh.thickness : 0, phase, { width: sh.thickness, clip: w.clip });
+      else fill((k) => stroke(k, [w.a, w.b], sh.thickness, w.corner?.[0] || w.corner?.[1] ? "square" : "butt"), "rgb(110,96,78)");
+    }
+    // (windows after every wall, so each lies whole over the walls either side of its gap)
+    for (const w of sh.walls) {
+      if (w.type === "window") {
+        const m = [(w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2];
+        g.save(); g.translate(X(m[0]), Y(m[1])); g.rotate(Math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]));
+        // (the window's art stretched across to the wall's thickness, as the wall's is)
+        if (win) { const band = bandOf(win), ky = (sh.thickness * ART_PX) / band.h; g.scale(1, ky); g.drawImage(win, -pp / 2, (-band.mid / ART_PX) * pp, pp, pp); }
+        else { g.fillStyle = "rgb(150,190,210)"; g.fillRect((-sh.thickness * pp) / 2, -0.04 * pp, sh.thickness * pp, 0.08 * pp); }
+        g.restore();
+      }
+    }
   }
 
   // 10. Props on the ground (wells, carts, crates, a hedge's bushes), and tree shadows (each tree's own art, dark, to
@@ -375,7 +453,7 @@ export function overheads(layout) {
   for (const parts of groups.values()) {
     const pts = parts.flatMap((b) => footprint(b));
     const box = clip([Math.min(...pts.map((p) => p[0])) - 0.5, Math.min(...pts.map((p) => p[1])) - 0.5, Math.max(...pts.map((p) => p[0])) + 0.5, Math.max(...pts.map((p) => p[1])) + 0.5]);
-    if (ok(box)) out.push({ name: `roof-${String(++n).padStart(3, "0")}`, kind: "roof", box, ids: parts.map((b) => b.id), elevation: OVERHEAD_ELEVATION.roof });
+    if (ok(box)) out.push({ name: `roof-${String(++n).padStart(3, "0")}`, kind: "roof", box, ids: parts.map((b) => b.id), elevation: roofHeight(parts) });
   }
   const cells = new Map();
   for (const t of layout.items.filter((i) => i.kind === "tree")) {

@@ -91,8 +91,9 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
     ...ways.map((w) => ({ path: w.path, half: w.width / 2 })),
     ...water.map((w) => ({ path: w.path, half: w.width / 2 + 0.2 })),
   ]);
-  // Squares, yards and named buildings keep a little clear ground around them
-  const raw = difference([poly], [...cut, ...offset(blocked, 0.12)]);
+  // Squares, yards and named buildings keep a little clear ground around them (on a battle map more: a plot's
+  // buildings keep half a square in from its edge, and a square in all from a named building, build.mjs)
+  const raw = difference([poly], [...cut, ...offset(blocked, district.battleScale ? 0.55 : 0.12)]);
   const blocks = shapes(raw).filter((b) => area(b.outer) - b.holes.reduce((s, h) => s + area(h), 0) > 0.5);
   // A fixed order, by position, so the same plan always cuts the same lots
   blocks.sort((a, b) => { const [ax, ay] = centroid(a.outer), [bx, by] = centroid(b.outer); return ay - by || ax - bx; });

@@ -330,6 +330,8 @@ export function normalize(plan) {
   p.output.quality ??= 0.86;
   p.output.dressing ??= false; // a frame, compass rose, scale bar and the map's name, painted on (illustrated style)
   if (!isObj(p.output.scene)) p.output.scene = {};
+  // (a battle map is for tokens to see by: its walls, doors and windows block their sight)
+  if (p.kind === "battle") p.output.scene.tokenVision ??= true;
   for (const [k, spec] of Object.entries(SCENE)) p.output.scene[k] ??= spec.default;
   p.output.scene.name ??= p.name ?? p.id ?? "Map";
   return p;

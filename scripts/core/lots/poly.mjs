@@ -35,7 +35,7 @@ export function union(a, b = []) {
   return C.unionD(many(a), many(b), C.FillRule.NonZero, PREC).map(fromC);
 }
 
-/** Polygons grown (by > 0) or shrunk (by < 0); mitred corners, so blocks keep square corners. */
+/** Polygons grown (by > 0) or shrunk (by < 0); mitered corners, so blocks keep square corners. */
 export function offset(polys, by) {
   return C.inflatePathsD(many(polys), by, C.JoinType.Miter, C.EndType.Polygon, 2.5, PREC).map(fromC);
 }

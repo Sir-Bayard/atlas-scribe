@@ -3,13 +3,15 @@
  * Before an existing scene is changed, all of it is saved as JSON to <output>/backups; updating keeps the scene's
  * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
  * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
- * title; a battle map's roof and tree tiles: overhead, kind), so a second publish replaces only its own labels, title
- * and overhead tiles and leaves the GM's own drawings and tiles alone.
+ * title; a battle map's roof and tree tiles: overhead, kind; its walls and roof regions: built, kind), so a second
+ * publish replaces only its own labels, title, overhead tiles, walls and regions and leaves the GM's own alone.
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
 import { labelsOf, useLabelsOf } from "../core/labels.mjs";
 import { titleBox, paintTitle } from "../render/styles/illustrated.mjs";
+import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
+import { union, shapes } from "../core/lots/poly.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -21,7 +23,7 @@ const FONT = { min: 8, max: 256 };
  * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
  * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
  * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
- * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map).
+ * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, walls, roofs, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map; walls and roofs: how many walls and roof regions a battle map got).
  */
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
@@ -68,18 +70,33 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   };
 
   onProgress(0.5, sceneId ? "Updating the scene" : "Creating the scene");
+  // A battle map's level reaches up to its roofs: Foundry draws a door's art at the top of the level, under a roof
+  // there. AtlasScribe sets that top only on a level with none, or the one it set before (kept as the scene's flag
+  // levelTop), and takes it off again when the scene becomes a settlement map; a top the GM set is left alone
+  const battle = layout?.kind === "battle";
+  const reach = battle ? { elevation: { bottom: 0, top: ROOF_HEIGHT.low } } : {};
   let scene, created = false;
   if (sceneId) {
     scene = sceneById(sceneId);
-    const before = scene.getFlag(MOD, "image");
+    const before = scene.getFlag(MOD, "image"), wasTop = scene.getFlag(MOD, "levelTop") ?? null;
     await scene.update(data);
     scene = sceneById(sceneId);
     // The level that shows AtlasScribe's last map, else the one the scene opens on
     const level = scene.levels.find((l) => before && l.background?.src === before) ?? scene.initialLevel ?? scene.levels.contents[0];
-    if (level) await scene.updateEmbeddedDocuments("Level", [{ _id: level.id, background: { src: image.path } }]);
-    else await scene.createEmbeddedDocuments("Level", [{ name: "Ground", background: { src: image.path } }]);
+    let top;
+    if (level) {
+      const now = level.elevation?.top ?? null, ours = now !== null && now === wasTop;
+      if (battle && (now === null || ours)) top = ROOF_HEIGHT.low;
+      else if (!battle && ours) top = null;
+      await scene.updateEmbeddedDocuments("Level", [{ _id: level.id, background: { src: image.path }, ...(top !== undefined ? { "elevation.top": top } : {}) }]);
+    } else {
+      await scene.createEmbeddedDocuments("Level", [{ name: "Ground", background: { src: image.path }, ...reach }]);
+      if (battle) top = ROOF_HEIGHT.low;
+    }
+    if (top !== undefined) await sceneById(sceneId).update({ [`flags.${MOD}.levelTop`]: top });
   } else {
-    scene = await Scene.create({ ...data, _id: id, name: freeSceneName(opts.name), levels: [{ name: "Ground", background: { src: image.path } }] }, { keepId: true });
+    if (battle) data.flags[MOD].levelTop = ROOF_HEIGHT.low;
+    scene = await Scene.create({ ...data, _id: id, name: freeSceneName(opts.name), levels: [{ name: "Ground", background: { src: image.path }, ...reach }] }, { keepId: true });
     if (!scene) throw new Error("AtlasScribe: Foundry didn't create the scene");
     sceneId = scene.id;
     created = true;
@@ -133,8 +150,52 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (oldOver.length) warnings.push("The roofs and trees over the map were left as they were: they come only with a map rendered for the scene.");
   else if (layout?.kind === "battle") warnings.push("This battle map's roofs and trees weren't placed: they come only with a map rendered for the scene.");
 
+  // A battle map's walls, doors and windows (from its buildings' shells), its fences and low walls (movement only, a
+  // yard's gate a door), and over each building a roof Foundry shows to a token outside (a raised surface it partly
+  // reveals): new ones in, then AtlasScribe's old ones out (a settlement map just takes the old ones out)
+  let walls = 0, roofs = 0;
+  if (layout) {
+    const { sceneX, sceneY } = sceneById(sceneId).dimensions;
+    const pps = plan.output.pxPerSquare;
+    const mine = (docs) => docs.filter((d) => isObj(d.flags?.[MOD]) && "built" in d.flags[MOD]).map((d) => d.id);
+    for (const [type, make, what] of [
+      ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null), "walls and doors"],
+      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces"],
+    ]) {
+      let placed = false;
+      try {
+        const data = battle ? make() : [];
+        const old = mine(type === "Wall" ? sceneById(sceneId).walls : sceneById(sceneId).regions);
+        await createAll(sceneId, type, data);
+        if (type === "Wall") walls = data.length; else roofs = data.length;
+        placed = true;
+        for (let k = 0; k < old.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, old.slice(k, k + BATCH));
+      } catch (e) {
+        const where = type === "Wall" ? "Walls" : "Regions";
+        warnings.push(placed ? `The last map's ${what} couldn't all be taken out (${e.message}); delete AtlasScribe's old ones from the ${where} controls.` : `The ${what} couldn't all be placed (${e.message}).`);
+      }
+    }
+  } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors and roofs were left as they were: the map couldn't be laid out again for them.");
+
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, walls, roofs, warnings };
+}
+
+/** How many documents go to Foundry in one request (a big battle map has thousands of walls). */
+const BATCH = 1000;
+
+/**
+ * Creates documents in batches; should a batch fail, those already made are taken out again, so a scene never keeps
+ * half a new set beside its old one.
+ */
+async function createAll(sceneId, type, data) {
+  const made = [];
+  try {
+    for (let k = 0; k < data.length; k += BATCH) made.push(...(await sceneById(sceneId).createEmbeddedDocuments(type, data.slice(k, k + BATCH))).map((d) => d.id));
+  } catch (e) {
+    for (let k = 0; k < made.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, made.slice(k, k + BATCH)).catch(() => {});
+    throw e;
+  }
 }
 
 /** How see-through an overhead tile is while a token is under it: a roof nearly gone, a tree's crown thinned. */
@@ -143,7 +204,7 @@ const OVERHEAD_ALPHA = { roof: 0.12, canopy: 0.25 };
 /**
  * An overhead piece (render's { path, kind, x, y, width, height, elevation }, in px from the map's corner) as Tile
  * data. A tile's x and y are its middle (Foundry 14 anchors tiles at their center). A roof fades as a whole when a
- * token is under it; a tree's crown opens in a circle around the token.
+ * token is under it, and clears where a token outside sees in; a tree's crown opens in a circle around the token.
  */
 function overheadTile(o, sceneX, sceneY, plan) {
   const M = CONST.TILE_OCCLUSION_MODES;
@@ -152,10 +213,99 @@ function overheadTile(o, sceneX, sceneY, plan) {
     x: Math.round(sceneX + o.x + o.width / 2), y: Math.round(sceneY + o.y + o.height / 2),
     width: o.width, height: o.height,
     elevation: o.elevation,
-    occlusion: { modes: [o.kind === "roof" ? M.FADE : M.RADIAL], alpha: OVERHEAD_ALPHA[o.kind] ?? 0.25 },
+    // (a roof also clears where a token outside sees under it, through a door or window: Foundry's Vision mode)
+    occlusion: { modes: o.kind === "roof" ? [M.FADE, M.VISION] : [M.RADIAL], alpha: OVERHEAD_ALPHA[o.kind] ?? 0.25 },
     locked: true,
     flags: { [MOD]: { overhead: plan, kind: o.kind } },
   };
+}
+
+/**
+ * The doors Foundry itself ships (Forgotten Adventures' art, in every install), swung open by a door: a house's, by its
+ * variant (a temple's wide door is two of them, a leaf each side); a yard's gate. Foundry fits a door's whole art to
+ * the door (a leaf of a double door to half of it), so each is a one-square door.
+ */
+const CORE_DOORS = ["canvas/doors/small/Door_Wood_Walnut_F_1x1.webp", "canvas/doors/small/Door_Wood_Dark_H_1x1.webp", "canvas/doors/small/Door_Wood_Ashen_A_1x1.webp", "canvas/doors/small/Door_Wood_Light_B_1x1.webp"];
+const CORE_GATE = "canvas/doors/small/Door_Wood_Light_G_1x1.webp";
+/**
+ * How thick a door's art is drawn: Foundry scales it by the scene's grid over the art's own squares (flags.core.
+ * textureGridSize, 200 px a square for this art). The door itself is a band 26 px (0.13 of a square) across the
+ * middle of its art, so a smaller grid size thickens it to the wall it stands in (a wall's thickness, in squares), or
+ * a gate to the fence it closes (the fence art's band, about 0.185 of a square).
+ */
+const DOOR_BAND = 26, FENCE_THICK = 0.185;
+const doorGrid = (thick) => Math.round(DOOR_BAND / thick);
+
+/** A battle layout's walls as Wall data: buildings' walls, doors and windows; fences and low walls; yard gates. */
+export function battleWalls(layout, sceneX, sceneY, pps, plan) {
+  const S = CONST.WALL_SENSE_TYPES, M = CONST.WALL_MOVEMENT_TYPES, D = CONST.WALL_DOOR_TYPES;
+  const c = (a, b) => [a, b].flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
+  const flags = (kind, grid = null) => ({ [MOD]: { built: plan, kind }, ...(grid ? { core: { textureGridSize: grid } } : {}) });
+  const dist = layout.size?.ftPerSquare ?? 5;
+  const swing = (texture, double = false) => ({ type: "swing", texture, double, duration: 500, direction: 1, flip: false, strength: 1 });
+  const out = [];
+  for (const sh of layout.items.filter((i) => i.kind === "shell")) {
+    for (const w of sh.walls) {
+      const base = { c: c(w.a, w.b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL };
+      if (w.type === "wall") out.push({ ...base, flags: flags("wall") });
+      // (a window: seen through from close by, two squares or less, as Foundry's window walls are)
+      else if (w.type === "window") out.push({ ...base, sight: S.PROXIMITY, light: S.PROXIMITY, threshold: { sight: 2 * dist, light: 2 * dist, attenuation: true }, flags: flags("window") });
+      else if (w.type === "door") {
+        const wide = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]) > 1.5;
+        out.push({ ...base, door: D.DOOR, doorSound: sh.material === "stone" ? "woodHeavy" : "woodBasic",
+          animation: swing(CORE_DOORS[(sh.variant ?? 0) % CORE_DOORS.length], wide),
+          flags: flags("door", doorGrid(sh.thickness ?? 0.3)) });
+      }
+    }
+  }
+  // (fences and low walls stop movement only; a yard's gate between its back fences is a door that does the same)
+  const fenceOnly = { move: M.NORMAL, sight: S.NONE, light: S.NONE, sound: S.NONE };
+  for (const f of layout.items.filter((i) => i.kind === "boundary" && i.class === "fence" && Array.isArray(i.path)))
+    for (let k = 1; k < f.path.length; k++) out.push({ ...fenceOnly, c: c(f.path[k - 1], f.path[k]), flags: flags("fence") });
+  for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "stone" && Array.isArray(i.path) && !(i.thickness > 0.6)))
+    for (let k = 1; k < w.path.length; k++) out.push({ ...fenceOnly, c: c(w.path[k - 1], w.path[k]), flags: flags("low-wall") });
+  for (const y of layout.items.filter((i) => i.kind === "surface" && i.class === "backyard")) {
+    const f3 = layout.items.find((i) => i.id === y.id + "-f3"), f4 = layout.items.find((i) => i.id === y.id + "-f4");
+    if (f3 && f4) out.push({ ...fenceOnly, c: c(f3.path.at(-1), f4.path[0]), door: D.DOOR, doorSound: "woodBasic",
+      animation: swing(CORE_GATE), flags: flags("gate", doorGrid(FENCE_THICK)) });
+  }
+  // (none wholly off the map, where a building at its edge runs past it)
+  const [MW, MH] = layout.size?.squares ?? [Infinity, Infinity];
+  const x1 = sceneX + MW * pps, y1 = sceneY + MH * pps;
+  return out.filter(({ c: [ax, ay, bx, by] }) => Math.max(ax, bx) >= sceneX && Math.min(ax, bx) <= x1 && Math.max(ay, by) >= sceneY && Math.min(ay, by) <= y1);
+}
+
+/**
+ * A battle layout's roofs as Region data: over each building, a surface at its roof's height (roofHeight) that
+ * Foundry reveals to a token outside, more of it the farther the token stands (Define Surface, Reveal Elevated
+ * Surface), and that makes the roof tile over it fade for a token beneath. A courtyard is a hole in it.
+ */
+export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
+  const groups = new Map();
+  for (const b of layout.items.filter((i) => i.kind === "building")) {
+    const k = b.group ?? b.id;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(b);
+  }
+  const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
+  const out = [];
+  for (const parts of groups.values()) {
+    const pieces = shapes(union(parts.map(footprint))).filter((p) => p.outer.length >= 3);
+    if (!pieces.length) continue;
+    const e = roofHeight(parts);
+    out.push({
+      name: "Roof",
+      color: "#9c6b3c",
+      shapes: pieces.flatMap((p) => [{ type: "polygon", points: pts(p.outer), hole: false }, ...p.holes.map((h) => ({ type: "polygon", points: pts(h), hole: true }))]),
+      elevation: { bottom: e, top: e },
+      visibility: CONST.REGION_VISIBILITY.LAYER,
+      // (a roof stops light, sight, sound and movement through it, from above as from below)
+      behaviors: [{ type: "defineSurface", name: "Roof", system: { placement: "bottom", exposure: true, occlusion: true, light: true, move: true, sight: true, sound: true, culling: false } }],
+      locked: true,
+      flags: { [MOD]: { built: plan, kind: "roof" } },
+    });
+  }
+  return out;
 }
 
 /** The scene with this id, or an error: every write checks the scene is still there. */
