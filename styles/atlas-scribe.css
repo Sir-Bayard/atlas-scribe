@@ -553,3 +553,27 @@
 .atlas-scribe .as-pv-draft {
   pointer-events: none;
 }
+/* The Battle map tool's box: blue, amber when it's big; its size in its corner */
+.atlas-scribe .as-pv-draft rect.as-pv-zoombox {
+  fill: rgba(120, 180, 255, 0.12);
+  stroke: rgb(40, 110, 210);
+  stroke-dasharray: 8 4;
+}
+.atlas-scribe .as-pv-draft rect.as-pv-zoombox.as-warn {
+  fill: rgba(255, 190, 80, 0.15);
+  stroke: rgb(215, 130, 10);
+}
+.atlas-scribe .as-pv-draft .as-pv-zoombox-size {
+  fill: rgb(20, 60, 130);
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 0.25;
+  font-weight: bold;
+}
+.atlas-scribe .as-pv-draft .as-pv-zoombox-size.as-warn {
+  fill: rgb(150, 80, 0);
+}
+.atlas-scribe .as-pv-battle-size.as-warn {
+  color: rgb(190, 110, 0);
+  font-weight: bold;
+}

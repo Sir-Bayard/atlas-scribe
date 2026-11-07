@@ -200,7 +200,8 @@ function characterWants(district, hasWater) {
 export function planUses({ district, lots, ways, want = [], ctx, water = [], roadIds = new Set(), ftPerSquare, r, tryForm = null }) {
   const sq = (ft) => ft / ftPerSquare;
   const out = { sites: [], useOf: new Map(), noThatch: new Set(), rear: null, out: null, missed: [], dry: [] };
-  if (!lots.length) return out;
+  // (a district told to keep its houses plain: a zoomed battle map's, whose notable buildings came from its overview)
+  if (!lots.length || district.uses === false) return out;
   const wayOf = new Map(ways.map((w) => [w.id, w]));
   // What each plot is like, measured once
   const info = lots.map((lot) => {

@@ -74,6 +74,8 @@ export const FIELD_TEXT = {
   "district.anchor": { label: "Centerpiece", help: "Its character's great building on its own square, placed first so the streets lead to it: a cathedral, a palace, the market square and hall, a guildhall, a customs house, a keep, a shrine" },
   "district.anchorAt": { label: "Centerpiece place", names: { middle: "In the middle", side: "Off to one side", edge: "At its edge" }, help: "Where its centerpiece stands: in the middle, its streets ringing it and leading out from it; off to one side; or at its edge, often on a main road", auto: "picked from the map's seed" },
   "district.notable": { label: "Notable buildings", help: "A temple, an inn and a smithy of its own, as a place its size would have" },
+  "district.streets": { label: "Own streets", help: "Lays streets and lanes of its own between the roads through it. Off, it has only the roads and streets drawn in the plan (as on a battle map zoomed from an overview, whose streets came with it)", more: true },
+  "district.uses": { label: "Uses", help: "Its character's buildings and trades: warehouses, mansions, workshops, shops. Off, its houses are all plain (as on a battle map zoomed from an overview, whose notable buildings came with it)", more: true },
   "district.gardens": { label: "Gardens", help: "The share of houses with a tended garden (0 to 1)", auto: "its character's" },
   "district.density": { label: "Built up", help: "Below 1, some plots are left empty (0 to 1)", more: true },
   "district.surface": { label: "Street surface", help: "Else the surface of a road through it", auto: "its road's" },

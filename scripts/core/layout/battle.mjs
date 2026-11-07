@@ -202,6 +202,20 @@ export function battleYards(items, W, H) {
  * How high a roof sits, in feet: an ordinary building's at 10, a tower's or a tall building's (a temple, a keep) at 20
  * (Patrick, 6 Nov). A roof is seen from the street as Foundry reveals a raised surface, more of it the lower it is.
  */
+/**
+ * What fills the middle of a block on a battle map, behind its street fronts (Patrick, 7 Nov: back houses, yards,
+ * gardens and sheds, so a town zoomed to battle size reads as full as its overview): a quarter's own back numbers
+ * (LOOK.back: a market's stores, a crafts quarter's workshops) with sheds and yard clutter added, else back houses.
+ * Sizes in feet; gap: between buildings; shed: a shed's size, and how many are tried beside the houses (a share of
+ * the houses' tries). Laid by the layout's fillBack, near the plots only, so open ground stays open.
+ */
+export const BATTLE_BACK = {
+  len: [24, 34], dep: [18, 24], gap: 5, use: "house", gardens: true,
+  shed: { share: 0.3, len: [12, 18], dep: [10, 14], use: "shed" },
+  clutter: ["barrel", "crate", "firewood", "cart"],
+};
+export const battleBack = (B) => (B ? { shed: BATTLE_BACK.shed, clutter: BATTLE_BACK.clutter, ...B } : BATTLE_BACK);
+
 export const ROOF_HEIGHT = { low: 10, tall: 20 };
 /** A building group's roof height: tall when any part is a tower or stands 40 ft or more (a layout's `tall` 1 or more). */
 export const roofHeight = (parts) => (parts.some((b) => b.tower || b.tall >= 1) ? ROOF_HEIGHT.tall : ROOF_HEIGHT.low);

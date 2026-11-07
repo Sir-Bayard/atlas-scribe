@@ -356,6 +356,15 @@ const host = {
     fileFor,
   },
   publish: (plan, { scene = null } = {}) => api.render(plan, { publish: true, scene }),
+  // A battle map of a rectangle on a plan (the window's Battle map tool): { plan, notes }
+  zoom: (plan, rect, zoom) => exclusive(async () => {
+    const checked = planOrThrow(plan);
+    return worker.run("zoom", { plan: checked.plan, rect, zoom });
+  }),
+  battleZoom: {
+    get: () => Number(game.settings.get(MOD, "battleZoom")) || 2,
+    set: (v) => game.settings.set(MOD, "battleZoom", v),
+  },
   cancel: () => api.cancel(),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
@@ -390,6 +399,15 @@ Hooks.once("init", () => {
     default: "",
   });
   game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
+  game.settings.register(MOD, "battleZoom", {
+    name: "Battle map zoom",
+    hint: "How big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight. The Battle map tool in the AtlasScribe window changes it too.",
+    scope: "client",
+    config: true,
+    type: Number,
+    choices: { 1: "True size", 1.5: "1.5 times true size", 2: "2 times true size" },
+    default: 2,
+  });
 });
 
 // An AtlasScribe button at the top of the Scenes tab, for the GM

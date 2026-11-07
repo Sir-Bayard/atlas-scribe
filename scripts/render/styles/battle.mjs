@@ -76,6 +76,9 @@ const SHADOW = [-0.7, -0.7];
 const wayPaving = (w) => (PAVING[w.surface] ? (w.class === "highway" ? "surface.flagstone" : PAVING[w.surface]) : null);
 const wayRole = (w, s) => wayPaving(w) ?? (s === "winter" ? `surface.${w.surface ?? "dirt"}.winter` : UNPAVED[w.surface] ?? "surface.dirt");
 const floorRole = (b) => (STONE_FLOORS.has(b.use) || b.tower ? "floor.stone" : "floor.wood");
+/** A quarter's own ground (look.ground: a market's paving, a crafts quarter's dirt), or null for lush grass. */
+const isQuarter = (i) => i.kind === "surface" && i.class === "quarter" && !i.lush && Array.isArray(i.poly);
+const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `surface.trodden.${s}` : s === "winter" ? `surface.${q.surface ?? "dirt"}.winter` : UNPAVED[q.surface] ?? "surface.dirt");
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
 
 export function rolesFor(layout) {
@@ -85,6 +88,7 @@ export function rolesFor(layout) {
   for (const i of layout.items) {
     if (i.kind === "way" && !i.faint) roles.add(wayRole(i, s));
     if (isPlaza(i)) roles.add(PAVING[i.surface] ?? "surface.flagstone");
+    if (isQuarter(i)) roles.add(quarterRole(i, s));
     if (i.kind === "surface" && i.garden) roles.add(`surface.dirt.${s}`);
     if (i.kind === "water") roles.add(i.frozen ? "water.ice" : `water.${i.class}`);
     if (i.kind === "crossing" && i.class !== "ford") roles.add("surface.flagstone");
@@ -238,6 +242,14 @@ export function paint(ctx) {
   soft((k) => k.fillRect(0, 0, W, H), tex(`ground.${gb}.light`), { noise: noiseMask("battle-g1", 10, 0.25, 0.2), alpha: 0.5 });
   if (art(`ground.${gb}.clover`)) soft((k) => k.fillRect(0, 0, W, H), tex(`ground.${gb}.clover`), { noise: noiseMask("battle-g2", 7, 0.45, 0.15), alpha: 0.6 });
 
+  // 1b. A quarter's own ground, as its overview shows it (a market paved, a crafts quarter's dirt), worn into patches
+  // with the grass showing through
+  for (const q of L.items.filter(isQuarter)) {
+    const bb = bboxOf(q.poly);
+    if (!meets(bb, 1)) continue;
+    soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), { blur: 0.5, alpha: q.alpha ?? 0.7, noise: noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
+  }
+
   // 2. Ground worn by feet around the buildings
   const trodden = tex(`surface.trodden.${s}`);
   const near = feet.filter(({ bb }) => meets(bb, 4));
@@ -321,7 +333,8 @@ export function paint(ctx) {
 
   // 7. Yards: trodden ground inside each fenced yard; fences (rails on posts) and walls, with their shadows
   // (a house's fenced yard behind it, and a trade's work yard)
-  const yards = items("surface").filter((i) => (i.class === "backyard" || i.class === "yard") && Array.isArray(i.poly)).map((y) => ({ y, bb: bboxOf(y.poly) })).filter(({ bb }) => meets(bb, 1.5));
+  // (a yard left as grass, a precinct's or a lawn, isn't worn)
+  const yards = items("surface").filter((i) => (i.class === "backyard" || (i.class === "yard" && i.surface !== "grass")) && Array.isArray(i.poly)).map((y) => ({ y, bb: bboxOf(y.poly) })).filter(({ bb }) => meets(bb, 1.5));
   if (yards.length) soft((k) => { for (const { y } of yards) { poly(k, y.poly); k.fill(); } }, trodden, { blur: 0.3, noise: noiseMask("battle-yd", 2.5, -0.3, 0.4), alpha: 0.7, box: boxAround(yards.map((x) => x.bb)) });
   // (rails: a yard's fence and any other fence or wall line; not hedges, balks or a garden's clipped box)
   const fences = items("boundary").filter((b) => Array.isArray(b.path) && b.path.length >= 2 && b.class !== "hedge" && b.class !== "balk" && b.class !== "clipped" && meets(bboxOf(b.path), 1));
@@ -345,10 +358,16 @@ export function paint(ctx) {
     // (stone, or a palisade's logs)
     const wood = walls.filter((w) => w.class === "palisade"), stone = walls.filter((w) => w.class !== "palisade");
     // (a yard's low wall from fence art where there is some; a town wall, thicker, stays a stone fill)
+    // (a bridge's parapet: a band of dressed stone, its edges dark)
+    const parapets = stone.filter((w) => w.parapet);
+    if (parapets.length) {
+      fill((k) => { for (const w of parapets) stroke(k, w.path, 0.48, "butt"); }, "rgb(34,32,30)", 0.8);
+      fill((k) => { for (const w of parapets) stroke(k, w.path, 0.4, "butt"); }, tex("stone.curb"));
+    }
     const lowArt = art("fence.stone");
-    const low = lowArt ? stone.filter((w) => !(w.thickness > 0.6)) : [];
+    const low = lowArt ? stone.filter((w) => !w.parapet && !(w.thickness > 0.6)) : [];
     for (const w of low) stripPath(lowArt, w.path);
-    const high = stone.filter((w) => !low.includes(w));
+    const high = stone.filter((w) => !w.parapet && !low.includes(w));
     if (high.length) fill((k) => { for (const w of high) stroke(k, w.path, thick(w), "butt"); }, tex(`stone.rough.${s}`));
     if (wood.length) fill((k) => { for (const w of wood) stroke(k, w.path, thick(w), "butt"); }, tex("wood.stake"));
   }

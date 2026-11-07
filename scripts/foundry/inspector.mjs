@@ -242,6 +242,7 @@ const HOW = {
   pier: "Click from the shore out into the water (double-click or Enter to finish).",
   cliff: "Click points along its top edge (double-click or Enter to finish). The drop is on your left as you go; its Drop setting turns it.",
   point: "Click where it goes.",
+  battle: "Drag a box over the area to fight in, or click to place one of the size picked below.",
 };
 
 /** The hint under the palette: how to use the tool, and the points so far. */
@@ -270,5 +271,37 @@ export function paletteHTML(tool, { points = 0, working = false } = {}) {
         <button type="button" data-action="asFinish" ${points >= (active.geometry === "path" ? 2 : 3) && !working ? "" : "disabled"}><i class="fa-solid fa-check"></i> Finish</button>
         <button type="button" data-action="asStopTool"><i class="fa-solid fa-xmark"></i> Cancel</button>
       </div>` : ""}
+    </section>`;
+}
+
+/** What the Battle map tool's box makes: its size in battle squares and feet, with a word when it's big. */
+export function battleSizeText({ box, size, big, limit }) {
+  if (!box || !size) return "No box yet.";
+  return `${size[0]} x ${size[1]} squares (${size[0] * 5} x ${size[1] * 5} ft).${big ? ` Over ${limit} squares a side: slow to make and heavy to play, but it can be made.` : ""}`;
+}
+
+/**
+ * The Battle map tool's panel: how to place the box, the zoom, the sizes a click places, the box's size, and Make
+ * battle map. st: the window's #battleState().
+ */
+export function battleHTML(st) {
+  const zoomLabel = (z) => (z === 1 ? "True size" : z === 1.5 ? "1.5 times true size" : `${z} times true size`);
+  return `<section class="as-pv-insp as-pv-palette as-pv-battle">
+      <header>
+        <button type="button" data-action="asBattle" data-tooltip="Back to the list" ${st.working ? "disabled" : ""}><i class="fa-solid fa-arrow-left"></i></button>
+        <span class="as-pv-name"><strong>Battle map</strong><em>an area of this map, at battle size</em></span>
+      </header>
+      <div class="as-pv-fields">
+        <p class="as-pv-hint as-pv-how">${esc(HOW.battle)} Its streets, water, squares and notable buildings stay where they are here; its houses are built again at battle size.</p>
+        <div class="as-pv-field"><label>Zoom</label><select data-battle-zoom ${st.working ? "disabled" : ""}>${st.zooms.map((z) => `<option value="${z}" ${z === st.zoom ? "selected" : ""}>${esc(zoomLabel(z))}</option>`).join("")}</select></div>
+        <p class="as-pv-group">A click places</p>
+        <div class="as-pv-tools-grid">${st.presets.map((n) => `<button type="button" data-action="asBattlePreset" data-size="${n}" class="${n === st.preset ? "as-on" : ""}" ${st.working ? "disabled" : ""}>${n} x ${n}</button>`).join("")}</div>
+        <p class="as-pv-group">The box</p>
+        <p class="as-pv-hint as-pv-battle-size ${st.big ? "as-warn" : ""}">${esc(battleSizeText(st))}</p>
+      </div>
+      <div class="as-pv-tools">
+        <button type="button" data-action="asBattleMake" ${st.placed && !st.working ? "" : "disabled"} data-tooltip="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making it" : "Make battle map"}</button>
+        ${st.zooming ? `<button type="button" data-action="asBattleStop"><i class="fa-solid fa-stop"></i> Stop</button>` : `<button type="button" data-action="asBattle" ${st.working ? "disabled" : ""}><i class="fa-solid fa-xmark"></i> Cancel</button>`}
+      </div>
     </section>`;
 }

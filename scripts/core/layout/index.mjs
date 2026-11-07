@@ -8,7 +8,7 @@
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
 import { roadWaterCrossings, snapCrossings, fordDetail } from "./crossings.mjs";
-import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer } from "../plan.mjs";
+import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer, OLD_PROFILES } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap, spansAt } from "../geom.mjs";
@@ -36,7 +36,7 @@ import { marketStalls } from "./market.mjs";
 import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf } from "../cliffs.mjs";
-import { battleYards } from "./battle.mjs";
+import { battleYards, battleBack } from "./battle.mjs";
 
 export const LAYOUT_VERSION = 7;
 
@@ -516,6 +516,70 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // Corners in the piece, none of its corners (or a hole's) poking in, and no hole under it
     const inside = (pts) => pts.every((p) => pointInPolygon(p, piece)) && !piece.some((p) => pointInPolygon(p, pts)) && !holes.some((h) => polygonsOverlap(h, pts)) && !onPlot(pts);
     let n = 0, m = 0;
+    // A battle map packs the middle of a block by trying places at random (a block's middle there is a ragged leftover
+    // between plots, which rows from its corner mostly miss): first back houses, then sheds beside a house, then the
+    // ground between, a garden or a yard with its clutter. All of it stays near the street fronts' plots, so a block's
+    // middle fills while open ground (a temple's precinct, a green) stays open
+    if (battle) {
+      const BEHIND = 6; // how far behind a plot back land is built on, in squares
+      // (a place whose middle is in the piece and on the map, found in a few draws: the piece is often a thin ragged
+      // shape in a big box)
+      const placeAt = (ll, dd) => {
+        if (u1 - u0 < ll + 2 * gap || v1 - v0 < dd + 2 * gap) return null;
+        for (let j = 0; j < 12; j++) {
+          const cu = u0 + gap + ll / 2 + r.next() * (u1 - u0 - 2 * gap - ll), cv = v0 + gap + dd / 2 + r.next() * (v1 - v0 - 2 * gap - dd);
+          const x = cx0 + ux * cu + nxv * cv, y = cy0 + uy * cu + nyv * cv;
+          if (x < 0 || y < 0 || x > W || y > H || !pointInPolygon([x, y], piece)) continue;
+          return { x, y, pts: [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [x + ux * (a * ll) / 2 + nxv * (b * dd) / 2, y + uy * (a * ll) / 2 + nyv * (b * dd) / 2]) };
+        }
+        return null;
+      };
+      const clearOf = (pts) => { const far = apartBy(pts, gap); return !placed.some((q) => polygonsOverlap(q, far)); };
+      const nearPlot = (pts) => { const far = apartBy(pts, BEHIND); return near2.some(([p]) => polygonsOverlap(far, p)); };
+      const besideHouse = (pts) => {
+        const far = apartBy(pts, 3), [x0, y0, x1, y1] = bbox(far);
+        for (const k of nearby.buildings.near((x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0) / 2)) if (polygonsOverlap(far, footOf(space.buildings[k]))) return true;
+        return placed.some((q) => polygonsOverlap(q, far));
+      };
+      const tries = Math.min(400, Math.ceil(area(piece) * 3));
+      const build = (small, at, ll, dd) => {
+        placed.push(at.pts);
+        const use = small ? B.shed.use : B.use;
+        const item = addBuilding({ shape: { rect: [at.x - ll / 2, at.y - dd / 2, at.x + ll / 2, at.y + dd / 2] }, rot, roof: pickRoof(d, r, palette), variant: r.int(8), roofStyle: ownStyles(d).length ? ownStyles(d)[r.int(ownStyles(d).length)] : "gable", height: small ? 10 : 15, chimney: use === "house" ? undefined : false, use }, `${d.id}/o-b${k}-${++n}`, r.fork("b", n), d.id);
+        // (a back house is a household's own, with a yard behind it where there's room, battle.mjs)
+        if (use === "house") item.main = true;
+      };
+      for (let t = 0; t < tries && n < 200; t++) {
+        const ll = ext(B.len), dd = ext(B.dep), at = placeAt(ll, dd);
+        if (at && inside(at.pts) && nearPlot(at.pts) && clearOf(at.pts) && rectFree(at.pts) && roomy(at.pts)) build(false, at, ll, dd);
+      }
+      if (B.shed) for (let t = 0; t < tries * B.shed.share && n < 200; t++) {
+        const ll = ext(B.shed.len), dd = ext(B.shed.dep), at = placeAt(ll, dd);
+        if (at && inside(at.pts) && nearPlot(at.pts) && besideHouse(at.pts) && clearOf(at.pts) && rectFree(at.pts) && roomy(at.pts)) build(true, at, ll, dd);
+      }
+      for (let t = 0; t < tries / 2; t++) {
+        const ll = ext(B.len), dd = ext(B.dep), at = placeAt(ll, dd);
+        if (!at || !inside(at.pts) || !nearPlot(at.pts) || !clearOf(at.pts) || !rectFree(at.pts)) continue;
+        placed.push(at.pts);
+        const { x, y } = at;
+        if (B.gardens && !(B.clutter?.length && r.next() < 0.4)) {
+          const garden = { cx: x, cy: y, w: ll * 0.9, d: dd * 0.9, rot, strip: true };
+          items.push({ kind: "surface", id: `${d.id}/g-b${k}-${++m}`, from: d.id, class: "garden", garden });
+          const gp = shapeToPolygon({ rect: [x - ll * 0.45, y - dd * 0.45, x + ll * 0.45, y + dd * 0.45] }, rot);
+          owner.set(gp, d.id);
+          space.gardens.push(gp);
+        } else if (B.clutter?.length) {
+          // (a yard: its ground worn to dirt, a thing or two of the quarter's in it)
+          items.push({ kind: "surface", id: `${d.id}/yd-b${k}-${++m}`, from: d.id, class: "yard", poly: at.pts });
+          for (let j = 1 + r.int(2); j > 0; j--) {
+            const cls = B.clutter[r.int(B.clutter.length)];
+            const px = x + ux * (r.next() - 0.5) * ll * 0.5 + nxv * (r.next() - 0.5) * dd * 0.5, py = y + uy * (r.next() - 0.5) * ll * 0.5 + nyv * (r.next() - 0.5) * dd * 0.5;
+            items.push({ kind: "prop", id: `${d.id}/q-b${k}-${m}-${j}`, from: d.id, class: cls, x: px, y: py, rot: rot + r.next() * 30, variant: r.int(8), scale: (CLUTTER_FT[cls] ?? 6) / sq / (PROP_SQUARES[cls] ?? 0.45) });
+          }
+        }
+      }
+      return;
+    }
     for (let v = v0 + gap; v < v1 - gap && n < 200; ) {
       const dd = ext(B.dep);
       for (let u = u0 + gap; u < u1 - gap && n < 200; ) {
@@ -1072,7 +1136,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // (with no ring, a street's half width short of the walls, so its end doesn't run over them)
     const grow = anchorRing ? ringWidth + 0.05 : ringWidth / 2 + 0.05;
     const streetStop = anchor ? shapeToPolygon({ rect: [anchor.center[0] - anchor.w / 2 - grow, anchor.center[1] - anchor.h / 2 - grow, anchor.center[0] + anchor.w / 2 + grow, anchor.center[1] + anchor.h / 2 + grow] }, anchor.rot) : null;
-    const made = streetsFor({
+    // (none of its own when it says so: a zoomed battle map's district, whose streets are its overview's, carried)
+    const made = d.streets === false ? { streets: [], bridges: [], field: null } : streetsFor({
       district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, { ...anchor.radial, anchor: true, ...(anchorAt.place !== "middle" ? { pull: 0.5 } : {}) }] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
@@ -1098,6 +1163,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const look = lookOf(d);
     const surface = d.surface ?? look.street ?? fixedHere.find((w) => !w.quay)?.surface ?? "dirt";
     if (look.ground) items.push({ kind: "surface", id: `${d.id}/ground`, from: d.id, class: "quarter", poly, ...look.ground });
+    // (a town's or city's built-up ground on a battle map, where its character has none of its own: worn by feet, as
+    // its overview shows it, rather than a meadow between the houses)
+    else if (battle && ["town", "city"].includes(OLD_PROFILES[d.profile] ?? d.profile)) items.push({ kind: "surface", id: `${d.id}/ground`, from: d.id, class: "quarter", poly, surface: "trodden", alpha: 0.55 });
     const own = [];
     made.streets.forEach((st, k) => {
       const item = { kind: "way", id: `${d.id}/s${k + 1}`, from: d.id, class: st.kind, path: st.path, width: st.width, surface, ruts: false };
@@ -1172,8 +1240,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     let wild = 0;
     // A dense quarter builds up the middles of its blocks instead: rows of stores, workshops or shacks square to the
     // nearest street, with its clutter between them
-    const keepPlots = look.back ? [...lots.map((l) => l.poly), ...built.surfaces.filter((x) => x.poly).map((x) => x.poly)].map((p) => [p, bbox(p)]) : [];
-    if (look.back) shapes(back).forEach((piece, k) => fillBack(d, piece, k, look.back, [...nearHere, ...own], r.fork("back", k), keepPlots, built.palette));
+    // (on a battle map every block's middle is built up, BATTLE_BACK)
+    const backLook = battle ? battleBack(look.back) : look.back;
+    const keepPlots = backLook ? [...lots.map((l) => l.poly), ...built.surfaces.filter((x) => x.poly).map((x) => x.poly)].map((p) => [p, bbox(p)]) : [];
+    if (backLook) shapes(back).forEach((piece, k) => fillBack(d, piece, k, backLook, [...nearHere, ...own], r.fork("back", k), keepPlots, built.palette));
     else back.forEach((poly, k) => {
       const pts = poissonInPolygon(poly, T.wild ?? 1.5, wr.fork(k), { keep: (x, y) => patch(x, y) > -0.1 && free(x, y, 0.45), max: 400 });
       for (const [x, y] of pts) {
@@ -1420,6 +1490,19 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   for (const c of items) if (c.kind === "crossing" && c.class === "ford") Object.assign(c, fordDetail(c, allWays));
 
   if (battle) {
+    // A bridge's parapets: a low stone wall along each side of its deck (a footbridge's wooden rails), which stop
+    // movement as any low wall or fence does
+    for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
+      const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2, hw = (c.width ?? 4) / 2 - 0.2;
+      if (hw < 0.5) continue;
+      [-1, 1].forEach((sg, k) => {
+        const at = (u) => [c.at[0] + u * ux - sg * hw * uy, c.at[1] + u * uy + sg * hw * ux];
+        const path = [at(-hl), at(hl)];
+        items.push(c.class === "bridge"
+          ? { kind: "wall", id: `${c.id}/parapet${k + 1}`, from: c.from ?? c.id, class: "stone", path, height: 3 / sq, parapet: true }
+          : { kind: "boundary", id: `${c.id}/rail${k + 1}`, from: c.from ?? c.id, class: "fence", path });
+      });
+    }
     battleYards(items, W, H);
     // What the battle style doesn't draw yet (it comes with later steps of battle maps)
     const NOT_YET = { field: "fields", cliff: "cliffs", ditch: "ditches", dock: "quays and piers", reed: "reeds", lily: "lily pads", pit: "pits", kiln: "kilns" };

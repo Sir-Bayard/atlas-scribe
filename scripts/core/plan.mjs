@@ -138,6 +138,8 @@ export const TYPES = {
       character: { ...oneOf(CHARACTERS, "homes"), fallback: "it's built as homes" }, // what it's for, beside how built up it is (see character.mjs)
       trades: listOf(TRADES), // the trades worked there, each sited by its rule (a crafts district picks some if none are given)
       notable: bool(true), // a temple, an inn and a smithy of its own, as a place its size would have
+      streets: bool(true), // streets and lanes of its own between the roads through it; off, only the plan's (a zoomed battle map's, whose streets come from its overview)
+      uses: bool(true), // its character's buildings and trades (warehouses, mansions, workshops, shops); off, its houses are all plain (a zoomed battle map's, whose notable buildings come from its overview)
       anchor: bool(true), // its character's landmark on its own square (a temple quarter's cathedral, the nobles' palace)
       anchorAt: { ...oneOf(ANCHOR_PLACES, null), fallback: "its place is picked from the map's seed" }, // where it stands: in the middle, off to one side, at the edge; else picked from the plan's seed
       gardens: num(null, { min: 0, max: 1 }), // the share of houses with a tended garden, else its character's (true and false still read)

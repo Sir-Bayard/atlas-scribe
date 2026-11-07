@@ -14,11 +14,12 @@ import { normalize, LABEL_SIZES } from "../core/plan.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle, cleanFont } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
-import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML } from "./inspector.mjs";
+import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML, battleHTML, battleSizeText } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
 import { addFeature, snapCorner, snapEnd, toolOf, wallIn } from "../core/draw.mjs";
 import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
+import { zoomSize, ZOOMS } from "../core/zoom.mjs";
 
 /** JSON with object keys sorted, so a plan whose keys merely moved (a setting reset, then set again) counts as unchanged. */
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -45,6 +46,14 @@ const underStyle = (rect, px, opacity) => `left:${rect[0] * px}px;top:${rect[1] 
 
 /** Ids of picked things the generator made start with this (they aren't in the plan). */
 const GEN = "@gen:";
+/**
+ * The Battle map tool: a box dragged (or clicked into place) over an area of a town map, made a battle map of its own
+ * (zoom.mjs). Not one of the drawing tools: it adds nothing to the plan. PRESETS: a clicked box's side, in battle
+ * squares; BIG: past this many squares a side the size shows amber (Patrick, 7 Nov: warn, still allow).
+ */
+const BATTLE_TOOL = { id: "battle", label: "Battle map", geometry: "box", how: "battle" };
+const toolFor = (id) => (id === "battle" ? BATTLE_TOOL : toolOf(id));
+const BATTLE = { PRESETS: [30, 45, 60], preset: 45, BIG: 60 };
 const genCache = new WeakMap();
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -98,6 +107,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       asDraw: AtlasScribeApp.#onDraw,
       asTool: AtlasScribeApp.#onTool,
       asFinish: AtlasScribeApp.#onFinish,
+      asBattle: AtlasScribeApp.#onBattle,
+      asBattlePreset: AtlasScribeApp.#onBattlePreset,
+      asBattleMake: AtlasScribeApp.#onBattleMake,
+      asBattleStop: AtlasScribeApp.#onBattleStop,
       asStopTool: AtlasScribeApp.#onStopTool,
     },
   };
@@ -121,6 +134,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #inspect = null; // what the side panel shows instead of the list: a feature's id, "@plan", or null
   #palette = false; // the side panel shows the drawing tools
   #tool = null; // the drawing under way: { id, points, box, cursor, snap, down }
+  #zoomBox = null; // the Battle map tool's box, once placed: [x0, y0, x1, y1] in the plan's squares
+  #preset = BATTLE.preset; // the Battle map tool's size for a click, in battle squares a side
+  #zooming = false; // a battle map is being made from the box
+  #boxPreset = false; // the box was placed by a click, at the preset size
   #keys = null; // the keyboard listener while drawing (Enter, Esc, Backspace)
   #presses = null; // while drawing: notes whether the last press was in the window
   #pressedHere = false;
@@ -252,7 +269,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** True while anything that holds the job (a draw, or making the scene) is running. */
   get #working() {
-    return this.#busy || this.#publishing || this.#saving; // a reroll while "Save over a plan?" is up would go unsaved
+    return this.#busy || this.#publishing || this.#saving || this.#zooming; // a reroll while "Save over a plan?" is up would go unsaved
   }
 
   /** True while Make scene or Update scene is painting. */
@@ -455,10 +472,12 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asDraw" class="${this.#palette ? "as-on" : ""}" data-tooltip="Draw something new: a district, area, square, building, road, river, wall, bridge, prop or label" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-pen"></i> Draw</button>
+          ${this.#plan?.kind !== "battle" ? `<button type="button" data-action="asBattle" class="${this.#tool?.id === "battle" ? "as-on" : ""}" data-tooltip="Pick an area of this map to make a battle map of: its streets, water and notable buildings where they are here, its houses built again at battle size" ${this.#working || !this.#result ? "disabled" : ""}><i class="fa-solid fa-chess-board"></i> Battle map</button>` : ""}
           <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll all</button>
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip="Back to the plan before the last change"><i class="fa-solid fa-rotate-left"></i> Undo</button>
         </div>
-        ${this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
+        ${this.#tool?.id === "battle" ? battleHTML(this.#battleState())
+          : this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
@@ -594,7 +613,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     el.addEventListener("pointermove", (ev) => {
       if (this.#edit) return this.#editMove(ev);
       if (this.#tool && this.#result && ev.target.closest?.(".as-pv-map")) {
-        const t = this.#tool, geo = toolOf(t.id).geometry;
+        const t = this.#tool, geo = toolFor(t.id).geometry;
         // A drag from an empty start makes a box (a shape or a building); otherwise it moves the map
         if (t.down && ev.buttons === 1 && (geo === "shape" || geo === "box") && !t.points.length && (t.box || Math.hypot(ev.clientX - t.down.x, ev.clientY - t.down.y) >= 4)) {
           t.box = [...t.down.at, ...this.#toSquares(ev)];
@@ -618,7 +637,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         if (t.box) { stop(); return this.#finish(); }
         const click = down && d && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) < 4 && ev.target.closest?.(".as-pv-map");
         // The second click of a double-click finishes a shape or a line (its first click already placed the point)
-        if (click && ev.detail >= 2 && t.points.length && toolOf(t.id).geometry !== "point" && toolOf(t.id).geometry !== "box") { stop(); return this.#finish(); }
+        if (click && ev.detail >= 2 && t.points.length && toolFor(t.id).geometry !== "point" && toolFor(t.id).geometry !== "box") { stop(); return this.#finish(); }
         if (click) this.#toolClick(ev);
         stop();
         return;
@@ -636,6 +655,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     });
     // A setting changed in the inspector: applied at once, and the map redrawn
     el.addEventListener("change", (ev) => {
+      // The Battle map tool's zoom: kept as the client setting, and the box's size said again
+      if (ev.target.dataset?.battleZoom !== undefined) {
+        Promise.resolve(this.#host.battleZoom?.set(Number(ev.target.value))).catch(() => {}).finally(() => this.#rezoomBattleBox());
+        return;
+      }
       const ui = ev.target.closest?.(".as-pv-insp [data-under]");
       if (ui && this.#plan) {
         if (this.#publishing || this.#saving) return this.render();
@@ -1202,7 +1226,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
 
   /** Where a click with the current tool lands, snapped: { at, kind }. */
   #snapped(at) {
-    const t = this.#tool, make = toolOf(t.id).make, geo = toolOf(t.id).geometry;
+    const t = this.#tool, make = toolFor(t.id).make, geo = toolFor(t.id).geometry;
     if (geo === "shape") return snapCorner(this.#plan, at, this.#tolerance());
     if (geo === "path") return snapEnd(this.#plan, make.type, at, this.#tolerance(), make.class ?? null);
     return { at: [Math.round(at[0] * 10) / 10, Math.round(at[1] * 10) / 10], kind: null };
@@ -1221,7 +1245,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   #toolClick(ev) {
     const t = this.#tool;
     if (!t || this.#working) return;
-    const tool = toolOf(t.id);
+    const tool = toolFor(t.id);
     const { at } = this.#snapped(this.#toSquares(ev));
     if (tool.geometry === "point" || tool.geometry === "box") {
       t.points = [at];
@@ -1246,7 +1270,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const t = this.#tool;
     const how = this.element?.querySelector(".as-pv-how");
     if (!t || !how) return;
-    const tool = toolOf(t.id);
+    const tool = toolFor(t.id);
     how.textContent = howText(tool, t.points.length);
     const fin = this.element.querySelector('[data-action="asFinish"]');
     if (fin) fin.disabled = t.points.length < (tool.geometry === "path" ? 2 : 3) || this.#working;
@@ -1256,6 +1280,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   async #finish() {
     const t = this.#tool;
     if (!t) return;
+    if (t.id === "battle") return this.#placeBattleBox();
     if (this.#working) { t.box = null; return this.#drawDraft(); } // a box let go while the map draws is dropped, not kept for later
     // A box's two corners snap as a shape's corners do
     const box = t.box && [...this.#snapped(t.box.slice(0, 2)).at, ...this.#snapped(t.box.slice(2)).at];
@@ -1273,8 +1298,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.#inspect = res.id;
     this.#finishedAt = Date.now();
     const drawn = await this.#change(res.plan);
-    if (drawn && res.crossings?.length) ui.notifications.info(`AtlasScribe: added ${res.crossings.join(" and ")} where it crosses ${toolOf(kept.id).make.type === "road" ? "the water" : "a road"}. Click one to make it a ford or footbridge, or delete it.`);
-    if (drawn && res.access?.length) ui.notifications.info(`AtlasScribe: ${res.id} had no road ${toolOf(kept.id).make.type === "square" ? "to" : "into"} it, so ${res.access[0]} runs to it from the nearest road${res.access.length > 1 ? ` (with ${res.access.slice(1).join(" and ")} over the water)` : ""}. Move or delete it as you like.`);
+    if (drawn && res.crossings?.length) ui.notifications.info(`AtlasScribe: added ${res.crossings.join(" and ")} where it crosses ${toolFor(kept.id).make.type === "road" ? "the water" : "a road"}. Click one to make it a ford or footbridge, or delete it.`);
+    if (drawn && res.access?.length) ui.notifications.info(`AtlasScribe: ${res.id} had no road ${toolFor(kept.id).make.type === "square" ? "to" : "into"} it, so ${res.access[0]} runs to it from the nearest road${res.access.length > 1 ? ` (with ${res.access.slice(1).join(" and ")} over the water)` : ""}. Move or delete it as you like.`);
     // It couldn't be drawn (the change was taken back): the drawing comes back too, to fix or cancel
     if (!drawn && this.rendered) {
       this.#selected = this.#inspect = null;
@@ -1298,7 +1323,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       // A key sent to the page itself counts only when the window had the last press: after a click on the canvas,
       // Delete and Esc are Foundry's
       if (target !== document.body ? !this.element?.contains(target) : !this.#pressedHere) return;
-      if (ev.key === "Enter") this.#finish();
+      if (ev.key === "Enter") { if (this.#tool.id === "battle" && this.#zoomBox && !this.#tool.box) this.#makeBattle(); else this.#finish(); }
       else if (ev.key === "Escape") { this.#endTool(); this.render(); }
       else if (ev.key === "Backspace" || ev.key === "Delete") { this.#tool.points.pop(); this.render(); }
       else return;
@@ -1313,6 +1338,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   }
 
   #endTool() {
+    this.#zoomBox = null;
     if (this.#keys) window.removeEventListener("keydown", this.#keys, true);
     if (this.#presses) document.removeEventListener("pointerdown", this.#presses, true);
     this.#keys = null;
@@ -1326,9 +1352,10 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     if (!g) return;
     const t = this.#tool;
     if (!t) { g.innerHTML = ""; return; }
-    const tool = toolOf(t.id);
+    const tool = toolFor(t.id);
     const [MW, MH] = this.#result?.squares ?? [1, 1];
     const r = Math.max(MW, MH) / 160;
+    if (t.id === "battle") return this.#drawBattleBox(g);
     const pts = t.cursor && tool.geometry !== "point" ? [...t.points, t.cursor] : [...t.points];
     let html = "";
     if (t.box) {
@@ -1343,10 +1370,150 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     g.innerHTML = html;
   }
 
+  /** The Battle map tool's zoom (the client setting). */
+  #battleZoom() {
+    const z = Number(this.#host.battleZoom?.get?.() ?? 2);
+    return ZOOMS.includes(z) ? z : 2;
+  }
+
+  /** The Battle map tool's box (being dragged, else placed) and its size at the zoom, for the panel and the map. */
+  #battleState() {
+    const t = this.#tool, zoom = this.#battleZoom();
+    const raw = t?.box ?? this.#zoomBox;
+    const box = raw ? [Math.min(raw[0], raw[2]), Math.min(raw[1], raw[3]), Math.max(raw[0], raw[2]), Math.max(raw[1], raw[3])] : null;
+    const size = box ? zoomSize(this.#plan, box, zoom).squares : null;
+    return { zoom, zooms: ZOOMS, preset: this.#preset, presets: BATTLE.PRESETS, box, size, big: !!size && Math.max(...size) > BATTLE.BIG, limit: BATTLE.BIG, placed: !!this.#zoomBox && !t?.box, working: this.#working, zooming: this.#zooming };
+  }
+
+  /** The box let go (or a click: a box of the preset size around it), kept on the map within its edges. */
+  #placeBattleBox() {
+    const t = this.#tool;
+    const [MW, MH] = this.#result?.squares ?? [0, 0];
+    let box = null;
+    this.#boxPreset = !t.box && !!t.points.length;
+    if (t.box) box = [Math.min(t.box[0], t.box[2]), Math.min(t.box[1], t.box[3]), Math.max(t.box[0], t.box[2]), Math.max(t.box[1], t.box[3])];
+    else if (t.points.length) {
+      // (the preset's battle squares in the plan's squares at this zoom)
+      const per = zoomSize(this.#plan, [0, 0, 1, 1], this.#battleZoom()).perSquare;
+      const half = this.#preset / per / 2, [x, y] = t.points[0];
+      box = [x - half, y - half, x + half, y + half];
+      // (slid onto the map whole where it fits)
+      const dx = box[0] < 0 ? -box[0] : box[2] > MW ? MW - box[2] : 0, dy = box[1] < 0 ? -box[1] : box[3] > MH ? MH - box[3] : 0;
+      box = [box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy];
+    }
+    t.box = null;
+    t.points = [];
+    if (box) {
+      box = [Math.max(0, box[0]), Math.max(0, box[1]), Math.min(MW, box[2]), Math.min(MH, box[3])].map((v) => Math.round(v * 100) / 100);
+      // (a box too small to fight in is dropped: under five battle squares a side)
+      const size = zoomSize(this.#plan, box, this.#battleZoom()).squares;
+      this.#zoomBox = Math.min(...size) >= 5 ? box : null;
+      this.#error = this.#zoomBox ? null : "That box is too small for a battle map. Drag a bigger one, or click to place one of the size picked.";
+    }
+    this.render();
+  }
+
+  /**
+   * The zoom changed: a box placed by a click keeps its size in battle squares (the preset), around its middle; a
+   * dragged one keeps its area, and is dropped if that's now too small to fight in.
+   */
+  #rezoomBattleBox() {
+    const t = this.#tool;
+    if (t?.id === "battle" && this.#zoomBox) {
+      const [x0, y0, x1, y1] = this.#zoomBox;
+      if (this.#boxPreset) t.points = [[(x0 + x1) / 2, (y0 + y1) / 2]];
+      else t.box = [x0, y0, x1, y1];
+      return this.#placeBattleBox();
+    }
+    this.render();
+  }
+
+  /** The Battle map tool's box on the map, with its size in battle squares, and the panel's size line kept with it. */
+  #drawBattleBox(g) {
+    const st = this.#battleState();
+    const line = this.element?.querySelector(".as-pv-battle-size");
+    if (line) {
+      line.textContent = battleSizeText(st);
+      line.classList.toggle("as-warn", st.big);
+    }
+    if (!st.box) { g.innerHTML = ""; return; }
+    const [x0, y0, x1, y1] = st.box;
+    const [MW, MH] = this.#result?.squares ?? [1, 1];
+    // (its size just above it, or below it at the map's top edge: a battle-sized box is small on a town map)
+    const fs = Math.max(MW, MH) / 90;
+    const ty = y0 - fs * 0.35 > fs ? y0 - fs * 0.35 : y1 + fs * 1.05;
+    g.innerHTML = `<rect class="as-pv-zoombox ${st.big ? "as-warn" : ""}" x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" vector-effect="non-scaling-stroke"></rect>`
+      + `<text class="as-pv-zoombox-size ${st.big ? "as-warn" : ""}" x="${x0}" y="${ty}" font-size="${fs}">${esc(`${st.size[0]} x ${st.size[1]}`)}</text>`;
+  }
+
+  /** The Battle map button: the tool on (the side panel shows it), or off again. */
+  static #onBattle() {
+    if (this.#working) return;
+    this.#boxPreset = false;
+    if (this.#tool?.id === "battle") this.#endTool();
+    else { this.#startTool("battle"); this.#palette = false; this.#inspect = null; }
+    this.#error = null;
+    this.render();
+  }
+
+  /** A preset size for a clicked box; a placed box takes it too, around its middle. */
+  static #onBattlePreset(event, target) {
+    const n = Number(target.dataset.size);
+    if (!BATTLE.PRESETS.includes(n)) return;
+    this.#preset = n;
+    if (this.#zoomBox && this.#tool?.id === "battle") {
+      const [x0, y0, x1, y1] = this.#zoomBox;
+      this.#tool.points = [[(x0 + x1) / 2, (y0 + y1) / 2]];
+      return this.#placeBattleBox();
+    }
+    this.render();
+  }
+
+  static async #onBattleMake() {
+    await this.#makeBattle();
+  }
+
+  /** Stops making the battle map. */
+  static #onBattleStop() {
+    if (this.#zooming) this.#host.cancel?.();
+  }
+
+  /**
+   * Makes the battle map of the placed box and opens it here, a new plan not saved until Save (the town map's own
+   * unsaved changes are asked about first, as opening any plan does). It remembers where it came from (source).
+   */
+  async #makeBattle() {
+    const before = this.#plan;
+    if (!this.#zoomBox || this.#working || !before) return;
+    if (!(await this.#mayDiscard())) return;
+    // (while the dialog was up: a job started, the plan changed (asked about again), or the box went)
+    if (this.#working || !this.#zoomBox || !(await this.#mayReplace(before)) || this.#working) return;
+    // (the box as it is now: it may have been moved while the dialog was up)
+    const box = this.#zoomBox, from = this.#plan, zoom = this.#battleZoom();
+    this.#zooming = true;
+    this.#error = null;
+    this.render();
+    let res = null;
+    try {
+      res = await this.#host.zoom(from, box, zoom);
+    } catch (e) {
+      this.#error = e.cancelled ? "Stopped making the battle map." : `The battle map couldn't be made: ${e.message ?? e}`;
+    }
+    this.#zooming = false;
+    if (!res?.plan || this.#plan !== from) {
+      // (changes made in the panel meanwhile are applied now, as after a draw)
+      if (this.#queue.length) setTimeout(() => this.#flush(), 0);
+      return this.rendered ? this.render() : undefined;
+    }
+    for (const n of res.notes ?? []) ui.notifications.warn(`AtlasScribe: ${n}`);
+    const drawn = await this.show(res.plan);
+    if (drawn) ui.notifications.info(`AtlasScribe: made ${res.plan.name}, ${res.plan.size.squares.join(" x ")} squares. Save it to keep it, or Make scene.`);
+  }
+
   /** The drawing tools in the side panel (again to close them). */
   static #onDraw() {
     if (this.#palette) { this.#endTool(); this.#palette = false; }
-    else { this.#palette = true; this.#inspect = null; this.#selected = null; }
+    else { if (this.#tool?.id === "battle") this.#endTool(); this.#palette = true; this.#inspect = null; this.#selected = null; }
     this.render();
   }
 
