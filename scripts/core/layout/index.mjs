@@ -354,7 +354,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   if (battle) {
     const t = terrainOf({ plan, items, sq, pick: streamFor });
     notes.push(...t.notes);
-    for (const L of t.levels) items.push({ kind: "level", id: L.id, from: L.from, name: L.name, rings: L.rings, elevation: L.elevation, style: L.style, rock: L.rock, bed: L.bed, water: L.water ?? null, waterClass: L.waterClass ?? null, within: L.within ?? null });
+    for (const L of t.levels) items.push({ kind: "level", id: L.id, from: L.from, name: L.name, rings: L.rings, elevation: L.elevation, style: L.style, rock: L.rock, bed: L.bed, water: L.water ?? null, waterClass: L.waterClass ?? null, within: L.within ?? null, ...(L.shore ? { shore: L.shore } : {}) });
     for (const e of t.edges) {
       items.push(e);
       // (a walkable slope is ground like any: trees and houses may stand on it)
@@ -385,9 +385,18 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       // (and a road over it bends onto it gently over the squares before it, kept clear along its new line)
       for (const w of ways) {
         const eased = easeOnto(w.path, c);
-        if (eased === w.path) continue;
-        for (const sw of space.ways) if (sw.path === w.path) sw.path = eased;
-        w.path = eased;
+        if (!eased) continue;
+        // (a road joining it near the bridge has its end carried along, so it still meets it)
+        for (const o of ways) {
+          if (o === w) continue;
+          const ends = [0, o.path.length - 1].filter((i) => distanceToPath(o.path[i], w.path) < 0.3);
+          if (!ends.length) continue;
+          const path = o.path.map((p, i) => (ends.includes(i) ? eased.move(p) : p));
+          for (const sw of space.ways) if (sw.path === o.path) sw.path = path;
+          o.path = path;
+        }
+        for (const sw of space.ways) if (sw.path === w.path) sw.path = eased.path;
+        w.path = eased.path;
       }
     }
   }

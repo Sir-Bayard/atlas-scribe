@@ -11,7 +11,7 @@
  * Pure: runs in the worker and under node. Positions in squares, heights in feet.
  */
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../geom.mjs";
-import { bands, intersect } from "../lots/poly.mjs";
+import { bands, difference } from "../lots/poly.mjs";
 
 /**
  * Sizes, in squares and feet. tier: the feet of drop each tier of a cliff or bank stands for (one strip of art a
@@ -50,7 +50,8 @@ function inLevel(L, p) {
  * plan: the smoothed plan (height features, running water with their widths in items); items: the layout's items so far
  * (water as laid); sq: feet a square; pick(id): a random stream for a feature (for its rock when the plan leaves it out).
  * Returns { levels: [{ id, from, name, rings, elevation, style, rock, bed, water, waterClass, within }], edges: [...], elevAt(p),
- * notes } (within: the hollow a stretch of a stream's bed lies in, below the rest of its bed).
+ * notes } (within: the hollow a stream's water fills, a pool below the rest of its bed; shore: how far the pool lies
+ * below the ground around its hollow, which its edges' tiers are laid by, so a fall's line up with the shore's).
  */
 export function terrainOf({ plan, items, sq, pick }) {
   const levels = [], notes = [];
@@ -87,11 +88,15 @@ export function terrainOf({ plan, items, sq, pick }) {
     if (!rings.length) continue;
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(w.from ?? w.id).fork("rock").pick(ROCKS);
     levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class });
-    // (in each hollow it runs through, its bed lies its depth below the hollow's floor: that stretch of bed a level of
-    // its own, over the rest, so the bed steps down at the hollow's edge, a small fall in the water)
-    for (const k of [...new Set(ks.filter((k) => k >= 0 && levels[k].elevation < base))]) {
-      const H = levels[k], piece = intersect(rings, H.rings);
-      if (piece.length) levels.push({ id: `${w.id}/bed-${H.id}`, from: w.from ?? w.id, name: null, rings: piece, elevation: H.elevation - depth, style, rock, bed: true, water: w.id, waterClass: w.class, within: H.id });
+    // (each hollow it runs through fills with its water, a pool its depth below the hollow's floor, the hollow's own
+    // edge its shore: a level of its own over the hollow and the bed, so the stream falls into it and out again)
+    // (in the order the hollows lie, so one inside another is filled over it; each only where it's the ground seen, not
+    // under a rise or hollow laid over it)
+    for (const k of [...new Set(ks.filter((k) => k >= 0 && levels[k].elevation < base))].sort((a, b) => a - b)) {
+      const H = levels[k], over = levels.slice(k + 1, before).flatMap((x) => x.rings);
+      const seen = over.length ? difference(H.rings, over) : H.rings.map((r) => r.map((p) => [...p]));
+      if (!seen.length) continue;
+      levels.push({ id: `${w.id}/pool-${H.id}`, from: w.from ?? w.id, name: null, rings: seen, elevation: H.elevation - depth, style: H.style, rock: H.rock, bed: true, water: w.id, waterClass: w.class, within: H.id, shore: base - (H.elevation - depth) });
     }
   }
   return { levels, edges: edgesOf(levels), elevAt, notes };
@@ -145,8 +150,9 @@ export function edgesOf(levels) {
         if (r.pts.length < 2 || pathLength(r.pts) < 0.3) continue;
         const path = r.hiLeft ? r.pts : [...r.pts].reverse();
         // (a bed's bank deeper than TERRAIN.bankMost, where it cuts through higher ground, is a cliff)
-        const style = L.bed && L.style === "bank" && r.hi - r.lo > TERRAIN.bankMost ? "cliff" : L.style;
-        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}) });
+        // (a pool's shore is its hollow's own edge, kept as the hollow has it)
+        const style = L.bed && !L.within && L.style === "bank" && r.hi - r.lo > TERRAIN.bankMost ? "cliff" : L.style;
+        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}), ...(L.shore ? { shore: L.shore } : {}) });
       }
     }
   });

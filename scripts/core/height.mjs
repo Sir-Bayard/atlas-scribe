@@ -12,7 +12,7 @@
  * Pure: runs in the worker, the page and under node.
  */
 import { pointInPolygon, insidePoint } from "./geom.mjs";
-import { bands, difference, intersect, offset } from "./lots/poly.mjs";
+import { bands, difference, intersect, offset, union } from "./lots/poly.mjs";
 import { edgeSpan, shiftRight, resample } from "./layout/terrain.mjs";
 import { footprint } from "./layout/battle.mjs";
 
@@ -125,6 +125,9 @@ export function heightRegions(layout) {
       if (w.class !== "stream") deep = bands(segs.map((s) => ({ path: s.path, half: s.w / 2 - HEIGHT.shallows })).filter((s) => s.half >= HEIGHT.deepest / 2));
       // (its water reaches up to the highest bank it runs between, so a token wading in from any bank counts)
       at = resample(w.path, 0.5).reduce((best, p) => (baseAt(p) > baseAt(best) ? p : best), w.path[0]);
+      // (and a hollow it fills: a pool, shallow along its shore, deep in its middle)
+      const pools = levels.filter((L) => L.within && L.water === w.id).flatMap((L) => L.rings);
+      if (pools.length) { area = union(area, pools); deep = union(deep, offset(pools, -HEIGHT.shallows)); }
     } else if (Array.isArray(w.poly) && w.poly.length >= 3) {
       area = [w.poly];
       deep = offset([w.poly], -HEIGHT.shallows);

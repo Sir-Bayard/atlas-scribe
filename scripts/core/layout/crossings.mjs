@@ -129,11 +129,13 @@ export function fordDetail(c, ways) {
 /**
  * A way eased onto a bridge: over `reach` squares before each end of the deck it bends gently onto the deck's middle
  * line, as a road is built to meet its bridge, not turned onto it at the last moment, and runs straight across the
- * deck. Only the stretch near the bridge changes (resampled finely there); the rest keeps its points. Returns the new
- * path, or the old one when the way doesn't run onto this bridge.
+ * deck. Only the stretch near the bridge changes (resampled finely there); the rest keeps its points, and its own ends
+ * stay put (the easing gives way over the last squares before an end, so a road that ends near a bridge still ends
+ * where it did). Returns { path, move(p) } (move: where a point on the old path, a road joining it, goes), or null when
+ * the way doesn't run onto this bridge.
  */
 export function easeOnto(path, c, reach = 6) {
-  if (!Array.isArray(path) || path.length < 2 || !Array.isArray(c?.at)) return path;
+  if (!Array.isArray(path) || path.length < 2 || !Array.isArray(c?.at)) return null;
   const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2;
   // (the way's points every quarter square, each with its distance along the way)
   const pts = [path[0]], arc = [0], from = [0];
@@ -143,16 +145,27 @@ export function easeOnto(path, c, reach = 6) {
   }
   let best = 0, bd = Infinity;
   pts.forEach(([x, y], i) => { const d = Math.hypot(x - c.at[0], y - c.at[1]); if (d < bd) { bd = d; best = i; } });
-  if (bd > (c.width ?? 2) / 2 + 0.5) return path;
+  if (bd > (c.width ?? 2) / 2 + 0.5) return null;
+  const total = arc.at(-1), at0 = arc[best];
+  const smooth = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+  // (a point at distance s along the way: drawn onto the deck's line, the more the nearer the deck, the less near an end)
+  const ease = (p, s) => {
+    const off = Math.abs(s - at0);
+    if (off > hl + reach) return p;
+    const end = Math.min(s, total - s), keep = Math.max(smooth((off - hl) / reach), off > hl ? 1 - smooth(end / 1.5) : 0);
+    const u = (p[0] - c.at[0]) * ux + (p[1] - c.at[1]) * uy, on = [c.at[0] + u * ux, c.at[1] + u * uy];
+    return [on[0] + (p[0] - on[0]) * keep, on[1] + (p[1] - on[1]) * keep];
+  };
   const out = [];
   pts.forEach((p, i) => {
-    const s = Math.abs(arc[i] - arc[best]);
-    if (s > hl + reach) { if (from[i] >= 0 || i === 0) out.push(p); return; }
-    const u = (p[0] - c.at[0]) * ux + (p[1] - c.at[1]) * uy, on = [c.at[0] + u * ux, c.at[1] + u * uy];
-    const t = Math.min(1, Math.max(0, (s - hl) / reach)), e = t * t * (3 - 2 * t);
-    out.push([on[0] + (p[0] - on[0]) * e, on[1] + (p[1] - on[1]) * e]);
+    if (Math.abs(arc[i] - at0) > hl + reach) { if (from[i] >= 0 || i === 0) out.push(p); return; }
+    out.push(ease(p, arc[i]));
   });
-  if (out.at(-1) !== pts.at(-1) && Math.abs(arc.at(-1) - arc[best]) > hl + reach) out.push(pts.at(-1));
-  return out;
+  const move = (q) => {
+    let k = 0, kd = Infinity;
+    pts.forEach((p, i) => { const d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < kd) { kd = d; k = i; } });
+    const e = ease(pts[k], arc[k]);
+    return [q[0] + e[0] - pts[k][0], q[1] + e[1] - pts[k][1]];
+  };
+  return { path: out, move };
 }
-

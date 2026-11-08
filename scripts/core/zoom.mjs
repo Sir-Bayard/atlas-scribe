@@ -192,7 +192,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     if (!parts.some((b) => polygonsOverlap(footOf(b), boxPoly))) continue;
     // (one that fronted a street on the overview fronts it still: everything else grows with the zoom but streets keep
     // their true width, so it's moved up to the street by what that leaves between them, along each street it fronted)
-    const [dx, dy] = frontShift(parts.map(footOf), fronts, (E - ft / 5) / E);
+    // (a centerpiece stays with its grounds, its plaza, lawns and wall, which aren't moved)
+    const [dx, dy] = /\/h-anchor\d+$/.test(key) ? [0, 0] : frontShift(parts.map(footOf), fronts, (E - ft / 5) / E);
     const moved = dx || dy ? parts.map((b) => ({ ...b, cx: b.cx + dx, cy: b.cy + dy, ...(Array.isArray(b.poly) ? { poly: b.poly.map(([x, y]) => [x + dx, y + dy]) } : {}) })) : parts;
     features.push({ id: idFor(key.replace(/^.*\//, "") || "building"), type: "landmark", buildings: moved.map((b) => scaled(b, P, E)) });
   }
@@ -245,8 +246,8 @@ function frontOf(feet, w) {
 /**
  * The move, in overview squares, that brings a notable building up to the streets it fronted once the zoom has grown
  * it but not them: for the nearest way it stood within FRONTED squares of, and another at a corner (turned more than
- * 45 degrees from the first), (half the way's width + the gap) x share, share being what the zoom adds over true size
- * as a share of the zoom ((E - ft/5) / E).
+ * 45 degrees from the first), (half the way's width + the gap) x share toward each, share being what the zoom adds over
+ * true size as a share of the zoom ((E - ft/5) / E): so each stands from it as it did at true size.
  */
 const FRONTED = 0.25;
 export function frontShift(feet, ways, share) {
@@ -254,9 +255,13 @@ export function frontShift(feet, ways, share) {
   const near = ways.map((w) => ({ w, ...frontOf(feet, w) })).filter((x) => x.gap < FRONTED && x.gap > -x.w.width / 2).sort((a, b) => a.gap - b.gap);
   const used = [];
   for (const x of near) if (used.length < 2 && used.every((u) => Math.abs(u.dir[0] * x.dir[0] + u.dir[1] * x.dir[1]) < Math.SQRT1_2)) used.push(x);
-  let dx = 0, dy = 0;
-  for (const u of used) { const by = (u.w.width / 2 + Math.max(0, u.gap)) * share; dx += u.dir[0] * by; dy += u.dir[1] * by; }
-  return [r3(dx), r3(dy)];
+  // (how far toward each: half its width and the gap, overlap counting less, x share; at a corner both at once, the
+  // move that comes that far toward each street, whatever the angle between them)
+  const by = used.map((u) => (u.w.width / 2 + u.gap) * share);
+  if (used.length === 1) return [r3(used[0].dir[0] * by[0]), r3(used[0].dir[1] * by[0])];
+  if (!used.length) return [0, 0];
+  const [a, b] = used.map((u) => u.dir), det = a[0] * b[1] - a[1] * b[0];
+  return [r3((by[0] * b[1] - by[1] * a[1]) / det), r3((a[0] * by[1] - b[0] * by[0]) / det)];
 }
 
 /** A building item's footprint on the map. */

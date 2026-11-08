@@ -19,7 +19,7 @@ import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
-import { bands } from "../../core/lots/poly.mjs";
+import { bands, union, offset } from "../../core/lots/poly.mjs";
 import { distanceToPath } from "../../core/geom.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
@@ -352,6 +352,14 @@ export function paint(ctx) {
       if (!w.frozen) soft((k) => stroke(k, w.path, width * 0.5), "rgb(8,40,52)", { blur: 1, alpha: 0.3, box });
     }
   }
+  // (a hollow a stream fills: its water over the whole hollow, its edge's banks laid over the shore, deeper in the middle)
+  for (const Lv of levels.filter((x) => x.within)) {
+    const w = L.items.find((i) => i.id === Lv.water);
+    const role = w?.frozen ? "water.ice" : `water.${w?.class ?? "stream"}`, box = boxAround(Lv.rings.map(bboxOf), 0.5);
+    const inner = offset(Lv.rings, -(edgeSpan({ drop: Lv.shore ?? 10, style: Lv.style }) - 0.1));
+    soft((k) => { for (const r of inner) poly(k, r); k.fill("evenodd"); }, tex(role), { blur: 0.06, box });
+    if (!w?.frozen) soft((k) => { for (const r of offset(Lv.rings, -1.6)) poly(k, r); k.fill("evenodd"); }, "rgb(8,40,52)", { blur: 1, alpha: 0.3, box });
+  }
 
   // 3b. Edges where the ground drops, as FA builds them (the Map Dressing Guide's tiers): a cliff in a tier of rock
   // face for every five feet, each a little lower than the one above it and drawn beneath it, the rubble at its foot,
@@ -359,6 +367,9 @@ export function paint(ctx) {
   // walkable slope as shade on the side turned from the sun. Each tier wanders a little on its own
   progress(0.2, "Banks and cliffs");
   const edges = items("edge").filter((e) => meets(bboxOf(e.path), edgeSpan(e) + 1));
+  // (how far out a bank's foot lies from its line: by its own drop, or a pool's whole shore, so the step where a stream
+  // falls into the pool is laid as the foot of the shore around it)
+  const footOf = (e) => edgeSpan(e.shore ? { drop: e.shore, style: e.style } : e);
   const wob = makeNoise(L.seed ?? 1, "battle-edge", { scale: 3, octaves: 2 });
   const tierPath = (e, d, k) => {
     const pts = resample(e.path, 0.5);
@@ -400,15 +411,16 @@ export function paint(ctx) {
   // (where a stream's bed steps down, as into a hollow, its banks' art and shadows are kept off its water, which falls
   // there in a line of white water instead)
   const waterOf = new Map(items("water").filter((w) => Array.isArray(w.path)).map((w) => [w.id, w]));
-  const fallWater = (e) => { const w = e.fall ? waterOf.get(e.water) : null; return w ? bands([{ path: w.path, half: (w.width ?? 1) / 2 + 0.05 }]) : null; };
+  const fallWater = (e, by = 0.05) => { const w = e.fall ? waterOf.get(e.water) : null; return w ? bands([{ path: w.path, half: (w.width ?? 1) / 2 + by }]) : null; };
   const offWater = (e, draw) => {
-    const wb = fallWater(e);
+    // (the art kept a little in from the water's edge, so it meets the water with no seam)
+    const wb = fallWater(e, -0.15);
     if (!wb) return draw();
     g.save(); g.beginPath(); g.rect(0, 0, W, H);
     for (const r of wb) { r.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("evenodd"); draw(); g.restore();
   };
-  for (const e of edges.filter((x) => x.style !== "slope")) offWater(e, () => {
+  for (const e of edges.filter((x) => x.style !== "slope" && !x.fall)) offWater(e, () => {
     // (the drop's own shadow on the low ground past its foot, where it faces away from the sun: longer the higher)
     const pts = resample(e.path, 0.5), foot = shiftRight(pts, edgeSpan(e)), far = shiftRight(pts, edgeSpan(e) + Math.min(3, (e.drop / 5) * 0.7));
     soft((k) => {
@@ -423,15 +435,16 @@ export function paint(ctx) {
     }, "rgb(14,20,34)", { blur: 0.45, alpha: 0.32, box: boxAround([bboxOf(pts), bboxOf(far)], 0.6) });
   });
   for (const e of edges.filter((x) => x.style !== "slope")) offWater(e, () => {
-    const n = tiersOf(e.drop, e.style), cliff = e.style === "cliff";
+    // (a fall into a pool is drawn, off its water, as the pool's whole shore, so the shore runs unbroken past the stream)
+    const n = tiersOf(e.fall && e.shore ? e.shore : e.drop, e.style), cliff = e.style === "cliff";
     const face = cliff ? art(`edge.face.${e.rock}`, 0) : art(BANK[e.rock] ?? "edge.bank.earthy", 0);
     const face2 = cliff ? art(`edge.face.${e.rock}`, 1) ?? face : art(BANK[e.rock] ?? "edge.bank.earthy", 1) ?? face;
     // (the rubble at the foot, under everything)
     const footArt = cliff ? art(`edge.foot.${e.rock}`, 0) : null;
     if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
-    if (!cliff) {
+    if (!cliff && !e.fall) {
       // (the bank's shadow on the water, cast where its face is turned from the sun, the longer the deeper it drops)
-      const span = edgeSpan(e) + 0.04, pts = resample(e.path, 0.5), foot = [], far = [];
+      const span = footOf(e) + 0.04, pts = resample(e.path, 0.5), foot = [], far = [];
       pts.forEach((p, i) => {
         const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], Ln = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
         const nx = -(b[1] - a[1]) / Ln, ny = (b[0] - a[0]) / Ln, away = (nx * SHADOW[0] + ny * SHADOW[1]) / Math.hypot(...SHADOW);
@@ -444,7 +457,7 @@ export function paint(ctx) {
       // (a bank's tier laid with its top toward the edge's line and its face of earth and roots running down toward
       // the low side, the lowest one's foot just into the water: FA's woodland cliff art, as a GM draws it along a stream)
       const half = !cliff && face ? bandOf(face).h / ART_PX / 2 : TERRAIN.bankBand / 2;
-      const d = cliff ? 0.25 + (k - 1) * TERRAIN.step : Math.max(half, edgeSpan(e) - half - (n - k) * TERRAIN.bankStep + 0.04);
+      const d = cliff ? 0.25 + (k - 1) * TERRAIN.step : Math.max(half, footOf(e) - half - (n - k) * TERRAIN.bankStep + 0.04);
       // (the shadow under this tier, tucked in below its middle line and painted soft, darker going down: the tier's
       // art covers it where solid. Painted, not drawn from shadow art, whose pieces overlap in lines where it's
       // see-through)
@@ -455,7 +468,7 @@ export function paint(ctx) {
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
     }
     // (where a bank's face goes into the water, dark: the foot of the face in shade, the water against it deep)
-    if (!cliff) soft((kk) => stroke(kk, tierPath(e, edgeSpan(e) - 0.04, n), 0.26, "butt"), "rgb(6,14,22)", { blur: 0.12, alpha: 0.45, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+    if (!cliff && !e.fall) soft((kk) => stroke(kk, tierPath(e, footOf(e) - 0.04, n), 0.26, "butt"), "rgb(6,14,22)", { blur: 0.12, alpha: 0.45, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
     const lip = cliff ? art(`edge.top.${e.rock}`, 0) : null;
     if (lip) stripPath(lip, tierPath(e, -0.05, 0), 0.21);
   });
@@ -481,12 +494,13 @@ export function paint(ctx) {
   const paved = ways.filter(wayPaving);
   // (no way is painted down in a stream's bed: a bridge carries it over, and the road showing under the deck, curving
   // where the deck runs straight, read wrong; a ford's crossing is left open so its track runs through)
-  const cutBeds = items("level").filter((Lv) => Lv.bed && !Lv.within && meets(bboxOf(Lv.rings.flat()), 1));
+  const cutBeds = items("level").filter((Lv) => Lv.bed && meets(bboxOf(Lv.rings.flat()), 1));
   g.save();
   if (cutBeds.length) {
     g.beginPath();
     g.rect(0, 0, W, H);
-    for (const Lv of cutBeds) for (const ring of Lv.rings) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    // (one outline for all of them: a pool's rings overlap its stream's bed, which even-odd would leave uncut)
+    for (const ring of union(cutBeds.flatMap((Lv) => Lv.rings))) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     for (const c of items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at))) { deckOf(c).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("evenodd");
   }
@@ -570,9 +584,9 @@ export function paint(ctx) {
     const lowBy = Math.max(0, levelAt(levelItemsAll, [c.at[0] + ux * hl, c.at[1] + uy * hl]) - levelAt(levelItemsAll, c.at));
     const off = 0.85 + (lowBy / 10) * 0.7;
     // (only down in the bed it spans: where its ends rest on the bank, the deck lies on the ground and casts none)
-    const under = levelItemsAll.filter((Lv) => Lv.bed && !Lv.within && Lv.rings.some((r) => r.some((p) => Math.hypot(p[0] - c.at[0], p[1] - c.at[1]) < hl + 4)));
+    const under = levelItemsAll.filter((Lv) => Lv.bed && Lv.rings.some((r) => r.some((p) => Math.hypot(p[0] - c.at[0], p[1] - c.at[1]) < hl + 4)));
     g.save();
-    if (under.length) { g.beginPath(); for (const Lv of under) for (const ring of Lv.rings) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); } g.clip("evenodd"); }
+    if (under.length) { g.beginPath(); for (const ring of union(under.flatMap((Lv) => Lv.rings))) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); } g.clip("evenodd"); }
     soft((k) => { poly(k, pts.map(([x, y]) => [x + SHADOW[0] * off, y + SHADOW[1] * off])); k.fill(); }, "rgb(0,0,0)", { blur: 0.4 + lowBy / 40, alpha: 0.4, box: [bb[0] - 2, bb[1] - 2, bb[2], bb[3]] });
     g.restore();
     // (a road bridge in flagstones edged in stone; a footbridge a deck of planks laid across it, a dark beam along
