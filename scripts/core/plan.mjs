@@ -215,7 +215,8 @@ export const TYPES = {
   },
   prop: {
     geometry: "point",
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"],
+    // (campfire, fire pit, brazier, torch and lamp post: lights on a battle map, each lit where it stands)
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post"],
     fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }) },
   },
   label: {
@@ -250,13 +251,17 @@ export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };
 
 /**
  * The scene a plan is published to (output.scene). name falls back to the plan's name. weather is one of the
- * weather effects Foundry offers (snow, rain, fog and so on); an unknown one is skipped with a warning.
+ * weather effects Foundry offers (snow, rain, fog and so on); an unknown one is skipped with a warning; left out, a
+ * battle map in winter snows ("none" for none).
  */
 export const SCENE = {
   name: str(null),
   padding: num(0.05, { min: 0, max: 0.5 }),
   darkness: num(0, { min: 0, max: 1 }),
   globalLight: bool(true),
+  // The time of day (a battle map's): sets the scene's darkness, its light outdoors and its tint in place of darkness
+  // and globalLight, and which lights are lit (TIMES in publish.mjs). Left out, those two settings are used
+  time: oneOf(["day", "dawn", "dusk", "night"], null),
   tokenVision: bool(false),
   fog: bool(false),
   weather: str(null),

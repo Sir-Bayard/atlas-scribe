@@ -135,7 +135,8 @@ export function programFor(use, a) {
  * Furniture, each piece a tile the GM can move (Patrick, 7 Nov: grouped as the art groups it, a bed made up, a table
  * with its chairs and what's on it). size: its art in squares [across, deep] as the art lies (the files are 200 px a
  * square); body: the part that's drawn, as big as it is in any of its files, which the layout sets flush against a wall
- * and keeps clear of doors and other pieces; back: the side of the art that goes against a wall (top unless said; none
+ * and keeps clear of doors and other pieces; on: it stands on another piece (its tile over that one's); back: the side
+ * of the art that goes against a wall (top unless said; none
  * for a piece that stands free); floor: a rug, under the rest; drawn: painted into the map (a stage).
  */
 export const FURNITURE = {
@@ -171,6 +172,16 @@ export const FURNITURE = {
   trough: { size: [2, 1], body: [1.98, 0.58] },
   "weapon.rack": { size: [1, 2], body: [0.32, 1.94], back: "left" },
   "armor.stand": { size: [1, 1], body: [0.64, 0.3] },
+  // (lights' pieces, placed by layout/lights.mjs: candles and a lamp stand on a table or desk, over it; a wall
+  // lantern's bracket at its art's top, against its wall; a lamp post's lamp at its art's top, toward the street)
+  candles: { size: [1, 1], body: [0.3, 0.36], back: "none", on: true },
+  "lamp.table": { size: [1, 1], body: [0.28, 0.28], back: "none", on: true },
+  "lantern.wall": { size: [1, 1], body: [0.28, 0.38] },
+  "lamp.post": { size: [1, 1], body: [0.22, 0.84], back: "none" },
+  "torch.stake": { size: [1, 1], body: [0.2, 0.43], back: "none" },
+  campfire: { size: [1, 1], body: [0.6, 0.6], back: "none" },
+  firepit: { size: [1, 1], body: [0.46, 0.46], back: "none" },
+  brazier: { size: [1, 1], body: [0.9, 0.9], back: "none" },
   stage: { size: [4, 2], body: [4, 2], drawn: true },
   "stage.small": { size: [3, 2], body: [3, 2], drawn: true },
 };

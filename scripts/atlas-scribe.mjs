@@ -67,16 +67,16 @@ function planOrThrow(input) {
   return checked;
 }
 
-/** { path, width, height, thumb?, overheads?, furniture? } for an image: from render's result, or measured from its file. */
+/** { path, width, height, thumb?, overheads?, furniture?, mist? } for an image: from render's result, or measured from its file. */
 async function imageInfo(image) {
   if (image && typeof image === "object" && image.path && image.width && image.height)
-    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null };
+    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null };
   const path = typeof image === "string" ? image : image?.path;
   if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
   const res = await fetch(new URL(path, window.location.href));
   if (!res.ok) throw new Error(`AtlasScribe: couldn't load the map image ${path}`);
   const bmp = await createImageBitmap(await res.blob());
-  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, furniture: null };
+  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, furniture: null, mist: null };
   bmp.close();
   return info;
 }
@@ -268,7 +268,7 @@ const api = {
               }
             } catch (e) {
               // (overheads null, not empty: a scene published from this keeps the roofs and trees it had)
-              e.result = { path, width: img.width, height: img.height, layout, overheads: null, furniture: null };
+              e.result = { path, width: img.width, height: img.height, layout, overheads: null, furniture: null, mist: null };
               throw e;
             }
           }
@@ -276,7 +276,7 @@ const api = {
         const ms = Math.round(performance.now() - t0);
         bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
         result = {
-          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [],
+          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [],
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           notes: [...layout.notes.map((n) => n.message), ...notes],
           artNotes: notes, // why art is missing (FA Nexus not active, say)

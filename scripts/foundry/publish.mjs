@@ -3,9 +3,9 @@
  * Before an existing scene is changed, all of it is saved as JSON to <output>/backups; updating keeps the scene's
  * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
  * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
- * title; a battle map's roof and tree tiles: overhead, kind; its walls, its roof regions and its ground and water
- * regions: built, kind), so a second
- * publish replaces only its own labels, title, overhead tiles, walls and regions and leaves the GM's own alone.
+ * title; a battle map's roof and tree tiles: overhead, kind; its furniture: furniture; its mist: atmosphere; its walls,
+ * roof, indoor, ground and water regions and lights: built, kind), so a second publish replaces only its own labels,
+ * title, tiles, walls, regions and lights and leaves the GM's own alone.
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
@@ -15,6 +15,7 @@ import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
 import { union, shapes } from "../core/lots/poly.mjs";
 import { FURNITURE } from "../core/layout/rooms.mjs";
 import { heightRegions, groundOf, WALKING } from "../core/height.mjs";
+import { LIGHTS, LIT_FROM } from "../core/layout/lights.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -26,7 +27,7 @@ const FONT = { min: 8, max: 256 };
  * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
  * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
  * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
- * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, walls, roofs, heights, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map; walls, roofs and heights: how many walls, roof regions and ground and water regions a battle map got).
+ * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, mist, walls, roofs, heights, lights, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map; furniture and mist: how many pieces and overlays; walls, roofs, heights and lights: how many walls, roof and indoor regions, ground and water regions and lights a battle map got).
  */
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
@@ -54,11 +55,20 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   check(); // the last chance to stop: from here the scene is written
   const thumb = await upload(`${folder}/thumbs`, `${id}.webp`, thumbBlob);
 
-  let weather = opts.weather ?? "";
+  // (a battle map left without weather snows in winter; "none" for none)
+  let weather = opts.weather ?? (layout?.kind === "battle" && (layout.season ?? plan.season) === "winter" ? "snow" : "");
+  if (weather === "none") weather = "";
   if (weather && !(weather in (CONFIG.weatherEffects ?? {}))) {
     warnings.push(`The weather "${weather}" isn't one this world offers, so the scene has none.`);
     weather = "";
   }
+  // (the time of day, when the plan gives one, in place of its darkness and global light; one taken off again puts
+  // back the plain tint and dim global light it replaced, kept as the scene's flag time)
+  const time = TIMES[opts.time] ?? null;
+  const hadTime = sceneId ? (sceneById(sceneId)?.getFlag(MOD, "time") ?? null) : null;
+  const environment = time
+    ? { darknessLevel: time.darkness, globalLight: { enabled: time.global, bright: time.bright }, base: time.base ?? BASE_TINT }
+    : { darknessLevel: opts.darkness, globalLight: { enabled: opts.globalLight, ...(hadTime ? { bright: false } : {}) }, ...(hadTime ? { base: BASE_TINT } : {}) };
   const data = {
     width, height,
     padding: opts.padding,
@@ -66,10 +76,10 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     grid: { type: CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, distance: plan.size.ftPerSquare, units: "ft", alpha: opts.gridAlpha },
     tokenVision: opts.tokenVision,
     fog: { mode: opts.fog ? CONST.FOG_EXPLORATION_MODES.INDIVIDUAL : CONST.FOG_EXPLORATION_MODES.DISABLED },
-    environment: { darknessLevel: opts.darkness, globalLight: { enabled: opts.globalLight } },
+    environment,
     weather,
     navigation: opts.navigation,
-    flags: { [MOD]: { plan: plan.id ?? null, image: image.path, version: game.modules.get(MOD)?.version ?? null, built: Date.now() } },
+    flags: { [MOD]: { plan: plan.id ?? null, image: image.path, version: game.modules.get(MOD)?.version ?? null, built: Date.now(), time: time ? opts.time : null } },
   };
 
   onProgress(0.5, sceneId ? "Updating the scene" : "Creating the scene");
@@ -153,12 +163,30 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (oldOver.length) warnings.push("The roofs and trees over the map were left as they were: they come only with a map rendered for the scene.");
   else if (layout?.kind === "battle") warnings.push("This battle map's roofs and trees weren't placed: they come only with a map rendered for the scene.");
 
+  // A battle map's mist, fog overlays over its low places (lying on the map, under the tokens): new ones in, the old out
+  const oldMist = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "atmosphere" in t.flags[MOD]).map((t) => t.id);
+  let mist = 0;
+  if (Array.isArray(image.mist)) {
+    let placed = false;
+    try {
+      const { sceneX, sceneY } = sceneById(sceneId).dimensions;
+      const tiles = image.mist.map((m) => mistTile(m, sceneX, sceneY, plan.id ?? null));
+      await createAll(sceneId, "Tile", tiles);
+      mist = tiles.length;
+      placed = true;
+      for (let k = 0; k < oldMist.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldMist.slice(k, k + BATCH));
+    } catch (e) {
+      warnings.push(placed ? `The last map's mist couldn't all be taken out (${e.message}); delete AtlasScribe's old mist from the Tiles controls.` : `The mist couldn't all be placed (${e.message}).`);
+    }
+  } else if (oldMist.length) warnings.push("The mist was left as it was: it comes only with a map rendered for the scene.");
+
   // A battle map's furniture, a tile for each piece (a bed made up, a table with its chairs and what's on it), for the
   // GM to move as they like: new ones in, then AtlasScribe's old ones out; a map given by its path keeps those it had,
   // and so does one whose furniture art wasn't found at all (the art folder moved, say)
   let furniture = 0;
   const oldFurn = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "furniture" in t.flags[MOD]).map((t) => t.id);
-  const pieces = (layout?.items ?? []).filter((i) => i.kind === "interior").flatMap((i) => i.furniture ?? []).filter((f) => FURNITURE[f.f] && !FURNITURE[f.f].drawn).length;
+  const pieces = (layout?.items ?? []).filter((i) => i.kind === "interior").flatMap((i) => i.furniture ?? []).filter((f) => FURNITURE[f.f] && !FURNITURE[f.f].drawn).length
+    + (layout?.items ?? []).filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f]).length;
   if (Array.isArray(image.furniture) && pieces && !image.furniture.length) warnings.push(`None of the furniture's art was found, so no furniture was placed${oldFurn.length ? " and the last map's was kept" : ""} (is FA Nexus active?).`);
   else if (Array.isArray(image.furniture)) {
     if (image.furniture.length < pieces) warnings.push(`${pieces - image.furniture.length} of the ${pieces} pieces of furniture had no art and were left out.`);
@@ -180,7 +208,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // yard's gate a door), over each building a roof Foundry shows to a token outside (a raised surface it partly
   // reveals), and its ground, banks, cliffs and water (height.mjs): new ones in, then AtlasScribe's old ones out (a
   // settlement map just takes the old ones out)
-  let walls = 0, roofs = 0, heights = 0;
+  let walls = 0, roofs = 0, heights = 0, lights = 0;
   if (layout) {
     const { sceneX, sceneY } = sceneById(sceneId).dimensions;
     const pps = plan.output.pxPerSquare;
@@ -189,26 +217,27 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     const isHeight = (k) => HEIGHT_KINDS.includes(k);
     for (const [type, make, what, kinds, count] of [
       ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null), "walls and doors", null, (n) => (walls = n)],
-      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces", (k) => !isHeight(k), (n) => (roofs = n)],
+      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k), (n) => (roofs = n)],
       ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null), "ground and water regions", isHeight, (n) => (heights = n)],
+      ["AmbientLight", () => battleLights(layout, sceneX, sceneY, pps, plan.id ?? null), "lights", null, (n) => (lights = n)],
     ]) {
       let placed = false;
       try {
         const data = battle ? make() : [];
-        const old = mine(type === "Wall" ? sceneById(sceneId).walls : sceneById(sceneId).regions, kinds);
+        const old = mine(type === "Wall" ? sceneById(sceneId).walls : type === "AmbientLight" ? sceneById(sceneId).lights : sceneById(sceneId).regions, kinds);
         await createAll(sceneId, type, data);
         count(data.length);
         placed = true;
         for (let k = 0; k < old.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, old.slice(k, k + BATCH));
       } catch (e) {
-        const where = type === "Wall" ? "Walls" : "Regions";
+        const where = type === "Wall" ? "Walls" : type === "AmbientLight" ? "Lighting" : "Regions";
         warnings.push(placed ? `The last map's ${what} couldn't all be taken out (${e.message}); delete AtlasScribe's old ones from the ${where} controls.` : `The ${what} couldn't all be placed (${e.message}).`);
       }
     }
-  } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs and ground regions were left as they were: the map couldn't be laid out again for them.");
+  } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, walls, roofs, heights, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, mist, walls, roofs, heights, lights, warnings };
 }
 
 /** How many documents go to Foundry in one request (a big battle map has thousands of walls). */
@@ -245,6 +274,8 @@ function overheadTile(o, sceneX, sceneY, plan) {
     elevation: o.elevation,
     // (a roof also clears where a token outside sees under it, through a door or window: Foundry's Vision mode)
     occlusion: { modes: o.kind === "roof" ? [M.FADE, M.VISION] : [M.RADIAL], alpha: OVERHEAD_ALPHA[o.kind] ?? 0.25 },
+    // (a fire or candle under it doesn't light it from below; under a roof, no weather when it fades)
+    restrictions: { light: true, weather: o.kind === "roof" },
     locked: true,
     flags: { [MOD]: { overhead: plan, kind: o.kind } },
   };
@@ -259,10 +290,57 @@ function furnitureTile(f, sceneX, sceneY, plan) {
     texture: { src: localPath(f.src) },
     x: Math.round(sceneX + f.x), y: Math.round(sceneY + f.y),
     width: Math.round(f.width), height: Math.round(f.height), rotation: Math.round((f.rotation ?? 0) * 100) / 100,
-    elevation: 0, sort: f.f === "rug" ? 0 : 1,
+    elevation: 0, sort: FURNITURE[f.f]?.floor ? 0 : FURNITURE[f.f]?.on ? 2 : 1,
     flags: { [MOD]: { furniture: plan, piece: f.f } },
   };
 }
+/**
+ * A mist overlay's tile: faint, turned at random, lying on the map at the ground's height, under the tokens; it hides
+ * nothing and doesn't fade (Map Dressing Guide, Atmosphere).
+ */
+function mistTile(m, sceneX, sceneY, plan) {
+  return {
+    texture: { src: localPath(m.src) },
+    x: Math.round(sceneX + m.x), y: Math.round(sceneY + m.y),
+    width: Math.round(m.width), height: Math.round(m.height), rotation: Math.round((m.rotation ?? 0) * 100) / 100,
+    elevation: 0, alpha: m.alpha ?? 0.2,
+    occlusion: { modes: [], alpha: 1 },
+    locked: true,
+    flags: { [MOD]: { atmosphere: plan } },
+  };
+}
+
+/**
+ * The times of day a plan can give (output.scene.time): the scene's darkness, whether its light outdoors is on and
+ * bright (a day's sun) or dim (dawn and dusk), and the tint of its light. A lantern, torch or lamp post is lit from
+ * LIT_FROM, so at dawn, dusk and night.
+ */
+export const TIMES = {
+  day: { darkness: 0, global: true, bright: true },
+  dawn: { darkness: 0.45, global: true, bright: false, base: { hue: 0.07, intensity: 0.35, luminosity: 0, saturation: 0.15, shadows: 0 } },
+  dusk: { darkness: 0.6, global: true, bright: false },
+  night: { darkness: 0.9, global: false, bright: false },
+};
+const BASE_TINT = { hue: 0, intensity: 0, luminosity: 0, saturation: 0, shadows: 0 };
+
+/**
+ * A battle layout's lights as AmbientLight data (layout/lights.mjs): each at its place and the ground's elevation
+ * there, stopped by walls, its numbers from LIGHTS (feet), a lantern's, torch's or lamp post's lit only from LIT_FROM.
+ */
+export function battleLights(layout, sceneX, sceneY, pps, plan) {
+  return layout.items.filter((i) => i.kind === "light" && LIGHTS[i.class]).map((l) => {
+    const L = LIGHTS[l.class];
+    return {
+      x: Math.round(sceneX + l.at[0] * pps), y: Math.round(sceneY + l.at[1] * pps),
+      elevation: Math.max(l.elevation ?? 0, 0),
+      walls: true, vision: false,
+      config: { bright: L.bright, dim: L.dim, color: L.color, alpha: L.alpha, attenuation: 0.6, luminosity: 0.5, animation: { ...L.animation, reverse: false }, darkness: { min: L.dark ? LIT_FROM : 0, max: 1 } },
+      locked: true,
+      flags: { [MOD]: { built: plan, kind: "light", light: l.class } },
+    };
+  });
+}
+
 /** An art file's address as Foundry's path to it (the worker was given full addresses). */
 function localPath(src) {
   try {
@@ -341,7 +419,8 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
 /**
  * A battle layout's roofs as Region data: over each building, a surface at its roof's height (roofHeight) that
  * Foundry reveals to a token outside, more of it the farther the token stands (Define Surface, Reveal Elevated
- * Surface), and that makes the roof tile over it fade for a token beneath. A courtyard is a hole in it.
+ * Surface), and that makes the roof tile over it fade for a token beneath; and under it the indoors, a little darker
+ * than outside (the roof tile keeps the weather out). A courtyard is a hole in both.
  */
 export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
   const groups = new Map();
@@ -368,11 +447,28 @@ export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
       locked: true,
       flags: { [MOD]: { built: plan, kind: "roof" } },
     });
+    // (and under it, indoors: a little darker than outside; the roof tile keeps the weather out once it fades, where a
+    // region suppressing the weather would stop it falling on the roof too)
+    out.push({
+      name: "Indoors",
+      color: "#6b5a3c",
+      shapes: pieces.flatMap((p) => [{ type: "polygon", points: pts(p.outer), hole: false }, ...p.holes.map((h) => ({ type: "polygon", points: pts(h), hole: true }))]),
+      elevation: { bottom: null, top: e },
+      visibility: CONST.REGION_VISIBILITY.LAYER,
+      behaviors: [
+        { type: "adjustDarknessLevel", name: "Indoors", system: { mode: globalThis.CONFIG?.RegionBehavior?.dataModels?.adjustDarknessLevel?.MODES?.DARKEN ?? 2, modifier: INDOOR_DARK } },
+      ],
+      locked: true,
+      flags: { [MOD]: { built: plan, kind: "indoor" } },
+    });
   }
   return out;
 }
 
-/** The kinds of AtlasScribe's ground and water regions (a roof's kind is "roof"). */
+/** How much darker it is indoors than out (an Adjust Darkness Level region's darken). */
+const INDOOR_DARK = 0.25;
+
+/** The kinds of AtlasScribe's ground and water regions (a roof's is "roof", the indoors' under it "indoor"). */
 const HEIGHT_KINDS = ["ground", "face", "shallow", "deep", "ice"];
 
 /** Each kind of height region's color in the Regions controls. */

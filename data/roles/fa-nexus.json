@@ -210,6 +210,15 @@
     "prop.branch": ["Branch_Wood_Ashen_A1_1x2.webp", "Branch_Wood_Ashen_A2_1x2.webp", "Branch_Wood_Ashen_A3_1x2.webp", "Branch_Wood_Ashen_A4_1x2.webp", "Branch_Wood_Ashen_A5_1x2.webp"],
     "prop.roots": ["Root_Ashen_Large_A13_3x3.webp", "Root_Ashen_Large_A14_3x3.webp", "Root_Ashen_Large_A15_3x3.webp", "Root_Ashen_Large_A16_2x3.webp"],
     "prop.leaves": ["Fallen_Leaves_Piles_Brown1_A2_2x2.webp", "Fallen_Leaves_Piles_Brown1_A3_3x3.webp"],
-    "edge.grass": ["Grass_Ribbon_Green_B1_Path.webp", "Grass_Medium_Path_01_A.webp"]
+    "edge.grass": ["Grass_Ribbon_Green_B1_Path.webp", "Grass_Medium_Path_01_A.webp"],
+    "furn.candles": ["Candles_Yellow_Arranged_A1_1x1.webp", "Candles_Yellow_Arranged_A2_1x1.webp", "Candles_Yellow_Arranged_A3_1x1.webp", "Candles_Yellow_Arranged_A4_1x1.webp", "Candles_Yellow_Arranged_A5_1x1.webp", "Candles_Yellow_Arranged_A6_1x1.webp"],
+    "furn.lamp.table": ["Lamp_Metal_Brass_A_1x1.webp", "Lamp_Metal_Brass_B_1x1.webp", "Lamp_Metal_Brass_C_1x1.webp", "Lamp_Metal_Brass_D_1x1.webp"],
+    "furn.lantern.wall": ["Wall_Lantern_Metal_Brass_A_1x1.webp", "Wall_Lantern_Metal_Brass_B_1x1.webp", "Wall_Lantern_Metal_Brass_C_1x1.webp", "Wall_Lantern_Metal_Gray_A_1x1.webp", "Wall_Lantern_Metal_Gray_B_1x1.webp"],
+    "furn.lamp.post": ["Lamp_Post_Wood_Dark_A_1x1.webp", "Lamp_Post_Wood_Dark_B_1x1.webp", "Lamp_Post_Wood_Dark_C_1x1.webp", "Lamp_Post_Wood_Ashen_A_1x1.webp", "Lamp_Post_Wood_Ashen_B_1x1.webp", "Lamp_Post_Wood_Ashen_C_1x1.webp"],
+    "furn.torch.stake": ["Torch_Stake_Wood_Dark_Lit_A1_1x1.webp", "Torch_Stake_Wood_Ashen_Lit_A1_1x1.webp", "Torch_Stake_Wood_Walnut_Lit_A1_1x1.webp", "Torch_Stake_Wood_Light_Lit_A1_1x1.webp"],
+    "furn.campfire": ["Campfire_Stone_Earthy_A1_Lit_1x1.webp", "Campfire_Stone_Slate_A1_Lit_1x1.webp", "Campfire_Stone_Sandstone_A1_Lit_1x1.webp"],
+    "furn.firepit": ["Firepit_Stone_Earthy_A1_Lit_1x1.webp", "Firepit_Stone_Earthy_A2_Lit_1x1.webp", "Firepit_Stone_Slate_A1_Lit_1x1.webp", "Firepit_Stone_Slate_A2_Lit_1x1.webp"],
+    "furn.brazier": ["Brazier_Metal_Black_B1_1x1.webp", "Brazier_Metal_Black_B2_1x1.webp", "Brazier_A_1x1.webp"],
+    "fog.light": ["Fog_Overlay_Light_A1_7x7.webp", "Fog_Overlay_Light_B1_7x7.webp", "Fog_Overlay_Light_C1_7x7.webp"]
   }
 }

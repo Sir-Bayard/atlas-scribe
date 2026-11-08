@@ -19,7 +19,7 @@ export function styleOf(layout) {
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt, overheads, furniture }:
+ * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt, overheads, furniture, mist }:
  * thumb is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colors),
  * brokenArt the roles any file failed for (painted with fewer variants, or plain), overheads the pieces a style paints
  * apart to lie over the map as tiles (a battle map's roofs and tree crowns): [{ name, kind, x, y, width, height (px,
@@ -126,9 +126,17 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     const at = artPlacement(piece, insetsOf(bmp));
     furniture.push({ src: url, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot });
   }
+  // Mist (a battle map's): each overlay a tile over the low place it lies in
+  const mist = [];
+  for (const m of style.mist?.(layout) ?? []) {
+    const list = loadedUrls[m.role];
+    if (!list?.length) continue;
+    const url = list[Math.abs(m.variant | 0) % list.length];
+    mist.push({ src: url, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
+  }
   for (const bmp of loaded.values()) bmp?.close();
   const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, furniture, ms: Math.round(performance.now() - t0) };
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, furniture, mist, ms: Math.round(performance.now() - t0) };
 }
 
 /**

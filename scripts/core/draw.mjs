@@ -64,6 +64,10 @@ export const TOOLS = [
   { id: "ship", label: "Ship", icon: "fa-ferry", geometry: "point", make: { type: "prop", class: "ship" } },
   { id: "rise", label: "Rise", icon: "fa-mountain-sun", geometry: "shape", how: "height", make: { type: "height", height: 10 } },
   { id: "hollow", label: "Hollow", icon: "fa-arrow-down-wide-short", geometry: "shape", how: "height", make: { type: "height", height: -10 } },
+  { id: "campfire", label: "Campfire", icon: "fa-fire", geometry: "point", make: { type: "prop", class: "campfire" } },
+  { id: "brazier", label: "Brazier", icon: "fa-fire-burner", geometry: "point", make: { type: "prop", class: "brazier" } },
+  { id: "torch", label: "Torch", icon: "fa-fire-flame-simple", geometry: "point", make: { type: "prop", class: "torch" } },
+  { id: "lamppost", label: "Lamp post", icon: "fa-lightbulb", geometry: "point", base: "lamp", make: { type: "prop", class: "lamp-post" } },
   { id: "crane", label: "Crane", icon: "fa-person-digging", geometry: "point", make: { type: "prop", class: "crane" } },
   { id: "label", label: "Label", icon: "fa-font", geometry: "point", make: { type: "label", text: "New label", show: "gm" } },
 ];

@@ -40,6 +40,7 @@ import { battleYards, battleBack } from "./battle.mjs";
 import { terrainOf, edgeSpan, shiftRight, resample } from "./terrain.mjs";
 import { battleWoods, rockfall } from "./wild.mjs";
 import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
+import { lightsOf, mistOf, LIGHT_PROPS } from "./lights.mjs";
 
 export const LAYOUT_VERSION = 9;
 
@@ -888,6 +889,13 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const r = streamFor(f.id);
       const w = layWall(f, { roads: roadsSq, waters: watersSq, sq, r: r.fork("wall") });
       for (const g of w.gates) { gatedBy.add(g.road); if (Array.isArray(g.at)) wallGatePts.push(g.at); }
+      // (each gate on a battle map, for its torches: along the wall there, and outward)
+      if (battle) w.gates.filter((x) => Array.isArray(x.at)).forEach((g, k) => {
+        const run = w.runs.flatMap((path) => path.slice(1).map((b, i) => [path[i], b])).reduce((best, sg) => { const d = distanceToPath(g.at, sg); return d < best.d ? { d, sg } : best; }, { d: Infinity, sg: null }).sg;
+        const seg = run ?? [f.path[0], f.path[1]], L = Math.hypot(seg[1][0] - seg[0][0], seg[1][1] - seg[0][1]) || 1, dir = [(seg[1][0] - seg[0][0]) / L, (seg[1][1] - seg[0][1]) / L];
+        const road = roadsSq.find((q) => q.id === g.road);
+        items.push({ kind: "gate", id: `${f.id}/gate-${g.road}-${k + 1}`, from: f.id, at: g.at, dir, out: [w.side * dir[1], -w.side * dir[0]], roadWidth: road?.width ?? 1, thickness: ft(f.thickness) });
+      });
       if (!w.runs.length && !w.notes.some((n) => /too short|all gates or water/.test(n.message))) notes.push({ level: "warning", id: f.id, message: `Nothing of "${f.id}" is built: all of it lies on roads or water.` });
       // Each run carries its outer face (where the battlements are) and its inner one
       w.runs.forEach((path, k) => items.push({ kind: "wall", id: w.runs.length === 1 ? f.id : `${f.id}/r${k + 1}`, from: f.id, class: f.class, path, height: ft(f.height), tall: tallOf(f.height ?? 25), thickness: ft(f.thickness), side: w.side, face: offsetPath(path, (w.side * ft(f.thickness)) / 2), back: offsetPath(path, (-w.side * ft(f.thickness)) / 2) }));
@@ -1590,6 +1598,15 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   items.unshift({ kind: "ground", id: "plan/ground", from: "plan", base: plan.ground, patches: groundPatches(rng(plan.seed, "ground"), W, H) },
     // (each district's outline, for a style that draws the built-up ground as one mass)
     ...dfeats.map((d) => ({ kind: "district", id: `${d.id}/outline`, from: d.id, profile: d.profile, character: characterOf(d), poly: dlist.find((x) => x.id === d.id).poly })));
+
+  // A battle map's lights (its fires, candles, lanterns, torches and lamp posts) and the mist in its low places; a
+  // plan's own fires and lamps become lights there, and on a settlement map aren't drawn
+  const lit = items.filter((i) => i.kind === "prop" && LIGHT_PROPS.includes(i.class));
+  if (battle) {
+    items.push(...lightsOf(items, plan.seed, { size: plan.size?.squares }));
+    items.push(...mistOf(items, plan.seed, { fog: plan.output?.scene?.weather === "fog" }));
+  } else if (lit.length) notes.push({ level: "info", id: lit[0].from ?? lit[0].id, message: `Campfires, braziers, torches and lamp posts are drawn on battle maps only; ${lit.length === 1 ? "this one is" : `these ${lit.length} are`} left off.` });
+  if (lit.length) for (let k = items.length - 1; k >= 0; k--) if (lit.includes(items[k])) items.splice(k, 1);
 
   const layout = {
     atlasScribe: LAYOUT_VERSION,

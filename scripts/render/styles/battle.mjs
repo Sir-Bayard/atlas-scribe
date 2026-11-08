@@ -122,7 +122,20 @@ const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class 
 export function furniture(layout) {
   const out = [];
   for (const it of layout.items.filter((i) => i.kind === "interior")) for (const p of it.furniture ?? []) if (FURNITURE[p.f] && !FURNITURE[p.f].drawn) out.push({ role: `furn.${p.f}`, variant: p.variant ?? 0, piece: p });
-  return out.sort((a, b) => (FURNITURE[b.piece.f].floor ? 1 : 0) - (FURNITURE[a.piece.f].floor ? 1 : 0));
+  // (and each light's own piece: candles, a lamp, a lantern, a torch, a lamp post, a fire)
+  for (const l of layout.items.filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f])) out.push({ role: `furn.${l.prop.f}`, variant: l.prop.variant ?? 0, piece: l.prop });
+  // (a rug first, under the rest; what stands on a table last, over it)
+  const order = (f) => (FURNITURE[f].floor ? 0 : FURNITURE[f].on ? 2 : 1);
+  return out.sort((a, b) => order(a.piece.f) - order(b.piece.f));
+}
+
+/**
+ * The mist over a battle map (its layout's mist items, layout/lights.mjs), each a fog overlay tile lying on the map
+ * over the low place, under the tokens: [{ role, variant, x, y, size, rot, alpha }] (x, y its middle, size across, in
+ * squares).
+ */
+export function mist(layout) {
+  return layout.items.filter((i) => i.kind === "mist").map((m) => ({ role: "fog.light", variant: m.variant ?? 0, x: m.at[0], y: m.at[1], size: m.size, rot: m.rot ?? 0, alpha: m.alpha }));
 }
 
 export function rolesFor(layout) {
@@ -149,6 +162,8 @@ export function rolesFor(layout) {
       for (const r of i.rooms) roles.add(ROOM_FLOOR[r.floor] ?? "floor.wood");
       for (const f of i.furniture) if (!FURNITURE[f.f]?.drawn) roles.add(`furn.${f.f}`);
     }
+    if (i.kind === "light" && i.prop && FURNITURE[i.prop.f]) roles.add(`furn.${i.prop.f}`);
+    if (i.kind === "mist") roles.add("fog.light");
     if (i.kind === "boundary" && i.class === "fence") roles.add("fence.wood");
     if (i.kind === "wall" && i.class === "stone") roles.add("fence.stone");
     if (i.kind === "wall" && i.class === "palisade") roles.add("wood.stake");
@@ -807,6 +822,16 @@ export function paint(ctx) {
       k.restore();
     }
   }, "rgb(16,24,40)", { blur: 0.15, alpha: 0.35, box: boxAround(trees.map((t) => { const r = crownOf(t, s) / 2 + crownOf(t, s) * 0.26; return [t.x - r, t.y - r, t.x + r, t.y + r]; })) });
+
+  // 12. The edge grade (the Map Dressing Guide's rule 15): the map darkened across its outer squares, unevenly, so the
+  // frame sits back and the play area is the lightest part of it
+  const [MW, MH] = L.size?.squares ?? [0, 0], GRADE = 2.5;
+  if (MW > 4 * GRADE && MH > 4 * GRADE) {
+    const frame = (k) => { k.beginPath(); k.rect(X(-3), Y(-3), (MW + 6) * pp, (MH + 6) * pp); k.rect(X(GRADE), Y(GRADE), (MW - 2 * GRADE) * pp, (MH - 2 * GRADE) * pp); k.fill("evenodd"); };
+    // (painted once over the whole tile when it reaches any edge, so the corners aren't darkened twice)
+    const near = [[-3, -3, MW + 3, GRADE + 1.5], [-3, MH - GRADE - 1.5, MW + 3, MH + 3], [-3, -3, GRADE + 1.5, MH + 3], [MW - GRADE - 1.5, -3, MW + 3, MH + 3]].some((box) => meets(box, 1));
+    if (near) soft(frame, "rgb(12,18,28)", { blur: 1.1, alpha: 0.24, noise: noiseMask("battle-grade", 3, -0.2, 0.9) });
+  }
   progress(1, "Ground");
 }
 
