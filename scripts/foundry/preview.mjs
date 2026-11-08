@@ -284,8 +284,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     return plan.features.filter(rerollable).map((f) => {
       let poly = [];
       // Areas are turned by their rot, as the layout turns them; districts aren't turned
-      try { poly = shapeToPolygon(f.shape, f.type === "area" ? f.rot ?? 0 : 0) ?? []; } catch { poly = []; }
-      const kind = f.type === "district" ? (f.profile ?? "village") : (f.class ?? "area");
+      try { poly = shapeToPolygon(f.shape, f.type === "area" || f.type === "height" ? f.rot ?? 0 : 0) ?? []; } catch { poly = []; }
+      const kind = f.type === "district" ? (f.profile ?? "village") : f.type === "height" ? (Number(f.height) < 0 ? "hollow" : "rise") : (f.class ?? "area");
       return { id: f.id, type: f.type, kind, name: f.name ?? null, poly, locked: locked.has(f.id) };
     });
   }

@@ -80,6 +80,23 @@ export const TYPES = {
       shore: { ...oneOf(SHORES, null), only: BODIES, fallback: "picked from its seed" },
       frozen: { kind: "boolean", default: false, byClass: { pond: null, lake: null } }, // a pond or lake left unset freezes in winter
       straight: bool(false), // drawn straight between its points (a canal, a stone basin); else it curves smoothly through them
+      // On a battle map: how far below its banks its bed lies, how its banks come down, and their rock
+      depth: num(null, { unit: "ft", min: 0, max: 60, byClass: { stream: 5, river: 10, canal: 5 }, only: RUNNING }),
+      banks: { ...oneOf(["bank", "cliff", "slope"], "bank"), only: RUNNING },
+      rock: { ...oneOf(["earthy", "slate", "mossy"], null), only: RUNNING, fallback: "picked from its seed" },
+    },
+  },
+  height: {
+    // On a battle map: ground standing higher or lower than around it (a rise, a ledge, a hollow), its height in feet
+    // (below the ground around for a hollow), its edge a cliff, a steep bank or a walkable slope
+    geometry: "shape",
+    fields: {
+      name: str(),
+      height: num(10, { unit: "ft", min: -60, max: 60 }),
+      edge: { ...oneOf(["cliff", "bank", "slope"], null), fallback: "a bank for 5 ft or less, else a cliff" },
+      rock: { ...oneOf(["earthy", "slate", "mossy"], null), fallback: "picked from its seed" },
+      rot: num(0, { unit: "deg" }),
+      straight: bool(false), // its corners kept sharp (a quarry's cut, a built terrace); else rounded as ground lies
     },
   },
   dock: {
@@ -198,7 +215,7 @@ export const TYPES = {
   },
   prop: {
     geometry: "point",
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane"],
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"],
     fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }) },
   },
   label: {

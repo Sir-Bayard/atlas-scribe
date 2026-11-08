@@ -62,6 +62,8 @@ export const TOOLS = [
   { id: "cross", label: "Market cross", icon: "fa-monument", geometry: "point", make: { type: "prop", class: "cross", size: 12 } },
   { id: "boat", label: "Boat", icon: "fa-sailboat", geometry: "point", make: { type: "prop", class: "boat" } },
   { id: "ship", label: "Ship", icon: "fa-ferry", geometry: "point", make: { type: "prop", class: "ship" } },
+  { id: "rise", label: "Rise", icon: "fa-mountain-sun", geometry: "shape", how: "height", make: { type: "height", height: 10 } },
+  { id: "hollow", label: "Hollow", icon: "fa-arrow-down-wide-short", geometry: "shape", how: "height", make: { type: "height", height: -10 } },
   { id: "crane", label: "Crane", icon: "fa-person-digging", geometry: "point", make: { type: "prop", class: "crane" } },
   { id: "label", label: "Label", icon: "fa-font", geometry: "point", make: { type: "label", text: "New label", show: "gm" } },
 ];
@@ -350,7 +352,7 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
     f.shape = shape;
   }
   next.features.push(f);
-  const problem = (SHAPED.has(f.type) || f.type === "water") && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
+  const problem = (SHAPED.has(f.type) || f.type === "water" || f.type === "height") && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
   if (problem) return { error: problem };
   if (SHAPED.has(f.type) && f.type !== "square") shareSides(next, id);
   const crossings = addCrossings(next, f);

@@ -14,6 +14,7 @@ import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
 import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY } from "./core/quick.mjs";
+import { registerHeight } from "./foundry/height.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
@@ -307,7 +308,7 @@ const api = {
    * <output>/backups first, its name is kept, and the labels AtlasScribe added to it before (from whatever plan)
    * are replaced; a dressed map's name goes in as a hidden tile the GM can show, and a battle map's roofs and tree crowns
    * (render's overheads) as tiles over it, with its walls, doors, windows and roof regions. Returns { sceneId, created,
-   * backup, thumb, labels, title, overheads, walls, roofs, warnings }.
+   * backup, thumb, labels, title, overheads, walls, roofs, heights, warnings }.
    */
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();
@@ -409,6 +410,7 @@ Hooks.once("init", () => {
     choices: { 1: "True size", 1.5: "1.5 times true size", 2: "2 times true size" },
     default: 2,
   });
+  registerHeight();
 });
 
 // An AtlasScribe button at the top of the Scenes tab, for the GM

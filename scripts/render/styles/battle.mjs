@@ -16,7 +16,9 @@ import { PROP_SQUARES } from "../../core/plan.mjs";
 import { makeNoise } from "../../core/noise.mjs";
 import { footprint, roofHeight } from "../../core/layout/battle.mjs";
 import { FURNITURE } from "../../core/layout/rooms.mjs";
+import { tiersOf, edgeSpan, shiftRight, resample, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
+import { groundOf, levelAt } from "../../core/height.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
@@ -59,6 +61,13 @@ function bandOf(im) {
   BANDS.set(im, band);
   return band;
 }
+
+/** A bank's art by its rock (a mossy bank is grassy). */
+const BANK = { earthy: "edge.bank.earthy", slate: "edge.bank.slate", mossy: "edge.bank.mossy" };
+/** The wild props laid flat on the ground (drawn first, no shadow), and those standing up (shadowed). */
+const FLAT_PROPS = new Set(["fern", "leaves", "roots", "branch"]);
+/** The classes drawn as wild props (at their art's size) wherever they come from. */
+const WILD_CLASSES = new Set(["fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"]);
 
 /** A hedge's bushes: bare in winter, in leaf otherwise (as the textured style's). */
 const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
@@ -135,6 +144,14 @@ export function rolesFor(layout) {
     if (i.kind === "boundary" && i.class === "fence") roles.add("fence.wood");
     if (i.kind === "wall" && i.class === "stone") roles.add("fence.stone");
     if (i.kind === "wall" && i.class === "palisade") roles.add("wood.stake");
+    if (i.kind === "level" && i.bed) roles.add(`surface.bed.${s}`);
+    if (i.kind === "edge") {
+      roles.add("shadow.half");
+      if (i.style === "slope" && s !== "winter") roles.add("edge.grass");
+      if (i.style === "cliff") { roles.add(`edge.face.${i.rock}`); roles.add(`edge.top.${i.rock}`); roles.add(`edge.foot.${i.rock}`); }
+      if (i.style === "bank") roles.add(BANK[i.rock] ?? "edge.bank.earthy");
+    }
+    if (i.kind === "tree" && i.wild && s !== "winter") roles.add(`ground.forest.${s}`);
     if (i.kind === "prop" && i.class === "fountain") roles.add(s === "winter" ? "water.ice" : "water.pond");
     if (i.kind === "prop" && i.class !== "grave" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
   }
@@ -282,6 +299,21 @@ export function paint(ctx) {
     soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), { blur: 0.5, alpha: q.alpha ?? 0.7, noise: noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
   }
 
+  // 1c. Height: the lower a level lies the darker its ground (light comes down into a cut less), a stream's bed of
+  // stones and gravel under its water; then under the woods a forest floor in soft patches
+  const levels = items("level").filter((Lv) => Lv.rings.some((r) => r.length >= 3 && meets(bboxOf(r), 2)));
+  for (const Lv of levels.filter((x) => x.bed)) {
+    const box = boxAround(Lv.rings.map(bboxOf), 0.2);
+    soft((k) => { for (const r of Lv.rings) poly(k, r); k.fill("evenodd"); }, tex(`surface.bed.${s}`), { blur: 0.2, box });
+  }
+  for (const Lv of levels.filter((x) => x.elevation < 0)) {
+    const box = boxAround(Lv.rings.map(bboxOf), 0.4);
+    soft((k) => { for (const r of Lv.rings) poly(k, r); k.fill("evenodd"); }, "rgb(14,20,34)", { blur: 0.35, alpha: Math.min(0.45, (-Lv.elevation / 10) * 0.3), box });
+  }
+  // (a wood's own trees, not a park's or a hedgerow's; none in winter, when the snow lies over it)
+  const woods = s === "winter" ? [] : L.items.filter((i) => i.kind === "tree" && i.wild && meets([i.x, i.y, i.x, i.y], 4));
+  if (woods.length && art(`ground.forest.${s}`)) soft((k) => { for (const t of woods) { k.beginPath(); k.arc(X(t.x), Y(t.y), 3.2 * pp, 0, 2 * Math.PI); k.fill(); } }, tex(`ground.forest.${s}`), { blur: 0.9, alpha: 0.4, noise: noiseMask("battle-forest", 4, -0.15, 0.3), box: boxAround(woods.map((t) => [t.x, t.y, t.x, t.y]), 3.5) });
+
   // 2. Ground worn by feet around the buildings
   const trodden = tex(`surface.trodden.${s}`);
   const near = feet.filter(({ bb }) => meets(bb, 4));
@@ -301,11 +333,92 @@ export function paint(ctx) {
     } else if (Array.isArray(w.path) && w.path.length >= 2) {
       const width = w.width ?? 1, bb = bboxOf(w.path), r = width / 2 + 1.3, box = [bb[0] - r, bb[1] - r, bb[2] + r, bb[3] + r];
       if (!meets(box, 3)) continue;
-      soft((k) => stroke(k, w.path, width + 2.4), trodden, { blur: 0.5, alpha: 0.7, box });
-      soft((k) => stroke(k, w.path, width + 1), tex(`stone.rough.${s}`), { blur: 0.25, box });
+      // (in a bed below its banks the bed is its edge: no trodden bank up here)
+      const inBed = levels.some((Lv) => Lv.bed && Lv.water === w.id);
+      if (!inBed) soft((k) => stroke(k, w.path, width + 2.4), trodden, { blur: 0.5, alpha: 0.7, box });
+      soft((k) => stroke(k, w.path, width + (inBed ? 0.5 : 1)), tex(`stone.rough.${s}`), { blur: 0.25, alpha: inBed ? 0.6 : 1, box });
       soft((k) => stroke(k, w.path, width), tex(role), { blur: 0.06, box });
       if (!w.frozen) soft((k) => stroke(k, w.path, width * 0.5), "rgb(8,40,52)", { blur: 1, alpha: 0.3, box });
     }
+  }
+
+  // 3b. Edges where the ground drops, as FA builds them (the Map Dressing Guide's tiers): a cliff in a tier of rock
+  // face for every five feet, each a little lower than the one above it and drawn beneath it, the rubble at its foot,
+  // a shadow tucked under each tier, darker going down, and a lip along the top; a bank in tiers of bank art; a
+  // walkable slope as shade on the side turned from the sun. Each tier wanders a little on its own
+  progress(0.2, "Banks and cliffs");
+  const edges = items("edge").filter((e) => meets(bboxOf(e.path), edgeSpan(e) + 1));
+  const wob = makeNoise(L.seed ?? 1, "battle-edge", { scale: 3, octaves: 2 });
+  const tierPath = (e, d, k) => {
+    const pts = resample(e.path, 0.5);
+    return pts.map((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], Ln = Math.hypot(dx, dy) || 1;
+      const dd = d + wob(p[0] + k * 17.3, p[1] - k * 9.1) * 0.14 * Math.min(2, k);
+      return [p[0] - (dy / Ln) * dd, p[1] + (dx / Ln) * dd];
+    });
+  };
+  const shadowArt = art("shadow.half");
+  for (const e of edges.filter((x) => x.style === "slope")) {
+    const span = edgeSpan(e), pts = resample(e.path, 0.5), far = shiftRight(pts, span);
+    const bb = boxAround([bboxOf(pts), bboxOf(far)], 0.5);
+    // (each stretch shaded by how far its downhill side turns from the sun, low in the southeast)
+    soft((k) => {
+      for (let i = 1; i < pts.length; i++) {
+        const dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], Ln = Math.hypot(dx, dy) || 1;
+        const down = [-dy / Ln, dx / Ln], away = (down[0] * SHADOW[0] + down[1] * SHADOW[1]) / Math.hypot(...SHADOW);
+        if (away <= 0.05) continue;
+        k.globalAlpha = Math.min(1, away);
+        poly(k, [pts[i - 1], pts[i], far[i], far[i - 1]]); k.fill();
+      }
+      k.globalAlpha = 1;
+    }, "rgb(14,20,34)", { blur: 0.6, alpha: Math.min(0.75, 0.42 * tiersOf(e.drop)), box: bb });
+    // (and the side turned to the sun a little lighter, the top of the slope edged with longer grass)
+    soft((k) => {
+      for (let i = 1; i < pts.length; i++) {
+        const dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], Ln = Math.hypot(dx, dy) || 1;
+        const down = [-dy / Ln, dx / Ln], toward = -(down[0] * SHADOW[0] + down[1] * SHADOW[1]) / Math.hypot(...SHADOW);
+        if (toward <= 0.05) continue;
+        k.globalAlpha = Math.min(1, toward);
+        poly(k, [pts[i - 1], pts[i], far[i], far[i - 1]]); k.fill();
+      }
+      k.globalAlpha = 1;
+    }, "rgb(255,248,210)", { blur: 0.6, alpha: 0.4, op: "soft-light", box: bb });
+    // (the brow: longer grass a little down from the top)
+    const grass = art("edge.grass", 0);
+    if (grass) { g.save(); g.globalAlpha = 0.55; stripPath(grass, tierPath(e, 0.35, 1)); g.restore(); }
+  }
+  for (const e of edges.filter((x) => x.style !== "slope")) {
+    // (the drop's own shadow on the low ground past its foot, where it faces away from the sun: longer the higher)
+    const pts = resample(e.path, 0.5), foot = shiftRight(pts, edgeSpan(e)), far = shiftRight(pts, edgeSpan(e) + Math.min(3, (e.drop / 5) * 0.7));
+    soft((k) => {
+      for (let i = 1; i < pts.length; i++) {
+        const dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], Ln = Math.hypot(dx, dy) || 1;
+        const down = [-dy / Ln, dx / Ln], away = (down[0] * SHADOW[0] + down[1] * SHADOW[1]) / Math.hypot(...SHADOW);
+        if (away <= 0) continue;
+        k.globalAlpha = Math.min(1, away * 1.2);
+        poly(k, [foot[i - 1], foot[i], far[i], far[i - 1]]); k.fill();
+      }
+      k.globalAlpha = 1;
+    }, "rgb(14,20,34)", { blur: 0.45, alpha: 0.32, box: boxAround([bboxOf(pts), bboxOf(far)], 0.6) });
+  }
+  for (const e of edges.filter((x) => x.style !== "slope")) {
+    const n = tiersOf(e.drop), cliff = e.style === "cliff";
+    const face = cliff ? art(`edge.face.${e.rock}`, 0) : art(BANK[e.rock] ?? "edge.bank.earthy", 0);
+    const face2 = cliff ? art(`edge.face.${e.rock}`, 1) ?? face : face;
+    // (the rubble at the foot, under everything)
+    const footArt = cliff ? art(`edge.foot.${e.rock}`, 0) : null;
+    if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
+    for (let k = n; k >= 1; k--) {
+      const d = (cliff ? 0.25 : 0.15) + (k - 1) * TERRAIN.step;
+      // (the shadow under this tier, tucked in below its middle line: the tier's art covers it where solid)
+      if (shadowArt) { g.save(); g.globalAlpha = Math.min(1, 0.45 + 0.25 * (k / n)); stripPath(shadowArt, tierPath(e, d + 0.32, k)); g.restore(); }
+      else soft((kk) => stroke(kk, tierPath(e, d + 0.35, k), 0.4, "butt"), "rgb(14,20,34)", { blur: 0.15, alpha: 0.35, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+      const im = k % 2 ? face : face2;
+      if (im) stripPath(im, tierPath(e, d, k), k * 0.37);
+      else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
+    }
+    const lip = cliff ? art(`edge.top.${e.rock}`, 0) : null;
+    if (lip) stripPath(lip, tierPath(e, -0.05, 0), 0.21);
   }
 
   // 4. Ways: a trodden verge; an unpaved way's dirt; a paved one's curb (with its shadow on the grass and the joint
@@ -359,8 +472,14 @@ export function paint(ctx) {
     const bb = bboxOf(pts);
     if (!meets(bb, 2)) continue;
     soft((k) => { poly(k, pts.map(([x, y]) => [x + SHADOW[0] * 0.85, y + SHADOW[1] * 0.85])); k.fill(); }, "rgb(0,0,0)", { blur: 0.4, alpha: 0.35, box: [bb[0] - 1, bb[1] - 1, bb[2], bb[3]] });
-    fill((k) => { poly(k, pts); k.fill(); }, tex("surface.flagstone", 1, c.angle ?? 0));
-    fill((k) => { poly(k, pts); k.lineWidth = 0.5 * pp; k.stroke(); }, tex("stone.curb"));
+    // (a road bridge in flagstones edged in stone; a footbridge a deck of planks laid across it, its edges dark)
+    if (c.class === "footbridge") {
+      fill((k) => { poly(k, pts); k.fill(); }, tex("floor.wood", 1, (c.angle ?? 0) + 90));
+      fill((k) => { poly(k, pts); k.lineWidth = 0.12 * pp; k.stroke(); }, "rgb(40,28,20)", 0.8);
+    } else {
+      fill((k) => { poly(k, pts); k.fill(); }, tex("surface.flagstone", 1, c.angle ?? 0));
+      fill((k) => { poly(k, pts); k.lineWidth = 0.5 * pp; k.stroke(); }, tex("stone.curb"));
+    }
   }
 
   // 7. Yards: trodden ground inside each fenced yard; fences (rails on posts) and walls, with their shadows
@@ -488,7 +607,22 @@ export function paint(ctx) {
   // 10. Props on the ground (wells, carts, crates, a hedge's bushes), and tree shadows (each tree's own art, dark, to
   // the northwest)
   progress(0.75, "Props and trees");
-  for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain")) {
+  // (wild props at their art's own size: the flat ones first, under the logs, stumps and rocks)
+  // (a plan's own fern, log or rock too, so it's drawn as the woods' are)
+  const isWild = (p) => p.wild || WILD_CLASSES.has(p.class);
+  const wild = items("prop").filter(isWild).sort((a, b) => (FLAT_PROPS.has(b.class) ? 1 : 0) - (FLAT_PROPS.has(a.class) ? 1 : 0));
+  for (const p of wild) {
+    if (p.class === "bush") continue;
+    const im = art(`prop.${p.class}`, p.variant);
+    if (!im) continue;
+    const w = (im.width / ART_PX) * (p.scale ?? 1), h = (im.height / ART_PX) * (p.scale ?? 1);
+    if (!meets([p.x, p.y, p.x, p.y], Math.max(w, h) / 2 + 0.5)) continue;
+    g.save(); g.translate(X(p.x), Y(p.y)); g.rotate(((p.rot ?? 0) * Math.PI) / 180);
+    if (!FLAT_PROPS.has(p.class)) { g.shadowColor = "rgba(16,24,40,0.5)"; g.shadowBlur = pp * 0.12; g.shadowOffsetX = SHADOW[0] * pp * (p.class === "boulder" ? 0.3 : 0.15); g.shadowOffsetY = SHADOW[1] * pp * (p.class === "boulder" ? 0.3 : 0.15); }
+    g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
+    g.restore();
+  }
+  for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain" && !(isWild(p) && p.class !== "bush"))) {
     const bush = p.class === "bush";
     const size = bush ? p.scale ?? 0.5 : (PROP_SQUARES[p.class] ?? 0.45) * (p.scale ?? 1);
     const im = art(bush ? bushRole(s) : `prop.${p.class}`, p.variant);
@@ -532,9 +666,10 @@ export function overheads(layout) {
   for (const parts of groups.values()) {
     const pts = parts.flatMap((b) => footprint(b));
     const box = clip([Math.min(...pts.map((p) => p[0])) - 0.5, Math.min(...pts.map((p) => p[1])) - 0.5, Math.max(...pts.map((p) => p[0])) + 0.5, Math.max(...pts.map((p) => p[1])) + 0.5]);
-    if (ok(box)) out.push({ name: `roof-${String(++n).padStart(3, "0")}`, kind: "roof", box, ids: parts.map((b) => b.id), elevation: roofHeight(parts) });
+    // (a roof at its height above the ground its building stands on)
+    if (ok(box)) out.push({ name: `roof-${String(++n).padStart(3, "0")}`, kind: "roof", box, ids: parts.map((b) => b.id), elevation: roofHeight(parts) + groundOf(layout, parts) });
   }
-  const cells = new Map();
+  const cells = new Map(), levelItems = layout.items.filter((i) => i.kind === "level");
   for (const t of layout.items.filter((i) => i.kind === "tree")) {
     const k = `${Math.floor(t.x / CANOPY_CELL)},${Math.floor(t.y / CANOPY_CELL)}`;
     if (!cells.has(k)) cells.set(k, []);
@@ -545,7 +680,9 @@ export function overheads(layout) {
     const ts = cells.get(k);
     const r = (t) => crownOf(t, s) / 2;
     const box = clip([Math.min(...ts.map((t) => t.x - r(t))), Math.min(...ts.map((t) => t.y - r(t))), Math.max(...ts.map((t) => t.x + r(t))), Math.max(...ts.map((t) => t.y + r(t)))]);
-    if (ok(box)) out.push({ name: `canopy-${String(++n).padStart(3, "0")}`, kind: "canopy", box, ids: ts.map((t) => t.id), elevation: OVERHEAD_ELEVATION.canopy });
+    // (crowns above the highest ground their trees stand on)
+    const up = Math.max(0, ...ts.map((t) => levelAt(levelItems, [t.x, t.y])));
+    if (ok(box)) out.push({ name: `canopy-${String(++n).padStart(3, "0")}`, kind: "canopy", box, ids: ts.map((t) => t.id), elevation: OVERHEAD_ELEVATION.canopy + up });
   }
   return out;
 }

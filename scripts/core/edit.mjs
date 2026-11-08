@@ -41,6 +41,9 @@ export const FIELD_TEXT = {
   "water.shore": { label: "Shore", names: { sand: "sand", pebbles: "pebbles", rocks: "rocks", grass: "grass", marsh: "marsh", reeds: "reeds" }, auto: "picked from its seed" },
   "water.frozen": { label: "Frozen" },
   "water.straight": { label: "Straight", help: "Straight lines between its points (a canal) instead of a smooth curve" },
+  "water.depth": { label: "Depth", help: "On a battle map: how far below the ground its bed lies, in feet (0 for none). Its middle is deep water to swim on a river or canal; a stream is shallow all across" },
+  "water.banks": { label: "Banks", names: { bank: "steep banks", cliff: "cliffs", slope: "walkable slopes" }, help: "On a battle map: how its banks come down to the water. A cliff stops walkers (they climb, leap or fly); a bank or slope slows them. A bank deeper than 10 ft (where a stream cuts through higher ground) is a cliff" },
+  "water.rock": { label: "Bank rock", names: { earthy: "earthy brown stone", slate: "gray slate", mossy: "mossy stone" }, auto: "picked from its seed", more: true },
 
   "dock.width": { label: "Width", help: "How wide it is, in feet" },
   "dock.material": { label: "Built of", names: { stone: "stone", wood: "timber" } },
@@ -102,6 +105,12 @@ export const FIELD_TEXT = {
   "area.fieldSize": { label: "Field size", help: "About how big a field (or a furlong of strips) is, in feet", auto: "by system" },
   "area.border": { label: "Border", help: "What bounds its fields, or a cemetery: a hedge, a drystone wall or nothing", auto: "by seed" },
   "area.coverage": { label: "Cultivated", help: "The share of its fields that are farmed; the rest is grass (0 to 1)", auto: "0.65" },
+
+  "height.height": { label: "Height", help: "In feet: how far its ground stands above the ground around it (below zero, a hollow). A token's elevation follows it on the scene" },
+  "height.edge": { label: "Edge", names: { cliff: "a cliff", bank: "a steep bank", slope: "a walkable slope" }, help: "How its edge comes down. A cliff stops walkers (they climb, leap or fly); a bank or slope slows them", auto: "a bank for 5 ft or less, else a cliff" },
+  "height.rock": { label: "Rock", names: { earthy: "earthy brown stone", slate: "gray slate", mossy: "mossy stone" }, auto: "picked from its seed" },
+  "height.rot": { label: "Turned", help: "Degrees clockwise; a turned rise can't be reshaped by its corners yet", more: true },
+  "height.straight": { label: "Sharp corners", help: "Its corners kept sharp (a quarry's cut, a built terrace); else rounded as ground lies", more: true },
 
   "wall.height": { label: "Height", help: "In feet" },
   "wall.straight": { label: "Straight", help: "Straight lines between its points (a town wall's runs) instead of a smooth curve" },

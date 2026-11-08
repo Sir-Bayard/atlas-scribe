@@ -3,7 +3,8 @@
  * Before an existing scene is changed, all of it is saved as JSON to <output>/backups; updating keeps the scene's
  * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
  * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
- * title; a battle map's roof and tree tiles: overhead, kind; its walls and roof regions: built, kind), so a second
+ * title; a battle map's roof and tree tiles: overhead, kind; its walls, its roof regions and its ground and water
+ * regions: built, kind), so a second
  * publish replaces only its own labels, title, overhead tiles, walls and regions and leaves the GM's own alone.
  */
 import { upload, freeName } from "./files.mjs";
@@ -13,6 +14,7 @@ import { titleBox, paintTitle } from "../render/styles/illustrated.mjs";
 import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
 import { union, shapes } from "../core/lots/poly.mjs";
 import { FURNITURE } from "../core/layout/rooms.mjs";
+import { heightRegions, groundOf, WALKING } from "../core/height.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -24,7 +26,7 @@ const FONT = { min: 8, max: 256 };
  * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
  * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
  * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
- * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, walls, roofs, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map; walls and roofs: how many walls and roof regions a battle map got).
+ * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, walls, roofs, heights, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map; walls, roofs and heights: how many walls, roof regions and ground and water regions a battle map got).
  */
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
@@ -175,23 +177,27 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (oldFurn.length) warnings.push("The furniture was left as it was: it comes only with a map rendered for the scene.");
 
   // A battle map's walls, doors and windows (from its buildings' shells), its fences and low walls (movement only, a
-  // yard's gate a door), and over each building a roof Foundry shows to a token outside (a raised surface it partly
-  // reveals): new ones in, then AtlasScribe's old ones out (a settlement map just takes the old ones out)
-  let walls = 0, roofs = 0;
+  // yard's gate a door), over each building a roof Foundry shows to a token outside (a raised surface it partly
+  // reveals), and its ground, banks, cliffs and water (height.mjs): new ones in, then AtlasScribe's old ones out (a
+  // settlement map just takes the old ones out)
+  let walls = 0, roofs = 0, heights = 0;
   if (layout) {
     const { sceneX, sceneY } = sceneById(sceneId).dimensions;
     const pps = plan.output.pxPerSquare;
-    const mine = (docs) => docs.filter((d) => isObj(d.flags?.[MOD]) && "built" in d.flags[MOD]).map((d) => d.id);
-    for (const [type, make, what] of [
-      ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null), "walls and doors"],
-      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces"],
+    // (each set replaces only its own: the roofs their old roofs, the ground its old ground and water regions)
+    const mine = (docs, kinds) => docs.filter((d) => isObj(d.flags?.[MOD]) && "built" in d.flags[MOD] && (!kinds || kinds(d.flags[MOD].kind))).map((d) => d.id);
+    const isHeight = (k) => HEIGHT_KINDS.includes(k);
+    for (const [type, make, what, kinds, count] of [
+      ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null), "walls and doors", null, (n) => (walls = n)],
+      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces", (k) => !isHeight(k), (n) => (roofs = n)],
+      ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null), "ground and water regions", isHeight, (n) => (heights = n)],
     ]) {
       let placed = false;
       try {
         const data = battle ? make() : [];
-        const old = mine(type === "Wall" ? sceneById(sceneId).walls : sceneById(sceneId).regions);
+        const old = mine(type === "Wall" ? sceneById(sceneId).walls : sceneById(sceneId).regions, kinds);
         await createAll(sceneId, type, data);
-        if (type === "Wall") walls = data.length; else roofs = data.length;
+        count(data.length);
         placed = true;
         for (let k = 0; k < old.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, old.slice(k, k + BATCH));
       } catch (e) {
@@ -199,10 +205,10 @@ export async function publish({ plan, image, width, height, folder, layout = nul
         warnings.push(placed ? `The last map's ${what} couldn't all be taken out (${e.message}); delete AtlasScribe's old ones from the ${where} controls.` : `The ${what} couldn't all be placed (${e.message}).`);
       }
     }
-  } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors and roofs were left as they were: the map couldn't be laid out again for them.");
+  } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs and ground regions were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, walls, roofs, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, walls, roofs, heights, warnings };
 }
 
 /** How many documents go to Foundry in one request (a big battle map has thousands of walls). */
@@ -349,7 +355,8 @@ export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
   for (const parts of groups.values()) {
     const pieces = shapes(union(parts.map(footprint))).filter((p) => p.outer.length >= 3);
     if (!pieces.length) continue;
-    const e = roofHeight(parts);
+    // (its roof at its height above the ground it stands on: a house on a rise has its roof up with it)
+    const e = roofHeight(parts) + groundOf(layout, parts);
     out.push({
       name: "Roof",
       color: "#9c6b3c",
@@ -363,6 +370,36 @@ export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
     });
   }
   return out;
+}
+
+/** The kinds of AtlasScribe's ground and water regions (a roof's kind is "roof"). */
+const HEIGHT_KINDS = ["ground", "face", "shallow", "deep", "ice"];
+
+/** Each kind of height region's color in the Regions controls. */
+const HEIGHT_COLOR = { ground: "#8a7a4a", face: "#6b5a48", shallow: "#4a90b0", deep: "#1f4f7a", ice: "#b8d8e8" };
+
+/**
+ * A battle layout's height as Region data (height.mjs): the ground of each level at its elevation (no behavior: the
+ * height hook reads it for a token's elevation), and over each bank, slope, cliff face and water a cost for walkers
+ * (the scene's own Modify Movement Cost, its walking actions slowed; flying and swimming left alone). Each carries
+ * what the hook needs in its flags. Seen only in the Regions controls.
+ */
+export function battleHeights(layout, sceneX, sceneY, pps, plan) {
+  const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
+  // (the actions the scene's movement cost knows, so a system that leaves some out isn't given them)
+  const keys = Object.keys(CONFIG.RegionBehavior?.dataModels?.modifyMovementCost?.schema?.fields?.difficulties?.fields ?? {});
+  const slows = (cost) => [{ type: "modifyMovementCost", name: "Walking cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? cost : 1])) } }];
+  return heightRegions(layout).map((r) => ({
+    name: r.name,
+    color: HEIGHT_COLOR[r.kind] ?? "#888888",
+    shapes: r.polys.map((p) => ({ type: "polygon", points: pts(p.points), hole: p.hole })),
+    // (a top elevation counts as inside, so a token standing at a bank's top or wading in from the bank is in it)
+    elevation: r.kind === "ground" ? { bottom: r.elevation, top: r.elevation, topInclusive: true } : { bottom: r.kind === "face" ? r.bottom : null, top: r.top, topInclusive: true },
+    visibility: CONST.REGION_VISIBILITY.LAYER,
+    behaviors: r.kind === "ground" || !keys.length || !r.cost ? [] : slows(r.cost),
+    locked: true,
+    flags: { [MOD]: { built: plan, kind: r.kind, elevation: r.elevation ?? null, order: r.order ?? null, over: !!r.over, style: r.style ?? null, lines: (r.lines ?? []).map((l) => pts(l)), alone: !!r.alone } },
+  }));
 }
 
 /** The scene with this id, or an error: every write checks the scene is still there. */

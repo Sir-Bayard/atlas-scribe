@@ -85,6 +85,8 @@ export function checkPlan(raw) {
     else if (seen.has(f.id)) err(f.id, "id", `The id "${f.id}" is used twice.`);
     else seen.set(f.id, f);
     checkFeature(f, where, raw.features?.[i] ?? {}, { err, warn, w, h });
+    // (a rise or a hollow is drawn on a battle map only: a settlement map's squares are too big for one)
+    if (f?.type === "height" && plan.kind !== "battle") warn(f.id ?? null, "type", `"${where}" is a rise or hollow, which only a battle map draws; it's left off this map.`);
   });
 
   // Districts: a known profile, and a way in: a road into it, or a street from a neighboring district through a gate

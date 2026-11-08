@@ -9,6 +9,7 @@
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets, outlineOf } from "../roofs.mjs";
 import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
+import { edgeSpan, shiftRight, resample } from "../../core/layout/terrain.mjs";
 
 /** No blur, so no tile margin. */
 export const MAX_BLUR = 0;
@@ -120,8 +121,29 @@ export function paint(ctx) {
   const boundWidth = { hedge: 0.08, balk: 0.12, clipped: 0.16 };
   for (const b of items("boundary")) stroke(b.path, boundWidth[b.class] ?? 0.04, boundColor[b.class] ?? boundColor.fence);
   for (const w of items("wall").filter((w) => !w.thickness)) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
-  // Cliffs: the face shaded from its top edge to its toe, hatched down the slope, the top edge drawn hard
-  for (const c of items("cliff")) {
+  // Height on a battle map: each level's ground lighter the higher it stands and darker the lower, then each edge as
+  // a band toward its low side (a cliff in its rock's color, a bank in earth, a slope as a faint shade), the top of
+  // a cliff or bank drawn hard
+  for (const Lv of items("level")) {
+    const k = Math.min(0.3, Math.abs(Lv.elevation) / 50);
+    g.fillStyle = Lv.elevation >= 0 ? `rgba(255,250,230,${k})` : `rgba(20,24,30,${k})`;
+    g.beginPath();
+    for (const ring of Lv.rings) ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+    g.fill("evenodd");
+  }
+  const ROCK = { earthy: "rgb(150,136,116)", slate: "rgb(128,130,134)", mossy: "rgb(118,128,104)" };
+  const edges = items("edge");
+  for (const e of edges) {
+    const span = edgeSpan(e), mid = shiftRight(resample(e.path, 0.5), span / 2);
+    g.lineCap = "butt";
+    if (e.style === "slope") { g.globalAlpha = 0.25; stroke(mid, span, "rgb(30,36,40)"); g.globalAlpha = 1; }
+    else stroke(mid, span, e.style === "cliff" ? ROCK[e.rock] ?? ROCK.earthy : "rgb(128,108,78)");
+    g.lineCap = "round";
+    if (e.style !== "slope") stroke(e.path, 0.06, "rgb(70,60,50)");
+  }
+  // Cliffs: the face shaded from its top edge to its toe, hatched down the slope, the top edge drawn hard (on a battle
+  // map a cliff line is an edge, drawn above)
+  for (const c of items("cliff").filter((c) => !edges.some((e) => e.from === c.id && e.line))) {
     fillPoly([...c.path, ...[...c.toe].reverse()], c.rock === "slate" ? "rgb(128,130,134)" : "rgb(150,136,116)");
     g.save(); g.strokeStyle = "rgba(60,52,44,0.55)"; g.lineWidth = Math.max(1, 0.03 * pp);
     let carry = 0;

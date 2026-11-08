@@ -35,11 +35,13 @@ import { shoreLife } from "./shores.mjs";
 import { marketStalls } from "./market.mjs";
 import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
-import { cliffOf } from "../cliffs.mjs";
+import { cliffOf, offsetLine } from "../cliffs.mjs";
 import { battleYards, battleBack } from "./battle.mjs";
+import { terrainOf, edgeSpan, shiftRight, resample } from "./terrain.mjs";
+import { battleWoods, rockfall } from "./wild.mjs";
 import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
 
-export const LAYOUT_VERSION = 8;
+export const LAYOUT_VERSION = 9;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
@@ -315,8 +317,12 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
           const c = cliffOf(f, sq, [W, H]);
           const cr = streamFor(f.id), rock = ["earthy", "slate"].includes(f.rock) ? f.rock : cr.fork("rock").chance(0.6) ? "earthy" : "slate";
           items.push({ kind: "cliff", id: f.id, from: f.id, path: c.line, taper: c.taper, toe: c.toe, w: c.w, sign: c.sign, rock, height: f.height ?? 30, variant: cr.fork("look").int(2), top: cr.fork("top").int(4) });
-          for (const poly of bandPieces(c.keep.path, c.keep.half)) { space.reserved.push(poly); space.zones.push(poly); }
-          cliffBands.push(c.keep);
+          // (on a battle map it's drawn in tiers of rock, terrain.mjs, so it keeps only their ground clear, its fallen
+          // rock lying past them)
+          const span = edgeSpan({ drop: Math.max(5, f.height ?? 30), style: "cliff" }) + 0.3;
+          const keep = battle ? { path: offsetLine(f.path, (c.sign * span) / 2), half: span / 2 + 0.15 } : c.keep;
+          for (const poly of bandPieces(keep.path, keep.half)) { space.reserved.push(poly); space.zones.push(poly); }
+          cliffBands.push(keep);
           break;
         }
         items.push({ kind: "wall", id: f.id, from: f.id, class: f.class, path: f.path, height: ft(f.height) });
@@ -340,6 +346,42 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         break;
       default:
         break;
+    }
+  }
+
+  // Height on a battle map: the ground's levels (rises, hollows, stream beds) and the edges between them, each edge's
+  // band kept clear (nothing is built or grows on a cliff face or a bank) (terrain.mjs)
+  if (battle) {
+    const t = terrainOf({ plan, items, sq, pick: streamFor });
+    notes.push(...t.notes);
+    for (const L of t.levels) items.push({ kind: "level", id: L.id, from: L.from, name: L.name, rings: L.rings, elevation: L.elevation, style: L.style, rock: L.rock, bed: L.bed, water: L.water ?? null, waterClass: L.waterClass ?? null });
+    for (const e of t.edges) {
+      items.push(e);
+      // (a walkable slope is ground like any: trees and houses may stand on it)
+      if (e.style === "slope") continue;
+      const span = edgeSpan(e) + (e.style === "slope" ? 0 : 0.3);
+      const mid = shiftRight(resample(e.path, 0.5), span / 2);
+      for (const poly of bandPieces(mid, span / 2 + 0.15)) { space.reserved.push(poly); space.zones.push(poly); }
+    }
+    for (const L of t.levels.filter((x) => x.bed)) for (const ring of L.rings) space.reserved.push(ring);
+    // A cliff drawn as a line: an edge of its own, its high side on its left as every edge's (its ground already kept
+    // clear by its band), from the ground around it up its height; it bounds no level, so it sets no token's elevation
+    for (const c of items.filter((i) => i.kind === "cliff")) {
+      if (!Array.isArray(c.path) || c.path.length < 2) continue;
+      const h = Math.max(5, c.height ?? 30);
+      const path = c.sign > 0 ? [...c.path].reverse() : c.path.map((p) => [...p]);
+      // (its foot on whatever ground lies below it, a rise's or a hollow's)
+      const foot = shiftRight(resample(path, 0.5), 0.5), low = t.elevAt(foot[Math.floor(foot.length / 2)]);
+      items.push({ kind: "edge", id: `${c.id}/edge1`, from: c.from, path, closed: false, drop: h, high: low + h, low, style: "cliff", rock: c.rock, bed: false, line: true });
+    }
+    // A bridge over a stream's bed reaches from bank top to bank top: its deck is lengthened until both its ends stand
+    // clear of the bed (a deck as long as the water alone would end down in the bed, under its banks)
+    const beds = t.levels.filter((x) => x.bed);
+    const inBed = (p) => beds.some((Lv) => { let n = 0; for (const r of Lv.rings) if (pointInPolygon(p, r)) n++; return n % 2 === 1; });
+    for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
+      const a = ((c.angle ?? 0) * Math.PI) / 180, u = [Math.cos(a), Math.sin(a)];
+      const end = (sg) => [c.at[0] + sg * u[0] * (c.length ?? 2) / 2, c.at[1] + sg * u[1] * (c.length ?? 2) / 2];
+      for (let k = 0; k < 60 && (inBed(end(1)) || inBed(end(-1))); k++) c.length = (c.length ?? 2) + 0.25;
     }
   }
 
@@ -1446,8 +1488,12 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Woods and hedgerows last: trees keep clear of every building
   progress(0.6, "Woods");
   for (const f of plan.features.filter((f) => f.type === "area" && f.class === "woods")) {
-    notes.push(...fillWoods({ area: f, r: streamFor(f.id), free, items, winter: seasonOf(plan) === "winter" }));
+    // (a battle map's woods at battle size: trees apart, with the ground between dressed, wild.mjs)
+    if (battle) { const w = battleWoods({ area: f, r: streamFor(f.id), free, season: seasonOf(plan) }); items.push(...w.items); notes.push(...w.notes); }
+    else notes.push(...fillWoods({ area: f, r: streamFor(f.id), free, items, winter: seasonOf(plan) === "winter" }));
   }
+  // Fallen rock at the foot of each cliff
+  if (battle) for (const e of items.filter((i) => i.kind === "edge" && i.style === "cliff")) items.push(...rockfall({ edge: e, r: rng(seedOf(plan, e.from), e.id, "fall"), free }));
   for (const f of plan.features.filter((f) => f.type === "wall" && f.class === "hedge")) {
     const before = items.length;
     hedgeBushes({ wall: f, r: streamFor(f.id), items });
@@ -1518,7 +1564,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       if (rooms.length > ROOM.most) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: ${rooms.length} rooms named; only the first ${ROOM.most} are laid out.` });
     }
     // What the battle style doesn't draw yet (it comes with later steps of battle maps)
-    const NOT_YET = { field: "fields", cliff: "cliffs", ditch: "ditches", dock: "quays and piers", reed: "reeds", lily: "lily pads", pit: "pits", kiln: "kilns" };
+    const NOT_YET = { field: "fields", ditch: "ditches", dock: "quays and piers", reed: "reeds", lily: "lily pads", pit: "pits", kiln: "kilns" };
     const NOT_YET_SURFACE = { park: "parks", bed: "flower beds", farmyard: "farmyards", croft: "crofts" };
     const missing = [...new Set(items.map((i) => NOT_YET[i.kind] ?? (i.kind === "surface" ? NOT_YET_SURFACE[i.class] : i.kind === "boundary" && i.class === "clipped" ? "clipped hedges" : null)).filter(Boolean))];
     if (missing.length) notes.push({ level: "warning", id: "plan", message: `A battle map doesn't draw ${missing.join(", ")} yet; they're left off this map.` });

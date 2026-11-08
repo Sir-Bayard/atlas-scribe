@@ -87,7 +87,7 @@ const polys = (plan) => (plan?.features ?? []).map((f) => ({ f, e: editableShape
  */
 export function familyOf(f) {
   if (Array.isArray(f?.path)) return f.type === "wall" && f.class === "cliff" ? "cliff" : f.type;
-  return f?.type === "water" ? "body" : "shape";
+  return f?.type === "water" ? "body" : f?.type === "height" ? "height" : "shape";
 }
 
 /** The other shapes' corners at the same place as this corner: [{ id, i }]. */
