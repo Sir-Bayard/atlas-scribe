@@ -106,13 +106,21 @@ export function toWall(w) {
 
 /** A paved way's stone: a main road's flagstones, so it reads apart from the streets off it (as in the mockup). */
 const wayPaving = (w) => (PAVING[w.surface] ? (w.class === "highway" ? "surface.flagstone" : PAVING[w.surface]) : null);
-const wayRole = (w, s) => wayPaving(w) ?? (s === "winter" ? `surface.${w.surface ?? "dirt"}.winter` : UNPAVED[w.surface] ?? "surface.dirt");
+/** An unpaved way's or quarter's ground in winter: trodden snow for a snowy lane, slush for mud, else its own winter art. */
+const WINTER_SURFACE = { snow: "surface.trodden.winter", mud: "surface.dirt.winter" };
+const winterSurface = (surface) => WINTER_SURFACE[surface] ?? `surface.${surface ?? "dirt"}.winter`;
+const wayRole = (w, s) => wayPaving(w) ?? (s === "winter" ? winterSurface(w.surface) : UNPAVED[w.surface] ?? "surface.dirt");
 const floorRole = (b) => (STONE_FLOORS.has(b.use) || b.tower ? "floor.stone" : "floor.wood");
 /** A room's floor (its kind's: a kitchen's stone, a stable's dirt). */
 const ROOM_FLOOR = { wood: "floor.wood", stone: "floor.stone", dirt: "surface.dirt" };
 /** A quarter's own ground (look.ground: a market's paving, a crafts quarter's dirt), or null for lush grass. */
 const isQuarter = (i) => i.kind === "surface" && i.class === "quarter" && !i.lush && Array.isArray(i.poly);
-const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `surface.trodden.${s}` : s === "winter" ? `surface.${q.surface ?? "dirt"}.winter` : UNPAVED[q.surface] ?? "surface.dirt");
+const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `surface.trodden.${s}` : s === "winter" ? winterSurface(q.surface) : UNPAVED[q.surface] ?? "surface.dirt");
+/**
+ * The ground's art: its own, a lighter second and a third, each in broad patches. In winter a grass ground lies under
+ * snow: snow, a lighter snow, and grass showing through the snow in places.
+ */
+export const groundRoles = (base, s) => (s === "winter" && base === "grass" ? ["ground.snow", "ground.snow.light", "ground.snow.grassy"] : [`ground.${base}`, `ground.${base}.light`, `ground.${base}.clover`]);
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
 
 /**
@@ -141,7 +149,7 @@ export function mist(layout) {
 export function rolesFor(layout) {
   const s = layout.season;
   const g = layout.items.find((i) => i.kind === "ground")?.base ?? "grass";
-  const roles = new Set([`ground.${g}`, `ground.${g}.light`, `ground.${g}.clover`, `surface.trodden.${s}`, "stone.curb", "floor.wood", "floor.stone", "wood.fence", `stone.rough.${s}`]);
+  const roles = new Set([...groundRoles(g, s), `surface.trodden.${s}`, "stone.curb", "floor.wood", "floor.stone", "wood.fence", `stone.rough.${s}`]);
   for (const i of layout.items) {
     if (i.kind === "way" && !i.faint) roles.add(wayRole(i, s));
     if (isPlaza(i)) roles.add(PAVING[i.surface] ?? "surface.flagstone");
@@ -309,11 +317,13 @@ export function paint(ctx) {
   const ways = items("way").filter((w) => !w.faint && Array.isArray(w.path) && w.path.length >= 2).map(toWall).map((w) => ({ w, bb: bboxOf(w.path) })).filter(({ w, bb }) => meets(bb, (w.width ?? 1) / 2 + 2)).map(({ w }) => w);
   const feet = items("building").map((b) => { const f = footprint(b); return { b, f, bb: bboxOf(f) }; }).filter(({ bb }) => meets(bb, 6));
 
-  // 1. The ground: its art, a second grass and a little clover in broad soft patches
+  // 1. The ground: its art, a second grass and a little clover in broad soft patches (in winter, snow, lighter snow
+  // and grass showing through)
   progress(0.02, "Ground");
-  g.fillStyle = tex(`ground.${gb}`); g.fillRect(0, 0, W, H);
-  soft((k) => k.fillRect(0, 0, W, H), tex(`ground.${gb}.light`), { noise: noiseMask("battle-g1", 10, 0.25, 0.2), alpha: 0.5 });
-  if (art(`ground.${gb}.clover`)) soft((k) => k.fillRect(0, 0, W, H), tex(`ground.${gb}.clover`), { noise: noiseMask("battle-g2", 7, 0.45, 0.15), alpha: 0.6 });
+  const [gBase, gLight, gThird] = groundRoles(gb, s);
+  g.fillStyle = tex(gBase); g.fillRect(0, 0, W, H);
+  soft((k) => k.fillRect(0, 0, W, H), tex(gLight), { noise: noiseMask("battle-g1", 10, 0.25, 0.2), alpha: 0.5 });
+  if (art(gThird)) soft((k) => k.fillRect(0, 0, W, H), tex(gThird), { noise: noiseMask("battle-g2", 7, 0.45, 0.15), alpha: 0.6 });
 
   // 1b. A quarter's own ground, as its overview shows it (a market paved, a crafts quarter's dirt), worn into patches
   // with the grass showing through
