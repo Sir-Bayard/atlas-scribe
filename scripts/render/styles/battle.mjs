@@ -18,7 +18,7 @@ import { footprint, roofHeight } from "../../core/layout/battle.mjs";
 import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { tiersOf, edgeSpan, shiftRight, resample, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
-import { groundOf, levelAt } from "../../core/height.mjs";
+import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
@@ -146,7 +146,6 @@ export function rolesFor(layout) {
     if (i.kind === "wall" && i.class === "palisade") roles.add("wood.stake");
     if (i.kind === "level" && i.bed) roles.add(`surface.bed.${s}`);
     if (i.kind === "edge") {
-      roles.add("shadow.half");
       if (i.style === "slope" && s !== "winter") roles.add("edge.grass");
       if (i.style === "cliff") { roles.add(`edge.face.${i.rock}`); roles.add(`edge.top.${i.rock}`); roles.add(`edge.foot.${i.rock}`); }
       if (i.style === "bank") roles.add(BANK[i.rock] ?? "edge.bank.earthy");
@@ -357,7 +356,6 @@ export function paint(ctx) {
       return [p[0] - (dy / Ln) * dd, p[1] + (dx / Ln) * dd];
     });
   };
-  const shadowArt = art("shadow.half");
   for (const e of edges.filter((x) => x.style === "slope")) {
     const span = edgeSpan(e), pts = resample(e.path, 0.5), far = shiftRight(pts, span);
     const bb = boxAround([bboxOf(pts), bboxOf(far)], 0.5);
@@ -410,9 +408,10 @@ export function paint(ctx) {
     if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
     for (let k = n; k >= 1; k--) {
       const d = (cliff ? 0.25 : 0.15) + (k - 1) * TERRAIN.step;
-      // (the shadow under this tier, tucked in below its middle line: the tier's art covers it where solid)
-      if (shadowArt) { g.save(); g.globalAlpha = Math.min(1, 0.45 + 0.25 * (k / n)); stripPath(shadowArt, tierPath(e, d + 0.32, k)); g.restore(); }
-      else soft((kk) => stroke(kk, tierPath(e, d + 0.35, k), 0.4, "butt"), "rgb(14,20,34)", { blur: 0.15, alpha: 0.35, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+      // (the shadow under this tier, tucked in below its middle line and painted soft, darker going down: the tier's
+      // art covers it where solid. Painted, not drawn from shadow art, whose pieces overlap in lines where it's
+      // see-through)
+      soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       const im = k % 2 ? face : face2;
       if (im) stripPath(im, tierPath(e, d, k), k * 0.37);
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
@@ -427,6 +426,17 @@ export function paint(ctx) {
   progress(0.25, "Streets");
   const wayBox = (list, add) => boxAround(list.map((w) => { const bb = bboxOf(w.path), r = (w.width ?? 1) / 2 + add; return [bb[0] - r, bb[1] - r, bb[2] + r, bb[3] + r]; }));
   const paved = ways.filter(wayPaving);
+  // (no way is painted down in a stream's bed: a bridge carries it over, and the road showing under the deck, curving
+  // where the deck runs straight, read wrong; a ford's crossing is left open so its track runs through)
+  const cutBeds = items("level").filter((Lv) => Lv.bed && meets(bboxOf(Lv.rings.flat()), 1));
+  g.save();
+  if (cutBeds.length) {
+    g.beginPath();
+    g.rect(0, 0, W, H);
+    for (const Lv of cutBeds) for (const ring of Lv.rings) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    for (const c of items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at))) { deckOf(c).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    g.clip("evenodd");
+  }
   if (ways.length) soft((k) => { for (const w of ways) stroke(k, w.path, w.width + 0.8); }, trodden, { blur: 0.25, alpha: 0.8, box: wayBox(ways, 0.4) });
   const dirt = new Map();
   for (const w of ways.filter((w) => !wayPaving(w))) { const r = wayRole(w, s); if (!dirt.has(r)) dirt.set(r, []); dirt.get(r).push(w); }
@@ -437,6 +447,7 @@ export function paint(ctx) {
     fill((k) => { for (const w of paved) stroke(k, w.path, w.width + 0.08); }, "rgb(40,36,32)", 0.55);
     for (const w of [...paved].sort((a, b) => a.width - b.width)) fill((k) => stroke(k, w.path, w.width), tex(wayRole(w, s), wayRole(w, s) === "surface.flagstone" ? 1 : 0));
   }
+  g.restore();
 
   // 5. Squares: flagstones inside a curb
   for (const sq of L.items.filter(isPlaza)) {
@@ -466,16 +477,23 @@ export function paint(ctx) {
     fill((k) => { for (const gv of graves) { poly(k, rectAt(gv.x - 0.1, gv.y - 0.1, 0.7, 0.36, gv.rot ?? 0)); k.fill(); } }, "rgba(20,24,34,0.35)");
     fill((k) => { for (const gv of graves) { poly(k, rectAt(gv.x, gv.y, 0.7, 0.36, gv.rot ?? 0)); k.fill(); } }, tex("stone.curb"));
   }
+  const levelItemsAll = items("level");
   for (const c of items("crossing").filter((c) => c.class !== "ford" && Array.isArray(c.at))) {
     const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, hl = (c.length ?? 2) / 2, hw = (c.width ?? 4) / 2;
     const pts = [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([u, v]) => [c.at[0] + u * ux + v * nx, c.at[1] + u * uy + v * ny]);
     const bb = bboxOf(pts);
     if (!meets(bb, 2)) continue;
-    soft((k) => { poly(k, pts.map(([x, y]) => [x + SHADOW[0] * 0.85, y + SHADOW[1] * 0.85])); k.fill(); }, "rgb(0,0,0)", { blur: 0.4, alpha: 0.35, box: [bb[0] - 1, bb[1] - 1, bb[2], bb[3]] });
-    // (a road bridge in flagstones edged in stone; a footbridge a deck of planks laid across it, its edges dark)
+    // (its shadow on the water, cast the farther and softer the deeper the bed below it)
+    const lowBy = Math.max(0, levelAt(levelItemsAll, [c.at[0] + ux * hl, c.at[1] + uy * hl]) - levelAt(levelItemsAll, c.at));
+    const off = 0.85 + (lowBy / 10) * 0.7;
+    soft((k) => { poly(k, pts.map(([x, y]) => [x + SHADOW[0] * off, y + SHADOW[1] * off])); k.fill(); }, "rgb(0,0,0)", { blur: 0.4 + lowBy / 40, alpha: 0.4, box: [bb[0] - 2, bb[1] - 2, bb[2], bb[3]] });
+    // (a road bridge in flagstones edged in stone; a footbridge a deck of planks laid across it, a dark beam along
+    // each side, its ends worn where the track comes on, so the way runs onto it rather than stopping at a box)
     if (c.class === "footbridge") {
       fill((k) => { poly(k, pts); k.fill(); }, tex("floor.wood", 1, (c.angle ?? 0) + 90));
-      fill((k) => { poly(k, pts); k.lineWidth = 0.12 * pp; k.stroke(); }, "rgb(40,28,20)", 0.8);
+      const side = (v) => [[-hl, v], [hl, v]].map(([u, w]) => [c.at[0] + u * ux + w * nx, c.at[1] + u * uy + w * ny]);
+      soft((k) => { stroke(k, side(-hw + 0.06), 0.16, "butt"); stroke(k, side(hw - 0.06), 0.16, "butt"); }, "rgb(34,24,16)", { blur: 0.03, alpha: 0.75, box: bb });
+      soft((k) => { for (const sg of [-1, 1]) { const e = [c.at[0] + sg * ux * hl, c.at[1] + sg * uy * hl]; stroke(k, [[e[0] - sg * ux * 0.35, e[1] - sg * uy * 0.35], [e[0] + sg * ux * 0.5, e[1] + sg * uy * 0.5]], hw * 1.6); } }, trodden, { blur: 0.3, alpha: 0.55, noise: noiseMask("battle-deck", 1.5, -0.2, 0.5), box: [bb[0] - 1, bb[1] - 1, bb[2] + 1, bb[3] + 1] });
     } else {
       fill((k) => { poly(k, pts); k.fill(); }, tex("surface.flagstone", 1, c.angle ?? 0));
       fill((k) => { poly(k, pts); k.lineWidth = 0.5 * pp; k.stroke(); }, tex("stone.curb"));
