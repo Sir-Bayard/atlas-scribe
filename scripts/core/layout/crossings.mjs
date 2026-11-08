@@ -125,3 +125,34 @@ export function fordDetail(c, ways) {
   }
   return { dir, rocks, stones };
 }
+
+/**
+ * A way eased onto a bridge: over `reach` squares before each end of the deck it bends gently onto the deck's middle
+ * line, as a road is built to meet its bridge, not turned onto it at the last moment, and runs straight across the
+ * deck. Only the stretch near the bridge changes (resampled finely there); the rest keeps its points. Returns the new
+ * path, or the old one when the way doesn't run onto this bridge.
+ */
+export function easeOnto(path, c, reach = 6) {
+  if (!Array.isArray(path) || path.length < 2 || !Array.isArray(c?.at)) return path;
+  const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2;
+  // (the way's points every quarter square, each with its distance along the way)
+  const pts = [path[0]], arc = [0], from = [0];
+  for (let i = 1; i < path.length; i++) {
+    const [x0, y0] = path[i - 1], [x1, y1] = path[i], L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.ceil(L / 0.25));
+    for (let k = 1; k <= n; k++) { pts.push([x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n]); arc.push(arc.at(-1) + L / n); from.push(k === n ? i : -1); }
+  }
+  let best = 0, bd = Infinity;
+  pts.forEach(([x, y], i) => { const d = Math.hypot(x - c.at[0], y - c.at[1]); if (d < bd) { bd = d; best = i; } });
+  if (bd > (c.width ?? 2) / 2 + 0.5) return path;
+  const out = [];
+  pts.forEach((p, i) => {
+    const s = Math.abs(arc[i] - arc[best]);
+    if (s > hl + reach) { if (from[i] >= 0 || i === 0) out.push(p); return; }
+    const u = (p[0] - c.at[0]) * ux + (p[1] - c.at[1]) * uy, on = [c.at[0] + u * ux, c.at[1] + u * uy];
+    const t = Math.min(1, Math.max(0, (s - hl) / reach)), e = t * t * (3 - 2 * t);
+    out.push([on[0] + (p[0] - on[0]) * e, on[1] + (p[1] - on[1]) * e]);
+  });
+  if (out.at(-1) !== pts.at(-1) && Math.abs(arc.at(-1) - arc[best]) > hl + reach) out.push(pts.at(-1));
+  return out;
+}
+

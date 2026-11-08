@@ -472,11 +472,12 @@ export function paint(ctx) {
     const a = ((c.angle ?? 0) * Math.PI) / 180;
     return { at: c.at, ux: Math.cos(a), uy: Math.sin(a), hl: (c.length ?? 2) / 2, hw: (c.width ?? 2) / 2 };
   });
-  const TAPER = 2.2;
-  // (a point of a way that runs onto decks: drawn toward a deck's middle line and narrowed to its planks as it nears an
-  // end, or null under the deck itself, where nothing of the way is drawn)
+  const TAPER = 3.5;
+  // (a point of a way that runs onto decks, narrowed evenly about its middle to the deck's planks over its last squares
+  // (the layout has already bent it onto the deck's middle line), or null under the deck itself, where nothing of the
+  // way is drawn)
   const nearDecks = (p, onto, w, extra) => {
-    let q = p, width = w + extra;
+    let width = w + extra;
     for (const d of onto) {
       const dx = p[0] - d.at[0], dy = p[1] - d.at[1], u = dx * d.ux + dy * d.uy, v = -dx * d.uy + dy * d.ux;
       if (Math.abs(v) > w + 1.5 || Math.abs(u) > d.hl + TAPER) continue;
@@ -484,10 +485,8 @@ export function paint(ctx) {
       const t = Math.min(1, Math.max(0, (Math.abs(u) - d.hl) / TAPER)), e = t * t * (3 - 2 * t);
       const inner = (d.hw - 0.3) * 2;
       width = Math.min(width, inner + (w + extra - inner) * e);
-      const v2 = v * e;
-      q = [d.at[0] + u * d.ux - v2 * d.uy, d.at[1] + u * d.uy + v2 * d.ux];
     }
-    return { q, width };
+    return { q: p, width };
   };
   // (the decks a way runs onto: those it passes through the middle of; any other way near a bridge is drawn as it is)
   const ontoDecks = new Map(ways.map((w) => [w, decks.filter((d) => distanceToPath(d.at, w.path) < d.hw + 0.5)]));

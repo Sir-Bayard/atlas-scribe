@@ -7,7 +7,7 @@
  * Every random choice is made here, never in the painter, so the same plan always paints the same map, whatever
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
-import { roadWaterCrossings, snapCrossings, fordDetail } from "./crossings.mjs";
+import { roadWaterCrossings, snapCrossings, fordDetail, easeOnto } from "./crossings.mjs";
 import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer, OLD_PROFILES } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
@@ -382,6 +382,13 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const a = ((c.angle ?? 0) * Math.PI) / 180, u = [Math.cos(a), Math.sin(a)];
       const end = (sg) => [c.at[0] + sg * u[0] * (c.length ?? 2) / 2, c.at[1] + sg * u[1] * (c.length ?? 2) / 2];
       for (let k = 0; k < 60 && (inBed(end(1)) || inBed(end(-1))); k++) c.length = (c.length ?? 2) + 0.25;
+      // (and a road over it bends onto it gently over the squares before it, kept clear along its new line)
+      for (const w of ways) {
+        const eased = easeOnto(w.path, c);
+        if (eased === w.path) continue;
+        for (const sw of space.ways) if (sw.path === w.path) sw.path = eased;
+        w.path = eased;
+      }
     }
   }
 
