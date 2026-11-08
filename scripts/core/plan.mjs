@@ -117,6 +117,7 @@ export const TYPES = {
       variant: num(null, { min: 0 }), // which of the roof art's pieces (else from the seed)
       name: str(),
       use: { ...oneOf(USES, null), fallback: "it's taken as a house" }, // what it's for (a pinned building keeps its use); named on the scene's labels
+      rooms: str(), // its rooms on a battle map, in words ("common room with stage, kitchen, 2 bedrooms"); else from its use
       // A pinned generated building keeps how it was drawn: where its chimney stands ({ u, v, variant }), the ends
       // that run into another roof (join) and the hips that start in from a corner (cut)
       tower: bool(false), // drawn as a tower: a flat roof inside a parapet, a round one too (a pinned watch post)

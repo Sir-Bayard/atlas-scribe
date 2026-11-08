@@ -37,8 +37,9 @@ import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf } from "../cliffs.mjs";
 import { battleYards, battleBack } from "./battle.mjs";
+import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
 
-export const LAYOUT_VERSION = 7;
+export const LAYOUT_VERSION = 8;
 
 
 /** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
@@ -145,11 +146,14 @@ function boxOf(v) {
 }
 
 /**
- * Streets cut where they'd run into a building (their edge inside it): each street is split there, and pieces shorter
- * than a square are dropped. A street that only passes a building, its edge at most touching the wall (a house on the
- * street line), is left whole.
+ * Streets cut where they'd run into a building (their edge inside it): each street is split there, pieces shorter
+ * than a square are dropped, and so are pieces cut at both ends shorter than STUB feet that no other street meets (a
+ * scrap of lane between two buildings, crossing a road). A piece's cut ends are marked (wallEnds: [start, end]), so a battle map draws it on to
+ * the wall, its rounded end under the building (Patrick, 7 Nov: lanes ended in a round cap short of a wall). A street
+ * that only passes a building, its edge at most touching the wall (a house on the street line), is left whole.
  */
-function trimAtBuildings(streets, feet) {
+const STUB = 40;
+export function trimAtBuildings(streets, feet, ftPerSquare = 5) {
   if (!feet.length) return streets;
   const walls = feet.map((p) => ({ p, ring: closed(p), box: bbox(p) }));
   const out = [];
@@ -159,10 +163,10 @@ function trimAtBuildings(streets, feet) {
     if (!st.path.some((q, k) => k && walls.some(({ box }) => Math.max(q[0], st.path[k - 1][0]) > box[0] - m && Math.min(q[0], st.path[k - 1][0]) < box[2] + m && Math.max(q[1], st.path[k - 1][1]) > box[1] - m && Math.min(q[1], st.path[k - 1][1]) < box[3] + m))) { out.push(st); continue; }
     // Walk the path in steps of a tenth of a square, keeping its own points and the last point before each cut
     const pieces = [];
-    let cur = [], last = null, cut = false;
-    const end = () => { if (cur.length) { if (last && last !== cur.at(-1)) cur.push(last); pieces.push(cur); } cur = []; last = null; };
+    let cur = [], last = null, cut = false, cutBefore = false;
+    const end = (atCut) => { if (cur.length) { if (last && last !== cur.at(-1)) cur.push(last); cur.cutStart = cutBefore; cur.cutEnd = atCut; pieces.push(cur); } cur = []; last = null; };
     const visit = (q, own) => {
-      if (inside(q)) { cut = true; end(); return; }
+      if (inside(q)) { cut = true; end(true); cutBefore = true; return; }
       if (own || !cur.length) cur.push(q);
       last = q;
     };
@@ -172,12 +176,14 @@ function trimAtBuildings(streets, feet) {
       for (let t = 0; t < n; t++) visit(t ? [a[0] + ((b[0] - a[0]) * t) / n, a[1] + ((b[1] - a[1]) * t) / n] : a, t === 0);
     }
     visit(st.path.at(-1), true);
-    end();
+    end(false);
     if (!cut) { out.push(st); continue; }
     const len = (pts) => pts.reduce((s, q, i) => (i ? s + Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) : 0), 0);
     for (const pc of pieces) {
       const pts = pc.map((q) => [q[0], q[1]]);
-      if (pts.length >= 2 && len(pts) >= 1) out.push({ ...st, path: pts });
+      const met = () => streets.some((o) => o !== st && [o.path[0], o.path.at(-1)].some((e) => distanceToPath(e, pts) < st.width / 2 + 0.3));
+      if (pts.length < 2 || len(pts) < 1 || (pc.cutStart && pc.cutEnd && len(pts) < STUB / ftPerSquare && !met())) continue;
+      out.push({ ...st, path: pts, ...(pc.cutStart || pc.cutEnd ? { wallEnds: [!!pc.cutStart, !!pc.cutEnd] } : {}) });
     }
   }
   return out;
@@ -430,6 +436,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       ...(b.name ? { name: b.name } : {}),
       ...(b.use ? { use: b.use } : {}),
       ...(b.grand ? { grand: true } : {}),
+      ...(b.rooms ? { rooms: b.rooms } : {}), // its rooms on a battle map, as its plan gives them
     };
     items.push(item);
     space.buildings.push(item);
@@ -1141,7 +1148,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       district: d, poly, roads: fixedHere, water: space.water, radials: anchor?.radial ? [...radials, { ...anchor.radial, anchor: true, ...(anchorAt.place !== "middle" ? { pull: 0.5 } : {}) }] : radials, blocked: streetStop ? [...streetBlocked, streetStop] : streetBlocked, gates: gates.get(d.id) ?? [], borders,
       ftPerSquare: sq, r: r.fork("streets"),
     });
-    made.streets = trimAtBuildings(made.streets, around.plots);
+    made.streets = trimAtBuildings(made.streets, around.plots, sq);
     for (const path of ringRuns) made.streets.push({ path, kind: "street", width: ringWidth, ends: [], ring: true });
     // The anchor's square opens onto the town: a street straight out from the middle of its front to the nearest
     // street or road it meets, where that way is clear
@@ -1168,7 +1175,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     else if (battle && ["town", "city"].includes(OLD_PROFILES[d.profile] ?? d.profile)) items.push({ kind: "surface", id: `${d.id}/ground`, from: d.id, class: "quarter", poly, surface: "trodden", alpha: 0.55 });
     const own = [];
     made.streets.forEach((st, k) => {
-      const item = { kind: "way", id: `${d.id}/s${k + 1}`, from: d.id, class: st.kind, path: st.path, width: st.width, surface, ruts: false };
+      const item = { kind: "way", id: `${d.id}/s${k + 1}`, from: d.id, class: st.kind, path: st.path, width: st.width, surface, ruts: false, ...(st.wallEnds ? { wallEnds: st.wallEnds } : {}) };
       items.push(item);
       own.push(item);
       const entry = { path: st.path, clear: st.width / 2 - 0.05 };
@@ -1504,6 +1511,12 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       });
     }
     battleYards(items, W, H);
+    buildingInteriors(items, plan.seed);
+    for (const b of items.filter((i) => i.kind === "building" && i.rooms)) {
+      const { rooms, unknown } = parseRooms(b.rooms);
+      if (unknown.length) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: rooms not known (${unknown.join(", ")}); they're left out.` });
+      if (rooms.length > ROOM.most) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: ${rooms.length} rooms named; only the first ${ROOM.most} are laid out.` });
+    }
     // What the battle style doesn't draw yet (it comes with later steps of battle maps)
     const NOT_YET = { field: "fields", cliff: "cliffs", ditch: "ditches", dock: "quays and piers", reed: "reeds", lily: "lily pads", pit: "pits", kiln: "kilns" };
     const NOT_YET_SURFACE = { park: "parks", bed: "flower beds", farmyard: "farmyards", croft: "crofts" };

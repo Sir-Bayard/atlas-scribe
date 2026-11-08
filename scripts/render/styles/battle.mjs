@@ -15,6 +15,7 @@ import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
 import { makeNoise } from "../../core/noise.mjs";
 import { footprint, roofHeight } from "../../core/layout/battle.mjs";
+import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { paintRoof } from "./textured.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
@@ -72,14 +73,40 @@ const treeTurn = (t) => (Number.isFinite(t.rot) ? t.rot : (Math.abs(Math.sin(t.x
 /** The shadow's direction: the sun low in the southeast, so shadows fall to the northwest. */
 const SHADOW = [-0.7, -0.7];
 
+/**
+ * A way cut short of a building (wallEnds, from the layout) drawn on to its wall: each cut end carried on by the way's
+ * half width and a little more, so its rounded end lies under the building's floor and the way meets the wall square.
+ */
+export function toWall(w) {
+  if (!w.wallEnds) return w;
+  const d = (w.width ?? 1) / 2 + 0.3;
+  const on = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [b[0] + ((b[0] - a[0]) / L) * d, b[1] + ((b[1] - a[1]) / L) * d]; };
+  let path = w.path;
+  if (w.wallEnds[1]) path = [...path, on(path.at(-2), path.at(-1))];
+  if (w.wallEnds[0]) path = [on(path[1], path[0]), ...path];
+  return { ...w, path };
+}
+
 /** A paved way's stone: a main road's flagstones, so it reads apart from the streets off it (as in the mockup). */
 const wayPaving = (w) => (PAVING[w.surface] ? (w.class === "highway" ? "surface.flagstone" : PAVING[w.surface]) : null);
 const wayRole = (w, s) => wayPaving(w) ?? (s === "winter" ? `surface.${w.surface ?? "dirt"}.winter` : UNPAVED[w.surface] ?? "surface.dirt");
 const floorRole = (b) => (STONE_FLOORS.has(b.use) || b.tower ? "floor.stone" : "floor.wood");
+/** A room's floor (its kind's: a kitchen's stone, a stable's dirt). */
+const ROOM_FLOOR = { wood: "floor.wood", stone: "floor.stone", dirt: "surface.dirt" };
 /** A quarter's own ground (look.ground: a market's paving, a crafts quarter's dirt), or null for lush grass. */
 const isQuarter = (i) => i.kind === "surface" && i.class === "quarter" && !i.lush && Array.isArray(i.poly);
 const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `surface.trodden.${s}` : s === "winter" ? `surface.${q.surface ?? "dirt"}.winter` : UNPAVED[q.surface] ?? "surface.dirt");
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
+
+/**
+ * A battle map's furniture, each piece a tile over the map (Patrick, 7 Nov: so a GM can move it): [{ role, variant,
+ * piece }], rugs first (they lie under the rest).
+ */
+export function furniture(layout) {
+  const out = [];
+  for (const it of layout.items.filter((i) => i.kind === "interior")) for (const p of it.furniture ?? []) if (FURNITURE[p.f] && !FURNITURE[p.f].drawn) out.push({ role: `furn.${p.f}`, variant: p.variant ?? 0, piece: p });
+  return out.sort((a, b) => (FURNITURE[b.piece.f].floor ? 1 : 0) - (FURNITURE[a.piece.f].floor ? 1 : 0));
+}
 
 export function rolesFor(layout) {
   const s = layout.season;
@@ -100,6 +127,11 @@ export function rolesFor(layout) {
     }
     if (i.kind === "tree") roles.add(treeRole(i, s));
     if (i.kind === "shell") { roles.add(`wall.${i.material}`); if (i.walls.some((w) => w.type === "window")) roles.add("window.small"); }
+    if (i.kind === "interior") {
+      roles.add(`wall.${i.material}`);
+      for (const r of i.rooms) roles.add(ROOM_FLOOR[r.floor] ?? "floor.wood");
+      for (const f of i.furniture) if (!FURNITURE[f.f]?.drawn) roles.add(`furn.${f.f}`);
+    }
     if (i.kind === "boundary" && i.class === "fence") roles.add("fence.wood");
     if (i.kind === "wall" && i.class === "stone") roles.add("fence.stone");
     if (i.kind === "wall" && i.class === "palisade") roles.add("wood.stake");
@@ -233,7 +265,7 @@ export function paint(ctx) {
 
   const ground = L.items.find((i) => i.kind === "ground");
   const gb = ground?.base ?? "grass";
-  const ways = items("way").filter((w) => !w.faint && Array.isArray(w.path) && w.path.length >= 2).map((w) => ({ w, bb: bboxOf(w.path) })).filter(({ w, bb }) => meets(bb, (w.width ?? 1) / 2 + 2)).map(({ w }) => w);
+  const ways = items("way").filter((w) => !w.faint && Array.isArray(w.path) && w.path.length >= 2).map(toWall).map((w) => ({ w, bb: bboxOf(w.path) })).filter(({ w, bb }) => meets(bb, (w.width ?? 1) / 2 + 2)).map(({ w }) => w);
   const feet = items("building").map((b) => { const f = footprint(b); return { b, f, bb: bboxOf(f) }; }).filter(({ bb }) => meets(bb, 6));
 
   // 1. The ground: its art, a second grass and a little clover in broad soft patches
@@ -391,9 +423,37 @@ export function paint(ctx) {
     }
   }, "rgb(16,24,40)", { blur: 0.3, alpha: 0.24, box: boxAround(feet.map(({ b, bb }) => { const d = ((20 + (b.tall ?? 0) * 20) / 5) * 0.3 * 0.7; return [bb[0] - d, bb[1] - d, bb[2], bb[3]]; })) });
   for (const { b, f } of feet) fill((k) => { poly(k, f); k.fill(); }, tex(floorRole(b), floorRole(b) === "floor.wood" ? Math.round(b.cx * 3 + b.cy) : 0, b.rot ?? 0));
+  // Interiors: each room's floor where it isn't the building's (under the shadow along the walls), then below a stage
+  // and the walls between rooms (the building's wall art, thinner; a door's gap and an open doorway's left). The
+  // furniture isn't painted: it lies over the map as tiles (furniture(layout))
+  const interiors = items("interior").filter((it) => meets(bboxOf(it.rooms.flatMap((r) => r.poly)), 1)).map((it) => {
+    const b = feet.find(({ b }) => (b.group ?? b.id) === it.group)?.b;
+    return { it, b, rot: b?.rot ?? 0, woodV: b ? Math.round(b.cx * 3 + b.cy) : 0 };
+  });
+  for (const { it, b, rot, woodV } of interiors) for (const r of it.rooms) {
+    const role = ROOM_FLOOR[r.floor] ?? "floor.wood";
+    if (b && role === floorRole(b)) continue;
+    fill((k) => { poly(k, r.poly); k.fill(); }, tex(role, role === "floor.wood" ? woodV : 0, rot));
+  }
   if (feet.length) {
     const outlines = (k, w) => { k.lineWidth = w * pp; k.lineJoin = "miter"; for (const { f } of feet) { poly(k, f); k.stroke(); } };
     soft((k) => outlines(k, 0.8), "rgb(10,12,18)", { blur: 0.25, alpha: 0.35, box: boxAround(feet.map((x) => x.bb), 0.4) });
+  }
+  for (const { it, woodV } of interiors) {
+    // (a stage: a raised wooden platform, its edge in shadow; the rest of the furniture lies over the map as tiles)
+    for (const f of it.furniture.filter((x) => FURNITURE[x.f]?.drawn)) {
+      const [aw, ah] = FURNITURE[f.f].body;
+      const box = rectAt(f.x, f.y, aw, ah, f.rot);
+      soft((k) => { poly(k, box.map(([x, y]) => [x + 0.08, y + 0.08])); k.fill(); }, "rgb(16,24,40)", { blur: 0.12, alpha: 0.5, box: bboxOf(box) });
+      fill((k) => { poly(k, box); k.fill(); }, tex("floor.wood", woodV + 1, f.rot + 90));
+      fill((k) => { k.lineWidth = 0.08 * pp; poly(k, box); k.stroke(); }, "rgba(40,28,18,0.8)");
+    }
+    const im = art(`wall.${it.material}`, 0);
+    for (const w of it.walls.filter((x) => x.type === "wall" && !x.join)) {
+      // (a wall runs to the outer wall's middle line and over any inner wall it meets already: no more past its ends)
+      if (im) strip(im, w.a, w.b, 0, 0, 0, { width: it.thickness });
+      else fill((k) => stroke(k, [w.a, w.b], it.thickness, "butt"), "rgb(110,96,78)");
+    }
   }
   // Each building's walls from wall art (its shell: walls and windows; a door's gap is left for the scene's door), or
   // plain strokes along its footprint without art

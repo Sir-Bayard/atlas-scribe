@@ -235,5 +235,6 @@ function scaled(b, P, E) {
   if (b.join) out.join = structuredClone(b.join);
   if (Array.isArray(b.cut) && b.cut.length) out.cut = structuredClone(b.cut);
   if (typeof b.use === "string") out.use = b.use;
+  if (typeof b.rooms === "string" && b.rooms) out.rooms = b.rooms; // (its rooms as the overview's plan gave them)
   return out;
 }

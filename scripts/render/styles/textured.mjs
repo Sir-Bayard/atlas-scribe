@@ -1044,19 +1044,23 @@ export function paintRoof(g, b, { x, y, pp, art, season: s, texPx, chimney = 0.3
   const P = ([x, y]) => [x * pp, y * pp];
   const shape = (pts) => { g.beginPath(); pts.forEach((q, k) => { const [x, y] = P(q); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
   const line = (a2, b2) => { g.beginPath(); g.moveTo(...P(a2)); g.lineTo(...P(b2)); g.stroke(); };
+  // (FA's roof art has a clear strip along the bottom of each repeat, under the next row's overlap: each facet is laid
+  // twice, a copy shifted half a repeat underneath filling the strips)
   const fillTex = (img, angle, fallback) => {
-    if (img) {
+    if (!img) { g.fillStyle = fallback; g.fill(); return; }
+    for (const shift of [img.height / 2, 0]) {
       const p = g.createPattern(img, "repeat");
-      p.setTransform(new DOMMatrix().rotate(angle).scale(texPx / img.width));
+      p.setTransform(new DOMMatrix().rotate(angle).scale(texPx / img.width).translate(0, shift));
       g.fillStyle = p;
-    } else g.fillStyle = fallback;
+      g.fill();
+    }
   };
   for (const f of facets) {
     if (!f.poly.length) continue; // a gable's verge: outline only
     // The texture's rows run along the facet's eave; flat pieces take the flat roof's paving
+    shape(f.poly);
     if (f.flat) fillTex(flatIm, 0, fallbackColor(flatRole(b, s)));
     else fillTex(im, f.eaveAngle, fallbackColor(role));
-    shape(f.poly); g.fill();
     if (snow && (f.flat || !SNOWY_IN_WINTER.has(b.roof))) {
       const p = g.createPattern(snow, "repeat"); p.setTransform(new DOMMatrix().rotate(f.eaveAngle).scale((pp * 1.5) / snow.width));
       // A pale wash first, so a colored roof reads as snowed on as much as the art that comes with snow

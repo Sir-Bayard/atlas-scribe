@@ -57,6 +57,7 @@ export const FIELD_TEXT = {
 
   "building.roof": { label: "Roof" },
   "building.use": { label: "Use", names: USE_NAMES, help: "What it's for: a notable use (an inn, a temple, a trade) gets a hidden label on the scene, for the GM", auto: "a house" },
+  "building.rooms": { label: "Rooms", help: "Its rooms on a battle map, in words: \"common room with stage, kitchen, 2 bedrooms, storeroom\". The first meets the front door. Empty: rooms by its use", auto: "rooms by its use" },
   "building.roofStyle": { label: "Roof form" },
   "building.height": { label: "Height", help: "In feet; taller buildings cast longer shadows" },
   "building.chimney": { label: "Chimney", kind: "tristate", auto: "the generator decides" },

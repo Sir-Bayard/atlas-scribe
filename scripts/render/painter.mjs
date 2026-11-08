@@ -5,6 +5,7 @@
 import * as textured from "./styles/textured.mjs";
 import * as illustrated from "./styles/illustrated.mjs";
 import * as battle from "./styles/battle.mjs";
+import { artPlacement } from "../core/layout/rooms.mjs";
 
 export const STYLES = { illustrated, textured };
 
@@ -18,11 +19,12 @@ export function styleOf(layout) {
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt, overheads }:
+ * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt, overheads, furniture }:
  * thumb is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colors),
  * brokenArt the roles any file failed for (painted with fewer variants, or plain), overheads the pieces a style paints
  * apart to lie over the map as tiles (a battle map's roofs and tree crowns): [{ name, kind, x, y, width, height (px,
- * from the map's corner), elevation, blob }], empty for a style without them.
+ * from the map's corner), elevation, blob }], empty for a style without them; furniture a battle map's pieces to lie
+ * over it as tiles, [{ src, f, x, y (their middle), width, height (px), rotation }].
  * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
  */
 export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
@@ -60,6 +62,8 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     const list = bitmaps[role];
     return list?.length ? list[Math.abs(variant | 0) % list.length] : null;
   };
+  // (each role's files that loaded, with their addresses, for pieces that become tiles)
+  const loadedUrls = Object.fromEntries(urls.map(([role, list]) => [role, list.filter((u) => loaded.get(u))]));
 
   // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur, a single
   // one too, so soft edges don't fade toward the map's border. The margin is capped, so a map at hundreds of pixels a
@@ -113,9 +117,39 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     overheads.push({ name: piece.name, kind: piece.kind, x, y, width: w, height: h, elevation: piece.elevation, blob: await c.convertToBlob({ type: "image/webp", quality: Math.max(quality, 0.9) }) });
     c.width = c.height = 1;
   }
+  // Furniture (a battle map's): each piece a tile, its art placed by the part of its file that's drawn
+  const furniture = [];
+  for (const { role, variant, piece } of style.furniture?.(layout) ?? []) {
+    const list = loadedUrls[role];
+    if (!list?.length) continue;
+    const url = list[Math.abs(variant | 0) % list.length], bmp = loaded.get(url);
+    const at = artPlacement(piece, insetsOf(bmp));
+    furniture.push({ src: url, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot });
+  }
   for (const bmp of loaded.values()) bmp?.close();
   const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, ms: Math.round(performance.now() - t0) };
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, furniture, ms: Math.round(performance.now() - t0) };
+}
+
+/**
+ * The part of a piece's art that's drawn: how far in from each edge it starts, [left, top, right, bottom] as shares of
+ * the image's width and height, where its alpha passes a sixth. Measured once for each image.
+ */
+const INSETS = new WeakMap();
+function insetsOf(bmp) {
+  if (!bmp) return [0, 0, 0, 0];
+  if (INSETS.has(bmp)) return INSETS.get(bmp);
+  let out = [0, 0, 0, 0];
+  try {
+    const w = bmp.width, h = bmp.height, c = new OffscreenCanvas(w, h), k = c.getContext("2d");
+    k.drawImage(bmp, 0, 0);
+    const d = k.getImageData(0, 0, w, h).data;
+    let l = w, t = h, r = -1, b = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 40) { if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > b) b = y; }
+    if (r >= 0) out = [l / w, t / h, (w - 1 - r) / w, (h - 1 - b) / h];
+  } catch { /* (an image the canvas can't read: placed by its whole art) */ }
+  INSETS.set(bmp, out);
+  return out;
 }
 
 /** Thumbnail size, as Foundry makes them. */

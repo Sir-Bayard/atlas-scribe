@@ -12,6 +12,7 @@ import { labelsOf, useLabelsOf } from "../core/labels.mjs";
 import { titleBox, paintTitle } from "../render/styles/illustrated.mjs";
 import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
 import { union, shapes } from "../core/lots/poly.mjs";
+import { FURNITURE } from "../core/layout/rooms.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -150,6 +151,29 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (oldOver.length) warnings.push("The roofs and trees over the map were left as they were: they come only with a map rendered for the scene.");
   else if (layout?.kind === "battle") warnings.push("This battle map's roofs and trees weren't placed: they come only with a map rendered for the scene.");
 
+  // A battle map's furniture, a tile for each piece (a bed made up, a table with its chairs and what's on it), for the
+  // GM to move as they like: new ones in, then AtlasScribe's old ones out; a map given by its path keeps those it had,
+  // and so does one whose furniture art wasn't found at all (the art folder moved, say)
+  let furniture = 0;
+  const oldFurn = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "furniture" in t.flags[MOD]).map((t) => t.id);
+  const pieces = (layout?.items ?? []).filter((i) => i.kind === "interior").flatMap((i) => i.furniture ?? []).filter((f) => FURNITURE[f.f] && !FURNITURE[f.f].drawn).length;
+  if (Array.isArray(image.furniture) && pieces && !image.furniture.length) warnings.push(`None of the furniture's art was found, so no furniture was placed${oldFurn.length ? " and the last map's was kept" : ""} (is FA Nexus active?).`);
+  else if (Array.isArray(image.furniture)) {
+    if (image.furniture.length < pieces) warnings.push(`${pieces - image.furniture.length} of the ${pieces} pieces of furniture had no art and were left out.`);
+    let placed = false;
+    try {
+      onProgress(0.96, "Placing the furniture");
+      const { sceneX, sceneY } = sceneById(sceneId).dimensions;
+      const tiles = image.furniture.map((f) => furnitureTile(f, sceneX, sceneY, plan.id ?? null));
+      await createAll(sceneId, "Tile", tiles);
+      furniture = tiles.length;
+      placed = true;
+      for (let k = 0; k < oldFurn.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldFurn.slice(k, k + BATCH));
+    } catch (e) {
+      warnings.push(placed ? `The last map's furniture couldn't all be taken out (${e.message}); delete AtlasScribe's old pieces from the Tiles controls.` : `The furniture couldn't all be placed (${e.message}).`);
+    }
+  } else if (oldFurn.length) warnings.push("The furniture was left as it was: it comes only with a map rendered for the scene.");
+
   // A battle map's walls, doors and windows (from its buildings' shells), its fences and low walls (movement only, a
   // yard's gate a door), and over each building a roof Foundry shows to a token outside (a raised surface it partly
   // reveals): new ones in, then AtlasScribe's old ones out (a settlement map just takes the old ones out)
@@ -178,7 +202,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors and roofs were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, walls, roofs, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, walls, roofs, warnings };
 }
 
 /** How many documents go to Foundry in one request (a big battle map has thousands of walls). */
@@ -221,6 +245,31 @@ function overheadTile(o, sceneX, sceneY, plan) {
 }
 
 /**
+ * A piece of furniture's tile: its art from the art folder (where FA Nexus saved it), on the ground under tokens and
+ * roofs, a rug under the rest; left unlocked, for the GM to move.
+ */
+function furnitureTile(f, sceneX, sceneY, plan) {
+  return {
+    texture: { src: localPath(f.src) },
+    x: Math.round(sceneX + f.x), y: Math.round(sceneY + f.y),
+    width: Math.round(f.width), height: Math.round(f.height), rotation: Math.round((f.rotation ?? 0) * 100) / 100,
+    elevation: 0, sort: f.f === "rug" ? 0 : 1,
+    flags: { [MOD]: { furniture: plan, piece: f.f } },
+  };
+}
+/** An art file's address as Foundry's path to it (the worker was given full addresses). */
+function localPath(src) {
+  try {
+    const url = new URL(src, window.location.href);
+    if (url.origin !== window.location.origin) return src;
+    const base = new URL(foundry.utils.getRoute("/"), window.location.href).pathname;
+    return decodeURIComponent(url.pathname.startsWith(base) ? url.pathname.slice(base.length) : url.pathname.replace(/^\//, ""));
+  } catch {
+    return src;
+  }
+}
+
+/**
  * The doors Foundry itself ships (Forgotten Adventures' art, in every install), swung open by a door: a house's, by its
  * variant (a temple's wide door is two of them, a leaf each side); a yard's gate. Foundry fits a door's whole art to
  * the door (a leaf of a double door to half of it), so each is a one-square door.
@@ -256,6 +305,14 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
           animation: swing(CORE_DOORS[(sh.variant ?? 0) % CORE_DOORS.length], wide),
           flags: flags("door", doorGrid(sh.thickness ?? 0.3)) });
       }
+    }
+  }
+  // Walls between rooms, and doors in them (an open doorway is left open: nothing there)
+  for (const it of layout.items.filter((i) => i.kind === "interior")) {
+    for (const w of it.walls) {
+      const base = { c: c(w.a, w.b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL };
+      if (w.type === "wall") out.push({ ...base, flags: flags("inner-wall") });
+      else if (w.type === "door") out.push({ ...base, door: D.DOOR, doorSound: "woodBasic", animation: swing(CORE_DOORS[0]), flags: flags("inner-door", doorGrid(it.thickness ?? 0.2)) });
     }
   }
   // (fences and low walls stop movement only; a yard's gate between its back fences is a door that does the same)
