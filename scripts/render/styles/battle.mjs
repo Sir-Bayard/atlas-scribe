@@ -20,7 +20,7 @@ import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, TERRAIN } from "../..
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
 import { bands, union, offset } from "../../core/lots/poly.mjs";
-import { distanceToPath } from "../../core/geom.mjs";
+import { distanceToPath, pointInPolygon } from "../../core/geom.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
@@ -171,7 +171,9 @@ export function rolesFor(layout) {
  *        layout, art(role, variant) -> ImageBitmap | null, progress(pct, label) }
  */
 export function paint(ctx) {
-  const { g, mask, W, H, x0, y0, pp, layout: L, art, progress = () => {} } = ctx;
+  const { mask, W, H, x0, y0, pp, layout: L, art, progress = () => {} } = ctx;
+  // (the map's canvas; for a while a layer of its own, to be laid over it softened)
+  let g = ctx.g;
   const q = mask.getContext("2d");
   const bq = ctx.blur?.getContext("2d") ?? null;
   const s = L.season;
@@ -372,10 +374,11 @@ export function paint(ctx) {
   const footOf = (e) => edgeSpan(e.shore ? { drop: e.shore, style: e.style } : e);
   const wob = makeNoise(L.seed ?? 1, "battle-edge", { scale: 3, octaves: 2 });
   const tierPath = (e, d, k) => {
-    const pts = resample(e.path, 0.5);
+    const pts = resample(e.path, 0.5), calm = e.style === "bank" && tiersOf(e.shore ?? e.drop, e.style) > 2;
     return pts.map((p, i) => {
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], Ln = Math.hypot(dx, dy) || 1;
-      const dd = d + wob(p[0] + k * 17.3, p[1] - k * 9.1) * 0.14 * Math.min(2, k);
+      // (a tall bank's many tiers wander less: they overlap less than a cliff's, and wandering apart would open gaps)
+      const dd = d + wob(p[0] + k * 17.3, p[1] - k * 9.1) * (calm ? 0.06 : 0.14) * Math.min(2, k);
       return [p[0] - (dy / Ln) * dd, p[1] + (dx / Ln) * dd];
     });
   };
@@ -412,15 +415,7 @@ export function paint(ctx) {
   // there in a line of white water instead)
   const waterOf = new Map(items("water").filter((w) => Array.isArray(w.path)).map((w) => [w.id, w]));
   const fallWater = (e, by = 0.05) => { const w = e.fall ? waterOf.get(e.water) : null; return w ? bands([{ path: w.path, half: (w.width ?? 1) / 2 + by }]) : null; };
-  const offWater = (e, draw) => {
-    // (the art kept a little in from the water's edge, so it meets the water with no seam)
-    const wb = fallWater(e, -0.15);
-    if (!wb) return draw();
-    g.save(); g.beginPath(); g.rect(0, 0, W, H);
-    for (const r of wb) { r.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
-    g.clip("evenodd"); draw(); g.restore();
-  };
-  for (const e of edges.filter((x) => x.style !== "slope" && !x.fall)) offWater(e, () => {
+  const shadeEdge = (e) => {
     // (the drop's own shadow on the low ground past its foot, where it faces away from the sun: longer the higher)
     const pts = resample(e.path, 0.5), foot = shiftRight(pts, edgeSpan(e)), far = shiftRight(pts, edgeSpan(e) + Math.min(3, (e.drop / 5) * 0.7));
     soft((k) => {
@@ -433,8 +428,8 @@ export function paint(ctx) {
       }
       k.globalAlpha = 1;
     }, "rgb(14,20,34)", { blur: 0.45, alpha: 0.32, box: boxAround([bboxOf(pts), bboxOf(far)], 0.6) });
-  });
-  for (const e of edges.filter((x) => x.style !== "slope")) offWater(e, () => {
+  };
+  const drawEdge = (e) => {
     // (a fall into a pool is drawn, off its water, as the pool's whole shore, so the shore runs unbroken past the stream)
     const n = tiersOf(e.fall && e.shore ? e.shore : e.drop, e.style), cliff = e.style === "cliff";
     const face = cliff ? art(`edge.face.${e.rock}`, 0) : art(BANK[e.rock] ?? "edge.bank.earthy", 0);
@@ -462,7 +457,8 @@ export function paint(ctx) {
       // art covers it where solid. Painted, not drawn from shadow art, whose pieces overlap in lines where it's
       // see-through)
       if (cliff) soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
-      else if (k < n) soft((kk) => stroke(kk, tierPath(e, d + half - 0.04, k), 0.22, "butt"), "rgb(14,20,34)", { blur: 0.1, alpha: 0.5, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+      // (lighter between many tiers, where the lines would stack up)
+      else if (k < n) soft((kk) => stroke(kk, tierPath(e, d + half - 0.04, k), 0.22, "butt"), "rgb(14,20,34)", { blur: 0.1, alpha: n > 2 ? 0.28 : 0.5, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       const im = k % 2 ? face : face2;
       if (im) stripPath(im, tierPath(e, d, k), k * 0.37, !cliff && BANK_FLIP);
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
@@ -471,7 +467,33 @@ export function paint(ctx) {
     if (!cliff && !e.fall) soft((kk) => stroke(kk, tierPath(e, footOf(e) - 0.04, n), 0.26, "butt"), "rgb(6,14,22)", { blur: 0.12, alpha: 0.45, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
     const lip = cliff ? art(`edge.top.${e.rock}`, 0) : null;
     if (lip) stripPath(lip, tierPath(e, -0.05, 0), 0.21);
-  });
+  };
+  // (a pool's edges, its shore and the falls where its stream comes and goes, are drawn as one: its hollow's whole rim,
+  // unbroken, its water's channel cut through it after, softly)
+  const plain = edges.filter((x) => x.style !== "slope" && !x.pool);
+  for (const e of plain) shadeEdge(e);
+  for (const e of plain) drawEdge(e);
+  for (const Lv of levels.filter((x) => x.within && meets(boxAround(x.rings.map(bboxOf), 0), 3))) {
+    const w = waterOf.get(Lv.water);
+    const rims = Lv.rings.map((r) => {
+      const inside = Lv.rings.filter((o) => o !== r && pointInPolygon(r[0], o)).length % 2 === 1;
+      let a = 0; for (let i = 0; i < r.length; i++) { const p = r[i], q2 = r[(i + 1) % r.length]; a += p[0] * q2[1] - q2[0] * p[1]; }
+      const pts = (a > 0) !== inside ? r : [...r].reverse();
+      return { kind: "edge", id: `${Lv.id}/rim`, path: [...pts, pts[0]], closed: true, drop: Lv.shore ?? 10, high: Lv.elevation + (Lv.shore ?? 10), low: Lv.elevation, style: Lv.style ?? "bank", rock: Lv.rock, bed: true };
+    });
+    const box = boxAround(Lv.rings.map(bboxOf), 3), rx = Math.max(0, Math.floor(X(box[0]))), ry = Math.max(0, Math.floor(Y(box[1])));
+    const rw = Math.min(W, Math.ceil(X(box[2]))) - rx, rh = Math.min(H, Math.ceil(Y(box[3]))) - ry;
+    if (rw <= 0 || rh <= 0) continue;
+    const layer = new OffscreenCanvas(W, H), lg = layer.getContext("2d"), g0 = g;
+    g = lg;
+    try { for (const e of rims) shadeEdge(e); for (const e of rims) drawEdge(e); } finally { g = g0; }
+    if (w && Array.isArray(w.path)) {
+      lg.save(); lg.globalCompositeOperation = "destination-out"; lg.filter = `blur(${0.12 * pp}px)`;
+      lg.lineCap = "round"; lg.lineJoin = "round"; lg.lineWidth = Math.max(0.2, (w.width ?? 1) - 0.1) * pp;
+      path(lg, w.path); lg.stroke(); lg.restore();
+    }
+    g.drawImage(layer, rx, ry, rw, rh, rx, ry, rw, rh);
+  }
   // (the fall itself: dark water just below the step, white water broken along it)
   for (const e of edges.filter((x) => x.fall)) {
     const wb = fallWater(e);

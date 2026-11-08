@@ -152,7 +152,7 @@ export function edgesOf(levels) {
         // (a bed's bank deeper than TERRAIN.bankMost, where it cuts through higher ground, is a cliff)
         // (a pool's shore is its hollow's own edge, kept as the hollow has it)
         const style = L.bed && !L.within && L.style === "bank" && r.hi - r.lo > TERRAIN.bankMost ? "cliff" : L.style;
-        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}), ...(L.shore ? { shore: L.shore } : {}) });
+        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}), ...(L.shore ? { shore: L.shore } : {}), ...(L.within ? { pool: L.id } : {}) });
       }
     }
   });
