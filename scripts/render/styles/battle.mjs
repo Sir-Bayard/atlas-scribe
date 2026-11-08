@@ -20,6 +20,7 @@ import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, TERRAIN } from "../..
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
 import { bands } from "../../core/lots/poly.mjs";
+import { distanceToPath } from "../../core/geom.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
@@ -417,6 +418,17 @@ export function paint(ctx) {
     // (the rubble at the foot, under everything)
     const footArt = cliff ? art(`edge.foot.${e.rock}`, 0) : null;
     if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
+    if (!cliff) {
+      // (the bank's shadow on the water, cast where its face is turned from the sun, the longer the deeper it drops)
+      const span = edgeSpan(e) + 0.04, pts = resample(e.path, 0.5), foot = [], far = [];
+      pts.forEach((p, i) => {
+        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], Ln = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const nx = -(b[1] - a[1]) / Ln, ny = (b[0] - a[0]) / Ln, away = (nx * SHADOW[0] + ny * SHADOW[1]) / Math.hypot(...SHADOW);
+        const len = Math.max(0, away) * (Math.abs(e.drop) / 10) * 0.45;
+        foot.push([p[0] + nx * (span - 0.15), p[1] + ny * (span - 0.15)]); far.push([p[0] + nx * (span + len), p[1] + ny * (span + len)]);
+      });
+      soft((kk) => { poly(kk, [...foot, ...far.reverse()]); kk.fill(); }, "rgb(6,14,22)", { blur: 0.25, alpha: 0.4, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 2) });
+    }
     for (let k = n; k >= 1; k--) {
       // (a bank's tier laid with its top toward the edge's line and its face of earth and roots running down toward
       // the low side, the lowest one's foot just into the water: FA's woodland cliff art, as a GM draws it along a stream)
@@ -426,11 +438,13 @@ export function paint(ctx) {
       // art covers it where solid. Painted, not drawn from shadow art, whose pieces overlap in lines where it's
       // see-through)
       if (cliff) soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
-      else soft((kk) => stroke(kk, tierPath(e, d + half, k), 0.3, "butt"), "rgb(14,20,34)", { blur: 0.12, alpha: 0.35, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+      else if (k < n) soft((kk) => stroke(kk, tierPath(e, d + half - 0.04, k), 0.22, "butt"), "rgb(14,20,34)", { blur: 0.1, alpha: 0.5, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       const im = k % 2 ? face : face2;
       if (im) stripPath(im, tierPath(e, d, k), k * 0.37, !cliff && BANK_FLIP);
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
     }
+    // (where a bank's face goes into the water, dark: the foot of the face in shade, the water against it deep)
+    if (!cliff) soft((kk) => stroke(kk, tierPath(e, edgeSpan(e) - 0.04, n), 0.26, "butt"), "rgb(6,14,22)", { blur: 0.12, alpha: 0.45, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
     const lip = cliff ? art(`edge.top.${e.rock}`, 0) : null;
     if (lip) stripPath(lip, tierPath(e, -0.05, 0), 0.21);
   }
@@ -452,10 +466,41 @@ export function paint(ctx) {
     for (const c of items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at))) { deckOf(c).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("evenodd");
   }
-  if (ways.length) soft((k) => { for (const w of ways) stroke(k, w.path, w.width + 0.8); }, trodden, { blur: 0.25, alpha: 0.8, box: wayBox(ways, 0.4) });
+  // (an unpaved way narrows onto a footbridge's planks over its last squares, rather than running on under the deck
+  // at its own width: stroked a short piece at a time, each as wide as the way is there)
+  const decks = items("crossing").filter((c) => c.class === "footbridge" && Array.isArray(c.at)).map((c) => {
+    const a = ((c.angle ?? 0) * Math.PI) / 180;
+    return { at: c.at, ux: Math.cos(a), uy: Math.sin(a), hl: (c.length ?? 2) / 2, hw: (c.width ?? 2) / 2 };
+  });
+  const TAPER = 2.2;
+  // (a point of a way that runs onto decks: drawn toward a deck's middle line and narrowed to its planks as it nears an
+  // end, or null under the deck itself, where nothing of the way is drawn)
+  const nearDecks = (p, onto, w, extra) => {
+    let q = p, width = w + extra;
+    for (const d of onto) {
+      const dx = p[0] - d.at[0], dy = p[1] - d.at[1], u = dx * d.ux + dy * d.uy, v = -dx * d.uy + dy * d.ux;
+      if (Math.abs(v) > w + 1.5 || Math.abs(u) > d.hl + TAPER) continue;
+      if (Math.abs(u) < d.hl - 0.25 && Math.abs(v) < d.hw + 0.3) return null;
+      const t = Math.min(1, Math.max(0, (Math.abs(u) - d.hl) / TAPER)), e = t * t * (3 - 2 * t);
+      const inner = (d.hw - 0.3) * 2;
+      width = Math.min(width, inner + (w + extra - inner) * e);
+      const v2 = v * e;
+      q = [d.at[0] + u * d.ux - v2 * d.uy, d.at[1] + u * d.uy + v2 * d.ux];
+    }
+    return { q, width };
+  };
+  // (the decks a way runs onto: those it passes through the middle of; any other way near a bridge is drawn as it is)
+  const ontoDecks = new Map(ways.map((w) => [w, decks.filter((d) => distanceToPath(d.at, w.path) < d.hw + 0.5)]));
+  const wayStroke = (k, w, extra) => {
+    const onto = ontoDecks.get(w) ?? [];
+    if (!onto.length) return stroke(k, w.path, w.width + extra);
+    const pts = resample(w.path, 0.15).map((p) => nearDecks(p, onto, w.width, extra));
+    for (let i = 1; i < pts.length; i++) if (pts[i - 1] && pts[i]) stroke(k, [pts[i - 1].q, pts[i].q], Math.min(pts[i - 1].width, pts[i].width));
+  };
+  if (ways.length) soft((k) => { for (const w of ways) wayStroke(k, w, 0.8); }, trodden, { blur: 0.25, alpha: 0.8, box: wayBox(ways, 0.4) });
   const dirt = new Map();
   for (const w of ways.filter((w) => !wayPaving(w))) { const r = wayRole(w, s); if (!dirt.has(r)) dirt.set(r, []); dirt.get(r).push(w); }
-  for (const [r, list] of dirt) soft((k) => { for (const w of list) stroke(k, w.path, w.width); }, tex(r), { blur: 0.15, box: wayBox(list, 0) });
+  for (const [r, list] of dirt) soft((k) => { for (const w of list) wayStroke(k, w, 0); }, tex(r), { blur: 0.15, box: wayBox(list, 0) });
   if (paved.length) {
     soft((k) => { for (const w of paved) stroke(k, w.path, w.width + 0.55); }, "rgb(20,20,24)", { blur: 0.12, alpha: 0.35, box: wayBox(paved, 0.3) });
     fill((k) => { for (const w of paved) stroke(k, w.path, w.width + 0.5); }, tex("stone.curb"));
@@ -501,14 +546,23 @@ export function paint(ctx) {
     // (its shadow on the water, cast the farther and softer the deeper the bed below it)
     const lowBy = Math.max(0, levelAt(levelItemsAll, [c.at[0] + ux * hl, c.at[1] + uy * hl]) - levelAt(levelItemsAll, c.at));
     const off = 0.85 + (lowBy / 10) * 0.7;
+    // (only down in the bed it spans: where its ends rest on the bank, the deck lies on the ground and casts none)
+    const under = levelItemsAll.filter((Lv) => Lv.bed && Lv.rings.some((r) => r.some((p) => Math.hypot(p[0] - c.at[0], p[1] - c.at[1]) < hl + 4)));
+    g.save();
+    if (under.length) { g.beginPath(); for (const Lv of under) for (const ring of Lv.rings) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); } g.clip("evenodd"); }
     soft((k) => { poly(k, pts.map(([x, y]) => [x + SHADOW[0] * off, y + SHADOW[1] * off])); k.fill(); }, "rgb(0,0,0)", { blur: 0.4 + lowBy / 40, alpha: 0.4, box: [bb[0] - 2, bb[1] - 2, bb[2], bb[3]] });
+    g.restore();
     // (a road bridge in flagstones edged in stone; a footbridge a deck of planks laid across it, a dark beam along
     // each side, its ends worn where the track comes on, so the way runs onto it rather than stopping at a box)
     if (c.class === "footbridge") {
       fill((k) => { poly(k, pts); k.fill(); }, tex("floor.wood", 1, (c.angle ?? 0) + 90));
       const side = (v) => [[-hl, v], [hl, v]].map(([u, w]) => [c.at[0] + u * ux + w * nx, c.at[1] + u * uy + w * ny]);
       soft((k) => { stroke(k, side(-hw + 0.06), 0.16, "butt"); stroke(k, side(hw - 0.06), 0.16, "butt"); }, "rgb(34,24,16)", { blur: 0.03, alpha: 0.75, box: bb });
-      soft((k) => { for (const sg of [-1, 1]) { const e = [c.at[0] + sg * ux * hl, c.at[1] + sg * uy * hl]; stroke(k, [[e[0] - sg * ux * 0.35, e[1] - sg * uy * 0.35], [e[0] + sg * ux * 0.5, e[1] + sg * uy * 0.5]], hw * 1.6); } }, trodden, { blur: 0.3, alpha: 0.55, noise: noiseMask("battle-deck", 1.5, -0.2, 0.5), box: [bb[0] - 1, bb[1] - 1, bb[2] + 1, bb[3] + 1] });
+      // (a sill beam across each end, where the planks rest on the bank, and the track's dirt carried onto them by feet)
+      soft((k) => { for (const sg of [-1, 1]) stroke(k, [[-hw + 0.1, sg * (hl - 0.06)], [hw - 0.1, sg * (hl - 0.06)]].map(([v, u]) => [c.at[0] + u * ux + v * nx, c.at[1] + u * uy + v * ny]), 0.12, "butt"); }, "rgb(34,24,16)", { blur: 0.03, alpha: 0.6, box: bb });
+      const onto = ways.find((w) => !wayPaving(w) && distanceToPath(c.at, w.path) < hw + 0.5);
+      const worn = onto ? tex(wayRole(onto, s)) : trodden;
+      soft((k) => { for (const sg of [-1, 1]) { const e = [c.at[0] + sg * ux * hl, c.at[1] + sg * uy * hl]; stroke(k, [[e[0] - sg * ux * 1.1, e[1] - sg * uy * 1.1], [e[0] + sg * ux * 0.05, e[1] + sg * uy * 0.05]], (hw - 0.2) * 2, "butt"); } }, worn, { blur: 0.35, alpha: 0.6, noise: noiseMask("battle-deck", 1.2, -0.3, 0.6), box: [bb[0] - 1, bb[1] - 1, bb[2] + 1, bb[3] + 1] });
     } else {
       fill((k) => { poly(k, pts); k.fill(); }, tex("surface.flagstone", 1, c.angle ?? 0));
       fill((k) => { poly(k, pts); k.lineWidth = 0.5 * pp; k.stroke(); }, tex("stone.curb"));

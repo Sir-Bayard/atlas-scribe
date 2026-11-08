@@ -18,11 +18,11 @@ import { bands } from "../lots/poly.mjs";
  * tier); step: how far each tier lies past the one above it, toward the low side; shelf: the ground between a
  * stream's water and the foot of its banks; sample: how finely an outline is walked to find its edges; slope: how
  * far a walkable slope runs for each tier of drop; bankMost: the deepest a stream's bank is drawn as a bank (deeper, a
- * cliff); bankTier, bankStep, bankBand: a bank's tier stands for 10 ft (FA's woodland cliff art, a face of earth and
- * roots under a grassy top, as a GM draws a stream's banks), each tier a little lower than the last, its art's band
- * this deep.
+ * cliff); bankTier, bankStep, bankBand: a bank's tier stands for 5 ft (FA's woodland cliff art, a face of earth and
+ * roots under a grassy top, as a GM draws a stream's banks), each tier set out past the one above it toward the
+ * water, its art's band this deep.
  */
-export const TERRAIN = { tier: 5, step: 0.38, shelf: 0.2, sample: 0.25, slope: 1.2, bankMost: 10, bankTier: 10, bankStep: 0.6, bankBand: 0.62 };
+export const TERRAIN = { tier: 5, step: 0.38, shelf: 0.2, sample: 0.25, slope: 1.2, bankMost: 10, bankTier: 5, bankStep: 0.45, bankBand: 0.62 };
 export const EDGE_STYLES = ["cliff", "bank", "slope"];
 export const ROCKS = ["earthy", "slate", "mossy"];
 
