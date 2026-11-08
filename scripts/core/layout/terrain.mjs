@@ -18,18 +18,23 @@ import { bands } from "../lots/poly.mjs";
  * tier); step: how far each tier lies past the one above it, toward the low side; shelf: the ground between a
  * stream's water and the foot of its banks; sample: how finely an outline is walked to find its edges; slope: how
  * far a walkable slope runs for each tier of drop; bankMost: the deepest a stream's bank is drawn as a bank (deeper, a
- * cliff).
+ * cliff); bankTier, bankStep, bankBand: a bank's tier stands for 10 ft (FA's woodland cliff art, a face of earth and
+ * roots under a grassy top, as a GM draws a stream's banks), each tier a little lower than the last, its art's band
+ * this deep.
  */
-export const TERRAIN = { tier: 5, step: 0.38, shelf: 0.6, sample: 0.25, slope: 1.2, bankMost: 10 };
+export const TERRAIN = { tier: 5, step: 0.38, shelf: 0.2, sample: 0.25, slope: 1.2, bankMost: 10, bankTier: 10, bankStep: 0.6, bankBand: 0.62 };
 export const EDGE_STYLES = ["cliff", "bank", "slope"];
 export const ROCKS = ["earthy", "slate", "mossy"];
 
-/** How many tiers of art an edge with this drop (feet) is drawn in: one for every five feet. */
-export const tiersOf = (drop) => Math.max(1, Math.round(Math.abs(drop) / TERRAIN.tier));
+/** How many tiers of art an edge with this drop (feet) is drawn in: a cliff's one for every five feet, a bank's ten. */
+/** The shelf of stones between a bed's water and its banks: a bank's earth comes down to the water itself. */
+export const shelfOf = (style) => (style === "bank" ? 0 : TERRAIN.shelf);
+export const tiersOf = (drop, style = "cliff") => Math.max(1, Math.round(Math.abs(drop) / (style === "bank" ? TERRAIN.bankTier : TERRAIN.tier)));
 /** How far an edge reaches from its line toward its low side, in squares (its art and the ground it takes). */
 export function edgeSpan(e) {
-  const n = tiersOf(e.drop);
+  const n = tiersOf(e.drop, e.style);
   if (e.style === "slope") return n * TERRAIN.slope;
+  if (e.style === "bank") return TERRAIN.bankBand + (n - 1) * TERRAIN.bankStep;
   return 0.45 + (n - 1) * TERRAIN.step;
 }
 
@@ -76,8 +81,8 @@ export function terrainOf({ plan, items, sq, pick }) {
     const base = level.length ? Math.min(...level) : under.length ? Math.min(...under) : 0;
     if (level.length && level.length < under.length) notes.push({ level: "warning", id: w.from ?? w.id, message: `"${w.from ?? w.id}" runs through a hollow; its bed is laid by the ground around the hollow, so it stands up out of the hollow there. Keep streams out of hollows, or make the hollow a pond.` });
     const style = EDGE_STYLES.includes(f.banks) ? f.banks : "bank";
-    // (the bed: the water, a shelf of stones each side, and the banks coming down to it)
-    const rings = bands([{ path: w.path, half: (w.width ?? 1) / 2 + TERRAIN.shelf + edgeSpan({ drop: depth, style }) }]);
+    // (the bed: the water, a shelf of stones each side below a cliff, and the banks coming down to it)
+    const rings = bands([{ path: w.path, half: (w.width ?? 1) / 2 + shelfOf(style) + edgeSpan({ drop: depth, style }) }]);
     if (!rings.length) continue;
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(w.from ?? w.id).fork("rock").pick(ROCKS);
     levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class });

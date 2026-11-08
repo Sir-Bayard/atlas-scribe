@@ -16,7 +16,7 @@ import { PROP_SQUARES } from "../../core/plan.mjs";
 import { makeNoise } from "../../core/noise.mjs";
 import { footprint, roofHeight } from "../../core/layout/battle.mjs";
 import { FURNITURE } from "../../core/layout/rooms.mjs";
-import { tiersOf, edgeSpan, shiftRight, resample, TERRAIN } from "../../core/layout/terrain.mjs";
+import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
 import { bands } from "../../core/lots/poly.mjs";
@@ -312,7 +312,7 @@ export function paint(ctx) {
   // grass, a terrace stepping down, not a strip of stones between two banks)
   for (const Lv of levels.filter((x) => x.bed)) {
     const w = L.items.find((i) => i.id === Lv.water && Array.isArray(i.path));
-    const floor = w ? bands([{ path: w.path, half: (w.width ?? 1) / 2 + TERRAIN.shelf + 0.1 }]) : Lv.rings;
+    const floor = w ? bands([{ path: w.path, half: (w.width ?? 1) / 2 + shelfOf(Lv.style) + 0.1 }]) : Lv.rings;
     const box = boxAround(floor.map(bboxOf), 0.2);
     soft((k) => { for (const r of floor) poly(k, r); k.fill("evenodd"); }, tex(`surface.bed.${s}`), { blur: 0.2, box });
   }
@@ -411,18 +411,22 @@ export function paint(ctx) {
     }, "rgb(14,20,34)", { blur: 0.45, alpha: 0.32, box: boxAround([bboxOf(pts), bboxOf(far)], 0.6) });
   }
   for (const e of edges.filter((x) => x.style !== "slope")) {
-    const n = tiersOf(e.drop), cliff = e.style === "cliff";
+    const n = tiersOf(e.drop, e.style), cliff = e.style === "cliff";
     const face = cliff ? art(`edge.face.${e.rock}`, 0) : art(BANK[e.rock] ?? "edge.bank.earthy", 0);
-    const face2 = cliff ? art(`edge.face.${e.rock}`, 1) ?? face : face;
+    const face2 = cliff ? art(`edge.face.${e.rock}`, 1) ?? face : art(BANK[e.rock] ?? "edge.bank.earthy", 1) ?? face;
     // (the rubble at the foot, under everything)
     const footArt = cliff ? art(`edge.foot.${e.rock}`, 0) : null;
     if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
     for (let k = n; k >= 1; k--) {
-      const d = (cliff ? 0.25 : 0.15) + (k - 1) * TERRAIN.step;
+      // (a bank's tier laid with its top toward the edge's line and its face of earth and roots running down toward
+      // the low side, the lowest one's foot just into the water: FA's woodland cliff art, as a GM draws it along a stream)
+      const half = !cliff && face ? bandOf(face).h / ART_PX / 2 : TERRAIN.bankBand / 2;
+      const d = cliff ? 0.25 + (k - 1) * TERRAIN.step : Math.max(half, edgeSpan(e) - half - (n - k) * TERRAIN.bankStep + 0.04);
       // (the shadow under this tier, tucked in below its middle line and painted soft, darker going down: the tier's
       // art covers it where solid. Painted, not drawn from shadow art, whose pieces overlap in lines where it's
       // see-through)
-      soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+      if (cliff) soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
+      else soft((kk) => stroke(kk, tierPath(e, d + half, k), 0.3, "butt"), "rgb(14,20,34)", { blur: 0.12, alpha: 0.35, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       const im = k % 2 ? face : face2;
       if (im) stripPath(im, tierPath(e, d, k), k * 0.37, !cliff && BANK_FLIP);
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
