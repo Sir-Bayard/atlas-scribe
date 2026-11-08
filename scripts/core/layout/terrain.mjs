@@ -11,7 +11,7 @@
  * Pure: runs in the worker and under node. Positions in squares, heights in feet.
  */
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../geom.mjs";
-import { bands } from "../lots/poly.mjs";
+import { bands, intersect } from "../lots/poly.mjs";
 
 /**
  * Sizes, in squares and feet. tier: the feet of drop each tier of a cliff or bank stands for (one strip of art a
@@ -49,7 +49,8 @@ function inLevel(L, p) {
  * The levels and edges of a battle plan's ground.
  * plan: the smoothed plan (height features, running water with their widths in items); items: the layout's items so far
  * (water as laid); sq: feet a square; pick(id): a random stream for a feature (for its rock when the plan leaves it out).
- * Returns { levels: [{ id, from, name, rings, elevation, style, rock, bed, water, waterClass }], edges: [...], elevAt(p), notes }.
+ * Returns { levels: [{ id, from, name, rings, elevation, style, rock, bed, water, waterClass, within }], edges: [...], elevAt(p),
+ * notes } (within: the hollow a stretch of a stream's bed lies in, below the rest of its bed).
  */
 export function terrainOf({ plan, items, sq, pick }) {
   const levels = [], notes = [];
@@ -74,18 +75,24 @@ export function terrainOf({ plan, items, sq, pick }) {
     const depth = Number.isFinite(f.depth) ? f.depth : ({ stream: 5, river: 10, canal: 5 }[w.class] ?? 0);
     if (!(depth > 0)) continue;
     // (its bed below the lowest ground it runs over, so it never stands above the ground beside it; through a rise
-    // it cuts a gorge, its banks there as deep as the rise is high. A hollow it passes through is left out, so one dip
-    // doesn't sink the whole stream, and noted; a stream wholly in a hollow lies below the hollow)
-    const under = resample(w.path, 0.5).map((p) => { const k = top(p, before); return k < 0 ? 0 : levels[k].elevation; });
+    // it cuts a gorge, its banks there as deep as the rise is high. A hollow it passes through takes the bed down with
+    // it, below; a stream wholly in a hollow lies below the hollow)
+    const along = resample(w.path, 0.5), ks = along.map((p) => top(p, before));
+    const under = ks.map((k) => (k < 0 ? 0 : levels[k].elevation));
     const level = under.filter((e) => e >= 0);
     const base = level.length ? Math.min(...level) : under.length ? Math.min(...under) : 0;
-    if (level.length && level.length < under.length) notes.push({ level: "warning", id: w.from ?? w.id, message: `"${w.from ?? w.id}" runs through a hollow; its bed is laid by the ground around the hollow, so it stands up out of the hollow there. Keep streams out of hollows, or make the hollow a pond.` });
     const style = EDGE_STYLES.includes(f.banks) ? f.banks : "bank";
     // (the bed: the water, a shelf of stones each side below a cliff, and the banks coming down to it)
     const rings = bands([{ path: w.path, half: (w.width ?? 1) / 2 + shelfOf(style) + edgeSpan({ drop: depth, style }) }]);
     if (!rings.length) continue;
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(w.from ?? w.id).fork("rock").pick(ROCKS);
     levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class });
+    // (in each hollow it runs through, its bed lies its depth below the hollow's floor: that stretch of bed a level of
+    // its own, over the rest, so the bed steps down at the hollow's edge, a small fall in the water)
+    for (const k of [...new Set(ks.filter((k) => k >= 0 && levels[k].elevation < base))]) {
+      const H = levels[k], piece = intersect(rings, H.rings);
+      if (piece.length) levels.push({ id: `${w.id}/bed-${H.id}`, from: w.from ?? w.id, name: null, rings: piece, elevation: H.elevation - depth, style, rock, bed: true, water: w.id, waterClass: w.class, within: H.id });
+    }
   }
   return { levels, edges: edgesOf(levels), elevAt, notes };
 }
@@ -116,20 +123,22 @@ export function edgesOf(levels) {
         if (inside !== li || elev(kl) === elev(kr)) { segs.push(null); continue; }
         // (a lower level whose outline runs along a higher one's: the higher draws it)
         if (elev(outside) > L.elevation && outside >= 0 && nearRing(outside, m)) { segs.push(null); continue; }
-        segs.push({ a, b, hiLeft: elev(kl) > elev(kr), hi: Math.max(elev(kl), elev(kr)), lo: Math.min(elev(kl), elev(kr)) });
+        // (a step between two stretches of one stream's bed, as where it falls into a hollow: a fall across its water)
+        const fall = L.bed && outside >= 0 && levels[outside].bed && levels[outside].water === L.water;
+        segs.push({ a, b, hiLeft: elev(kl) > elev(kr), hi: Math.max(elev(kl), elev(kr)), lo: Math.min(elev(kl), elev(kr)), fall });
       }
       // Runs of pieces with one drop (a ring's last run joined to its first when they meet)
       const runs = [];
       let cur = null;
       for (const s of segs) {
-        if (s && cur && cur.hi === s.hi && cur.lo === s.lo && cur.hiLeft === s.hiLeft) cur.pts.push(s.b);
-        else { if (cur) runs.push(cur); cur = s ? { pts: [s.a, s.b], hi: s.hi, lo: s.lo, hiLeft: s.hiLeft } : null; }
+        if (s && cur && cur.hi === s.hi && cur.lo === s.lo && cur.hiLeft === s.hiLeft && cur.fall === s.fall) cur.pts.push(s.b);
+        else { if (cur) runs.push(cur); cur = s ? { pts: [s.a, s.b], hi: s.hi, lo: s.lo, hiLeft: s.hiLeft, fall: s.fall } : null; }
       }
       if (cur) runs.push(cur);
       const closedAll = runs.length === 1 && segs.every(Boolean);
       if (runs.length > 1 && segs[0] && segs.at(-1)) {
         const f = runs[0], l = runs.at(-1);
-        if (f.hi === l.hi && f.lo === l.lo && f.hiLeft === l.hiLeft && l !== f) { l.pts.push(...f.pts.slice(1)); runs.shift(); }
+        if (f.hi === l.hi && f.lo === l.lo && f.hiLeft === l.hiLeft && f.fall === l.fall && l !== f) { l.pts.push(...f.pts.slice(1)); runs.shift(); }
       }
       for (const r of runs) {
         // (a run a hair long: a spike in the outline, not an edge)
@@ -137,7 +146,7 @@ export function edgesOf(levels) {
         const path = r.hiLeft ? r.pts : [...r.pts].reverse();
         // (a bed's bank deeper than TERRAIN.bankMost, where it cuts through higher ground, is a cliff)
         const style = L.bed && L.style === "bank" && r.hi - r.lo > TERRAIN.bankMost ? "cliff" : L.style;
-        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed });
+        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}) });
       }
     }
   });

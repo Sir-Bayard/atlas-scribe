@@ -175,6 +175,7 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
   }
   // Notable buildings: a house group (with its wings) whose use is notable, a centerpiece's parts, a street corner's
   // shrine or watch post, and the plan's own buildings and landmarks (a town wall's towers stay with the wall)
+  const fronts = items.filter((i) => i.kind === "way" && !i.faint && Array.isArray(i.path) && i.path.length >= 2 && !["back", "quay", "track", "path"].includes(i.class) && Number.isFinite(i.width));
   const groups = new Map();
   for (const b of items.filter((i) => i.kind === "building")) {
     const own = planFeature.get(b.from);
@@ -189,7 +190,11 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     const notable = planned || /\/h-(anchor|shrine|watch)\d+$/.test(key) || parts.some((b) => USE_INFO[b.use]?.notable);
     if (!notable) continue;
     if (!parts.some((b) => polygonsOverlap(footOf(b), boxPoly))) continue;
-    features.push({ id: idFor(key.replace(/^.*\//, "") || "building"), type: "landmark", buildings: parts.map((b) => scaled(b, P, E)) });
+    // (one that fronted a street on the overview fronts it still: everything else grows with the zoom but streets keep
+    // their true width, so it's moved up to the street by what that leaves between them, along each street it fronted)
+    const [dx, dy] = frontShift(parts.map(footOf), fronts, (E - ft / 5) / E);
+    const moved = dx || dy ? parts.map((b) => ({ ...b, cx: b.cx + dx, cy: b.cy + dy, ...(Array.isArray(b.poly) ? { poly: b.poly.map(([x, y]) => [x + dx, y + dy]) } : {}) })) : parts;
+    features.push({ id: idFor(key.replace(/^.*\//, "") || "building"), type: "landmark", buildings: moved.map((b) => scaled(b, P, E)) });
   }
   if (!features.some((f) => f.type === "district")) notes.push("No district reaches into this area, so no houses will be built there.");
   // (a district's houses front its streets, all of them the overview's: with none in the area, none are built)
@@ -209,6 +214,49 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     output: { pxPerSquare: 100, scene: { name: name ?? `${plan?.name ?? "Map"} (battle map)` } },
   };
   return { plan: out, notes };
+}
+
+/** The nearest point of a path to a point, and how far it is. */
+function nearestOn(p, path) {
+  let best = { d: Infinity, q: path[0] };
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i], vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy;
+    const t = L2 ? Math.max(0, Math.min(1, ((p[0] - ax) * vx + (p[1] - ay) * vy) / L2)) : 0;
+    const q = [ax + vx * t, ay + vy * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d < best.d) best = { d, q };
+  }
+  return best;
+}
+
+/** How far a group of footprints stands from fronting a way, and the way to move toward it: { gap, dir } (squares). */
+function frontOf(feet, w) {
+  let best = { d: Infinity, p: null, q: null };
+  for (const f of feet) for (let i = 0; i < f.length; i++) {
+    const a = f[i], b = f[(i + 1) % f.length], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.05));
+    for (let k = 0; k < n; k++) {
+      const p = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n], r = nearestOn(p, w.path);
+      if (r.d < best.d) best = { d: r.d, p, q: r.q };
+    }
+  }
+  const L = best.d || 1;
+  return { gap: best.d - w.width / 2, dir: best.p ? [(best.q[0] - best.p[0]) / L, (best.q[1] - best.p[1]) / L] : [0, 0] };
+}
+
+/**
+ * The move, in overview squares, that brings a notable building up to the streets it fronted once the zoom has grown
+ * it but not them: for the nearest way it stood within FRONTED squares of, and another at a corner (turned more than
+ * 45 degrees from the first), (half the way's width + the gap) x share, share being what the zoom adds over true size
+ * as a share of the zoom ((E - ft/5) / E).
+ */
+const FRONTED = 0.25;
+export function frontShift(feet, ways, share) {
+  if (!(share > 0) || !feet.length) return [0, 0];
+  const near = ways.map((w) => ({ w, ...frontOf(feet, w) })).filter((x) => x.gap < FRONTED && x.gap > -x.w.width / 2).sort((a, b) => a.gap - b.gap);
+  const used = [];
+  for (const x of near) if (used.length < 2 && used.every((u) => Math.abs(u.dir[0] * x.dir[0] + u.dir[1] * x.dir[1]) < Math.SQRT1_2)) used.push(x);
+  let dx = 0, dy = 0;
+  for (const u of used) { const by = (u.w.width / 2 + Math.max(0, u.gap)) * share; dx += u.dir[0] * by; dy += u.dir[1] * by; }
+  return [r3(dx), r3(dy)];
 }
 
 /** A building item's footprint on the map. */
