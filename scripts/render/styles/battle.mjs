@@ -19,6 +19,7 @@ import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { tiersOf, edgeSpan, shiftRight, resample, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
+import { bands } from "../../core/lots/poly.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
@@ -66,12 +67,11 @@ function bandOf(im) {
 const BANK = { earthy: "edge.bank.earthy", slate: "edge.bank.slate", mossy: "edge.bank.mossy" };
 /** The wild props laid flat on the ground (drawn first, no shadow), and those standing up (shadowed). */
 /**
- * FA's bank art is drawn the other way up from its cliff art: a bank's lip (the pale rim catching the light) lies along
- * the bottom of the image, its face and the lower ground above it, where a cliff's top lies along the top. So a bank's
- * strips are laid flipped, its lip on the high side (Patrick, 8 Nov: one bank of a stream read as stepping up to the
- * water).
+ * Whether a bank's art is laid flipped. FA's bank art has its grassy top along the top of the image, as its cliff art
+ * has, so it isn't: the top lies on the high side, the grass (Patrick, 8 Nov: "your cliff top is on the water not the
+ * grass" when it was flipped).
  */
-const BANK_FLIP = true;
+const BANK_FLIP = false;
 const FLAT_PROPS = new Set(["fern", "leaves", "roots", "branch"]);
 /** The classes drawn as wild props (at their art's size) wherever they come from. */
 const WILD_CLASSES = new Set(["fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"]);
@@ -308,9 +308,13 @@ export function paint(ctx) {
   // 1c. Height: the lower a level lies the darker its ground (light comes down into a cut less), a stream's bed of
   // stones and gravel under its water; then under the woods a forest floor in soft patches
   const levels = items("level").filter((Lv) => Lv.rings.some((r) => r.length >= 3 && meets(bboxOf(r), 2)));
+  // (the bed's stones only on its floor, the shelf along the water: up the banks each tier's top is the ground's own
+  // grass, a terrace stepping down, not a strip of stones between two banks)
   for (const Lv of levels.filter((x) => x.bed)) {
-    const box = boxAround(Lv.rings.map(bboxOf), 0.2);
-    soft((k) => { for (const r of Lv.rings) poly(k, r); k.fill("evenodd"); }, tex(`surface.bed.${s}`), { blur: 0.2, box });
+    const w = L.items.find((i) => i.id === Lv.water && Array.isArray(i.path));
+    const floor = w ? bands([{ path: w.path, half: (w.width ?? 1) / 2 + TERRAIN.shelf + 0.1 }]) : Lv.rings;
+    const box = boxAround(floor.map(bboxOf), 0.2);
+    soft((k) => { for (const r of floor) poly(k, r); k.fill("evenodd"); }, tex(`surface.bed.${s}`), { blur: 0.2, box });
   }
   for (const Lv of levels.filter((x) => x.elevation < 0)) {
     const box = boxAround(Lv.rings.map(bboxOf), 0.4);
