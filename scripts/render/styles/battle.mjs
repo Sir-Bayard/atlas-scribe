@@ -65,6 +65,13 @@ function bandOf(im) {
 /** A bank's art by its rock (a mossy bank is grassy). */
 const BANK = { earthy: "edge.bank.earthy", slate: "edge.bank.slate", mossy: "edge.bank.mossy" };
 /** The wild props laid flat on the ground (drawn first, no shadow), and those standing up (shadowed). */
+/**
+ * FA's bank art is drawn the other way up from its cliff art: a bank's lip (the pale rim catching the light) lies along
+ * the bottom of the image, its face and the lower ground above it, where a cliff's top lies along the top. So a bank's
+ * strips are laid flipped, its lip on the high side (Patrick, 8 Nov: one bank of a stream read as stepping up to the
+ * water).
+ */
+const BANK_FLIP = true;
 const FLAT_PROPS = new Set(["fern", "leaves", "roots", "branch"]);
 /** The classes drawn as wild props (at their art's size) wherever they come from. */
 const WILD_CLASSES = new Set(["fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"]);
@@ -256,14 +263,14 @@ export function paint(ctx) {
    * laid along a to b, its pattern starting at a (so tiles agree), carried ext0 and ext1 squares past each end.
    */
   const stripPatterns = new Map();
-  const strip = (im, a, b, ext0 = 0, ext1 = 0, phase = 0, { width = null, clip = null } = {}) => {
+  const strip = (im, a, b, ext0 = 0, ext1 = 0, phase = 0, { width = null, clip = null, flip = false } = {}) => {
     const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
     if (L < 1e-3) return;
     g.save();
     if (clip) { poly(g, clip); g.clip(); }
     // (width: the band's thickness in squares, the art stretched across to it; else the art's own)
     const band = bandOf(im), ky = width ? (width * ART_PX) / band.h : 1;
-    g.translate(X(a[0]), Y(a[1])); g.rotate(Math.atan2(dy, dx)); g.scale(pp / ART_PX, (pp / ART_PX) * ky);
+    g.translate(X(a[0]), Y(a[1])); g.rotate(Math.atan2(dy, dx)); g.scale(pp / ART_PX, (pp / ART_PX) * ky * (flip ? -1 : 1));
     // (one pattern for each image: a map has hundreds of wall pieces)
     let p = stripPatterns.get(im);
     if (!p) stripPatterns.set(im, (p = g.createPattern(im, "repeat-x")));
@@ -272,7 +279,7 @@ export function paint(ctx) {
     g.fillRect(-ext0 * ART_PX, -band.mid, (L + ext0 + ext1) * ART_PX, im.height);
     g.restore();
   };
-  const stripPath = (im, path, phase = 0) => { let t = phase; for (let i = 1; i < path.length; i++) { strip(im, path[i - 1], path[i], i > 1 ? 0.05 : 0, 0, t); t += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); } };
+  const stripPath = (im, path, phase = 0, flip = false) => { let t = phase; for (let i = 1; i < path.length; i++) { strip(im, path[i - 1], path[i], i > 1 ? 0.05 : 0, 0, t, { flip }); t += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); } };
   /** A rectangle w by d squares around cx, cy, turned rot degrees, as a polygon on the map (so a pattern stays anchored). */
   const rectAt = (cx, cy, w, d, rot) => {
     const a = (rot * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
@@ -413,7 +420,7 @@ export function paint(ctx) {
       // see-through)
       soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       const im = k % 2 ? face : face2;
-      if (im) stripPath(im, tierPath(e, d, k), k * 0.37);
+      if (im) stripPath(im, tierPath(e, d, k), k * 0.37, !cliff && BANK_FLIP);
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
     }
     const lip = cliff ? art(`edge.top.${e.rock}`, 0) : null;
@@ -506,7 +513,26 @@ export function paint(ctx) {
   const yards = items("surface").filter((i) => (i.class === "backyard" || (i.class === "yard" && i.surface !== "grass")) && Array.isArray(i.poly)).map((y) => ({ y, bb: bboxOf(y.poly) })).filter(({ bb }) => meets(bb, 1.5));
   if (yards.length) soft((k) => { for (const { y } of yards) { poly(k, y.poly); k.fill(); } }, trodden, { blur: 0.3, noise: noiseMask("battle-yd", 2.5, -0.3, 0.4), alpha: 0.7, box: boxAround(yards.map((x) => x.bb)) });
   // (rails: a yard's fence and any other fence or wall line; not hedges, balks or a garden's clipped box)
-  const fences = items("boundary").filter((b) => Array.isArray(b.path) && b.path.length >= 2 && b.class !== "hedge" && b.class !== "balk" && b.class !== "clipped" && meets(bboxOf(b.path), 1));
+  const isRail = (b) => /\/rail\d$/.test(b.id ?? "");
+  const fences = items("boundary").filter((b) => Array.isArray(b.path) && b.path.length >= 2 && b.class !== "hedge" && b.class !== "balk" && b.class !== "clipped" && !isRail(b) && meets(bboxOf(b.path), 1));
+  // (a footbridge's rails: a plain dark wooden handrail on posts, not the yard fence's art)
+  const rails = items("boundary").filter((b) => isRail(b) && Array.isArray(b.path) && b.path.length >= 2 && meets(bboxOf(b.path), 1));
+  if (rails.length) {
+    const rb = boxAround(rails.map((f) => bboxOf(f.path)), 0.5);
+    soft((k) => { for (const f of rails) stroke(k, f.path.map(([x, y]) => [x + SHADOW[0] * 0.12, y + SHADOW[1] * 0.12]), 0.2, "butt"); }, "rgb(10,12,18)", { blur: 0.05, alpha: 0.45, box: rb });
+    const posts = [];
+    for (const f of rails) {
+      const [a, b] = [f.path[0], f.path.at(-1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.round(l / 1.25));
+      for (let i = 0; i <= n; i++) posts.push([a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n]);
+    }
+    fill((k) => { for (const [x, y] of posts) { k.beginPath(); k.rect(X(x - 0.1), Y(y - 0.1), 0.2 * pp, 0.2 * pp); k.fill(); } }, "rgb(38,27,19)");
+    for (const f of rails) {
+      const ang = (Math.atan2(f.path.at(-1)[1] - f.path[0][1], f.path.at(-1)[0] - f.path[0][0]) * 180) / Math.PI;
+      fill((k) => stroke(k, f.path, 0.13, "butt"), tex("floor.wood", 0, ang));
+      fill((k) => stroke(k, f.path, 0.13, "butt"), "rgb(44,30,20)", 0.45);
+    }
+    fill((k) => { for (const [x, y] of posts) { k.beginPath(); k.rect(X(x - 0.07), Y(y - 0.07), 0.14 * pp, 0.14 * pp); k.fill(); } }, "rgb(70,52,36)");
+  }
   if (fences.length) {
     soft((k) => { for (const f of fences) stroke(k, f.path.map(([x, y]) => [x - 0.1, y - 0.1]), 0.35, "butt"); }, "rgb(16,20,30)", { blur: 0.08, alpha: 0.35, box: boxAround(fences.map((f) => bboxOf(f.path)), 0.4) });
     const fenceArt = art("fence.wood");
