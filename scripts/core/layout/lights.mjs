@@ -5,6 +5,8 @@
  *
  *   - Indoor fires and candles: a light on each hearth, oven and forge the interiors placed; candles on each table and
  *     at each end of an altar, an oil lamp on each desk.
+ *   - Floors above and below the ground: wall lanterns that always burn, spaced down an upstairs corridor (its rooms lit
+ *     through their doors), else one in each room of a cellar or of a floor with no corridor.
  *   - Door lanterns: a wall lantern beside the street door of each inn, temple, shop and workshop that serves the
  *     street, and of a house now and then; a torch each side of a town gate, on its outer face.
  *   - Street lamps: in a city's districts (a town's and village's get none), lamp posts evenly spaced at the curb, in
@@ -42,6 +44,7 @@ export const LIGHTS = {
   candles: { bright: 0, dim: 10, color: "#ffd590", alpha: 0.3, animation: { type: "torch", speed: 2, intensity: 1 }, prop: "candles" },
   lamp: { bright: 5, dim: 15, color: "#ffcf80", alpha: 0.3, animation: { type: "torch", speed: 1, intensity: 1 }, prop: "lamp.table" },
   lantern: { bright: 10, dim: 20, color: "#ffc56b", alpha: 0.35, animation: { type: "torch", speed: 1, intensity: 1 }, dark: true, prop: "lantern.wall" },
+  "lantern-indoor": { bright: 10, dim: 20, color: "#ffc56b", alpha: 0.35, animation: { type: "torch", speed: 1, intensity: 1 }, prop: "lantern.wall" },
   "gate-torch": { bright: 20, dim: 40, color: "#ff9a40", alpha: 0.4, animation: { type: "torch", speed: 3, intensity: 3 }, dark: true, prop: "torch.stake" },
   "lamp-post": { bright: 5, dim: 20, color: "#ffc56b", alpha: 0.35, animation: { type: "torch", speed: 1, intensity: 1 }, dark: true, prop: "lamp.post" },
   campfire: { bright: 20, dim: 40, color: "#ff9040", alpha: 0.4, animation: { type: "flame", speed: 3, intensity: 3 }, prop: "campfire" },
@@ -79,11 +82,71 @@ const SQUARES = new Set(["square", "plaza", "market"]);
  * [width, height] in squares (street lamps stay on it). Light props the plan placed are taken out of items (they're
  * drawn as lights, not painted).
  */
+/** A floor's height in feet (rooms.mjs FLOORS.height). */
+const FLOOR_FT = 10;
+
+/** How far apart an upstairs corridor's lanterns are, in squares. */
+const CORRIDOR_LANTERN = 7;
+
+/**
+ * Where the wall lanterns of a floor above or below the ground hang: spaced down its corridor if it has one, else one
+ * in each room, each on the wall nearest the spot, clear of doors, windows and the stairs. Returns [[at, rot]].
+ */
+function floorLanterns(it, stairBoxes) {
+  const rooms = it.rooms ?? [];
+  const lit = rooms.some((m) => m.kind === "corridor") ? rooms.filter((m) => m.kind === "corridor") : rooms;
+  // (each wall with its thickness: an inner wall's, an outer wall's, which a castle's masonry makes thicker)
+  const walls = [...(it.walls ?? []).map((w) => ({ ...w, th: it.thickness ?? 0.3 })), ...(it.outer ?? []).map((w) => ({ ...w, th: it.outerThickness ?? it.thickness ?? 0.3 }))];
+  const solid = walls.filter((w) => w.type === "wall");
+  const gaps = walls.filter((w) => w.type !== "wall");
+  const out = [];
+  for (const m of lit) {
+    const poly = m.poly;
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    // (the room's long axis: its longest edge's direction, through its middle)
+    const c = poly.reduce((a, p) => [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length], [0, 0]);
+    let ax = [1, 0], best = 0;
+    poly.forEach((p, k) => { const q = poly[(k + 1) % poly.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L > best) { best = L; ax = [(q[0] - p[0]) / L, (q[1] - p[1]) / L]; } });
+    const span = poly.map((p) => (p[0] - c[0]) * ax[0] + (p[1] - c[1]) * ax[1]);
+    const lo = Math.min(...span), hi = Math.max(...span);
+    const n = m.kind === "corridor" ? Math.max(1, Math.round((hi - lo) / CORRIDOR_LANTERN)) : 1;
+    for (let k = 0; k < n; k++) {
+      const t = lo + ((k + 0.5) / n) * (hi - lo), spot = [c[0] + ax[0] * t, c[1] + ax[1] * t];
+      // (the clear place on a solid wall nearest the spot, sliding along the walls past doors, windows and the stairs)
+      let pick = null;
+      for (const w of solid) {
+        const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], L = Math.hypot(dx, dy);
+        if (L < 0.3) continue;
+        const nx = -dy / L, ny = dx / L;
+        // (along it, clear of its ends; a short side of a round wall at its middle)
+        for (let e = Math.min(0.4, L / 2); e <= Math.max(L - 0.4, L / 2) + 1e-9; e += 0.25) {
+          const foot = [w.a[0] + (dx * e) / L, w.a[1] + (dy * e) / L];
+          // (hung on the room's side of the wall)
+          const reach = w.th / 2 + 0.2;
+          const sgn = pointInPolygon([foot[0] + nx * reach, foot[1] + ny * reach], poly) ? 1 : pointInPolygon([foot[0] - nx * reach, foot[1] - ny * reach], poly) ? -1 : 0;
+          if (!sgn) continue;
+          const o = [nx * sgn, ny * sgn], q = [foot[0] + o[0] * (w.th / 2 + 0.15), foot[1] + o[1] * (w.th / 2 + 0.15)];
+          if (!pointInPolygon(q, poly)) continue;
+          const d = Math.hypot(q[0] - spot[0], q[1] - spot[1]);
+          if (pick && d >= pick.d) continue;
+          if (gaps.some((g) => distanceToPath(q, [g.a, g.b]) < 0.7)) continue;
+          if (stairBoxes.some((bx) => pointInPolygon(q, bx) || distanceToPath(q, [...bx, bx[0]]) < 0.3)) continue;
+          pick = { q, o, d };
+        }
+      }
+      if (pick) out.push([[r3(pick.q[0]), r3(pick.q[1])], r3(deg(Math.atan2(-pick.o[0], pick.o[1])))]);
+    }
+  }
+  return out;
+}
+
 export function lightsOf(items, seed, { size = null } = {}) {
   const r = rng(seed ?? 1, "lights");
   const out = [];
   const ground = (p) => levelAt(items, p);
-  const add = (cls, from, at, prop = null, id = null) => out.push({ kind: "light", id: id ?? `${from}/light${out.length + 1}`, from, class: cls, at: [r3(at[0]), r3(at[1])], elevation: ground(at), prop });
+  // (a light on a floor above or below the ground: its floor, and its elevation that floor's)
+  let onFloor = 0;
+  const add = (cls, from, at, prop = null, id = null) => out.push({ kind: "light", id: id ?? `${from}/light${out.length + 1}`, from, class: cls, at: [r3(at[0]), r3(at[1])], elevation: ground(at) + onFloor * FLOOR_FT, ...(onFloor ? { floor: onFloor } : {}), prop: prop && onFloor ? { ...prop, floor: onFloor } : prop });
   const piece = (f, x, y, rot, variant) => ({ f, x: r3(x), y: r3(y), rot: r3(rot), variant });
   const onMap = (q) => !Array.isArray(size) || (q[0] > 0.5 && q[1] > 0.5 && q[0] < size[0] - 0.5 && q[1] < size[1] - 0.5);
   const feet = items.filter((i) => i.kind === "building").map((b) => footprint(b));
@@ -91,8 +154,10 @@ export function lightsOf(items, seed, { size = null } = {}) {
   const waters = items.filter((i) => i.kind === "water");
   const inWater = (q) => waters.some((w) => (Array.isArray(w.poly) && pointInPolygon(q, w.poly)) || (Array.isArray(w.path) && distanceToPath(q, w.path) < (w.width ?? 1) / 2 + 0.6));
 
+  const stairBoxes = items.filter((i) => i.kind === "stairs" && Array.isArray(i.box)).map((i) => i.box);
   // Indoor fires and candles
   for (const it of items.filter((i) => i.kind === "interior")) {
+    onFloor = it.floor ?? 0;
     for (const p of it.furniture ?? []) {
       if (FIRES[p.f]) add(FIRES[p.f], it.from ?? it.id, [p.x, p.y]);
       const a = ((p.rot ?? 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
@@ -107,8 +172,10 @@ export function lightsOf(items, seed, { size = null } = {}) {
         add("lamp", it.from ?? it.id, q, piece("lamp.table", q[0], q[1], 0, r.int(8)));
       }
     }
+    if (onFloor) for (const [q, rot] of floorLanterns(it, stairBoxes)) add("lantern-indoor", it.from ?? it.id, q, piece("lantern.wall", q[0], q[1], rot, r.int(8)));
   }
 
+  onFloor = 0;
   // Door lanterns: beside the street door of a building that serves the street, on its outer face
   const ways = items.filter((i) => i.kind === "way" && Array.isArray(i.path) && i.path.length >= 2 && !i.faint);
   const squares = items.filter((i) => i.kind === "surface" && SQUARES.has(i.class) && Array.isArray(i.poly) && i.poly.length >= 3);
@@ -118,7 +185,8 @@ export function lightsOf(items, seed, { size = null } = {}) {
     streets.reduce((best, w) => Math.min(best, distanceToPath(p, w.path) - (w.width ?? 0) / 2), Infinity),
     squares.reduce((best, q) => Math.min(best, pointInPolygon(p, q.poly) ? 0 : distanceToPath(p, [...q.poly, q.poly[0]])), Infinity));
   const lanterns = [];
-  for (const sh of items.filter((i) => i.kind === "shell" && !NO_LANTERN.has(i.use))) {
+  // (a castle's towers and gatehouses have none: its gates have their torches)
+  for (const sh of items.filter((i) => i.kind === "shell" && !NO_LANTERN.has(i.use) && !i.works)) {
     const doors = (sh.walls ?? []).filter((w) => w.type === "door" && Array.isArray(w.inward));
     if (!doors.length) continue;
     // (a house or workshop only now and then: a lit door here and there down the street)
@@ -135,6 +203,7 @@ export function lightsOf(items, seed, { size = null } = {}) {
       const q = [m[0] + t[0] * side * (L / 2 + 0.3) + o[0] * (thick / 2 + 0.15), m[1] + t[1] * side * (L / 2 + 0.3) + o[1] * (thick / 2 + 0.15)];
       // (on its own wall: not past the wall's end into a corner)
       if (!(sh.walls ?? []).some((x) => x.type !== "door" && distanceToPath(q, [x.a, x.b]) < thick / 2 + 0.25)) continue;
+      if (!onMap(q)) continue;
       // (its art's top, the bracket, against the wall)
       add("lantern", sh.from ?? sh.id, q, piece("lantern.wall", q[0], q[1], deg(Math.atan2(-o[0], o[1])), r.int(8)));
       lanterns.push(q);
@@ -145,8 +214,12 @@ export function lightsOf(items, seed, { size = null } = {}) {
   // A torch each side of a town gate, on its outer face
   for (const g of items.filter((i) => i.kind === "gate" && Array.isArray(i.at) && Array.isArray(i.dir) && Array.isArray(i.out))) {
     const half = (g.roadWidth ?? 1) / 2 + 0.55;
+    // (a battle map's gatehouse stands over the gate: its torches on the gatehouse's outer face, where the road comes in)
+    const house = items.find((i) => i.kind === "building" && i.works === "gatehouse" && pointInPolygon(g.at, footprint(i)));
+    let out = (g.thickness ?? 0.6) / 2 + 0.35;
+    if (house) { const f = footprint(house); let d = 0; while (d < 20 && pointInPolygon([g.at[0] + g.out[0] * d, g.at[1] + g.out[1] * d], f)) d += 0.05; out = d + 0.45; }
     for (const side of [-1, 1]) {
-      const q = [g.at[0] + g.dir[0] * side * half + g.out[0] * ((g.thickness ?? 0.6) / 2 + 0.35), g.at[1] + g.dir[1] * side * half + g.out[1] * ((g.thickness ?? 0.6) / 2 + 0.35)];
+      const q = [g.at[0] + g.dir[0] * side * half + g.out[0] * out, g.at[1] + g.dir[1] * side * half + g.out[1] * out];
       // (on the map, on dry ground and clear of the buildings: a gate at the map's edge may have only one, or none)
       if (!onMap(q) || inWater(q) || onFoot(q)) continue;
       add("gate-torch", g.from ?? g.id, q, piece("torch.stake", q[0], q[1], r.next() * 30 - 15, r.int(8)));

@@ -135,6 +135,12 @@ export const TYPES = {
       name: str(),
       use: { ...oneOf(USES, null), fallback: "it's taken as a house" }, // what it's for (a pinned building keeps its use); named on the scene's labels
       rooms: str(), // its rooms on a battle map, in words ("common room with stage, kitchen, 2 bedrooms"); else from its use
+      // Its floors on a battle map (each a level of the scene): how many above the ground floor (else by its use: an
+      // inn's guest floor, a keep's two), whether it has a cellar (else by its use), and their rooms in words
+      floors: num(null, { min: 0, max: 3, integer: true }),
+      cellar: { kind: "boolean", default: null },
+      upstairs: str(), // the rooms of each floor above, in words ("7 bedrooms"); else by its use
+      cellarRooms: str(), // the cellar's rooms, in words ("cellar, storeroom"); else by its use
       // A pinned generated building keeps how it was drawn: where its chimney stands ({ u, v, variant }), the ends
       // that run into another roof (join) and the hips that start in from a corner (cut)
       tower: bool(false), // drawn as a tower: a flat roof inside a parapet, a round one too (a pinned watch post)
@@ -203,7 +209,8 @@ export const TYPES = {
       // run's outside is on its `side` (left or right, going along the path from its first point)
       thickness: num(null, { unit: "ft", min: 1, byClass: { town: 12, palisade: 4 }, only: TOWN_WALLS }),
       towers: { ...oneOf(["roofed", "open", "mixed"], null), only: TOWN_WALLS, fallback: "picked from its seed" },
-      towerShape: { ...oneOf(["round", "square", "mixed"], null), only: TOWN_WALLS, fallback: "picked from its seed (a palisade's are square)" },
+      // (corners: round at its corners and ends, square between, as a battle map's castle has them by default)
+      towerShape: { ...oneOf(["round", "square", "mixed", "corners"], null), only: TOWN_WALLS, fallback: "picked from its seed (a palisade's are square; on a battle map round at the corners, square between)" },
       towerSpacing: num(null, { unit: "ft", min: 30, byClass: { town: 120, palisade: 90 }, only: TOWN_WALLS }),
       outside: { ...oneOf(["none", "ditch", "moat"], "none"), only: TOWN_WALLS },
       ditchWidth: num(null, { unit: "ft", min: 5, byClass: { town: 20, palisade: 12 }, only: TOWN_WALLS }),

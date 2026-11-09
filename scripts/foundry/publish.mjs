@@ -16,6 +16,7 @@ import { union, shapes } from "../core/lots/poly.mjs";
 import { FURNITURE } from "../core/layout/rooms.mjs";
 import { heightRegions, groundOf, WALKING } from "../core/height.mjs";
 import { LIGHTS, LIT_FROM } from "../core/layout/lights.mjs";
+import { CASTLE } from "../core/layout/castle.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -115,14 +116,42 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     created = true;
   }
 
-  // Labels: every label AtlasScribe put in this scene out (an earlier map's, whatever plan it came from), the plan's in
-  onProgress(0.75, "Placing the labels");
+  // A battle map's floors above and below its ground (Foundry 14's levels): a level for each, its image over (or under)
+  // the ground's; every document AtlasScribe places below then goes on its own floor's level
+  let levelOf = null;
+  if (battle) {
+    try {
+      onProgress(0.8, "Placing the floors");
+      // (a castle's 20 ft level is its wall walk as well as its buildings' floors at that height)
+      const walk = layout?.items?.some((i) => i.kind === "wall" && i.curtain);
+      levelOf = await syncLevels(sceneId, image.levels, image.path, walk ? { 2: "Wall walk" } : {});
+    } catch (e) {
+      warnings.push(`The floors above and below the ground couldn't all be made levels (${e.message}).`);
+    }
+  }
+  // Labels: every label AtlasScribe put in this scene out (an earlier map's, whatever plan it came from), the plan's in,
+  // on the ground's level when the scene has floors (an inn's name isn't in its cellar)
+  onProgress(0.85, "Placing the labels");
   // The new labels go in before the old ones come out, so a failure never leaves the scene with none
   scene = sceneById(sceneId);
   const old = scene.drawings.filter((d) => isObj(d.flags?.[MOD]) && "batch" in d.flags[MOD]).map((d) => d.id);
-  const labels = await labelDrawings(plan, sceneById(sceneId), warnings, layout);
+  const labels = (await labelDrawings(plan, sceneById(sceneId), warnings, layout)).map((d) => (levelOf?.get(0) ? { ...d, levels: [levelOf.get(0)] } : d));
   if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", labels);
   if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
+
+  /**
+   * A document's data on the level of its floor (when the scene has floors: _floor, else the ground; _floors, several;
+   * _all, every level, as a roof's surface and the indoors under it are), its floor notes taken off.
+   */
+  // (a document whose floors have no level, the scene's levels not made, say, is left out: never piled onto the ground;
+  // with no levels but the ground's, only the ground's documents go in, on every level as before)
+  const onFloor = ({ _floor, _floors, _all, ...d }) => {
+    const fs = _floors ?? [_floor ?? 0];
+    if (_all) return d;
+    if (!levelOf) return fs.includes(0) ? d : null;
+    const ids = fs.map((f) => levelOf.get(f)).filter(Boolean);
+    return ids.length ? { ...d, levels: ids } : null;
+  };
 
   // The map's name on a dressed map: a cartouche on a tile of its own, hidden until the GM shows it to the players
   // (the old one out once the new one is in)
@@ -152,7 +181,9 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     let placed = false;
     try {
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
-      const tiles = image.overheads.map((o) => overheadTile(o, sceneX, sceneY, plan.id ?? null));
+      // (a roof or a tree's crown over the ground and every floor above, not the cellars below)
+      const above = levelOf ? [...levelOf.keys()].filter((f) => f >= 0) : null;
+      const tiles = image.overheads.map((o) => onFloor({ ...overheadTile(o, sceneX, sceneY, plan.id ?? null), ...(above ? { _floors: above } : {}) })).filter(Boolean);
       if (tiles.length) await sceneById(sceneId).createEmbeddedDocuments("Tile", tiles);
       overheads = tiles.length;
       placed = true;
@@ -170,7 +201,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     let placed = false;
     try {
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
-      const tiles = image.mist.map((m) => mistTile(m, sceneX, sceneY, plan.id ?? null));
+      const tiles = image.mist.map((m) => onFloor(mistTile(m, sceneX, sceneY, plan.id ?? null))).filter(Boolean);
       await createAll(sceneId, "Tile", tiles);
       mist = tiles.length;
       placed = true;
@@ -194,7 +225,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     try {
       onProgress(0.96, "Placing the furniture");
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
-      const tiles = image.furniture.map((f) => furnitureTile(f, sceneX, sceneY, plan.id ?? null));
+      const tiles = image.furniture.map((f) => onFloor({ ...furnitureTile(f, sceneX, sceneY, plan.id ?? null), _floor: f.floor ?? 0 })).filter(Boolean);
       await createAll(sceneId, "Tile", tiles);
       furniture = tiles.length;
       placed = true;
@@ -208,7 +239,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // yard's gate a door), over each building a roof Foundry shows to a token outside (a raised surface it partly
   // reveals), and its ground, banks, cliffs and water (height.mjs): new ones in, then AtlasScribe's old ones out (a
   // settlement map just takes the old ones out)
-  let walls = 0, roofs = 0, heights = 0, lights = 0;
+  let walls = 0, roofs = 0, heights = 0, lights = 0, stairs = 0;
   if (layout) {
     const { sceneX, sceneY } = sceneById(sceneId).dimensions;
     const pps = plan.output.pxPerSquare;
@@ -217,13 +248,14 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     const isHeight = (k) => HEIGHT_KINDS.includes(k);
     for (const [type, make, what, kinds, count] of [
       ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null), "walls and doors", null, (n) => (walls = n)],
-      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k), (n) => (roofs = n)],
+      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs", (n) => (roofs = n)],
       ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null), "ground and water regions", isHeight, (n) => (heights = n)],
+      ["Region", () => (levelOf ? battleStairs(layout, sceneX, sceneY, pps, plan.id ?? null).filter((r) => r._floors.filter((f) => levelOf.has(f)).length > 1) : []), "stairs between floors", (k) => k === "stairs", (n) => (stairs = n)],
       ["AmbientLight", () => battleLights(layout, sceneX, sceneY, pps, plan.id ?? null), "lights", null, (n) => (lights = n)],
     ]) {
       let placed = false;
       try {
-        const data = battle ? make() : [];
+        const data = battle ? make().map(onFloor).filter(Boolean) : [];
         const old = mine(type === "Wall" ? sceneById(sceneId).walls : type === "AmbientLight" ? sceneById(sceneId).lights : sceneById(sceneId).regions, kinds);
         await createAll(sceneId, type, data);
         count(data.length);
@@ -237,7 +269,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, mist, walls, roofs, heights, lights, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, mist, walls, roofs, heights, lights, stairs, levels: levelOf ? levelOf.size : 1, warnings };
 }
 
 /** How many documents go to Foundry in one request (a big battle map has thousands of walls). */
@@ -290,7 +322,10 @@ function furnitureTile(f, sceneX, sceneY, plan) {
     texture: { src: localPath(f.src) },
     x: Math.round(sceneX + f.x), y: Math.round(sceneY + f.y),
     width: Math.round(f.width), height: Math.round(f.height), rotation: Math.round((f.rotation ?? 0) * 100) / 100,
-    elevation: 0, sort: FURNITURE[f.f]?.floor ? 0 : FURNITURE[f.f]?.on ? 2 : 1,
+    // (on its floor: a floor's height up for each above the ground, one down in a cellar; stairs locked, their region
+    // being where they are)
+    elevation: (f.floor ?? 0) * FLOOR_FT, sort: FURNITURE[f.f]?.floor ? 0 : FURNITURE[f.f]?.on ? 2 : 1,
+    ...(f.lock ? { locked: true } : {}),
     flags: { [MOD]: { furniture: plan, piece: f.f } },
   };
 }
@@ -337,6 +372,7 @@ export function battleLights(layout, sceneX, sceneY, pps, plan) {
       config: { bright: L.bright, dim: L.dim, color: L.color, alpha: L.alpha, attenuation: 0.6, luminosity: 0.5, animation: { ...L.animation, reverse: false }, darkness: { min: L.dark ? LIT_FROM : 0, max: 1 } },
       locked: true,
       flags: { [MOD]: { built: plan, kind: "light", light: l.class } },
+      ...(l.floor ? { _floor: l.floor } : {}),
     };
   });
 }
@@ -385,22 +421,42 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
       else if (w.type === "window") out.push({ ...base, sight: S.PROXIMITY, light: S.PROXIMITY, threshold: { sight: 2 * dist, light: 2 * dist, attenuation: true }, flags: flags("window") });
       else if (w.type === "door") {
         const wide = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]) > 1.5;
-        out.push({ ...base, door: D.DOOR, doorSound: sh.material === "stone" ? "woodHeavy" : "woodBasic",
+        out.push({ ...base, door: D.DOOR, doorSound: sh.material === "stone" || sh.material === "masonry" ? "woodHeavy" : "woodBasic",
           animation: swing(CORE_DOORS[(sh.variant ?? 0) % CORE_DOORS.length], wide),
           flags: flags("door", doorGrid(sh.thickness ?? 0.3)) });
       }
     }
   }
-  // Walls between rooms, and doors in them (an open doorway is left open: nothing there)
+  // Walls between rooms, and doors in them (an open doorway is left open: nothing there), on each floor; a floor above
+  // or below has its own outer walls (windows above, none in a cellar), each on its floor (_floor, for publish)
   for (const it of layout.items.filter((i) => i.kind === "interior")) {
+    const _floor = it.floor ?? 0;
     for (const w of it.walls) {
-      const base = { c: c(w.a, w.b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL };
+      const base = { c: c(w.a, w.b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, ...(_floor ? { _floor } : {}) };
       if (w.type === "wall") out.push({ ...base, flags: flags("inner-wall") });
       else if (w.type === "door") out.push({ ...base, door: D.DOOR, doorSound: "woodBasic", animation: swing(CORE_DOORS[0]), flags: flags("inner-door", doorGrid(it.thickness ?? 0.2)) });
+      // (a gatehouse's portcullis: a door that stops movement when it's down but not sight, light or sound)
+      else if (w.type === "portcullis") out.push({ ...base, sight: S.NONE, light: S.NONE, sound: S.NONE, door: D.DOOR, doorSound: "jailHeavy", flags: flags("portcullis") });
+    }
+    if (_floor && Array.isArray(it.outer)) for (const w of it.outer) {
+      const base = { c: c(w.a, w.b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, _floor };
+      if (w.type === "window") out.push({ ...base, sight: S.PROXIMITY, light: S.PROXIMITY, threshold: { sight: 2 * dist, light: 2 * dist, attenuation: true }, flags: flags("window") });
+      // (a castle tower's door onto the wall walk)
+      else if (w.type === "door") out.push({ ...base, door: D.DOOR, doorSound: "woodHeavy", animation: swing(CORE_DOORS[0]), flags: flags("door", doorGrid(0.3)) });
+      else out.push({ ...base, flags: flags("wall") });
     }
   }
   // (fences and low walls stop movement only; a yard's gate between its back fences is a door that does the same)
   const fenceOnly = { move: M.NORMAL, sight: S.NONE, light: S.NONE, sound: S.NONE };
+  // A castle's curtain: solid on the ground and the floor above, its faces cut where its towers and gatehouses stand
+  // (their own walls close it); at the walk, its parapet and its inner edge (around the top of each flight up) stop
+  // movement only, a token seeing over them
+  const W2 = CASTLE.walk;
+  for (const w of layout.items.filter((i) => i.kind === "wall" && i.curtain)) {
+    for (const [a, b] of [...w.curtain.face, ...w.curtain.back, ...w.curtain.ends]) out.push({ c: c(a, b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, _floors: [0, 1], flags: flags("curtain") });
+    for (const [a, b] of [...w.curtain.parapet, ...w.curtain.ends]) out.push({ ...fenceOnly, c: c(a, b), _floor: W2, flags: flags("parapet") });
+    for (const [a, b] of w.curtain.edge) out.push({ ...fenceOnly, c: c(a, b), _floor: W2, flags: flags("walk-edge") });
+  }
   for (const f of layout.items.filter((i) => i.kind === "boundary" && i.class === "fence" && Array.isArray(i.path)))
     for (let k = 1; k < f.path.length; k++) out.push({ ...fenceOnly, c: c(f.path[k - 1], f.path[k]), flags: flags("fence") });
   for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "stone" && Array.isArray(i.path) && !(i.thickness > 0.6)))
@@ -446,6 +502,7 @@ export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
       behaviors: [{ type: "defineSurface", name: "Roof", system: { placement: "bottom", exposure: true, occlusion: true, light: true, move: true, sight: true, sound: true, culling: false } }],
       locked: true,
       flags: { [MOD]: { built: plan, kind: "roof" } },
+      _all: true,
     });
     // (and under it, indoors: a little darker than outside; the roof tile keeps the weather out once it fades, where a
     // region suppressing the weather would stop it falling on the roof too)
@@ -460,9 +517,99 @@ export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
       ],
       locked: true,
       flags: { [MOD]: { built: plan, kind: "indoor" } },
+      _all: true,
+    });
+    // (a cellar under it: dark, on its own level, but for the lamps and lanterns brought down)
+    if (parts.some((b) => b.cellar)) out.push({
+      name: "Cellar",
+      color: "#3a2e22",
+      shapes: pieces.flatMap((p) => [{ type: "polygon", points: pts(p.outer), hole: false }, ...p.holes.map((h) => ({ type: "polygon", points: pts(h), hole: true }))]),
+      visibility: CONST.REGION_VISIBILITY.LAYER,
+      behaviors: [{ type: "adjustDarknessLevel", name: "Cellar", system: { mode: globalThis.CONFIG?.RegionBehavior?.dataModels?.adjustDarknessLevel?.MODES?.DARKEN ?? 2, modifier: CELLAR_DARK } }],
+      locked: true,
+      flags: { [MOD]: { built: plan, kind: "cellar" } },
+      _floors: [-1],
     });
   }
   return out;
+}
+
+/** How much darker a cellar is (an Adjust Darkness Level region's darken, on top of indoors). */
+const CELLAR_DARK = 0.55;
+/** A floor's height in feet (rooms.mjs FLOORS.height): a floor's level, its furniture's and its lights' elevation. */
+const FLOOR_FT = 10;
+/** A floor's level's name. */
+// (counted as American floors are: the ground floor is the first)
+const FLOOR_NAMES = { "-1": "Cellar", 1: "Second floor", 2: "Third floor", 3: "Fourth floor" };
+
+/**
+ * A battle layout's stairs as Region data: over each flight, Foundry's own Change Level, on every floor it joins
+ * (_floors, for publish to turn into levels), so a token that walks onto it is asked which floor to go to.
+ */
+export function battleStairs(layout, sceneX, sceneY, pps, plan) {
+  const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
+  return layout.items.filter((i) => i.kind === "stairs" && Array.isArray(i.box)).map((st) => {
+    // (a wall's flight joins the ground and the walk only; a building's every floor from its lowest to its highest)
+    const floors = [];
+    if (Array.isArray(st.levels)) floors.push(...st.levels);
+    else for (let f = st.floors[0]; f <= st.floors[1]; f++) floors.push(f);
+    return {
+      name: "Stairs",
+      color: "#c8a060",
+      shapes: [{ type: "polygon", points: pts(st.box), hole: false }],
+      visibility: CONST.REGION_VISIBILITY.LAYER,
+      behaviors: [{ type: "changeLevel", name: "Stairs", system: {} }],
+      locked: true,
+      flags: { [MOD]: { built: plan, kind: "stairs" } },
+      _floors: floors,
+    };
+  });
+}
+
+/**
+ * Makes a scene's levels match a battle map's floors: AtlasScribe's own levels (flags floor) updated, made or taken out;
+ * the ground's level (the one showing the map, groundPath) left as it is. wanted: render's levels ([{ floor, path }]),
+ * or null for a map given by its path (the floors the scene has are kept). A floor above sees down to the ground and the
+ * floors between; a cellar sees nothing else. Returns a Map of floor to level id (0 the ground), or null for a scene
+ * with no floors but its ground.
+ */
+async function syncLevels(sceneId, wanted, groundPath, names = {}) {
+  let scene = sceneById(sceneId);
+  const ground = scene.levels.find((l) => l.background?.src === groundPath) ?? scene.initialLevel ?? scene.levels.contents[0];
+  if (!ground) return null;
+  const ours = scene.levels.filter((l) => l.id !== ground.id && Number.isInteger(l.flags?.[MOD]?.floor) && l.flags[MOD].floor !== 0);
+  const map = new Map([[0, ground.id]]);
+  if (!Array.isArray(wanted)) {
+    for (const l of ours) map.set(l.flags[MOD].floor, l.id);
+    return map.size > 1 ? map : null;
+  }
+  const floors = [...wanted].filter((w) => Number.isInteger(w.floor) && w.floor !== 0 && w.path).sort((a, b) => a.floor - b.floor);
+  const byFloor = new Map(ours.map((l) => [l.flags[MOD].floor, l]));
+  const make = [], change = [];
+  for (const w of floors) {
+    const data = {
+      name: names[w.floor] ?? FLOOR_NAMES[w.floor] ?? `Floor ${w.floor}`,
+      elevation: w.floor < 0 ? { bottom: w.floor * FLOOR_FT, top: (w.floor + 1) * FLOOR_FT } : { bottom: w.floor * FLOOR_FT, top: (w.floor + 1) * FLOOR_FT },
+      background: { src: w.path },
+      sort: w.floor,
+      flags: { [MOD]: { floor: w.floor } },
+    };
+    const old = byFloor.get(w.floor);
+    if (old) change.push({ _id: old.id, ...data });
+    else make.push(data);
+  }
+  if (change.length) await scene.updateEmbeddedDocuments("Level", change);
+  if (make.length) await scene.createEmbeddedDocuments("Level", make);
+  scene = sceneById(sceneId);
+  for (const l of scene.levels) {
+    const f = l.flags?.[MOD]?.floor;
+    if (l.id !== ground.id && floors.some((w) => w.floor === f)) map.set(f, l.id);
+  }
+  const vis = [...map.entries()].filter(([f]) => f !== 0).map(([f, id]) => ({ _id: id, visibility: { levels: f > 0 ? [...map.entries()].filter(([g]) => g >= 0 && g < f).map(([, i]) => i) : [] } }));
+  if (vis.length) await scene.updateEmbeddedDocuments("Level", vis);
+  const gone = ours.filter((l) => !floors.some((w) => w.floor === l.flags[MOD].floor)).map((l) => l.id);
+  if (gone.length) await scene.deleteEmbeddedDocuments("Level", gone);
+  return map.size > 1 ? map : null;
 }
 
 /** How much darker it is indoors than out (an Adjust Darkness Level region's darken). */
@@ -495,6 +642,7 @@ export function battleHeights(layout, sceneX, sceneY, pps, plan) {
     behaviors: r.kind === "ground" || !keys.length || !r.cost ? [] : slows(r.cost),
     locked: true,
     flags: { [MOD]: { built: plan, kind: r.kind, elevation: r.elevation ?? null, order: r.order ?? null, over: !!r.over, style: r.style ?? null, lines: (r.lines ?? []).map((l) => pts(l)), alone: !!r.alone } },
+    _floor: 0,
   }));
 }
 

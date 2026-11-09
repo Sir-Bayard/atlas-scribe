@@ -37,6 +37,7 @@ import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf, offsetLine } from "../cliffs.mjs";
 import { battleYards, battleBack } from "./battle.mjs";
+import { castleWorks } from "./castle.mjs";
 import { terrainOf, edgeSpan, shiftRight, resample } from "./terrain.mjs";
 import { battleWoods, rockfall } from "./wild.mjs";
 import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
@@ -496,6 +497,11 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       ...(b.use ? { use: b.use } : {}),
       ...(b.grand ? { grand: true } : {}),
       ...(b.rooms ? { rooms: b.rooms } : {}), // its rooms on a battle map, as its plan gives them
+      // (its floors above and cellar on a battle map, and their rooms, as its plan gives them)
+      ...(b.floors != null ? { floors: b.floors } : {}), ...(b.cellar != null ? { cellar: b.cellar } : {}),
+      ...(b.upstairs ? { upstairs: b.upstairs } : {}), ...(b.cellarRooms ? { cellarRooms: b.cellarRooms } : {}),
+      // (a battle map's castle works: a wall's tower or gatehouse, built by castle.mjs; a gatehouse's passage across)
+      ...(b.works ? { works: b.works } : {}), ...(b.passage ? { passage: b.passage } : {}),
     };
     items.push(item);
     space.buildings.push(item);
@@ -888,7 +894,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const moatFrozen = plan.features.some((f) => f.type === "water" && f.frozen); // a moat freezes with the plan's water
     for (const f of plan.features.filter(isTownWall)) {
       const r = streamFor(f.id);
-      const w = layWall(f, { roads: roadsSq, waters: watersSq, sq, r: r.fork("wall") });
+      const w = layWall(f, { roads: roadsSq, waters: watersSq, sq, r: r.fork("wall"), battle });
       for (const g of w.gates) { gatedBy.add(g.road); if (Array.isArray(g.at)) wallGatePts.push(g.at); }
       // (each gate on a battle map, for its torches: along the wall there, and outward)
       if (battle) w.gates.filter((x) => Array.isArray(x.at)).forEach((g, k) => {
@@ -1581,8 +1587,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
           : { kind: "boundary", id: `${c.id}/rail${k + 1}`, from: c.from ?? c.id, class: "fence", path });
       });
     }
+    castleWorks(items, W, H, plan.seed);
     battleYards(items, W, H);
-    buildingInteriors(items, plan.seed);
+    buildingInteriors(items, plan.seed, notes);
     for (const b of items.filter((i) => i.kind === "building" && i.rooms)) {
       const { rooms, unknown } = parseRooms(b.rooms);
       if (unknown.length) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: rooms not known (${unknown.join(", ")}); they're left out.` });

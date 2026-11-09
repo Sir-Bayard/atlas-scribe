@@ -16,7 +16,7 @@ const select = (name, title, key, value) => `<div class="form-group"><label>${ti
 export function battleTabHTML() {
   const b = normalizeBrief({});
   return `<section class="as-qs-battle" data-tab="battle" hidden>
-    <div class="form-group stacked"><label>Describe it (optional)</label><textarea name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk..."></textarea></div>
+    <div class="form-group stacked"><label>Describe it (optional)</label><textarea name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk; a fort with roofed towers in winter..."></textarea></div>
     <div class="as-qs-chips" aria-live="polite"></div>
     <h4>Site</h4>
     <div class="as-qs-two">
@@ -35,6 +35,12 @@ export function battleTabHTML() {
       <div class="as-qs-two">${select("use", "Use", "use", b.building.use)}${select("bsize", "Size", "buildingSize", b.building.size)}</div>
       <div class="form-group stacked"><label>Rooms</label><input type="text" name="b-rooms" placeholder="From its use if empty (common room with a stage, kitchen, two bedrooms)"></div>
       <div class="form-group"><label>Name</label><input type="text" name="b-bname" placeholder="Made up for an inn if empty"></div>
+      <div class="as-qs-two">
+        <div class="form-group"><label>Floors above</label><select name="b-floors"><option value="">By its use</option><option value="0">None</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></div>
+        <div class="form-group"><label>Cellar</label><select name="b-cellar"><option value="">By its use</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+      </div>
+      <div class="form-group stacked"><label>Upstairs rooms</label><input type="text" name="b-upstairs" placeholder="By its use if empty (an inn's guest rooms off a corridor: 7 bedrooms)"></div>
+      <div class="form-group stacked"><label>Cellar rooms</label><input type="text" name="b-crooms" placeholder="By its use if empty (cellar, storeroom)"></div>
     </div>
     <div data-site="street" hidden>
       <h4>Street</h4>
@@ -43,6 +49,11 @@ export function battleTabHTML() {
     <div data-site="camp" hidden>
       <h4>Camp</h4>
       <div class="as-qs-two">${select("camp", "Kind", "camp", b.camp.kind)}<div class="form-group"><label>Tents</label><input type="number" name="b-tents" min="1" max="16" step="1" placeholder="By its kind"></div></div>
+    </div>
+    <div data-site="castle" hidden>
+      <h4>Castle</h4>
+      <p class="hint">A curtain wall with a walk along its top, towers and a gatehouse with floors, a keep and its yard's buildings, each floor a level of the scene. Its size above is the castle's.</p>
+      <div class="as-qs-two">${select("towers", "Tower tops", "towers", b.castle.towers)}</div>
     </div>
   </section>`;
 }
@@ -54,9 +65,10 @@ export function briefFromForm(form, seed) {
     site: v("site"), size: v("size"), season: v("season"), time: v("time"), weather: v("weather"), ground: v("ground"),
     features: BRIEF.features.filter((f) => form.elements[`b-f-${f}`]?.checked),
     trees: v("trees"), litter: v("litter"), rocks: v("rocks"), brush: v("brush"),
-    building: { use: v("use"), size: v("bsize"), rooms: v("rooms"), name: v("bname") },
+    building: { use: v("use"), size: v("bsize"), rooms: v("rooms"), name: v("bname"), floors: v("floors"), cellar: v("cellar"), upstairs: v("upstairs"), cellarRooms: v("crooms") },
     street: { place: v("place"), quarter: v("quarter") },
     camp: { kind: v("camp"), tents: v("tents") ? Number(v("tents")) : null },
+    castle: { towers: v("towers") },
     name: v("name"), seed,
   });
 }
@@ -67,8 +79,10 @@ function setForm(form, b) {
   for (const k of ["site", "size", "season", "time", "weather", "ground", "trees", "litter", "rocks", "brush"]) set(k, b[k]);
   for (const f of BRIEF.features) if (form.elements[`b-f-${f}`]) form.elements[`b-f-${f}`].checked = b.features.includes(f);
   set("use", b.building.use); set("bsize", b.building.size); set("rooms", b.building.rooms); set("bname", b.building.name);
+  set("floors", b.building.floors ?? ""); set("cellar", b.building.cellar === true ? "yes" : b.building.cellar === false ? "no" : ""); set("upstairs", b.building.upstairs); set("crooms", b.building.cellarRooms);
   set("place", b.street.place); set("quarter", b.street.quarter);
   set("camp", b.camp.kind); set("tents", b.camp.tents ?? "");
+  set("towers", b.castle.towers);
   if (form.elements.name) form.elements.name.value = b.name ?? "";
 }
 
@@ -76,10 +90,12 @@ function setForm(form, b) {
 function showSite(root) {
   const site = root.querySelector('[name="b-site"]')?.value;
   for (const el of root.querySelectorAll("[data-site]")) el.hidden = el.dataset.site !== site;
+  // (a castle's size is the castle's own: a fort, a castle, a great castle, each with its map's size)
+  for (const o of root.querySelectorAll('[name="b-size"] option')) o.textContent = (site === "castle" ? BRIEF_LABELS.castleSize : BRIEF_LABELS.size)[o.value] ?? o.textContent;
 }
 
 /** A form field's brief key ("b-bsize" is "building.size", a feature's box "feature.pond"), or null for one that isn't. */
-const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents" };
+const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", floors: "building.floors", cellar: "building.cellar", upstairs: "building.upstairs", crooms: "building.cellarRooms", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents", towers: "castle.towers" };
 function keyOf(name) {
   if (name === "name") return "name";
   if (!name?.startsWith("b-") || name === "b-describe") return null;
@@ -130,7 +146,7 @@ export function wireBattleTab(root) {
     chips.innerHTML = [
       kept.length || read.later.length || read.skipped.length || read.unknown.length ? `<div class="hint">What it understood (each also set in the form below; × takes it out):</div>` : "",
       ...kept.map((c) => `<span class="as-qs-chip" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(c.label)} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip="Take this out">×</button></span>`),
-      ...read.later.map((l) => `<span class="as-qs-chip as-later" data-tooltip="Upper floors and cellars come with a later version">${esc(l.label)}</span>`),
+      ...(read.later ?? []).map((l) => `<span class="as-qs-chip as-later">${esc(l.label)}</span>`),
       ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" data-tooltip="${esc(k.why)}">${esc(k.label)}: left out</span>`),
       ...read.unknown.map((w) => `<span class="as-qs-chip as-unknown" data-tooltip="Not understood: left out">${esc(w)}</span>`),
     ].join("");
@@ -159,7 +175,7 @@ export function wireBattleTab(root) {
     hand[key] = key.startsWith("feature.") ? !!event.target.checked : key === "camp.tents" ? (now.camp.tents ?? null) : getKey(now, key);
   };
   form.addEventListener("change", onHand);
-  for (const n of ["b-rooms", "b-bname", "b-tents", "name"]) form.elements[n]?.addEventListener("input", onHand);
+  for (const n of ["b-rooms", "b-bname", "b-tents", "b-upstairs", "b-crooms", "name"]) form.elements[n]?.addEventListener("input", onHand);
   showSite(root);
   return { flush: () => { if (timer) apply(); } };
 }

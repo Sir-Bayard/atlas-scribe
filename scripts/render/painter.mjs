@@ -24,7 +24,8 @@ export function styleOf(layout) {
  * brokenArt the roles any file failed for (painted with fewer variants, or plain), overheads the pieces a style paints
  * apart to lie over the map as tiles (a battle map's roofs and tree crowns): [{ name, kind, x, y, width, height (px,
  * from the map's corner), elevation, blob }], empty for a style without them; furniture a battle map's pieces to lie
- * over it as tiles, [{ src, f, x, y (their middle), width, height (px), rotation }].
+ * over it as tiles, [{ src, f, x, y (their middle), width, height (px), rotation, floor, lock }]; levels a battle map's
+ * floors above and below the ground, each its own image, [{ floor, blob }] (1 and up, -1 a cellar).
  * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
  */
 export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
@@ -72,28 +73,43 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   const single = W + 2 * margin <= 4096 && H + 2 * margin <= 4096;
   const cols = single ? 1 : Math.ceil(W / tileSize), rows = single ? 1 : Math.ceil(H / tileSize);
   const coreW = single ? W : tileSize, coreH = single ? H : tileSize;
-  const out = new OffscreenCanvas(W, H);
-  const og = out.getContext("2d");
-  const n = cols * rows;
-  for (let ty = 0; ty < rows; ty++) {
-    for (let tx = 0; tx < cols; tx++) {
-      const i = ty * cols + tx;
-      const cx0 = tx * coreW, cy0 = ty * coreH;
-      const cw = Math.min(coreW, W - cx0), ch = Math.min(coreH, H - cy0);
-      const tw = cw + 2 * margin, th = ch + 2 * margin;
-      const tile = new OffscreenCanvas(tw, th);
-      const mask = new OffscreenCanvas(tw, th), blur = new OffscreenCanvas(tw, th);
-      style.paint({
-        g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp,
-        x0: (cx0 - margin) / pp, y0: (cy0 - margin) / pp,
-        layout, art: getArt,
-        progress: (p, label) => progress(0.1 + (0.8 * (i + p)) / n, n > 1 ? `${label} (part ${i + 1} of ${n})` : label),
-      });
-      og.drawImage(tile, margin, margin, cw, ch, cx0, cy0, cw, ch);
-      mask.width = mask.height = 1;
-      blur.width = blur.height = 1;
-      tile.width = tile.height = 1;
+  // (the ground, or with floor a floor above or below it: a battle map's other levels, each an image of its own, clear
+  // where nothing of that floor is)
+  const paintAll = (floor, p0, p1) => {
+    const out = new OffscreenCanvas(W, H);
+    const og = out.getContext("2d");
+    const n = cols * rows;
+    for (let ty = 0; ty < rows; ty++) {
+      for (let tx = 0; tx < cols; tx++) {
+        const i = ty * cols + tx;
+        const cx0 = tx * coreW, cy0 = ty * coreH;
+        const cw = Math.min(coreW, W - cx0), ch = Math.min(coreH, H - cy0);
+        const tw = cw + 2 * margin, th = ch + 2 * margin;
+        const tile = new OffscreenCanvas(tw, th);
+        const mask = new OffscreenCanvas(tw, th), blur = new OffscreenCanvas(tw, th);
+        style.paint({
+          g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp, floor,
+          x0: (cx0 - margin) / pp, y0: (cy0 - margin) / pp,
+          layout, art: getArt,
+          progress: (p, label) => progress(p0 + ((p1 - p0) * (i + p)) / n, n > 1 ? `${label} (part ${i + 1} of ${n})` : label),
+        });
+        og.drawImage(tile, margin, margin, cw, ch, cx0, cy0, cw, ch);
+        mask.width = mask.height = 1;
+        blur.width = blur.height = 1;
+        tile.width = tile.height = 1;
+      }
     }
+    return out;
+  };
+  const floors = style.floorsOf?.(layout) ?? [];
+  const n = cols * rows;
+  const out = paintAll(0, 0.1, floors.length ? 0.7 : 0.9);
+  // (each other floor saved as soon as it's painted, and let go)
+  const levels = [];
+  for (const [k, floor] of floors.entries()) {
+    const c = paintAll(floor, 0.7 + (0.2 * k) / floors.length, 0.7 + (0.2 * (k + 1)) / floors.length);
+    levels.push({ floor, blob: await c.convertToBlob({ type: "image/webp", quality }) });
+    c.width = c.height = 1;
   }
 
   progress(0.9, "Saving the image");
@@ -124,7 +140,7 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     if (!list?.length) continue;
     const url = list[Math.abs(variant | 0) % list.length], bmp = loaded.get(url);
     const at = artPlacement(piece, insetsOf(bmp));
-    furniture.push({ src: url, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot });
+    furniture.push({ src: url, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
   }
   // Mist (a battle map's): each overlay a tile over the low place it lies in
   const mist = [];
@@ -136,7 +152,7 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   }
   for (const bmp of loaded.values()) bmp?.close();
   const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, furniture, mist, ms: Math.round(performance.now() - t0) };
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, furniture, mist, levels, ms: Math.round(performance.now() - t0) };
 }
 
 /**

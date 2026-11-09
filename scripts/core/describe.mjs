@@ -20,9 +20,12 @@ const WORDS = {
   quarter: { market: ["market", "marketplace", "bazaar"], merchants: ["merchants", "merchant"], crafts: ["crafts", "craftsmen", "artisans", "workshops"], docks: ["docks", "harbor", "wharf", "waterfront", "port"], nobles: ["nobles", "noble", "rich", "wealthy", "estates"], temple: ["temple", "temples", "cathedral"], poor: ["poor", "slum", "slums", "squalid"], garrison: ["garrison", "barracks"] },
   camp: { caravan: ["caravan", "wagons", "wagon"], soldiers: ["soldiers", "army", "military", "troops", "mercenaries", "warband", "legion"], campsite: ["campsite", "campfire"] },
   size: { small: ["small", "tiny", "little", "cramped"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand"] },
+  towers: { roofed: ["roofed towers", "roofed tower", "tower roofs", "conical roofs", "cone roofs", "pointed roofs", "spires", "spire"], open: ["battlements", "crenellated", "crenelated", "crenellations", "open towers", "open tower"] },
 };
-/** Words that say a map is a wilderness, a camp, a street: "wilderness", "camp", "street". */
-const SITE_WORDS = { wilderness: ["wilderness", "wild", "wilds"], camp: ["camp", "encampment", "bivouac", "tents", "tent"], street: ["street", "streets", "quarter", "square"] };
+/** Words that say a map is a wilderness, a camp, a street or a castle: "wilderness", "camp", "street", "castle". */
+const SITE_WORDS = { wilderness: ["wilderness", "wild", "wilds"], camp: ["camp", "encampment", "bivouac", "tents", "tent"], street: ["street", "streets", "quarter", "square"], castle: ["castle", "fort", "fortress", "stronghold", "citadel", "bailey", "curtain wall", "ramparts", "rampart"] };
+/** A castle's size from its own word, when no size is said: a fort small, a fortress or great castle large. */
+const CASTLE_SIZE_WORDS = { small: ["fort", "small castle"], large: ["fortress", "great castle", "great fortress", "citadel"] };
 /** Scattered things, and how much. */
 const SCATTER_ITEMS = { trees: ["trees", "tree"], litter: ["stumps", "stump", "logs", "log", "deadfall", "fallen"], rocks: ["rocks", "rock", "boulders", "boulder", "stones"], brush: ["bushes", "bush", "shrubs", "shrub", "undergrowth", "ferns", "fern", "brush", "brambles"] };
 const AMOUNTS = { lots: ["lots", "lot", "many", "littered", "full", "plenty", "strewn", "covered", "dense", "thick", "overgrown", "heavy", "packed", "loads"], some: ["some", "several", "scattered", "occasional", "with"], few: ["few", "sparse", "sparsely", "handful", "couple", "light", "thin"], none: ["no", "without", "barren", "treeless"] };
@@ -37,8 +40,8 @@ const ROOM_WORDS = {
   store: ["storeroom", "store room", "storage", "pantry"],
   bedroom: ["rooms for rent", "rooms to rent", "guest rooms", "guest room", "bedrooms", "bedroom", "rooms to let"],
 };
-/** Words that put a room or a thing on another floor (levels, chunk 8). */
-const LATER = { cellar: ["cellar", "cellars", "basement", "undercroft"], upstairs: ["upstairs", "upper floor", "second floor", "first floor", "attic", "loft", "upper floors", "two floors", "three floors", "2 floors", "3 floors", "stories", "storeys"] }; // (read in British spelling too)
+/** Words that put a room or a thing on another floor: a cellar, or floors above (each a level of the scene). */
+const LATER = { cellar: ["cellar", "cellars", "basement", "undercroft"], upstairs: ["upstairs", "upper floor", "second floor", "first floor", "attic", "loft", "upper floors", "two floors", "three floors", "2 floors", "3 floors", "stories", "storeys", "story", "storey"] }; // (read in British spelling too)
 /** Number words. */
 const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, a: 1, an: 1, single: 1, pair: 2, dozen: 12 };
 /** Words not worth reporting as not understood. */
@@ -52,7 +55,8 @@ const pattern = (p) => new RegExp(`\\b${esc(p).replace(/ /g, "\\s+")}(?:s|es)?\\
  * Reads a description. Returns { brief, chips, later, skipped, unknown }: brief holds only the choices it found (site, size,
  * season, time, weather, ground, features, trees, litter, rocks, brush, building { use, size, rooms, name }, street
  * { place, quarter }, camp { kind, tents }); chips, what it understood, each { key, value, label } (key the brief's
- * field, "building.use" and so on); later, what it read but can't build yet ({ label }: a cellar, an upper floor);
+ * field, "building.use" and so on); later, kept for the window and always empty now (a cellar and floors above are
+ * read into the building's own);
  * skipped, what it read but left out for the site it chose ({ label, why }: the village of "a village inn"); unknown,
  * the words it didn't know.
  */
@@ -80,8 +84,9 @@ export function readDescription(text = "") {
   const named = raw.match(/\b(?:called|named)\s+["“]([^"”]{1,60})["”]/i);
   if (named) used.push([named.index, named.index + named[0].length]);
 
-  // Cellars and upper floors (and the rooms said to be there) come with levels
-  const laterSpans = [];
+  // A cellar and floors above, and the rooms said to be there ("a cellar filled with casks", "an upstairs with 7 rooms
+  // for rent"): each clause read on its own, for the building's cellar and floors (a building by a road's)
+  const laterSpans = [], floorsSaid = [];
   for (const [what, words] of Object.entries(LATER)) for (const w of words) for (const m of find(w)) {
     // (the clause it's in: to the nearest comma, "and" or period either side)
     const before = lower.slice(0, m.at), after = lower.slice(m.end);
@@ -90,7 +95,10 @@ export function readDescription(text = "") {
     const clause = (raw.length === lower.length ? raw : lower).slice(s, e).trim().replace(/^(?:and|with)\s+/i, "").replace(/^(?:a|an|the)\s+/i, "");
     laterSpans.push([s, e]);
     used.push([s, e]);
-    if (!later.some((l) => l.what === what)) later.push({ what, label: `${clause} (comes with levels)` });
+    // (every clause of a kind read together: "upstairs rooms, three floors" says both how many floors and what's there)
+    const had = floorsSaid.find((l) => l.what === what), text = lower.slice(s, e);
+    if (!had) floorsSaid.push({ what, word: w, text, label: clause });
+    else if (!had.text.includes(text)) had.text += ` ; ${text}`;
   }
   const inLater = (m) => laterSpans.some(([s, e]) => m.at >= s && m.end <= e);
 
@@ -103,7 +111,10 @@ export function readDescription(text = "") {
   const place = first(WORDS.place);
   const camp = mentions(SITE_WORDS.camp) || (!use && !place && (mentions(WORDS.camp.caravan) || mentions(WORDS.camp.soldiers)));
   const streetWords = mentions(SITE_WORDS.street);
-  if (camp) { brief.site = "camp"; mark(SITE_WORDS.camp); }
+  // (a castle's words make a castle, whatever else is said: its towers, yard and keep are its own)
+  const castle = mentions(SITE_WORDS.castle);
+  if (castle) { brief.site = "castle"; mark(SITE_WORDS.castle); }
+  else if (camp) { brief.site = "camp"; mark(SITE_WORDS.camp); }
   else if (streetWords || (place && !use)) { brief.site = "street"; mark(SITE_WORDS.street); }
   else if (use) brief.site = "roadside";
   else if (mentions(SITE_WORDS.wilderness)) { brief.site = "wilderness"; mark(SITE_WORDS.wilderness); }
@@ -111,12 +122,25 @@ export function readDescription(text = "") {
   if (!brief.site && (brief.ground || mentions(Object.values(WORDS.features).flat()))) brief.site = "wilderness";
   if (brief.site) chip("site", brief.site, BRIEF_LABELS.site[brief.site]);
   const skipped = [];
-  if (place && brief.site !== "street") skipped.push({ label: place, why: brief.site === "camp" ? "A camp stands in the country" : "A building by a road stands on its own: pick Village or town street for a street" });
+  if (place && brief.site !== "street") skipped.push({ label: place, why: brief.site === "camp" ? "A camp stands in the country" : brief.site === "castle" ? "A castle stands on its own" : "A building by a road stands on its own: pick Village or town street for a street" });
   if (brief.weather === "snow" && !brief.season) brief.season = "winter";
 
   // Size: of the building when there is one ("a wide open tavern area", "a big inn"), else of the map
   const size = first(WORDS.size);
   if (size && brief.site === "roadside") { brief.building = { ...brief.building, size }; chip("building.size", size, `${BRIEF_LABELS.buildingSize[size]} building`); }
+  else if (brief.site === "castle") {
+    // (a castle's size is the castle's: a fort, a castle, a great castle; said, or from its own word)
+    const own = size ?? Object.keys(CASTLE_SIZE_WORDS).find((k) => CASTLE_SIZE_WORDS[k].some((w) => find(w).length));
+    if (own) { brief.size = own; chip("size", own, BRIEF_LABELS.castleSize[own].replace(/ \(.*$/, "")); }
+    mark(Object.values(CASTLE_SIZE_WORDS).flat());
+    const towers = first(WORDS.towers);
+    if (towers) { brief.castle = { towers }; chip("castle.towers", towers, towers === "open" ? "Towers open, with battlements" : "Towers roofed"); }
+    mark(Object.values(WORDS.towers).flat());
+    // (its towers are its own; any other building is one of its yard's, which come with its size)
+    const other = useHits.filter((m) => !WORDS.use.watchtower.some((w) => lower.slice(m.at, m.end).startsWith(w)));
+    mark(WORDS.use.watchtower);
+    if (other.length) skipped.push({ label: lower.slice(other[0].at, other[0].end), why: "A castle's yard buildings come with its size" });
+  }
   else if (size) { brief.size = size; chip("size", size, `${BRIEF_LABELS.size[size].split(" ")[0]} map`); }
 
   // The site's own: the building's use, the place and quarter, the camp's kind and tents
@@ -215,6 +239,32 @@ export function readDescription(text = "") {
       chip("building.rooms", brief.building.rooms, `Rooms: ${brief.building.rooms}`);
     }
   }
+  // The cellar and the floors above: a building's (by a road), with the rooms said to be there
+  for (const f of floorsSaid) {
+    if (brief.site !== "roadside") { skipped.push({ label: f.label, why: brief.site === "castle" ? "A castle's keep, towers and gatehouse have their floors and the keep its cellar already" : "A cellar or floors above go with a building: pick a building by a road" }); continue; }
+    const t = f.text;
+    const count = (re) => { const m = t.match(re); return m ? (/^\d+$/.test(m[1]) ? Number(m[1]) : NUMBERS[m[1]] ?? null) : null; };
+    if (f.what === "cellar") {
+      brief.building = { ...brief.building, cellar: true };
+      chip("building.cellar", true, "A cellar");
+      const rooms = [/\b(cask|casks|barrel|barrels|wine|ale|beer|kegs?)\b/.test(t) ? "cellar" : null, /\b(store ?rooms?|storage|pantry|stores)\b/.test(t) ? "storeroom" : null].filter(Boolean);
+      if (rooms.length) { brief.building.cellarRooms = rooms.join(", "); chip("building.cellarRooms", brief.building.cellarRooms, `Cellar rooms: ${brief.building.cellarRooms}`); }
+    } else {
+      // (floors above: "upstairs" or an attic one; "three floors" or "three stories" the ground floor and two more)
+      const total = count(/\b(\d+|two|three|four)[\s-]+(?:floors?|stor(?:ies|eys|ey|y))\b/);
+      const up = Math.max(1, Math.min(3, total ? total - 1 : 1));
+      brief.building = { ...brief.building, floors: up };
+      chip("building.floors", up, up === 1 ? "A floor above" : `${up} floors above`);
+      const beds = t.match(/\b(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen)?\s*(?:guest\s+)?(?:bed)?rooms?(?:\s+(?:for|to)\s+(?:rent|let))?\b/);
+      // (only a number of rooms said sets them: "upstairs rooms" alone leaves them to its use, an inn's whole corridor)
+      if (beds && /rooms?/.test(beds[0]) && beds[1]) {
+        const n = /^\d+$/.test(beds[1]) ? Number(beds[1]) : NUMBERS[beds[1]] ?? 2;
+        brief.building.upstairs = n === 1 ? "bedroom" : `${Math.min(8, n)} bedrooms`;
+        chip("building.upstairs", brief.building.upstairs, `Upstairs: ${brief.building.upstairs}`);
+      }
+    }
+  }
+
   if (named) {
     if (brief.site === "roadside") { brief.building = { ...brief.building, name: named[1].trim() }; chip("building.name", named[1].trim(), `Named ${named[1].trim()}`); }
     else { brief.name = named[1].trim(); chip("name", brief.name, `Named ${brief.name}`); }

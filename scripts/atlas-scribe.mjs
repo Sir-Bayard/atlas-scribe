@@ -69,16 +69,16 @@ function planOrThrow(input) {
   return checked;
 }
 
-/** { path, width, height, thumb?, overheads?, furniture?, mist? } for an image: from render's result, or measured from its file. */
+/** { path, width, height, thumb?, overheads?, furniture?, mist?, levels? } for an image: from render's result, or measured from its file. */
 async function imageInfo(image) {
   if (image && typeof image === "object" && image.path && image.width && image.height)
-    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null };
+    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null, levels: Array.isArray(image.levels) ? image.levels : null };
   const path = typeof image === "string" ? image : image?.path;
   if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
   const res = await fetch(new URL(path, window.location.href));
   if (!res.ok) throw new Error(`AtlasScribe: couldn't load the map image ${path}`);
   const bmp = await createImageBitmap(await res.blob());
-  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, furniture: null, mist: null };
+  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, furniture: null, mist: null, levels: null };
   bmp.close();
   return info;
 }
@@ -249,7 +249,9 @@ const api = {
    * A battle map's roofs and tree crowns are saved too, each its own image in a folder beside the map, for publish to
    * lay over it as tiles: overheads lists them ({ path, kind, x, y, width, height, elevation }; empty for other maps),
    * and furniture its pieces of furniture, also tiles ({ src, f, x, y, width, height, rotation }).
-   * Returns { path, width, height, tiles, ms, layout, overheads, furniture, missingArt, notes, artNotes, warnings }, and scene when
+   * A battle map's floors above and below the ground are saved too, each an image (levels: [{ floor, path }]), for publish
+   * to make the scene's levels of.
+   * Returns { path, width, height, tiles, ms, layout, overheads, furniture, levels, missingArt, notes, artNotes, warnings }, and scene when
    * published.
    */
   async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
@@ -271,7 +273,7 @@ const api = {
         const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
         if (img.brokenArt?.length) forgetArt(); // a file that failed may have gone: ask FA Nexus again next time
         check();
-        let path = null, overheads = [];
+        let path = null, overheads = [], levels = [];
         if (save) {
           bar.update(0.97, "Saving");
           const dir = `${outputFolder()}/maps`;
@@ -290,7 +292,23 @@ const api = {
               }
             } catch (e) {
               // (overheads null, not empty: a scene published from this keeps the roofs and trees it had)
-              e.result = { path, width: img.width, height: img.height, layout, overheads: null, furniture: null, mist: null };
+              e.result = { path, width: img.width, height: img.height, layout, overheads: null, furniture: null, mist: null, levels: null };
+              throw e;
+            }
+          }
+          // A battle map's floors above and below the ground, each its own image beside the map (in a folder of its own,
+          // as the roofs are), for publish to make the scene's levels of
+          if (img.levels?.length) {
+            try {
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-levels`)}`;
+              await ensureDir(sub);
+              for (const l of img.levels) {
+                check();
+                bar.update(0.99, "Saving the floors");
+                levels.push({ floor: l.floor, path: await upload(sub, `${l.floor < 0 ? "cellar" : `floor-${l.floor}`}.webp`, l.blob, { ready: true }) });
+              }
+            } catch (e) {
+              e.result = { path, width: img.width, height: img.height, layout, overheads, furniture: null, mist: null, levels: null };
               throw e;
             }
           }
@@ -298,7 +316,7 @@ const api = {
         const ms = Math.round(performance.now() - t0);
         bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
         result = {
-          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [],
+          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           notes: [...layout.notes.map((n) => n.message), ...notes],
           artNotes: notes, // why art is missing (FA Nexus not active, say)

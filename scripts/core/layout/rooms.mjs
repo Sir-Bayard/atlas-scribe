@@ -12,6 +12,7 @@
  */
 import { intersect, difference, area, offset, signedArea } from "../lots/poly.mjs";
 import { pointInPolygon, polygonsOverlap, spansAt } from "../geom.mjs";
+import { levelAt } from "../height.mjs";
 import { rng } from "../rng.mjs";
 
 /**
@@ -31,7 +32,9 @@ export const ROOMS = {
   common: { words: ["common room", "taproom", "tavern", "bar room"], floor: "wood", weight: 3.5, features: ["bar", "hearth"] },
   kitchen: { words: ["kitchen"], floor: "stone", weight: 1.3, place: "back" },
   bedroom: { words: ["bedroom", "private room", "guest room"], floor: "wood", private: true },
-  store: { words: ["storeroom", "store", "pantry", "cellar"], floor: "stone", private: true, weight: 0.8 },
+  store: { words: ["storeroom", "store", "pantry"], floor: "stone", private: true, weight: 0.8 },
+  cellar: { words: ["cellar", "wine cellar", "cask cellar", "cask room", "vault"], floor: "earth", weight: 1.5 },
+  corridor: { words: ["corridor", "passage", "landing"], floor: "wood", weight: 0.6 },
   office: { words: ["office", "study"], floor: "wood", private: true },
   workroom: { words: ["workshop", "workroom"], floor: "wood", weight: 2 },
   forge: { words: ["forge"], floor: "stone", weight: 2 },
@@ -116,7 +119,9 @@ export function programFor(use, a) {
   if (STORAGE_USES.has(u)) return a < 40 ? [P("storage", 1, "front")] : [P("storage", 0.85, "front"), P("office", 0.15)];
   if (u === "barracks") return [P("bunks", 0.5, "front"), P("mess", 0.3), P("armory", 0.2)];
   if (u === "armory") return [P("armory", 1, "front")];
-  if (u === "keep" || u === "watch") return a < 50 ? [P("armory", 1, "front")] : [P("hall", 0.6, "front", ["hearth"]), P("armory", 0.4)];
+  // (a keep's ground floor its undercroft, stores and arms: its great hall is on the floor above)
+  if (u === "keep") return a < 50 ? [P("store", 1, "front")] : [P("store", 0.6, "front"), P("armory", 0.4)];
+  if (u === "watch") return a < 50 ? [P("armory", 1, "front")] : [P("hall", 0.6, "front", ["hearth"]), P("armory", 0.4)];
   if (u === "mansion" || u === "palace") return [P("hall", 0.3, "front", ["hearth"]), P("dining", 0.2), P("kitchen", 0.2, "back"), P("bedroom", 0.15), P("office", 0.15)];
   if (u === "guildhall") return [P("hall", 0.6, "front", ["hearth"]), P("office", 0.2), P("store", 0.2)];
   if (u === "workshop" || TRADE_LIST.includes(u)) {
@@ -183,6 +188,9 @@ export const FURNITURE = {
   firepit: { size: [1, 1], body: [0.46, 0.46], back: "none" },
   brazier: { size: [1, 1], body: [0.9, 0.9], back: "none" },
   stage: { size: [4, 2], body: [4, 2], drawn: true },
+  // (a building's stairs, placed by buildingInteriors on each of its floors: FA's flight of 1 by 3 squares, its art
+  // running down the image, turned along the building)
+  stairs: { size: [1, 3], body: [1, 3], back: "none" },
   "stage.small": { size: [3, 2], body: [3, 2], drawn: true },
 };
 
@@ -235,6 +243,9 @@ const RECIPES = {
     { f: "chest", at: "foot", of: ["bed", "bed.single"] },
     { f: "wardrobe", at: "wall" }, { f: "rug", at: "rug", min: 14 }, { f: "chair", at: "corner" }] },
   store: { cover: 0.5, fill: ["crate", "barrel", "crate", "shelf.goods"], steps: [] },
+  // (a cask cellar: casks along its walls and in rows, a rack of goods)
+  cellar: { cover: 0.42, fill: ["barrel", "barrel", "crate", "shelf.goods"], steps: [{ f: "barrel", at: "wall", n: 8 }, { f: "shelf.goods", at: "wall" }] },
+  corridor: { cover: 0, fill: [], steps: [] },
   office: { cover: 0.3, fill: ["chest", "shelf"], steps: [
     { f: "desk", at: "wall", want: "outside" }, { f: "chair", at: "seat", of: "desk" },
     { f: "shelf", at: "wall", n: 2 }, { f: "rug", at: "rug", min: 14 }] },
@@ -386,27 +397,337 @@ function layRooms(poly, program, doors, openings = []) {
 }
 
 /**
+ * Floors (M6 chunk 8, Patrick, 8 Nov: Foundry 14's levels on one scene; by use, plus when the plan asks; stairs as art
+ * with a Change Level region; an inn's guest floor a corridor with rooms off it; the stairs against a wall of the main
+ * room; a cellar of stone and earth). height: a floor's height in feet; most: the most upper floors; corridor: an upper
+ * floor's corridor across, in squares (the stairs and a way past them); stairs: their art's size [across, along]; a
+ * floor needs an inside of least by least squares.
+ */
+/** A building's use as a note names it ("The inn"), for a building with no name of its own. */
+const USE_WORDS = { watch: "watchtower", trade: "shop" };
+const theUse = (use) => `The ${USE_WORDS[use] ?? use ?? "building"}`;
+
+export const FLOORS = { height: 10, most: 3, corridor: 2.2, stairs: [1, 3], least: [4, 5], sideMin: 2.6 };
+const KEEP_FLOORS = new Set(["keep"]), TOWER_USES = new Set(["watch", "tower"]);
+
+/**
+ * How many floors a building has above its ground floor, and whether it has a cellar, by its use and the floor of
+ * its inside (a square squares; r its own random stream): an inn of some size a guest floor and a cellar; a mansion or
+ * palace a floor of bedrooms and a cellar; a keep two floors and a cellar; a tower two floors; a big shop, workshop or
+ * house now and then a floor of rooms above (a big house now and then a cellar).
+ */
+export function floorsFor(use, a, r) {
+  const u = use ?? "house";
+  if (u === "inn") return { up: a >= 60 ? 1 : 0, cellar: true };
+  if (u === "mansion" || u === "palace") return { up: 1, cellar: true };
+  if (u === "guildhall") return { up: 1, cellar: false };
+  if (KEEP_FLOORS.has(u)) return { up: 2, cellar: true };
+  if (TOWER_USES.has(u)) return { up: 2, cellar: false };
+  if (TRADE_SHOP.has(u) || u === "workshop" || TRADE_LIST.includes(u)) return { up: a >= 50 && r.chance(0.5) ? 1 : 0, cellar: false };
+  if (u === "house") return { up: a >= 60 && r.chance(0.35) ? 1 : 0, cellar: a >= 60 && r.chance(0.15) };
+  return { up: 0, cellar: false };
+}
+
+/**
+ * An upper floor's program by use (floor k of up), or null for a corridor of guest rooms (as many as fit): an inn's
+ * guest rooms; a mansion's bedrooms and a study off a corridor; a keep's great hall, then its lord's rooms; a tower's
+ * rooms one to a floor; a house's or shop's rooms above, off a landing at the stairs.
+ */
+function upperProgram(use, k, up) {
+  const u = use ?? "house";
+  if (u === "inn") return { corridor: true, rooms: null };
+  if (u === "mansion" || u === "palace") return { corridor: true, rooms: null, last: "office" };
+  if (KEEP_FLOORS.has(u)) return k === 1 ? { rooms: [P("hall", 1, "front", ["hearth"])] } : { rooms: [P("hall", 0.4, "front"), P("bedroom", 0.35, "any", ["bed"]), P("office", 0.25)] };
+  if (TOWER_USES.has(u)) return { rooms: [P(k === up ? "hall" : "armory", 1, "front")] };
+  if (u === "guildhall") return { rooms: [P("hall", 0.6, "front"), P("office", 0.4)] };
+  return { rooms: [P("hall", 0.4, "front"), P("bedroom", 0.6, "any")] };
+}
+/** A cellar's program by use: an inn's or a mansion's cask cellar and a storeroom; a keep's stores and armory; else a storeroom. */
+function cellarProgram(use) {
+  const u = use ?? "house";
+  if (u === "inn" || u === "mansion" || u === "palace") return [P("cellar", 0.65, "front"), P("store", 0.35)];
+  if (KEEP_FLOORS.has(u)) return [P("store", 0.6, "front"), P("armory", 0.4)];
+  return [P("store", 1, "front")];
+}
+
+/**
+ * A plan's own program read into rooms ("7 bedrooms"), each with its share and features; the first meets the front
+ * (on a floor above or below, the stairs).
+ */
+const programOf = (named) => parseRooms(named).rooms.slice(0, ROOM.most).map((x, i) => P(x.kind, ROOMS[x.kind].weight ?? 1, i === 0 ? "front" : ROOMS[x.kind].place ?? "any", [...(ROOMS[x.kind].features ?? []), ...x.features]));
+
+/**
+ * A floor's rooms laid out, their inner walls and the doors in them (in the building's frame). laid: { rooms: [{ poly,
+ * room }], cuts }. ringF: the outer wall's middle line. front: where the floor is entered (the front door, or the
+ * stairs). r: the floor's random stream. hub: a room every door opens from (a corridor), when there is one. noDoor(p):
+ * a place no door may be (before the stairs). Returns { rooms, walls, stretches, doorsIn, roomAt }.
+ */
+function wallsOf(laid, ringF, front, r, { hub = null, noDoor = null } = {}) {
+  const rooms = laid.rooms.map((x, i) => ({ i, poly: x.poly, kind: x.room.kind, features: x.room.features, private: !!ROOMS[x.room.kind].private }));
+  const roomAt = (p) => rooms.find((q) => pointInPolygon(p, q.poly));
+  const stretches = [];
+  // (where a cut's line, going on from t one way, meets the outer wall's line within most of a square: its t there)
+  const ringHit = (cut, t, dir) => {
+    let best = null;
+    for (let i = 0; i < ringF.length; i++) {
+      const a = ringF[i], b = ringF[(i + 1) % ringF.length];
+      // (in the cut's own terms: across, the line's fixed coordinate; along, t)
+      const [aa, at] = cut.axis === 0 ? [a[0], a[1]] : [a[1], a[0]], [ba, bt] = cut.axis === 0 ? [b[0], b[1]] : [b[1], b[0]];
+      if ((aa - cut.c) * (ba - cut.c) > 0 || aa === ba) continue;
+      const h = at + ((cut.c - aa) / (ba - aa)) * (bt - at), s = (h - t) * dir;
+      if (s >= -0.05 && s <= 0.8 && (best == null || s < (best - t) * dir)) best = h;
+    }
+    return best;
+  };
+  const spansOf = (k) => spansAt(k.axis === 0 ? k.poly.map(([x, y]) => [y, x]) : k.poly, k.c);
+  for (const cut of laid.cuts) {
+    const swap = cut.axis === 0;
+    const spans = spansAt(swap ? cut.poly.map(([x, y]) => [y, x]) : cut.poly, cut.c);
+    for (const [t0, t1] of spans) {
+      const P2 = (t) => (swap ? [cut.c, t] : [t, cut.c]);
+      const nrm = swap ? [1, 0] : [0, 1];
+      let cur = null;
+      for (let t = t0 + 0.05; t <= t1 - 0.05 + 1e-9; t += 0.1) {
+        const p = P2(t), A = roomAt([p[0] - nrm[0] * 0.2, p[1] - nrm[1] * 0.2]), B = roomAt([p[0] + nrm[0] * 0.2, p[1] + nrm[1] * 0.2]);
+        const key = A && B && A !== B ? `${Math.min(A.i, B.i)}-${Math.max(A.i, B.i)}` : null;
+        if (cur && cur.key === key) cur.t1 = t + 0.05;
+        else { if (cur?.key) stretches.push(cur); cur = { key, A, B, t0: t - 0.05, t1: t + 0.05, P2, swap }; }
+      }
+      if (cur?.key) stretches.push(cur);
+      // (each stretch's wall runs on past its ends: at the outer wall to its middle line, where that wall's own line
+      // runs; at an inner wall across it to that wall's far face; so walls meet and leave no gap to see or slip through)
+      // (the inner walls across this one that reach it: a cut of the other way whose line, within its own piece, runs
+      // to this line or over it)
+      const across = laid.cuts.filter((k) => k.axis !== cut.axis && spansOf(k).some(([a, b]) => cut.c >= a - 0.15 && cut.c <= b + 0.15)).map((k) => k.c);
+      // (a stretch ends where the rooms either side change, the samples a tenth apart putting that within a twentieth
+      // of its end: at an inner wall that runs across there, on past every one that close to its far face; else at
+      // the span's end, on to the outer wall's own line, found where this line meets the ring (a wing's or a sloped
+      // wall's too), a hair past it)
+      const meet = (t0s, dir, end) => {
+        const t = end ?? t0s;
+        const near = across.filter((x) => Math.abs(x - t) < 0.07);
+        if (near.length) return (dir > 0 ? Math.max(...near) : Math.min(...near)) + dir * ROOM.wall / 2;
+        // (near a sloped or round wall the rooms run out before the span does: the ring is looked for anyway)
+        const hit = ringHit(cut, t, dir);
+        return hit != null ? hit + dir * 0.02 : { free: t + dir * (ROOM.wall / 2 + 0.05) };
+      };
+      for (const st of stretches.filter((x) => x.P2 === P2)) {
+        for (const [k, t, dir, end] of [[0, st.t0, -1, st.t0 <= t0 + 0.11 ? t0 : null], [1, st.t1, 1, st.t1 >= t1 - 0.11 ? t1 : null]]) {
+          const e = meet(t, dir, end);
+          st[`e${k}`] = typeof e === "number" ? e : e.free;
+          // (an end that meets neither, beside a wing's corner or a round part's curve: joined to the ring's nearest
+          // point, below)
+          if (typeof e !== "number") st[`free${k}`] = true;
+        }
+      }
+    }
+  }
+  const frontRoom = hub ? rooms[hub] : front ? rooms.reduce((a, q) => (dist(q.poly, front) < dist(a.poly, front) ? q : a)) : rooms[0];
+  const reached = new Set([frontRoom.i]);
+  const doorsIn = [];
+  // (where along a stretch a door of width w may go: its stretch less its corners, and less any place no door may be)
+  const room = (st, w) => {
+    const lo = st.t0 + ROOM.cornerKeep + w / 2, hi = st.t1 - ROOM.cornerKeep - w / 2;
+    if (!noDoor) return hi >= lo ? [lo, hi] : null;
+    let best = null;
+    for (let a = lo, t = lo; t <= hi + 1e-9; t += 0.1) {
+      const blocked = noDoor(st.P2(t));
+      if (blocked) a = t + 0.1;
+      else if (t - a >= 0 && (!best || t - a > best[1] - best[0])) best = [a, t];
+    }
+    return best;
+  };
+  // (with a hub, a room opens off the hub alone, a guest room onto the corridor, not through its neighbor; then any
+  // room the hub couldn't reach (beside the stairs) through a neighbor)
+  for (let grew = true, onlyHub = hub != null; grew || onlyHub; ) {
+    if (!grew && onlyHub) onlyHub = false;
+    grew = false;
+    const next = stretches.filter((st) => reached.has(st.A.i) !== reached.has(st.B.i) && (!onlyHub || st.A.i === hub || st.B.i === hub))
+      .map((st) => ({ st, span: room(st, st.A.private || st.B.private ? ROOM.door : ROOM.opening) })).filter((x) => x.span)
+      .sort((a, b) => b.st.t1 - b.st.t0 - (a.st.t1 - a.st.t0))[0];
+    if (next) {
+      const { st, span: [lo, hi] } = next;
+      const priv = st.A.private || st.B.private;
+      const w = priv ? ROOM.door : ROOM.opening;
+      const t = (lo + hi) / 2 + (r.next() - 0.5) * Math.max(0, hi - lo) * 0.6;
+      doorsIn.push({ stretch: st, t, w, type: priv ? "door" : "opening" });
+      reached.add(st.A.i); reached.add(st.B.i);
+      grew = true;
+    }
+  }
+  // The walls as segments (in the frame), gaps at the doors
+  const walls = [];
+  for (const st of stretches) {
+    const gaps = doorsIn.filter((d) => d.stretch === st).map((d) => [d.t - d.w / 2, d.t + d.w / 2, d.type]).sort((a, b) => a[0] - b[0]);
+    let t = st.e0;
+    for (const [g0, g1, type] of gaps) {
+      if (g0 > t + 1e-6) walls.push({ type: "wall", a: st.P2(t), b: st.P2(g0) });
+      walls.push({ type, a: st.P2(g0), b: st.P2(g1) });
+      t = g1;
+    }
+    if (st.e1 > t + 1e-6) walls.push({ type: "wall", a: st.P2(t), b: st.P2(st.e1) });
+    // (a free end joined to the outer wall's line where that's within half a square: a short wall the scene gets but
+    // the map doesn't paint, the outer wall's art covering it)
+    for (const k of [0, 1]) if (st[`free${k}`]) {
+      const p = st.P2(st[`e${k}`]);
+      let best = null, bd = 0.5;
+      for (let i = 0; i < ringF.length; i++) { const q = nearestOn(p, ringF[i], ringF[(i + 1) % ringF.length]), d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < bd) { bd = d; best = q; } }
+      if (best && bd > 1e-3) walls.push({ type: "wall", a: p, b: best, join: true });
+    }
+  }
+  return { rooms, walls, stretches, doorsIn, roomAt };
+}
+
+/**
+ * A floor's furniture, room by room (in the frame). doors: the outside doors (none above or below the ground floor).
+ * extra: { keep: [poly] kept clear (the stairs), openings: [{ at, w, u }] more ways in (the stairs' foot) }.
+ */
+function furnishFloor(w, doors, framePoly, r, extra = {}) {
+  const { rooms, stretches, doorsIn, roomAt } = w;
+  const furniture = [];
+  for (const q of rooms) {
+    const openings = [
+      ...doors.filter((d) => roomAt(d.at) === q || dist(q.poly, d.at) < 0.3).map((d) => ({ at: d.at, w: d.w, u: d.u, outside: true })),
+      ...doorsIn.filter((d) => d.stretch.A === q || d.stretch.B === q).map((d) => ({ at: d.stretch.P2(d.t), w: d.w, u: d.stretch.swap ? [0, 1] : [1, 0] })),
+      ...(extra.openings ?? []).filter((o) => roomAt(o.at) === q),
+    ];
+    // (its floor: the room less half of each inner wall along it; its outer walls' inner face is its edge already)
+    const bands = stretches.filter((st) => st.A === q || st.B === q).map((st) => { const a = st.P2(st.t0), b = st.P2(st.t1), u = st.swap ? [0, 1] : [1, 0]; return boxAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, st.t1 - st.t0 + 0.4, ROOM.wall, u, [-u[1], u[0]]); });
+    const floor = (bands.length ? difference([q.poly], bands) : [q.poly]).reduce((a, p) => (!a || area(p) > area(a) ? p : a), null);
+    if (floor && area(floor) > 1) furnish(q, tidyRing(floor), openings, framePoly, r.fork("room", q.i), furniture, extra.keep ?? []);
+  }
+  return furniture;
+}
+
+/**
+ * Where a building's stairs go (in its frame), from its ground floor's rooms: against an end wall of the main room,
+ * along the building's long way, in the band an upper floor's corridor takes, clear of the doors' ground; else of a
+ * public room; else of any. Returns { box, at, foot, u, along, lane } or null when none fits.
+ */
+function stairsOf(framePoly, w, openings, long, mainKind) {
+  const [x0, y0, x1, y1] = bbOf(framePoly), along = x1 - x0 >= y1 - y0 ? 0 : 1;
+  const lo = along === 0 ? x0 : y0, hi = along === 0 ? x1 : y1, mid = along === 0 ? (y0 + y1) / 2 : (x0 + x1) / 2;
+  const [sw, sl] = [FLOORS.stairs[0], Math.min(FLOORS.stairs[1], long)];
+  const u = along === 0 ? [1, 0] : [0, 1], n = [-u[1], u[0]];
+  let best = null;
+  // (against an end wall of a room the corridor's band reaches: the building's own end walls, or a wall between rooms
+  // across the band, its far end 0.08 off the wall's face; anywhere across the band, so it stands in the upper floor's
+  // corridor; slid along the room away from that wall only when it must be, to clear a door)
+  const bLo = mid - FLOORS.corridor / 2, bHi = mid + FLOORS.corridor / 2;
+  const lane = FLOORS.corridor / 2 - sw / 2 - 0.05; // (best to one side of the corridor, a way past it on the other)
+  const tries = [];
+  for (const room of w.rooms ?? []) {
+    const [rx0, ry0, rx1, ry1] = bbOf(room.poly), rLo = along === 0 ? rx0 : ry0, rHi = along === 0 ? rx1 : ry1;
+    const qLo = Math.max(bLo, along === 0 ? ry0 : rx0), qHi = Math.min(bHi, along === 0 ? ry1 : rx1);
+    if (qHi - qLo < sw + 0.1 || rHi - rLo < sl + 0.2) continue;
+    for (const end of [-1, 1]) {
+      const face = end < 0 ? rLo : rHi, outer = Math.abs(face - (end < 0 ? lo : hi)) < 0.05;
+      const gap = 0.08 + (outer ? 0 : ROOM.wall / 2);
+      const c00 = end < 0 ? face + gap + sl / 2 : face - gap - sl / 2;
+      for (let slide = 0; slide <= rHi - rLo - sl - gap - 0.1 + 1e-9; slide += 0.5) {
+        for (let off = qLo + sw / 2 + 0.05; off <= qHi - sw / 2 - 0.05 + 1e-9; off += 0.25) tries.push({ end, c0: c00 - end * slide, off, outer, slide });
+      }
+    }
+  }
+  // (else, as a last resort, anywhere across a room: the floor above then has rooms off a landing, not a corridor)
+  for (const room of w.rooms ?? []) {
+    const [rx0, ry0, rx1, ry1] = bbOf(room.poly), rLo = along === 0 ? rx0 : ry0, rHi = along === 0 ? rx1 : ry1;
+    const qLo = along === 0 ? ry0 : rx0, qHi = along === 0 ? ry1 : rx1;
+    if (rHi - rLo < sl + 0.2) continue;
+    for (const end of [-1, 1]) {
+      const face = end < 0 ? rLo : rHi, outer = Math.abs(face - (end < 0 ? lo : hi)) < 0.05, gap = 0.08 + (outer ? 0 : ROOM.wall / 2);
+      const c00 = end < 0 ? face + gap + sl / 2 : face - gap - sl / 2;
+      for (let slide = 0; slide <= rHi - rLo - sl - gap - 0.1 + 1e-9; slide += 0.5) for (let off = qLo + sw / 2 + 0.1; off <= qHi - sw / 2 - 0.1 + 1e-9; off += 0.25) {
+        if (off - sw / 2 >= bLo - 1e-6 && off + sw / 2 <= bHi + 1e-6) continue; // (tried already)
+        tries.push({ end, c0: c00 - end * slide, off, outer, slide, out: true });
+      }
+    }
+  }
+  for (const { end, c0, off, outer, slide, out } of tries) {
+    if (out && best) break; // (a place in the band beats any out of it)
+    const side = off >= mid ? 1 : -1;
+    const at = along === 0 ? [c0, off] : [off, c0];
+    const box = boxAt(at[0], at[1], sl, sw, u, n);
+    const into = w.roomAt(at);
+    if (!into || !box.every((p) => pointInPolygon(p, into.poly))) continue;
+    // (clear of the walls between rooms by half their thickness: the room's sides that aren't the outer wall's face)
+    const innerSide = (a, b) => ![a, b, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]].every((q) => segDistRing(q, framePoly) < 0.02);
+    if (into.poly.some((a, i) => { const b = into.poly[(i + 1) % into.poly.length]; return innerSide(a, b) && box.some((q) => segDist(q, a, b) < ROOM.wall / 2 + 0.02); })) continue;
+    // (the inner face of the end wall where its far end is: the box's corners there must be inside the outline)
+    const footAt = [at[0] - u[0] * end * (sl / 2 + 0.7), at[1] - u[1] * end * (sl / 2 + 0.7)];
+    if (!pointInPolygon(footAt, into.poly)) continue;
+    const clash = openings.some((o) => Math.hypot(o.at[0] - at[0], o.at[1] - at[1]) < sl / 2 + ROOM.doorClear + 0.2 && polygonsOverlap(boxAt(o.at[0], o.at[1], o.w + 0.6, 2 * ROOM.doorClear, o.u, [-o.u[1], o.u[0]]), box));
+    if (clash) continue;
+    const score = (into.kind === mainKind ? 0 : into.private ? 3 : 1) + slide * 0.4 + (outer ? 0 : 0.1) + Math.min(Math.abs(off - mid - lane), Math.abs(off - mid + lane)) * 0.05 + (side > 0 ? 0.001 : 0) + (end > 0 ? 0.002 : 0);
+    if (!best || score < best.score) best = { score, box, at, foot: footAt, u: [-u[0] * end, -u[1] * end], along, lane: side, end, inBand: !out };
+  }
+  return best;
+}
+
+/**
+ * A floor above the ground laid out as a corridor down the building's long way with rooms off both sides (the stairs
+ * at its end, in its band): { rooms, cuts } as divide gives, the corridor the last room. kinds: the rooms' kinds in
+ * order (null: guest rooms, as many as fit); last: the kind of the last of them (a mansion's study).
+ */
+function corridorFloor(framePoly, kinds, last) {
+  const [x0, y0, x1, y1] = bbOf(framePoly), along = x1 - x0 >= y1 - y0 ? 0 : 1, across = 1 - along;
+  const lo = along === 0 ? x0 : y0, hi = along === 0 ? x1 : y1, mid = along === 0 ? (y0 + y1) / 2 : (x0 + x1) / 2;
+  const cA = mid - FLOORS.corridor / 2, cB = mid + FLOORS.corridor / 2;
+  const low = sideOf(framePoly, across, cA, true), rest = sideOf(framePoly, across, cA, false);
+  if (low.length !== 1 || rest.length !== 1) return null;
+  const high = sideOf(rest[0], across, cB, false), corr = sideOf(rest[0], across, cB, true);
+  if (high.length !== 1 || corr.length !== 1) return null;
+  const L = hi - lo;
+  const fit = Math.max(1, Math.floor(L / 3.4));
+  const want = kinds ? kinds.length : 2 * fit;
+  const k1 = Math.min(fit, Math.ceil(want / 2)), k2 = Math.min(fit, want - k1);
+  const roomsOut = [], cuts = [{ axis: across, c: cA, poly: framePoly }, { axis: across, c: cB, poly: rest[0] }];
+  const list = kinds ? [...kinds] : Array.from({ length: k1 + k2 }, (_, i) => (last && i === k1 + k2 - 1 ? last : "bedroom"));
+  let i = 0;
+  for (const [strip, k] of [[low[0], k1], [high[0], k2]]) {
+    for (let j = 0; j < k; j++) {
+      const a = lo + (L * j) / k, b = lo + (L * (j + 1)) / k;
+      const piece = sideOf(sideOf(strip, along, a, false)[0] ?? strip, along, b, true)[0];
+      if (!piece) return null;
+      roomsOut.push({ poly: piece, room: P(list[i++] ?? "bedroom", 1, "any") });
+      if (j > 0) cuts.push({ axis: along, c: a, poly: strip });
+    }
+  }
+  roomsOut.push({ poly: corr[0], room: P("corridor", 1, "front") });
+  return { rooms: roomsOut, cuts, dropped: Math.max(0, want - k1 - k2) };
+}
+
+/**
  * Every building's interior on a battle map, from its shell (buildingShells): items `interior` with rooms (kind,
  * poly, floor, private), walls between them (wall, door, opening; each runs on to the outer wall's middle line and over
  * an inner wall it meets) and furniture ({ f, x, y, rot, variant, against }: x, y its body's middle, against when it's
  * flush to a wall). seed: the plan's. Groups wholly round get no shell, so none; a group with a round part gets one,
  * its rooms cut from the whole outline. Courtyard pieces and buildings the map's edge cuts (closed) get none.
+ * A building with floors above (floors on the plan's building, else by its use, floorsFor) or a cellar gets an
+ * interior for each, with floor (1 and up, -1 for the cellar) and its own outer walls (outer: a floor above has
+ * windows where the ground floor has doors and windows, a cellar none), and a `stairs` item where its stairs go on
+ * every floor ({ at, rot, len, width, floors: [lowest, highest], material }); its parts get `floorsAbove` (its floors
+ * above). Only on ground at the map's own level (a building on a rise keeps one floor, with a note). notes: the
+ * layout's notes.
  */
-export function buildingInteriors(items, seed) {
+export function buildingInteriors(items, seed, notes = []) {
   const buildings = items.filter((i) => i.kind === "building");
   const byGroup = new Map();
   for (const b of buildings) { const k = b.group ?? b.id; if (!byGroup.has(k)) byGroup.set(k, []); byGroup.get(k).push(b); }
+  const levels = items.filter((i) => i.kind === "level");
   let n = 0;
   for (const sh of items.filter((i) => i.kind === "shell" && Array.isArray(i.ring))) {
-    if (sh.holes?.length || sh.closed) continue;
+    if (sh.holes?.length || sh.closed || sh.works) continue; // (a castle's works: castle.mjs laid their floors)
     const parts = byGroup.get(sh.group) ?? [];
     const main = parts.find((b) => b.main) ?? parts[0];
     if (!main) continue;
     const inner = offset([sh.ring], -sh.thickness / 2).reduce((a, p) => (!a || area(p) > area(a) ? p : a), null);
-    if (!inner || area(inner) < ROOM.min * ROOM.min) continue;
+    const who = main.name ?? theUse(main.use);
+    const tooSmall = () => { if (parts.some((b) => b.floors > 0 || b.cellar === true)) notes.push({ level: "warning", id: main.from ?? main.id, message: `${who} is too small inside for floors above or a cellar; it keeps its one floor.` }); };
+    if (!inner || area(inner) < ROOM.min * ROOM.min) { tooSmall(); continue; }
     // (a building's rooms as its plan names them: its main part's, or any part's)
     const named = main.rooms ?? parts.find((b) => b.rooms)?.rooms;
-    const given = named ? parseRooms(named).rooms.slice(0, ROOM.most).map((r, i) => P(r.kind, ROOMS[r.kind].weight ?? 1, i === 0 ? "front" : ROOMS[r.kind].place ?? "any", [...(ROOMS[r.kind].features ?? []), ...r.features])) : null;
+    const given = named ? programOf(named) : null;
     const program = given?.length ? given : programFor(sh.use, area(inner));
     if (!program.length) continue;
     const r = rng(seed ?? 0, "interior", sh.id);
@@ -421,127 +742,114 @@ export function buildingInteriors(items, seed) {
     const holes = sh.walls.filter((w) => w.type === "door" || w.type === "window").map((w) => { const a = toFrame(w.a), b = toFrame(w.b), along = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 0 : 1; return { axis: along, a: Math.min(a[along], b[along]) - pad, b: Math.max(a[along], b[along]) + pad, pos: (a[1 - along] + b[1 - along]) / 2 }; });
     const laid = layRooms(framePoly, program, doors, holes);
     if (!laid.rooms.length) continue;
-    // Inner walls: each cut's line within its piece; their stretches between two rooms; a spanning tree of doors from
-    // the front room, a door to a private room, an open doorway between public ones
-    const rooms = laid.rooms.map((x, i) => ({ i, poly: x.poly, kind: x.room.kind, features: x.room.features, private: !!ROOMS[x.room.kind].private }));
-    const roomAt = (p) => rooms.find((q) => pointInPolygon(p, q.poly));
-    const stretches = [];
-    // (where a cut's line, going on from t one way, meets the outer wall's line within most of a square: its t there)
     const ringF = sh.ring.map(toFrame);
-    const ringHit = (cut, t, dir) => {
-      let best = null;
-      for (let i = 0; i < ringF.length; i++) {
-        const a = ringF[i], b = ringF[(i + 1) % ringF.length];
-        // (in the cut's own terms: across, the line's fixed coordinate; along, t)
-        const [aa, at] = cut.axis === 0 ? [a[0], a[1]] : [a[1], a[0]], [ba, bt] = cut.axis === 0 ? [b[0], b[1]] : [b[1], b[0]];
-        if ((aa - cut.c) * (ba - cut.c) > 0 || aa === ba) continue;
-        const h = at + ((cut.c - aa) / (ba - aa)) * (bt - at), s = (h - t) * dir;
-        if (s >= -0.05 && s <= 0.8 && (best == null || s < (best - t) * dir)) best = h;
-      }
-      return best;
-    };
-    const spansOf = (k) => spansAt(k.axis === 0 ? k.poly.map(([x, y]) => [y, x]) : k.poly, k.c);
-    for (const cut of laid.cuts) {
-      const swap = cut.axis === 0;
-      const spans = spansAt(swap ? cut.poly.map(([x, y]) => [y, x]) : cut.poly, cut.c);
-      for (const [t0, t1] of spans) {
-        const P2 = (t) => (swap ? [cut.c, t] : [t, cut.c]);
-        const nrm = swap ? [1, 0] : [0, 1];
-        let cur = null;
-        for (let t = t0 + 0.05; t <= t1 - 0.05 + 1e-9; t += 0.1) {
-          const p = P2(t), A = roomAt([p[0] - nrm[0] * 0.2, p[1] - nrm[1] * 0.2]), B = roomAt([p[0] + nrm[0] * 0.2, p[1] + nrm[1] * 0.2]);
-          const key = A && B && A !== B ? `${Math.min(A.i, B.i)}-${Math.max(A.i, B.i)}` : null;
-          if (cur && cur.key === key) cur.t1 = t + 0.05;
-          else { if (cur?.key) stretches.push(cur); cur = { key, A, B, t0: t - 0.05, t1: t + 0.05, P2, swap }; }
-        }
-        if (cur?.key) stretches.push(cur);
-        // (each stretch's wall runs on past its ends: at the outer wall to its middle line, where that wall's own line
-        // runs; at an inner wall across it to that wall's far face; so walls meet and leave no gap to see or slip through)
-        // (the inner walls across this one that reach it: a cut of the other way whose line, within its own piece, runs
-        // to this line or over it)
-        const across = laid.cuts.filter((k) => k.axis !== cut.axis && spansOf(k).some(([a, b]) => cut.c >= a - 0.15 && cut.c <= b + 0.15)).map((k) => k.c);
-        // (a stretch ends where the rooms either side change, the samples a tenth apart putting that within a twentieth
-        // of its end: at an inner wall that runs across there, on past every one that close to its far face; else at
-        // the span's end, on to the outer wall's own line, found where this line meets the ring (a wing's or a sloped
-        // wall's too), a hair past it)
-        const meet = (t0s, dir, end) => {
-          const t = end ?? t0s;
-          const near = across.filter((x) => Math.abs(x - t) < 0.07);
-          if (near.length) return (dir > 0 ? Math.max(...near) : Math.min(...near)) + dir * ROOM.wall / 2;
-          // (near a sloped or round wall the rooms run out before the span does: the ring is looked for anyway)
-          const hit = ringHit(cut, t, dir);
-          return hit != null ? hit + dir * 0.02 : { free: t + dir * (ROOM.wall / 2 + 0.05) };
-        };
-        for (const st of stretches.filter((x) => x.P2 === P2)) {
-          for (const [k, t, dir, end] of [[0, st.t0, -1, st.t0 <= t0 + 0.11 ? t0 : null], [1, st.t1, 1, st.t1 >= t1 - 0.11 ? t1 : null]]) {
-            const e = meet(t, dir, end);
-            st[`e${k}`] = typeof e === "number" ? e : e.free;
-            // (an end that meets neither, beside a wing's corner or a round part's curve: joined to the ring's nearest
-            // point, below)
-            if (typeof e !== "number") st[`free${k}`] = true;
-          }
-        }
+    const ground = wallsOf(laid, ringF, front, r);
+
+    // Floors above and below: from the plan's building (floors, cellar), else by use; a building whose inside is too
+    // small, or that stands on raised or sunken ground, keeps its one floor
+    const fr = rng(seed ?? 0, "floors", sh.id);
+    const byUse = floorsFor(sh.use, area(inner), fr);
+    const asked = parts.find((b) => b.floors != null)?.floors, askedCellar = parts.find((b) => b.cellar != null)?.cellar;
+    let up = Math.min(FLOORS.most, asked ?? byUse.up), cellar = askedCellar ?? byUse.cellar;
+    const [bx0, by0, bx1, by1] = bbOf(framePoly), short = Math.min(bx1 - bx0, by1 - by0), long = Math.max(bx1 - bx0, by1 - by0);
+    const wantsFloors = up > 0 || cellar;
+    let stairs = null;
+    if (wantsFloors && (short < FLOORS.least[0] || long < FLOORS.least[1])) {
+      tooSmall();
+      up = 0; cellar = false;
+    } else if (wantsFloors && levels.length && sh.ring.some((p) => levelAt(levels, p) !== 0)) {
+      if (asked || askedCellar) notes.push({ level: "warning", id: main.from ?? main.id, message: `${who} stands on raised or sunken ground, so it keeps its one floor (floors above and cellars are built on level ground for now).` });
+      up = 0; cellar = false;
+    }
+    const groundOpenings = [...doors.map((d) => ({ at: d.at, w: d.w, u: d.u })), ...ground.doorsIn.map((d) => ({ at: d.stretch.P2(d.t), w: d.w, u: d.stretch.swap ? [0, 1] : [1, 0] }))];
+    if (up > 0 || cellar) {
+      stairs = stairsOf(framePoly, ground, groundOpenings, long - 1.5, laid.rooms[0]?.room.kind);
+      if (!stairs) {
+        if (asked || askedCellar) notes.push({ level: "warning", id: main.from ?? main.id, message: `${who}: no room for stairs in its ground floor's rooms, so it keeps its one floor.` });
+        up = 0; cellar = false;
       }
     }
-    const frontRoom = front ? rooms.reduce((a, q) => (dist(q.poly, front) < dist(a.poly, front) ? q : a)) : rooms[0];
-    const reached = new Set([frontRoom.i]);
-    const doorsIn = [];
-    for (let grew = true; grew; ) {
-      grew = false;
-      const next = stretches.filter((st) => reached.has(st.A.i) !== reached.has(st.B.i) && st.t1 - st.t0 >= ROOM.door + 2 * ROOM.cornerKeep).sort((a, b) => b.t1 - b.t0 - (a.t1 - a.t0))[0];
-      if (next) {
-        const priv = next.A.private || next.B.private;
-        const w = priv ? ROOM.door : ROOM.opening;
-        const room = next.t1 - next.t0 - w - 2 * ROOM.cornerKeep;
-        const t = (next.t0 + next.t1) / 2 + (r.next() - 0.5) * Math.max(0, room) * 0.6;
-        doorsIn.push({ stretch: next, t, w, type: priv ? "door" : "opening" });
-        reached.add(next.A.i); reached.add(next.B.i);
-        grew = true;
-      }
-    }
-    // The walls as segments (in the frame), gaps at the doors
-    const walls = [];
-    for (const st of stretches) {
-      const gaps = doorsIn.filter((d) => d.stretch === st).map((d) => [d.t - d.w / 2, d.t + d.w / 2, d.type]).sort((a, b) => a[0] - b[0]);
-      let t = st.e0;
-      for (const [g0, g1, type] of gaps) {
-        if (g0 > t + 1e-6) walls.push({ type: "wall", a: st.P2(t), b: st.P2(g0) });
-        walls.push({ type, a: st.P2(g0), b: st.P2(g1) });
-        t = g1;
-      }
-      if (st.e1 > t + 1e-6) walls.push({ type: "wall", a: st.P2(t), b: st.P2(st.e1) });
-      // (a free end joined to the outer wall's line where that's within half a square: a short wall the scene gets but
-      // the map doesn't paint, the outer wall's art covering it)
-      for (const k of [0, 1]) if (st[`free${k}`]) {
-        const p = st.P2(st[`e${k}`]);
-        let best = null, bd = 0.5;
-        for (let i = 0; i < ringF.length; i++) { const q = nearestOn(p, ringF[i], ringF[(i + 1) % ringF.length]), d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < bd) { bd = d; best = q; } }
-        if (best && bd > 1e-3) walls.push({ type: "wall", a: p, b: best, join: true });
-      }
-    }
-    // Furniture, room by room
-    const furniture = [];
-    for (const q of rooms) {
-      const openings = [
-        ...doors.filter((d) => roomAt(d.at) === q || dist(q.poly, d.at) < 0.3).map((d) => ({ at: d.at, w: d.w, u: d.u, outside: true })),
-        ...doorsIn.filter((d) => d.stretch.A === q || d.stretch.B === q).map((d) => ({ at: d.stretch.P2(d.t), w: d.w, u: d.stretch.swap ? [0, 1] : [1, 0] })),
-      ];
-      // (its floor: the room less half of each inner wall along it; its outer walls' inner face is its edge already)
-      const bands = stretches.filter((st) => st.A === q || st.B === q).map((st) => { const a = st.P2(st.t0), b = st.P2(st.t1), u = st.swap ? [0, 1] : [1, 0]; return boxAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, st.t1 - st.t0 + 0.4, ROOM.wall, u, [-u[1], u[0]]); });
-      const floor = (bands.length ? difference([q.poly], bands) : [q.poly]).reduce((a, p) => (!a || area(p) > area(a) ? p : a), null);
-      if (floor && area(floor) > 1) furnish(q, tidyRing(floor), openings, framePoly, r.fork("room", q.i), furniture);
-    }
-    items.push({
-      kind: "interior", id: `${sh.id}/interior`, from: sh.from, group: sh.group, use: sh.use,
-      rooms: rooms.map((q) => ({ kind: q.kind, poly: q.poly.map(toMap), floor: ROOMS[q.kind].floor, private: q.private })),
-      walls: walls.map((w) => ({ ...w, a: toMap(w.a), b: toMap(w.b) })),
-      thickness: ROOM.wall, material: sh.material,
+    const stairsKeep = stairs ? [stairs.box] : [];
+    const stairsOpen = stairs ? [{ at: stairs.foot, w: FLOORS.stairs[0], u: [-stairs.u[1], stairs.u[0]] }] : [];
+    const groundFurn = furnishFloor(ground, doors, framePoly, r, { keep: stairsKeep, openings: stairsOpen });
+    const out = (floor, w, furniture, outer = null, material = sh.material) => items.push({
+      kind: "interior", id: floor ? `${sh.id}/interior${floor < 0 ? "-cellar" : `-floor${floor}`}` : `${sh.id}/interior`, from: sh.from, group: sh.group, use: sh.use, floor,
+      rooms: w.rooms.map((q) => ({ kind: q.kind, poly: q.poly.map(toMap), floor: floor < 0 && ROOMS[q.kind].floor !== "earth" ? (ROOMS[q.kind].floor === "wood" ? "stone" : ROOMS[q.kind].floor) : ROOMS[q.kind].floor, private: q.private })),
+      walls: w.walls.map((x) => ({ ...x, a: toMap(x.a), b: toMap(x.b) })),
+      thickness: ROOM.wall, material,
+      ...(outer ? { outer } : {}),
       furniture: furniture.map((f) => ({ ...f, ...(() => { const [x, y] = toMap([f.x, f.y]); return { x, y }; })(), rot: f.rot + (main.rot ?? 0) })),
     });
+    out(0, ground, groundFurn);
+    const groundItem = items[items.length - 1];
     n++;
+    if (!stairs) continue;
+
+    // Each floor above: a corridor of rooms (an inn's guest floor), else rooms off a landing at the stairs; its outer
+    // walls the ground floor's, with windows where that has doors
+    const noDoor = (p) => distBox(p, stairs.box) < 0.7;
+    const upNamed = parts.find((b) => b.upstairs)?.upstairs;
+    const upGiven = upNamed ? programOf(upNamed) : null;
+    const upperOuter = sh.walls.map((x) => ({ ...x, type: x.type === "door" ? "window" : x.type }));
+    let made = 0, noted = false;
+    for (let k = 1; k <= up; k++) {
+      const fr2 = rng(seed ?? 0, "interior", sh.id, "floor", k);
+      const want = upperProgram(sh.use, k, up);
+      const kinds = upGiven?.length ? upGiven.map((x) => x.kind) : null;
+      let floorLaid = null, hub = null;
+      // (room for a corridor and a room each side, a hair's tolerance for rounding; the stairs in its band)
+      const corridorOK = short >= FLOORS.corridor + 2 * FLOORS.sideMin - 0.01 && stairs.inBand !== false;
+      if ((want.corridor || (upGiven && upGiven.length >= 3)) && corridorOK) {
+        floorLaid = corridorFloor(framePoly, kinds, want.last ?? null);
+        if (floorLaid?.dropped && !noted && (noted = true)) notes.push({ level: "info", id: main.from ?? main.id, message: `${who}: ${floorLaid.dropped} of the rooms asked for upstairs didn't fit along its corridor.` });
+        if (floorLaid) hub = floorLaid.rooms.length - 1;
+      }
+      if (!floorLaid) {
+        // (rooms off a landing: the first room meets the stairs, which no inner wall may cross)
+        const prog = upGiven?.length ? upGiven : (want.rooms ?? [P("corridor", 0.3, "front"), P("bedroom", 0.35), P("bedroom", 0.35)]);
+        const sb = bbOf(stairs.box);
+        const holesUp = [...holes, { axis: 0, a: sb[0] - 0.3, b: sb[2] + 0.3, pos: stairs.at[1] }, { axis: 1, a: sb[1] - 0.3, b: sb[3] + 0.3, pos: stairs.at[0] }];
+        floorLaid = layRooms(framePoly, prog, [{ at: stairs.at, w: 1, u: [-stairs.u[1], stairs.u[0]], side: "front" }], holesUp);
+        if (!floorLaid.rooms.length) break;
+      }
+      const w = wallsOf(floorLaid, ringF, stairs.at, fr2, { hub, noDoor });
+      // (a corridor's stairs in its band: the room they stand in, kept clear before them)
+      const furn = furnishFloor(w, [], framePoly, fr2, { keep: stairsKeep, openings: stairsOpen });
+      out(k, w, furn, upperOuter);
+      made++;
+    }
+    up = made;
+    // The cellar: stone walls with no windows or doors out, its rooms by its use or the plan's
+    if (cellar) {
+      const fr3 = rng(seed ?? 0, "interior", sh.id, "cellar");
+      const cNamed = parts.find((b) => b.cellarRooms)?.cellarRooms;
+      const cGiven = cNamed ? programOf(cNamed) : null;
+      const prog = cGiven?.length ? cGiven : cellarProgram(sh.use);
+      const sb = bbOf(stairs.box);
+      const holesC = [{ axis: 0, a: sb[0] - 0.3, b: sb[2] + 0.3, pos: stairs.at[1] }, { axis: 1, a: sb[1] - 0.3, b: sb[3] + 0.3, pos: stairs.at[0] }];
+      const cl = layRooms(framePoly, prog, [{ at: stairs.at, w: 1, u: [-stairs.u[1], stairs.u[0]], side: "front" }], holesC);
+      if (cl.rooms.length) {
+        const w = wallsOf(cl, ringF, stairs.at, fr3);
+        const furn = furnishFloor(w, [], framePoly, fr3, { keep: stairsKeep, openings: stairsOpen });
+        out(-1, w, furn, sh.walls.map((x) => ({ ...x, type: "wall" })), "stone");
+      } else cellar = false;
+    }
+    if (up > 0 || cellar) {
+      const rot = ((Math.atan2(stairs.u[1], stairs.u[0]) * 180) / Math.PI) + (main.rot ?? 0);
+      items.push({ kind: "stairs", id: `${sh.id}/stairs`, from: sh.from, group: sh.group, at: toMap(stairs.at), rot, len: FLOORS.stairs[1], width: FLOORS.stairs[0], floors: [cellar ? -1 : 0, up], material: sh.material === "stone" ? "stone" : "wood", box: stairs.box.map(toMap) });
+      for (const b of parts) { b.floorsAbove = up; if (cellar) b.cellar = true; }
+    } else {
+      // (no floor above or cellar came of it after all: the ground floor furnished again, nothing kept for stairs)
+      const again = furnishFloor(ground, doors, framePoly, rng(seed ?? 0, "interior", sh.id, "no-stairs"));
+      groundItem.furniture = again.map((f) => ({ ...f, ...(() => { const [x, y] = toMap([f.x, f.y]); return { x, y }; })(), rot: f.rot + (main.rot ?? 0) }));
+    }
   }
   return n;
 }
+/** How far p is from a ring's outline. */
+const segDistRing = (p, ring) => Math.min(...ring.map((a, i) => segDist(p, a, ring[(i + 1) % ring.length])));
+/** How far p is from a box (0 inside it). */
+const distBox = (p, box) => (pointInPolygon(p, box) ? 0 : Math.min(...box.map((a, i) => segDist(p, a, box[(i + 1) % box.length]))));
 /** A ring without its points that lie on a straight line (a cut leaves some). */
 const tidyRing = (ring) => ring.filter((p, i) => { const a = ring[(i - 1 + ring.length) % ring.length], c = ring[(i + 1) % ring.length]; return Math.abs((p[0] - a[0]) * (c[1] - a[1]) - (p[1] - a[1]) * (c[0] - a[0])) > 1e-5; });
 const dist = (poly, p) => (pointInPolygon(p, poly) ? 0 : Math.min(...poly.map((a, i) => segDist(p, a, poly[(i + 1) % poly.length]))));
@@ -562,12 +870,12 @@ function segDist([px, py], [ax, ay], [bx, by]) {
  * outside }] its doors and doorways: the ground before each is kept clear, and a way left between them. Each piece is
  * a { f, x, y, rot, variant, against } (x, y its body's middle; against when it's set flush to a wall) pushed to out.
  */
-function furnish(q, room, openings, buildingPoly, r, out) {
+function furnish(q, room, openings, buildingPoly, r, out, blocked = []) {
   const [x0, y0, x1, y1] = bbOf(room), roomArea = area(room);
   const recipe = RECIPES[q.kind] ?? { cover: 0.3, fill: ["chest"], steps: [] };
   const placed = [];
   // (a door's clear ground: a box before it as wide as it and a little more, a door's swing deep, either side of its wall)
-  const keep = openings.map(({ at, w, u }) => boxAt(at[0], at[1], w + 0.6, 2 * ROOM.doorClear, u, [-u[1], u[0]]));
+  const keep = [...openings.map(({ at, w, u }) => boxAt(at[0], at[1], w + 0.6, 2 * ROOM.doorClear, u, [-u[1], u[0]])), ...blocked];
   // (a way through from the room's widest way in, its outside door if it has one, to each of its other doors: on a
   // grid of quarter squares, each cell clear by a lane's half width of every piece)
   const hub = openings.reduce((a, o) => (!a || o.outside && !a.outside || o.w > a.w && !!o.outside === !!a.outside ? o : a), null);
@@ -747,7 +1055,15 @@ function furnish(q, room, openings, buildingPoly, r, out) {
       let any = null;
       for (const [x, y] of cands) {
         const w = free(f, x, y, 0), wide = boxAt(x, y, bw + 2 * pad, bh + 2 * pad, [1, 0], [0, 1]);
-        if (fits(w.poly) && !placed.some((p) => !FURNITURE[p.f].floor && polygonsOverlap(p.poly, wide))) any = put(f, { ...w, rot: r.int(4) * 90 });
+        if (!fits(w.poly) || placed.some((p) => !FURNITURE[p.f].floor && polygonsOverlap(p.poly, wide))) continue;
+        // (turned a quarter only where it fits turned too, with room around it, the stairs kept clear: else lengthwise)
+        let rot = r.int(4) * 90;
+        if (rot % 180) {
+          const w2 = free(f, x, y, rot), wide2 = boxAt(x, y, bh + 2 * pad, bw + 2 * pad, [1, 0], [0, 1]);
+          if (fits(w2.poly) && !placed.some((p) => !FURNITURE[p.f].floor && polygonsOverlap(p.poly, wide2))) { any = put(f, w2); continue; }
+          rot -= 90;
+        }
+        any = put(f, { ...w, rot });
       }
       return any;
     }

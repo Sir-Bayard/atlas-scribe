@@ -23,6 +23,12 @@ const THICK_FT = { town: 12, palisade: 4 };
 /** Roof materials a town wall's roofed towers choose from (one per wall). */
 const TOWER_ROOFS = ["slate", "slate-blue", "slate-black", "tile-red", "tile-brown"];
 const CORNER_DEG = 25; // a turn sharper than this is a corner, with a tower
+/**
+ * A stone wall's works on a battle map (castle.mjs builds them), in feet: a round tower's size across and a square
+ * one's side; a gatehouse's passage at least, each guard room's width, its walls' thickness and its depth across the
+ * wall; and how far a tower's inside reaches past the wall's inner face at least (its door opens into the yard there).
+ */
+export const BATTLE_TOWER_FT = { round: 35, square: 32, passage: 15, guard: 17.5, gateWall: 4.5, gateDeep: 36, intoYard: 5 };
 
 const same = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
 export const isClosed = (path) => path.length >= 4 && same(path[0], path[path.length - 1]);
@@ -33,11 +39,12 @@ export const isClosed = (path) => path.length >= 4 && same(path[0], path[path.le
  * its center stands out), towerOut (how far out a tower can reach, a square one turned to the wall included) and
  * ditchIn (where a ditch or moat starts: beyond the berm, the towers and the gatehouses).
  */
-function geometryOf(f, sq) {
+function geometryOf(f, sq, battle = false) {
   const ft = (v) => v / sq;
   const palisade = f.class === "palisade";
   const T = ft(f.thickness ?? THICK_FT[f.class] ?? 12), half = T / 2;
-  const D = palisade ? Math.max(3 * T, ft(14)) : Math.max(2.2 * T, ft(24));
+  // (on a battle map a stone wall's towers are buildings with rooms: a round one 35 ft across, a square one 32 ft)
+  const D = palisade ? Math.max(3 * T, ft(14)) : battle ? Math.max(2.2 * T, ft(BATTLE_TOWER_FT.round)) : Math.max(2.2 * T, ft(24));
   const push = Math.max(0, D / 2 - half) * 0.7;
   const deep = Math.max(2 * T, ft(22)), gateOut = T * 0.25;
   const towerOut = push + (D / 2) * Math.SQRT2;
@@ -157,7 +164,7 @@ function crossings(path, cum, line) {
  * band: { path, half } (what's kept clear), side, closed, notes }. A tower spec is what addBuilding takes, plus `kind`,
  * `at` and `key` (where it stands, for its stream).
  */
-export function layWall(f, { roads = [], waters = [], sq, r }) {
+export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
   // Repeated points dropped (a closed loop keeps its closing point)
   const path = f.path.filter((p, i) => i === 0 || Math.hypot(p[0] - f.path[i - 1][0], p[1] - f.path[i - 1][1]) > 1e-6);
   if (path.length >= 2 && isClosed(f.path) && !same(path[0], path[path.length - 1])) path.push([...path[0]]);
@@ -171,15 +178,17 @@ export function layWall(f, { roads = [], waters = [], sq, r }) {
   }
   const closed = isClosed(path) && path.length >= 4;
   const ft = (v) => v / sq;
-  const G = geometryOf(f, sq);
+  const palisade = f.class === "palisade";
+  const works = battle && !palisade; // (a stone wall's towers and gatehouses with rooms, castle.mjs)
+  const G = geometryOf(f, sq, works);
   const { T, half, D, push } = G;
   const sign = outsideSign(f, path, closed);
-  const palisade = f.class === "palisade";
 
   // The wall's look, from its stream unless the plan says: every choice drawn, so a setting never moves the others
   const lookRoll = r.next(), shapeRoll = r.next(), roofRoll = r.next();
   const look = f.towers ?? (lookRoll < 0.45 ? "roofed" : lookRoll < 0.8 ? "open" : "mixed");
-  const shape = palisade ? (f.towerShape === "round" ? "round" : f.towerShape === "mixed" ? "mixed" : "square") : f.towerShape ?? (shapeRoll < 0.5 ? "round" : shapeRoll < 0.8 ? "square" : "mixed");
+  // (on a battle map, round at its corners and ends and square between, unless the plan says)
+  const shape = palisade ? (f.towerShape === "round" ? "round" : f.towerShape === "mixed" ? "mixed" : "square") : f.towerShape ?? (works ? "corners" : shapeRoll < 0.5 ? "round" : shapeRoll < 0.8 ? "square" : "mixed");
   const roof = palisade ? "wood-shingle-dark" : TOWER_ROOFS[Math.floor(roofRoll * TOWER_ROOFS.length)];
   const spacing = ft(f.towerSpacing ?? (palisade ? 90 : 120));
   const height = f.height ?? (palisade ? 10 : 25);
@@ -298,19 +307,24 @@ export function layWall(f, { roads = [], waters = [], sq, r }) {
   const addTower = (at, u, kind, bisector = null) => {
     const tr = r.fork("tower", keyOf(at));
     const lk = look === "mixed" ? (tr.next() < 0.5 ? "roofed" : "open") : look;
-    const sh = shape === "mixed" ? (tr.next() < 0.5 ? "round" : "square") : shape;
+    const sh = shape === "mixed" ? (tr.next() < 0.5 ? "round" : "square") : shape === "corners" ? (kind === "corner" || kind === "end" ? "round" : "square") : shape;
     const n = bisector ?? outward(u);
-    const c = [at[0] + n[0] * push, at[1] + n[1] * push]; // a tower stands out from the wall's outer face
-    const reach = (D / 2) * (sh === "round" ? 1 : Math.SQRT2);
+    // (a works tower: its size by its shape, and set in so its inside reaches past the wall's inner face into the yard)
+    const size = works && sh === "square" ? ft(BATTLE_TOWER_FT.square) : D;
+    // (its inside: in from its outside by its wall, 5 ft; reaching the inner face, past a corner's, and on into the yard)
+    const inYard = half * (bisector ? Math.SQRT2 : 1) + ft(BATTLE_TOWER_FT.intoYard) + ft(5);
+    const out = works ? Math.max(0, Math.min(push, size / 2 - inYard)) : push;
+    const c = [at[0] + n[0] * out, at[1] + n[1] * out]; // a tower stands out from the wall's outer face
+    const reach = (size / 2) * (sh === "round" ? 1 : Math.SQRT2);
     if (!clearOf(c, reach, kind === "gate")) return false;
     taken.push([c[0], c[1], reach]);
     const rot = (Math.atan2(u[1], u[0]) * 180) / Math.PI;
     const spec = sh === "round"
-      ? { shape: { circle: [c[0], c[1], D / 2] }, roofStyle: lk === "open" ? "flat" : "cone" }
-      : { shape: { rect: [c[0] - D / 2, c[1] - D / 2, c[0] + D / 2, c[1] + D / 2] }, rot, roofStyle: lk === "open" ? "flat" : "pyramid" };
+      ? { shape: { circle: [c[0], c[1], size / 2] }, roofStyle: lk === "open" ? "flat" : "cone" }
+      : { shape: { rect: [c[0] - size / 2, c[1] - size / 2, c[0] + size / 2, c[1] + size / 2] }, rot, roofStyle: lk === "open" ? "flat" : "pyramid" };
     towers.push({
       ...spec, roof, height: height + (palisade ? 6 : 10), chimney: false, tower: true, crenels: lk === "open" && !palisade,
-      ...(palisade ? { flatRoof: "wood" } : {}), kind, at, key: keyOf(at),
+      ...(palisade ? { flatRoof: "wood" } : {}), kind, at, key: keyOf(at), ...(works ? { works: kind } : {}),
     });
     return true;
   };
@@ -321,16 +335,21 @@ export function layWall(f, { roads = [], waters = [], sq, r }) {
   for (const g of gaps) {
     const gr = r.fork("gate", keyOf(g.at));
     const blockRoll = gr.next(), lookRoll2 = gr.next();
-    const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= 0.6 && !g.roads[0].corner && blockRoll < 0.5;
+    // (on a battle map, a gatehouse wherever one can stand: Patrick's full gatehouse)
+    const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= 0.6 && !g.roads[0].corner && (works || blockRoll < 0.5);
     if (block) {
       const n = outward(g.u);
-      const len = 2 * g.half + 2 * ft(4), deep = G.deep;
+      // (a works gatehouse: its passage the road's width or more, a guard room each side, its walls)
+      const passage = works ? Math.max((g.roads[0].width ?? 1) + 0.4, ft(BATTLE_TOWER_FT.passage)) : 0;
+      const len = works ? Math.max(2 * g.half + 2 * ft(4), passage + 2 * ft(BATTLE_TOWER_FT.guard) + 4 * ft(BATTLE_TOWER_FT.gateWall)) : 2 * g.half + 2 * ft(4);
+      const deep = works ? Math.max(G.deep, ft(BATTLE_TOWER_FT.gateDeep)) : G.deep;
       const c = [g.at[0] + n[0] * G.gateOut, g.at[1] + n[1] * G.gateOut];
       const rot = (Math.atan2(g.u[1], g.u[0]) * 180) / Math.PI;
       const lk = look === "mixed" ? (lookRoll2 < 0.5 ? "roofed" : "open") : look;
       towers.push({
         shape: { rect: [c[0] - len / 2, c[1] - deep / 2, c[0] + len / 2, c[1] + deep / 2] }, rot,
         roofStyle: lk === "open" ? "flat" : "hip", roof, height: height + 8, chimney: false, tower: true, crenels: lk === "open", kind: "gatehouse", at: g.at, key: keyOf(g.at),
+        ...(works ? { works: "gatehouse", passage } : {}),
       });
       taken.push([c[0], c[1], Math.hypot(len, deep) / 2]);
     } else {

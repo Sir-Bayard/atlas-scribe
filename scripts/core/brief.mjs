@@ -10,7 +10,9 @@
  *   - roadside: a road through the country with one building (an inn, a farmstead, a shrine, a smithy or a
  *     watchtower) set back from it, its outbuildings beside it;
  *   - street: a hamlet's, village's, town's or city quarter's street at battle size, the district building the rest;
- *   - camp: tents around a fire (a campsite), inside a ring of wagons (a caravan), or in rows (soldiers).
+ *   - camp: tents around a fire (a campsite), inside a ring of wagons (a caravan), or in rows (soldiers);
+ *   - castle: a curtain wall with its towers and gatehouse (layout/castle.mjs builds their floors and the wall walk), a
+ *     keep and buildings around its yard, its road in through the gate; a fort, a castle or a great castle by size.
  */
 import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
@@ -18,7 +20,7 @@ import { CHARACTERS } from "./character.mjs";
 
 /** The choices, the first of each the default. features and scatter levels as below. */
 export const BRIEF = {
-  site: ["wilderness", "roadside", "street", "camp"],
+  site: ["wilderness", "roadside", "street", "camp", "castle"],
   size: ["medium", "small", "large"],
   season: ["summer", "spring", "autumn", "winter"],
   time: ["day", "dawn", "dusk", "night"],
@@ -34,11 +36,12 @@ export const BRIEF = {
   place: ["village", "hamlet", "town", "city"],
   quarter: CHARACTERS,
   camp: ["campsite", "caravan", "soldiers"],
+  towers: ["open", "roofed"],
 };
 
 /** How each choice reads in the dialog (and on the Describe box's chips). */
 export const BRIEF_LABELS = {
-  site: { wilderness: "Wilderness", roadside: "Roadside building", street: "Village or town street", camp: "Camp" },
+  site: { wilderness: "Wilderness", roadside: "Roadside building", street: "Village or town street", camp: "Camp", castle: "Castle" },
   size: { small: "Small (30 by 24)", medium: "Medium (45 by 34)", large: "Large (60 by 45)" },
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
   time: { day: "Day", dawn: "Dawn", dusk: "Dusk", night: "Night" },
@@ -54,10 +57,24 @@ export const BRIEF_LABELS = {
   place: { hamlet: "Hamlet", village: "Village", town: "Town", city: "City quarter" },
   quarter: { homes: "Homes", market: "Market", merchants: "Merchants", crafts: "Crafts", docks: "Docks", nobles: "Nobles", temple: "Temple", poor: "Poor quarter", garrison: "Garrison" },
   camp: { campsite: "Campsite", caravan: "Caravan", soldiers: "Soldiers" },
+  towers: { open: "Open, with battlements", roofed: "Roofed" },
+  // (a castle's size names the castle, its map sized to hold it)
+  castleSize: { small: "Fort (40 by 38)", medium: "Castle (48 by 46)", large: "Great castle (58 by 54)" },
 };
 
 /** The map in squares, by size. */
 export const BRIEF_SIZES = { small: [30, 24], medium: [45, 34], large: [60, 45] };
+
+/**
+ * A castle site by size, in squares: its map; its curtain wall's middle line (across, down) and where its top left
+ * corner stands; its keep; the towers' spacing along the wall in feet (a fort none between its corners, a castle one
+ * on each wall, a great castle two); and the buildings around its yard, in order (each [use, length, depth, roof]).
+ */
+export const CASTLES = {
+  small: { map: [40, 38], wall: [26, 22], at: [7, 6], keep: [7, 6], spacing: 1000, yard: [["barracks", 8, 4, "slate"], ["stable", 7, 4, "thatch"], ["store", 5, 4, "slate"]] },
+  medium: { map: [48, 46], wall: [34, 30], at: [7, 6], keep: [13, 8], spacing: 100, yard: [["barracks", 10, 5, "slate"], ["stable", 9, 5, "thatch"], ["chapel", 7, 5, "slate"], ["smithy", 6, 5, "slate"], ["store", 6, 4, "slate"]] },
+  large: { map: [58, 54], wall: [44, 38], at: [7, 6], keep: [17, 10], spacing: 80, yard: [["barracks", 12, 5, "slate"], ["stable", 10, 5, "thatch"], ["chapel", 8, 5, "slate"], ["smithy", 6, 5, "slate"], ["store", 8, 5, "slate"], ["armory", 6, 5, "slate"], ["barracks", 9, 5, "slate"]] },
+};
 
 /** Each site's own defaults where the brief leaves a choice out (a camp in a clearing, a roadside by its road). */
 const SITE_DEFAULTS = {
@@ -65,6 +82,7 @@ const SITE_DEFAULTS = {
   roadside: { ground: "open", trees: "open", features: ["road"] },
   street: { ground: "open", trees: "sparse", litter: "none", rocks: "none", brush: "few" },
   camp: { ground: "clearing", trees: "thick" },
+  castle: { ground: "open", trees: "sparse", litter: "few", rocks: "few", brush: "few" },
 };
 
 /** Scattered props per 100 square squares, by level: stumps and logs, rocks and boulders, bushes and ferns. */
@@ -78,7 +96,7 @@ const BUILDINGS = {
   farmstead: { dims: { small: [8, 6], medium: [10, 7], large: [12, 8] }, use: "house", roof: "thatch", out: [{ use: "stable", dims: [9, 6], name: "Barn" }, { use: "shed", dims: [4, 3] }] },
   shrine: { dims: { small: [5, 6], medium: [6, 8], large: [8, 11] }, use: "shrine", roof: "slate", out: [] },
   smithy: { dims: { small: [6, 5], medium: [8, 6], large: [10, 7] }, use: "smithy", roof: "slate", out: [{ use: "shed", dims: [4, 3] }] },
-  watchtower: { dims: { small: [4, 4], medium: [5, 5], large: [6, 6] }, use: "watch", roof: "slate", tower: true, out: [{ use: "shed", dims: [4, 3] }] },
+  watchtower: { dims: { small: [6, 6], medium: [7, 7], large: [8, 8] }, use: "watch", roof: "slate", tower: true, out: [{ use: "shed", dims: [4, 3] }] },
 };
 
 /** How many tents each kind of camp gets when the brief doesn't say; the most it takes. */
@@ -92,7 +110,8 @@ const pt = (p) => [r2(p[0]), r2(p[1])];
 
 /**
  * A brief with every choice filled in: those it gives (unknown values dropped), else its site's defaults, else the
- * first of each list. building: { use, size, rooms, name }; street: { place, quarter }; camp: { kind, tents }.
+ * first of each list. building: { use, size, rooms, name, floors (above the ground floor, null by its use), cellar (null
+ * by its use), upstairs and cellarRooms (rooms in words) }; street: { place, quarter }; camp: { kind, tents }.
  */
 export function normalizeBrief(input = {}) {
   const b = input ?? {};
@@ -113,9 +132,16 @@ export function normalizeBrief(input = {}) {
     litter: oneOf(BRIEF.litter, b.litter, d.litter),
     rocks: oneOf(BRIEF.rocks, b.rocks, d.rocks),
     brush: oneOf(BRIEF.brush, b.brush, d.brush),
-    building: { use: oneOf(BRIEF.use, bl.use), size: oneOf(BRIEF.buildingSize, bl.size), rooms: typeof bl.rooms === "string" ? bl.rooms.trim() : "", name: typeof bl.name === "string" ? bl.name.trim() : "" },
+    building: {
+      use: oneOf(BRIEF.use, bl.use), size: oneOf(BRIEF.buildingSize, bl.size), rooms: typeof bl.rooms === "string" ? bl.rooms.trim() : "", name: typeof bl.name === "string" ? bl.name.trim() : "",
+      // (its floors above and cellar, null for by its use; their rooms in words)
+      floors: bl.floors === null || bl.floors === undefined || bl.floors === "" || !Number.isFinite(Number(bl.floors)) ? null : Math.max(0, Math.min(3, Math.round(Number(bl.floors)))),
+      cellar: bl.cellar === true || bl.cellar === "yes" ? true : bl.cellar === false || bl.cellar === "no" ? false : null,
+      upstairs: typeof bl.upstairs === "string" ? bl.upstairs.trim() : "", cellarRooms: typeof bl.cellarRooms === "string" ? bl.cellarRooms.trim() : "",
+    },
     street: { place: oneOf(BRIEF.place, b.street?.place), quarter: oneOf(BRIEF.quarter, b.street?.quarter) },
     camp: { kind: oneOf(BRIEF.camp, b.camp?.kind), tents: Number.isFinite(Number(b.camp?.tents)) && Number(b.camp.tents) > 0 ? Math.min(TENTS.most, Math.round(Number(b.camp.tents))) : null },
+    castle: { towers: oneOf(BRIEF.towers, b.castle?.towers) },
     name: typeof b.name === "string" ? b.name.trim() : "",
     seed,
   };
@@ -127,7 +153,7 @@ export function normalizeBrief(input = {}) {
  */
 export function briefPlan(input = {}) {
   const b = normalizeBrief(input ?? {});
-  const [W, H] = BRIEF_SIZES[b.size];
+  const [W, H] = b.site === "castle" ? CASTLES[b.size].map : BRIEF_SIZES[b.size];
   const r = rng(b.seed, "brief", b.site);
   const features = [];
   const notes = []; // (what couldn't be made as asked, for the window to say)
@@ -150,7 +176,7 @@ export function briefPlan(input = {}) {
   // (a roadside's road low enough for its building behind it, and for a cliff above that when one's asked for)
   const roadsideY = () => { const dep = BUILDINGS[b.building.use].dims[b.building.size][1]; return Math.min(H - 2.5, Math.max(H * 0.66, (has("cliff") ? 1 + 3.5 + 4.5 : 1) + dep + 3.5 + 2 + 1.4)); };
   const roadY = b.site === "roadside" ? roadsideY() : b.site === "camp" ? Math.min(H - 3, Math.max(H * 0.5, campTop + 2 * campDims(b, W, H).span + 4.5 + r.range(0, 2))) : H * r.range(0.42, 0.6);
-  if (has("road") && b.site !== "street") {
+  if (has("road") && b.site !== "street" && b.site !== "castle") {
     const cls = b.site === "roadside" ? "highway" : "track";
     road = { path: wander(r, roadY, W, 1.4), cls, width: cls === "highway" ? 20 : 10 };
     features.push({ id: "road", type: "road", class: cls, surface: "dirt", width: road.width, path: road.path.map(pt) });
@@ -163,8 +189,10 @@ export function briefPlan(input = {}) {
   const before = features.length;
   if (b.site === "roadside") site = roadside(b, r, W, H, road, features, taken);
   if (b.site === "camp") site = camp(b, r, W, H, road, features, taken, campTop);
+  if (b.site === "castle") site = castle(b, r, W, H, features, taken, has("road"));
   if (site?.notes) notes.push(...site.notes);
   const sitePts = pointsOf(features.slice(before));
+  if (site?.pts) sitePts.push(...site.pts); // (a castle's walls and towers, all around)
   const clearOfSite = (path, d) => sitePts.every((q) => nearPath(q, path) > d + (q[2] ?? 0));
   // (the room above the site and its road, and below them)
   const roadBand = road ? road.width / 10 + 1 : 0;
@@ -374,7 +402,7 @@ function roadside(b, r, W, H, road, features, taken) {
   const rect = (cx, cy, l, d) => [[cx - l / 2, cy - d / 2], [cx + l / 2, cy - d / 2], [cx + l / 2, cy + d / 2], [cx - l / 2, cy + d / 2]].map(pt);
   const id = b.building.use;
   const name = b.building.name || (b.building.use === "inn" ? innName(r) : "");
-  features.push({ id, type: "building", use: B.use, roof: B.roof, ...(B.tower ? { tower: true, height: 30 } : {}), rot, ...(name ? { name } : {}), ...(b.building.rooms ? { rooms: b.building.rooms } : {}), shape: rect(c[0], c[1], len, dep) });
+  features.push({ id, type: "building", use: B.use, roof: B.roof, ...(B.tower ? { tower: true, height: 30 } : {}), rot, ...(name ? { name } : {}), ...(b.building.rooms ? { rooms: b.building.rooms } : {}), ...(b.building.floors !== null ? { floors: b.building.floors } : {}), ...(b.building.cellar !== null ? { cellar: b.building.cellar } : {}), ...(b.building.upstairs ? { upstairs: b.building.upstairs } : {}), ...(b.building.cellarRooms ? { cellarRooms: b.building.cellarRooms } : {}), shape: rect(c[0], c[1], len, dep) });
   taken.push({ at: c, r: Math.hypot(len, dep) / 2 + 3 });
   // (outbuildings to its right along the road, a gap between)
   let x = len / 2 + 3;
@@ -400,6 +428,53 @@ function roadside(b, r, W, H, road, features, taken) {
     }
   }
   return { at: c, r: Math.max(len, dep) / 2 + x / 2, name };
+}
+
+/**
+ * A castle: its curtain wall around the map's middle (a closed loop, its towers by the wall's spacing, open or roofed as
+ * asked), its road in from the map's foot through the gate in its south wall to its keep, the keep across the yard's top
+ * and its buildings down the yard's sides, a well and a few things about the yard; with a road asked for, a track
+ * across the map's foot that the gate's road comes off. Returns { at, r, pts } (pts: points all over the castle, kept
+ * clear by what's placed after it).
+ */
+function castle(b, r, W, H, features, taken, crossRoad) {
+  const C = CASTLES[b.size], [cw, ch] = C.wall, [X0, Y0] = C.at, X1 = X0 + cw, Y1 = Y0 + ch;
+  const cx = r2((X0 + X1) / 2);
+  features.push({ id: "curtain", type: "wall", class: "town", path: [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1], [X0, Y0]], straight: true, towers: b.castle.towers, towerSpacing: C.spacing });
+  // (the gate's road: up from the map's foot, or off a track across it, through the gate to the keep's door)
+  const [kl, kd] = C.keep, ky0 = Y0 + 5, ky1 = ky0 + kd;
+  const foot = crossRoad ? H - 2.6 : H + 2;
+  if (crossRoad) features.push({ id: "road", type: "road", class: "track", surface: "dirt", width: 10, path: wander(r, foot, W, 0.6).map(pt) });
+  features.push({ id: "gate-road", type: "road", class: "track", surface: "dirt", width: 10, path: [[cx, foot], [cx, ky1 + 1.5]], straight: true });
+  features.push({ id: "bailey", type: "square", name: "Bailey", surface: "trodden", middle: "none", shape: { rect: [X0 + 1.2, Y0 + 1.2, X1 - 1.2, Y1 - 1.2] } }); // (the yard up to the wall's inner face)
+  features.push({ id: "keep", type: "building", use: "keep", name: "Keep", roof: "slate", height: 40, roofStyle: "hip", shape: { rect: [r2(cx - kl / 2), ky0, r2(cx + kl / 2), ky1] } });
+  // (the yard's buildings: each in the first clear place down its sides from the top, west and east in turn, then
+  // along the south wall either side of the gate's road; clear of the keep, the road, each other and the wall's strip)
+  const inset = 4.4, gap = 1, yard = [X0 + inset, Y0 + inset, X1 - inset, Y1 - inset];
+  const keepBox = [cx - kl / 2, ky0, cx + kl / 2, ky1], roadBox = [cx - 1, ky1, cx + 1, Y1];
+  const placed = [keepBox];
+  const meets = (a, q, pad) => a[0] < q[2] + pad && a[2] > q[0] - pad && a[1] < q[3] + pad && a[3] > q[1] - pad;
+  const fits = (q) => q[0] >= yard[0] - 1e-9 && q[1] >= yard[1] - 1e-9 && q[2] <= yard[2] + 1e-9 && q[3] <= yard[3] + 1e-9 && !meets(q, roadBox, gap) && !placed.some((o) => meets(q, o, gap));
+  const slots = (len, dep, west) => {
+    const out = [];
+    for (let y = yard[1]; y + len <= yard[3]; y += 0.5) out.push(west ? [yard[0], y, yard[0] + dep, y + len] : [yard[2] - dep, y, yard[2], y + len]);
+    for (let x = west ? yard[0] : yard[2] - len; west ? x + len <= cx : x >= cx; x += west ? 0.5 : -0.5) out.push([x, yard[3] - dep, x + len, yard[3]]);
+    return out;
+  };
+  C.yard.forEach(([use, len, dep, roof], k) => {
+    const q = [...slots(len, dep, k % 2 === 0), ...slots(len, dep, k % 2 === 1)].find(fits);
+    if (!q) return;
+    placed.push(q);
+    features.push({ id: `yard-${k + 1}`, type: "building", use, roof, shape: { rect: q.map(r2) } });
+  });
+  // (a well and a few things about the yard)
+  const things = [["well", [cx - 4, (ky1 + Y1) / 2]], ["cart", [cx + 4.5, ky1 + 4]], ["barrel", [cx + 4, Y1 - inset - 3]], ["barrel", [cx + 4.6, Y1 - inset - 2.6]], ["crate", [cx - 4.5, Y1 - inset - 3]]];
+  // (each where no building stands)
+  things.forEach(([cls, at], k) => { if (!placed.some((o) => meets([at[0], at[1], at[0], at[1]], o, 1.2))) features.push({ id: `${cls}-${k + 1}`, type: "prop", class: cls, at: pt(at), rot: Math.round(r.range(-30, 30)) }); });
+  // (kept clear: the castle and a little around it)
+  const pts = [];
+  for (let x = X0 - 4; x <= X1 + 4; x += 1.5) for (let y = Y0 - 4; y <= Y1 + 4.5; y += 1.5) { pts.push([x, y]); taken.push({ at: [x, y], r: 1.2 }); }
+  return { at: [cx, (Y0 + Y1) / 2], r: Math.hypot(cw, ch) / 2 + 4, pts };
 }
 
 /** A street site: the main street across, a lane or cross street off it, a square where a town's meet, the district over all. */
@@ -535,5 +610,6 @@ function defaultName(b, site) {
   if (b.site === "wilderness") return `${BRIEF_LABELS.ground[b.ground]}${feat ? ` ${feat}` : ""}`;
   if (b.site === "roadside") return site?.name || `Roadside ${BRIEF_LABELS.use[b.building.use].toLowerCase()}`;
   if (b.site === "street") return `${BRIEF_LABELS.place[b.street.place]} street`;
+  if (b.site === "castle") return BRIEF_LABELS.castleSize[b.size].replace(/ \(.*$/, "");
   return `${BRIEF_LABELS.camp[b.camp.kind]} camp`;
 }

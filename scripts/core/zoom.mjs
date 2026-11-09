@@ -9,7 +9,7 @@
  * Pure: runs in the worker, on the page and under node.
  */
 import { intersect, shapes, area } from "./lots/poly.mjs";
-import { shapeToPolygon, polygonsOverlap, unturn } from "./geom.mjs";
+import { shapeToPolygon, polygonsOverlap, unturn, pointInPolygon } from "./geom.mjs";
 import { USE_INFO } from "./uses.mjs";
 import { houseOf } from "./pin.mjs";
 import { hash128 } from "./rng.mjs";
@@ -22,6 +22,16 @@ export const DEFAULT_ZOOM = 2;
 const REACH = 4;
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
+const same = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+
+/** Which side of a run cut from a closed loop its outside is ("left" or "right" going along it): away from the loop's inside. */
+function outsideOf(piece, loop) {
+  let best = 1, len = -1;
+  for (let i = 1; i < piece.length; i++) { const l = Math.hypot(piece[i][0] - piece[i - 1][0], piece[i][1] - piece[i - 1][1]); if (l > len) { len = l; best = i; } }
+  const a = piece[best - 1], b = piece[best], l = len || 1;
+  const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], left = [(b[1] - a[1]) / l, -(b[0] - a[0]) / l], eps = Math.min(0.05, l / 4);
+  return pointInPolygon([mid[0] + left[0] * eps, mid[1] + left[1] * eps], loop) ? "right" : "left";
+}
 
 /**
  * The battle map's size for a rectangle on an overview: { squares: [w, h], perSquare } (perSquare: battle squares to
@@ -135,7 +145,10 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     }
   }
   // Bridges and fords where the overview put them (each lands again on its road over the water)
-  for (const c of items.filter((i) => i.kind === "crossing" && Array.isArray(i.at))) {
+  // (a stone town wall's moat comes over with the wall, which bridges it again where the roads cross: its own bridges
+  // aren't carried)
+  const moated = new Set((plan?.features ?? []).filter((f) => f.type === "wall" && f.class === "town" && f.outside === "moat").map((f) => f.id));
+  for (const c of items.filter((i) => i.kind === "crossing" && Array.isArray(i.at) && !moated.has(i.from))) {
     if (c.at[0] < box[0] || c.at[0] > box[2] || c.at[1] < box[1] || c.at[1] > box[3]) continue;
     features.push({ id: idFor(c.id), type: "crossing", class: ["bridge", "footbridge", "ford"].includes(c.class) ? c.class : "bridge", at: P(c.at) });
   }
@@ -147,15 +160,37 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       features.push({ ...structuredClone(f), id: idFor(f.id), at: P(f.at) });
     }
   }
-  // The plan's own low walls, hedges and fences, cut to the rectangle (a town wall, palisade or cliff isn't drawn on a
-  // battle map yet: it's left off, and the notes say so)
+  // The plan's own low walls, hedges and fences, cut to the rectangle; its stone town walls too, built up close as a
+  // castle's are (layout/castle.mjs: a walk along the top, towers and gatehouses with floors), at their true thickness
+  // and height, their towers as far apart for the zoom as on the overview (a palisade or cliff isn't drawn on a battle
+  // map yet: it's left off, and the notes say so)
   const LOW_WALLS = new Set(["drystone", "hedge", "fence", "stone"]);
   const notYet = new Set();
   for (const f of plan?.features ?? []) {
     if (f.type !== "wall" || !Array.isArray(f.path)) continue;
     const pieces = clipPath(f.path, box);
     if (!pieces.length) continue;
-    if (!LOW_WALLS.has(f.class ?? "drystone")) { notYet.add(f.class === "cliff" ? "cliffs" : f.class === "palisade" ? "palisades" : "town walls"); continue; }
+    if (f.class === "town") {
+      const closed = f.path.length >= 4 && same(f.path[0], f.path[f.path.length - 1]);
+      // (a loop whose start lies in the rectangle comes out cut there in two, its last piece ending where its first
+      // begins: one run, so its corner there gets one tower)
+      const runs = pieces.map((q) => q.slice());
+      if (closed && runs.length >= 2 && same(runs[0][0], f.path[0]) && same(runs[runs.length - 1][runs[runs.length - 1].length - 1], f.path[0])) runs.splice(0, 1, [...runs.pop(), ...runs[0].slice(1)]);
+      for (const piece of runs) {
+        // (a loop the rectangle cuts is an open run, its outside where the loop's was: away from the loop's inside)
+        const loop = closed && piece.length >= 4 && same(piece[0], piece[piece.length - 1]);
+        const side = loop ? null : closed ? outsideOf(piece, f.path) : f.side ?? null;
+        features.push({
+          id: idFor(f.id), type: "wall", class: "town", path: piece.map(P), straight: true, ...(side ? { side } : {}),
+          ...(Number.isFinite(f.thickness) ? { thickness: f.thickness } : {}), ...(Number.isFinite(f.height) ? { height: f.height } : {}),
+          ...(f.towers ? { towers: f.towers } : {}), ...(f.towerShape ? { towerShape: f.towerShape } : {}),
+          towerSpacing: Math.round((Number.isFinite(f.towerSpacing) ? f.towerSpacing : 120) * zoom),
+          ...(f.outside && f.outside !== "none" ? { outside: f.outside, ...(Number.isFinite(f.ditchWidth) ? { ditchWidth: f.ditchWidth } : {}) } : {}),
+        });
+      }
+      continue;
+    }
+    if (!LOW_WALLS.has(f.class ?? "drystone")) { notYet.add(f.class === "cliff" ? "cliffs" : "palisades"); continue; }
     for (const piece of pieces) features.push({ ...structuredClone(f), id: idFor(f.id), path: piece.map(P) });
   }
   for (const what of notYet) notes.push(`A battle map doesn't draw ${what} yet, so the ${what.slice(0, -1)} here is left off.`);

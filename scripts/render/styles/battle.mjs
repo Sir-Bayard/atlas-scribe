@@ -21,9 +21,17 @@ import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
 import { bands, union, offset } from "../../core/lots/poly.mjs";
 import { distanceToPath, pointInPolygon } from "../../core/geom.mjs";
+import { offsetPath } from "../../core/layout/walls.mjs";
+import { CASTLE } from "../../core/layout/castle.mjs";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
+
+/** How long a flight FA's stairs art draws, in squares (its tile is 1 by 3, the steps the top 2.09 of it). */
+const STAIR_DRAWN = 2.09;
+
+/** How much a castle's masonry (its walls' tops) is darkened over the dressed stone, so it reads apart from the floors. */
+const MASONRY_SHADE = 0.4;
 
 /** Forgotten Adventures' art is drawn at 200 px a square. */
 const ART_PX = 200;
@@ -112,7 +120,7 @@ const winterSurface = (surface) => WINTER_SURFACE[surface] ?? `surface.${surface
 const wayRole = (w, s) => wayPaving(w) ?? (s === "winter" ? winterSurface(w.surface) : UNPAVED[w.surface] ?? "surface.dirt");
 const floorRole = (b) => (STONE_FLOORS.has(b.use) || b.tower ? "floor.stone" : "floor.wood");
 /** A room's floor (its kind's: a kitchen's stone, a stable's dirt). */
-const ROOM_FLOOR = { wood: "floor.wood", stone: "floor.stone", dirt: "surface.dirt" };
+const ROOM_FLOOR = { wood: "floor.wood", stone: "floor.stone", dirt: "surface.dirt", earth: "surface.dirt" };
 /** A quarter's own ground (look.ground: a market's paving, a crafts quarter's dirt), or null for lush grass. */
 const isQuarter = (i) => i.kind === "surface" && i.class === "quarter" && !i.lush && Array.isArray(i.poly);
 const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `surface.trodden.${s}` : s === "winter" ? winterSurface(q.surface) : UNPAVED[q.surface] ?? "surface.dirt");
@@ -129,7 +137,17 @@ const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class 
  */
 export function furniture(layout) {
   const out = [];
-  for (const it of layout.items.filter((i) => i.kind === "interior")) for (const p of it.furniture ?? []) if (FURNITURE[p.f] && !FURNITURE[p.f].drawn) out.push({ role: `furn.${p.f}`, variant: p.variant ?? 0, piece: p });
+  for (const it of layout.items.filter((i) => i.kind === "interior")) for (const p of it.furniture ?? []) if (FURNITURE[p.f] && !FURNITURE[p.f].drawn) out.push({ role: `furn.${p.f}`, variant: p.variant ?? 0, piece: it.floor ? { ...p, floor: it.floor } : p });
+  // (a building's stairs on each of its floors: the same flight on every one, so a token climbs where it stands; a wall's
+  // flight only at the ground and the walk, FA's flights end to end (each draws 2.09 squares of its 1 by 3 tile); a round
+  // tower's are painted, not art)
+  for (const st of layout.items.filter((i) => i.kind === "stairs" && !i.painted)) {
+    const n = Math.max(1, Math.round((st.len ?? 3) / STAIR_DRAWN)), step = (st.len ?? 3) / n, a = (st.rot * Math.PI) / 180, u = [Math.cos(a), Math.sin(a)];
+    for (const f of stairFloors(st)) for (let k = 0; k < n; k++) {
+      const off = (k - (n - 1) / 2) * step;
+      out.push({ role: `furn.stairs.${st.material === "stone" || f < 0 ? "stone" : "wood"}`, variant: 0, piece: { f: "stairs", x: st.at[0] + u[0] * off, y: st.at[1] + u[1] * off, rot: st.rot + 90, variant: 0, floor: f, lock: true } });
+    }
+  }
   // (and each light's own piece: candles, a lamp, a lantern, a torch, a lamp post, a fire)
   for (const l of layout.items.filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f])) out.push({ role: `furn.${l.prop.f}`, variant: l.prop.variant ?? 0, piece: l.prop });
   // (a rug first, under the rest; what stands on a table last, over it)
@@ -144,6 +162,24 @@ export function furniture(layout) {
  */
 export function mist(layout) {
   return layout.items.filter((i) => i.kind === "mist").map((m) => ({ role: "fog.light", variant: m.variant ?? 0, x: m.at[0], y: m.at[1], size: m.size, rot: m.rot ?? 0, alpha: m.alpha }));
+}
+
+/** The floors a flight of stairs joins: its own list (a wall's: the ground and the walk), else all from its lowest to its highest. */
+export function stairFloors(st) {
+  if (Array.isArray(st.levels)) return st.levels;
+  const out = [];
+  for (let f = st.floors[0]; f <= st.floors[1]; f++) out.push(f);
+  return out;
+}
+
+/**
+ * A battle map's floors other than the ground, lowest first (-1 a cellar, 1 and up the floors above), each its own
+ * image: its buildings' floors, and a castle's wall walk.
+ */
+export function floorsOf(layout) {
+  const fs = layout.items.filter((i) => i.kind === "interior" && i.floor).map((i) => i.floor);
+  if (layout.items.some((i) => i.kind === "wall" && i.curtain)) fs.push(CASTLE.walk);
+  return [...new Set(fs)].sort((a, b) => a - b);
 }
 
 export function rolesFor(layout) {
@@ -164,13 +200,17 @@ export function rolesFor(layout) {
       if (i.roofStyle === "flat" || i.roofStyle === "mansard") roles.add(i.flatRoof === "wood" ? `roof.flat.wood.${s}` : `roof.flat.${s}`);
     }
     if (i.kind === "tree") roles.add(treeRole(i, s));
-    if (i.kind === "shell") { roles.add(`wall.${i.material}`); if (i.walls.some((w) => w.type === "window")) roles.add("window.small"); }
+    // (a castle's masonry is painted, from the rough stone: no wall art)
+    if (i.kind === "shell" && i.material !== "masonry") { roles.add(`wall.${i.material}`); if (i.walls.some((w) => w.type === "window")) roles.add("window.small"); }
+    if (i.kind === "wall" && i.curtain) roles.add("surface.flagstone");
     if (i.kind === "interior") {
-      roles.add(`wall.${i.material}`);
+      if (i.material !== "masonry") roles.add(`wall.${i.material}`);
       for (const r of i.rooms) roles.add(ROOM_FLOOR[r.floor] ?? "floor.wood");
       for (const f of i.furniture) if (!FURNITURE[f.f]?.drawn) roles.add(`furn.${f.f}`);
     }
     if (i.kind === "light" && i.prop && FURNITURE[i.prop.f]) roles.add(`furn.${i.prop.f}`);
+    if (i.kind === "stairs" && !i.painted) { roles.add(`furn.stairs.${i.material === "stone" ? "stone" : "wood"}`); if (i.floors[0] < 0) roles.add("furn.stairs.stone"); }
+    if (i.kind === "interior" && i.outer && i.material !== "masonry") { roles.add(`wall.${i.material}`); if (i.outer.some((w) => w.type === "window")) roles.add("window.small"); }
     if (i.kind === "mist") roles.add("fog.light");
     if (i.kind === "boundary" && i.class === "fence") roles.add("fence.wood");
     if (i.kind === "wall" && i.class === "stone") roles.add("fence.stone");
@@ -318,6 +358,136 @@ export function paint(ctx) {
   const gb = ground?.base ?? "grass";
   const ways = items("way").filter((w) => !w.faint && Array.isArray(w.path) && w.path.length >= 2).map(toWall).map((w) => ({ w, bb: bboxOf(w.path) })).filter(({ w, bb }) => meets(bb, (w.width ?? 1) / 2 + 2)).map(({ w }) => w);
   const feet = items("building").map((b) => { const f = footprint(b); return { b, f, bb: bboxOf(f) }; }).filter(({ bb }) => meets(bb, 6));
+
+  // Castle works (castle.mjs), painted from dressed stone: a curtain wall's top (its walk's flagstones between the
+  // parapet's merlons along its face and its inner edge), a tower's or gatehouse's masonry ring (its doors' thresholds
+  // and arrow slits cut through it) and a round tower's stairs curling around its wall
+  const curtains = items("wall").filter((w) => w.curtain && meets(bboxOf(w.path), (w.thickness ?? 2) + 1));
+  const dark = "rgba(22,20,18,0.85)";
+  const line = (k, pts, w) => { k.lineCap = "butt"; k.lineJoin = "miter"; k.lineWidth = w * pp; path(k, pts); k.stroke(); };
+  // (a closed ring added to the path being built, so several make one shape: a ring with a hole, or many blocks)
+  const sub = (k, pts) => { pts.forEach(([x, y], i) => (i ? k.lineTo(X(x), Y(y)) : k.moveTo(X(x), Y(y)))); k.closePath(); };
+  function wallTops(list) {
+    if (!list.length) return;
+    const [ml, md, me] = CASTLE.merlon;
+    for (const w of list) {
+      const T = w.thickness ?? 2.4, side = w.side ?? 1;
+      fill((k) => line(k, w.path, T), tex("stone.curb"));
+      fill((k) => line(k, w.path, T), "rgb(20,18,16)", MASONRY_SHADE);
+      fill((k) => line(k, offsetPath(w.path, (-side * md) / 2), T - md - 0.14), tex("surface.flagstone"), 0.9);
+      // (the merlons along its face: blocks of stone with gaps between, as the overview draws a parapet)
+      const blocks = [];
+      for (let i = 1; i < w.face.length; i++) {
+        const a = w.face[i - 1], b = w.face[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.2) continue;
+        const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+        let n = [-u[1], u[0]];
+        const bm = w.back[Math.min(i, w.back.length - 1)];
+        if (n[0] * (bm[0] - a[0]) + n[1] * (bm[1] - a[1]) < 0) n = [-n[0], -n[1]];
+        for (let t = 0.15; t + ml <= L - 0.05; t += me) {
+          const p0 = [a[0] + u[0] * t, a[1] + u[1] * t], p1 = [a[0] + u[0] * (t + ml), a[1] + u[1] * (t + ml)];
+          blocks.push([p0, p1, [p1[0] + n[0] * md, p1[1] + n[1] * md], [p0[0] + n[0] * md, p0[1] + n[1] * md]]);
+        }
+      }
+      fill((k) => { k.beginPath(); for (const q of blocks) sub(k, q); k.fill(); }, tex("stone.curb"));
+      fill((k) => { k.beginPath(); for (const q of blocks) sub(k, q); k.fill(); }, "rgb(20,18,16)", MASONRY_SHADE * 0.6);
+      fill((k) => { k.lineWidth = 0.05 * pp; for (const q of blocks) { poly(k, q); k.stroke(); } }, dark, 0.7);
+      fill((k) => { line(k, w.face, 0.07); line(k, w.back, 0.07); }, dark);
+    }
+  }
+  function masonry(foot, inner, walls, T) {
+    if (!foot || !inner) return;
+    fill((k) => { k.beginPath(); sub(k, foot); sub(k, inner); k.fill("evenodd"); }, tex("stone.curb"));
+    fill((k) => { k.beginPath(); sub(k, foot); sub(k, inner); k.fill("evenodd"); }, "rgb(20,18,16)", MASONRY_SHADE);
+    for (const w of walls ?? []) {
+      const n = w.inward ?? [0, 0], h = T / 2 + 0.03;
+      if (w.type === "door") fill((k) => { poly(k, [[w.a[0] - n[0] * h, w.a[1] - n[1] * h], [w.b[0] - n[0] * h, w.b[1] - n[1] * h], [w.b[0] + n[0] * h, w.b[1] + n[1] * h], [w.a[0] + n[0] * h, w.a[1] + n[1] * h]]); k.fill(); }, tex("floor.stone"));
+      else if (w.type === "window") {
+        // (an arrow slit: a dark slot through the wall, splayed a little wider inside)
+        const m = [(w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2], L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]) || 1, t = [(w.b[0] - w.a[0]) / L, (w.b[1] - w.a[1]) / L];
+        const o = [m[0] - n[0] * h, m[1] - n[1] * h], i = [m[0] + n[0] * h, m[1] + n[1] * h];
+        fill((k) => { poly(k, [[o[0] - t[0] * 0.06, o[1] - t[1] * 0.06], [o[0] + t[0] * 0.06, o[1] + t[1] * 0.06], [i[0] + t[0] * 0.14, i[1] + t[1] * 0.14], [i[0] - t[0] * 0.14, i[1] - t[1] * 0.14]]); k.fill(); }, "rgb(30,28,26)");
+      }
+    }
+    fill((k) => { k.lineWidth = 0.07 * pp; k.lineJoin = "miter"; poly(k, foot); k.stroke(); poly(k, inner); k.stroke(); }, dark);
+  }
+  function curlStairs(st) {
+    const { c, r0, r1, a0, a1, steps } = st.curl;
+    const rad = (d) => (d * Math.PI) / 180;
+    fill((k) => { poly(k, st.box); k.fill(); }, tex("stone.curb"));
+    // (each step a little lighter going up: the higher it is, the nearer the eye)
+    for (let k2 = 0; k2 < steps; k2++) {
+      const t0 = rad(a0 + ((a1 - a0) * k2) / steps), t1 = rad(a0 + ((a1 - a0) * (k2 + 1)) / steps);
+      fill((k) => { k.beginPath(); k.arc(X(c[0]), Y(c[1]), r1 * pp, t0, t1); k.arc(X(c[0]), Y(c[1]), r0 * pp, t1, t0, true); k.closePath(); k.fill(); }, "rgb(16,14,12)", 0.04 * (steps - k2));
+    }
+    fill((k) => {
+      k.lineWidth = 0.05 * pp;
+      for (let k2 = 1; k2 < steps; k2++) { const t = rad(a0 + ((a1 - a0) * k2) / steps); k.beginPath(); k.moveTo(X(c[0] + r0 * Math.cos(t)), Y(c[1] + r0 * Math.sin(t))); k.lineTo(X(c[0] + r1 * Math.cos(t)), Y(c[1] + r1 * Math.sin(t))); k.stroke(); }
+      poly(k, st.box); k.stroke();
+    }, dark, 0.8);
+  }
+  const curls = (f) => items("stairs").filter((st) => st.curl && stairFloors(st).includes(f) && meets(bboxOf(st.box), 1));
+
+  if (ctx.floor) { paintFloor(ctx.floor); return; }
+
+  /**
+   * A floor above or below the ground (floor 1 and up, -1 a cellar), as a level of its own over or under the map: clear
+   * but for the buildings that have that floor (a cellar dark rock all around), each with its floor, its rooms' floors,
+   * a shadow along its walls inside and, from a floor above, a soft shadow on the ground below around it; its walls
+   * between rooms, and its own outer walls with their windows (a cellar's of stone, with none).
+   */
+  function paintFloor(f) {
+    const its = items("interior").filter((it) => it.floor === f && meets(bboxOf(it.rooms.flatMap((r) => r.poly)), 2));
+    if (f < 0) {
+      g.fillStyle = "rgb(28,25,22)"; g.fillRect(0, 0, W, H);
+      soft((k) => k.fillRect(0, 0, W, H), "rgb(54,48,42)", { noise: noiseMask("cellar-rock", 2.5, 0.15, 0.35), alpha: 0.55 });
+    }
+    // (the wall walk: the curtain's top again, at its own level, its shadow falling on the yard below)
+    if (f === CASTLE.walk && curtains.length) {
+      soft((k) => { for (const w of curtains) line(k, w.path.map(([x, y]) => [x - 0.25, y - 0.25]), (w.thickness ?? 2.4) + 0.3); }, "rgb(10,12,18)", { blur: 0.35, alpha: 0.45, box: boxAround(curtains.map((w) => bboxOf(w.path)), 3) });
+      wallTops(curtains);
+    }
+    for (const it of its) {
+      const mine = feet.filter(({ b }) => (b.group ?? b.id) === it.group);
+      const b = mine[0]?.b, rot = b?.rot ?? 0, woodV = b ? Math.round(b.cx * 3 + b.cy) + 7 * f : 0;
+      const box = boxAround(mine.map((x) => x.bb), 1);
+      if (!mine.length) continue;
+      // (from above, the floor's edge throws a shadow out onto the ground below)
+      if (f > 0) soft((k) => { for (const { f: fp } of mine) { poly(k, fp); k.fill(); } }, "rgb(10,12,18)", { blur: 0.35, alpha: 0.5, box });
+      const works = it.material === "masonry";
+      const base = f < 0 || works ? "floor.stone" : "floor.wood";
+      for (const { f: fp } of mine) fill((k) => { poly(k, fp); k.fill(); }, tex(base, base === "floor.wood" ? woodV : 0, rot));
+      for (const r of it.rooms) {
+        const role = ROOM_FLOOR[r.floor] ?? "floor.wood";
+        if (role === base) continue;
+        fill((k) => { poly(k, r.poly); k.fill(); }, tex(role, role === "floor.wood" ? woodV : 0, rot));
+      }
+      soft((k) => { k.lineWidth = 0.8 * pp; k.lineJoin = "miter"; for (const { f: fp } of mine) { poly(k, fp); k.stroke(); } }, "rgb(10,12,18)", { blur: 0.25, alpha: f < 0 ? 0.5 : 0.35, box });
+      const im = art(`wall.${it.material}`, 0);
+      for (const w of it.walls.filter((x) => x.type === "wall" && !x.join)) {
+        if (im) strip(im, w.a, w.b, 0, 0, 0, { width: it.thickness });
+        else fill((k) => stroke(k, [w.a, w.b], it.thickness, "butt"), "rgb(110,96,78)");
+      }
+      const sh = items("shell").find((x) => x.group === it.group);
+      if (!sh || !it.outer) continue;
+      if (works) { masonry(it.foot ?? sh.foot, it.rooms[0]?.poly ?? sh.floor, it.outer, sh.thickness); continue; }
+      const om = art(`wall.${it.material}`, sh.variant), win = art("window.small", sh.variant);
+      const half = sh.thickness, phase = (sh.variant % 7) * 0.37 + f * 0.5;
+      for (const w of it.outer.filter((x) => x.type === "wall")) {
+        if (om) strip(om, w.a, w.b, w.corner?.[0] ? half : 0, w.corner?.[1] ? half : 0, phase, { width: sh.thickness, clip: w.clip });
+        else fill((k) => stroke(k, [w.a, w.b], sh.thickness, w.corner?.[0] || w.corner?.[1] ? "square" : "butt"), "rgb(110,96,78)");
+      }
+      for (const w of it.outer.filter((x) => x.type === "window")) {
+        const m = [(w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2];
+        g.save(); g.translate(X(m[0]), Y(m[1])); g.rotate(Math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]));
+        if (win) { const band = bandOf(win), ky = (sh.thickness * ART_PX) / band.h; g.scale(1, ky); g.drawImage(win, -pp / 2, (-band.mid / ART_PX) * pp, pp, pp); }
+        else { g.fillStyle = "rgb(150,190,210)"; g.fillRect((-sh.thickness * pp) / 2, -0.04 * pp, sh.thickness * pp, 0.08 * pp); }
+        g.restore();
+      }
+    }
+    for (const st of curls(f)) curlStairs(st);
+    progress(1, f < 0 ? "Cellars" : "Upper floors");
+  }
 
   // 1. The ground: its art, a second grass and a little clover in broad soft patches (in winter, snow, lighter snow
   // and grass showing through)
@@ -721,9 +891,10 @@ export function paint(ctx) {
     const lowArt = art("fence.stone");
     const low = lowArt ? stone.filter((w) => !w.parapet && !(w.thickness > 0.6)) : [];
     for (const w of low) stripPath(lowArt, w.path);
-    const high = stone.filter((w) => !w.parapet && !low.includes(w));
+    const high = stone.filter((w) => !w.parapet && !low.includes(w) && !w.curtain);
     if (high.length) fill((k) => { for (const w of high) stroke(k, w.path, thick(w), "butt"); }, tex(`stone.rough.${s}`));
     if (wood.length) fill((k) => { for (const w of wood) stroke(k, w.path, thick(w), "butt"); }, tex("wood.stake"));
+    wallTops(curtains);
   }
 
   // 8. Fountains: a stone basin of water
@@ -740,15 +911,15 @@ export function paint(ctx) {
   progress(0.55, "Buildings");
   if (feet.length) soft((k) => {
     for (const { b, f } of feet) {
-      const d = ((20 + (b.tall ?? 0) * 20) / 5) * 0.3;
+      const d = ((20 + (b.tall ?? 0) * 20 + (b.floorsAbove ?? 0) * 10) / 5) * 0.3;
       for (let t = 0; t <= 1.0001; t += 0.1) { poly(k, f.map(([x, y]) => [x + SHADOW[0] * d * t, y + SHADOW[1] * d * t])); k.fill(); }
     }
-  }, "rgb(16,24,40)", { blur: 0.3, alpha: 0.24, box: boxAround(feet.map(({ b, bb }) => { const d = ((20 + (b.tall ?? 0) * 20) / 5) * 0.3 * 0.7; return [bb[0] - d, bb[1] - d, bb[2], bb[3]]; })) });
+  }, "rgb(16,24,40)", { blur: 0.3, alpha: 0.24, box: boxAround(feet.map(({ b, bb }) => { const d = ((20 + (b.tall ?? 0) * 20 + (b.floorsAbove ?? 0) * 10) / 5) * 0.3 * 0.7; return [bb[0] - d, bb[1] - d, bb[2], bb[3]]; })) });
   for (const { b, f } of feet) fill((k) => { poly(k, f); k.fill(); }, tex(floorRole(b), floorRole(b) === "floor.wood" ? Math.round(b.cx * 3 + b.cy) : 0, b.rot ?? 0));
   // Interiors: each room's floor where it isn't the building's (under the shadow along the walls), then below a stage
   // and the walls between rooms (the building's wall art, thinner; a door's gap and an open doorway's left). The
   // furniture isn't painted: it lies over the map as tiles (furniture(layout))
-  const interiors = items("interior").filter((it) => meets(bboxOf(it.rooms.flatMap((r) => r.poly)), 1)).map((it) => {
+  const interiors = items("interior").filter((it) => !it.floor && meets(bboxOf(it.rooms.flatMap((r) => r.poly)), 1)).map((it) => {
     const b = feet.find(({ b }) => (b.group ?? b.id) === it.group)?.b;
     return { it, b, rot: b?.rot ?? 0, woodV: b ? Math.round(b.cx * 3 + b.cy) : 0 };
   });
@@ -773,10 +944,20 @@ export function paint(ctx) {
     const im = art(`wall.${it.material}`, 0);
     for (const w of it.walls.filter((x) => x.type === "wall" && !x.join)) {
       // (a wall runs to the outer wall's middle line and over any inner wall it meets already: no more past its ends)
-      if (im) strip(im, w.a, w.b, 0, 0, 0, { width: it.thickness });
+      if (it.material === "masonry") { fill((k) => line(k, [w.a, w.b], it.thickness), tex("stone.curb")); fill((k) => line(k, [w.a, w.b], it.thickness), "rgb(20,18,16)", 0.45); }
+      else if (im) strip(im, w.a, w.b, 0, 0, 0, { width: it.thickness });
       else fill((k) => stroke(k, [w.a, w.b], it.thickness, "butt"), "rgb(110,96,78)");
     }
+    // (a gatehouse's portcullis: an iron grille across its passage, a bar every half square)
+    if (Array.isArray(it.portcullis)) {
+      const [a, b] = it.portcullis, L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / L, (b[0] - a[0]) / L];
+      fill((k) => {
+        line(k, [a, b], 0.1);
+        for (let t = 0; t <= L + 1e-6; t += 0.5) { const p = [a[0] + ((b[0] - a[0]) * t) / L, a[1] + ((b[1] - a[1]) * t) / L]; line(k, [[p[0] - n[0] * 0.14, p[1] - n[1] * 0.14], [p[0] + n[0] * 0.14, p[1] + n[1] * 0.14]], 0.07); }
+      }, "rgb(34,34,36)");
+    }
   }
+  for (const st of curls(0)) curlStairs(st);
   // Each building's walls from wall art (its shell: walls and windows; a door's gap is left for the scene's door), or
   // plain strokes along its footprint without art
   const shells = items("shell").filter((sh) => meets(bboxOf(sh.walls.flatMap((w) => [w.a, w.b])), 1));
@@ -786,7 +967,8 @@ export function paint(ctx) {
     fill((k) => outlines(k, 0.5), "rgb(70,58,46)");
     fill((k) => outlines(k, 0.34), "rgb(150,132,108)");
   }
-  for (const sh of shells) {
+  for (const sh of shells.filter((x) => x.material === "masonry")) masonry(sh.foot, sh.floor, sh.walls, sh.thickness);
+  for (const sh of shells.filter((x) => x.material !== "masonry")) {
     const im = art(`wall.${sh.material}`, sh.variant);
     const win = art("window.small", sh.variant);
     const half = sh.thickness / 2, phase = (sh.variant % 7) * 0.37;
@@ -906,6 +1088,48 @@ export function overheads(layout) {
  * Paints one overhead piece onto its own canvas, which covers the piece's box at pp px a square.
  * ctx: { g, W, H, pp, layout, art(role, variant) }. A roof is clipped to its building's walls, so it covers them exactly.
  */
+/** A castle tower's or gatehouse's open top, onto its roof's own image: flagstones inside a parapet, merlons along its edge. */
+function battlements(g, b, X, Y, pp, art, [x0, y0]) {
+  const pat = (role) => {
+    const im = art(role, 0);
+    if (!im) return fallbackColor(role);
+    const p = g.createPattern(im, "repeat");
+    p.setTransform(new DOMMatrix().translate(-x0 * pp, -y0 * pp).scale(pp / ART_PX));
+    return p;
+  };
+  const sub = (pts) => { pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); };
+  const foot = footprint(b), [ml, md, me] = CASTLE.merlon, wall = 0.5;
+  const inner = offset([foot], -wall).reduce((a, q) => (!a || Math.abs(q.length) > Math.abs(a.length) ? q : a), null);
+  g.save();
+  g.fillStyle = pat("surface.flagstone"); g.beginPath(); sub(foot); g.fill();
+  if (inner) {
+    g.fillStyle = pat("stone.curb"); g.beginPath(); sub(foot); sub(inner); g.fill("evenodd");
+    g.globalAlpha = MASONRY_SHADE; g.fillStyle = "rgb(20,18,16)"; g.beginPath(); sub(foot); sub(inner); g.fill("evenodd"); g.globalAlpha = 1;
+  }
+  // (merlons: blocks around the edge with gaps between, standing on the parapet)
+  const cx = foot.reduce((a, p) => a + p[0] / foot.length, 0), cy = foot.reduce((a, p) => a + p[1] / foot.length, 0);
+  const blocks = [];
+  let carry = 0.15;
+  foot.forEach((a, i) => {
+    const c = foot[(i + 1) % foot.length], L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (L < 1e-6) return;
+    const u = [(c[0] - a[0]) / L, (c[1] - a[1]) / L];
+    let n = [-u[1], u[0]];
+    if (n[0] * (cx - a[0]) + n[1] * (cy - a[1]) < 0) n = [-n[0], -n[1]];
+    let t = carry;
+    for (; t + ml <= L; t += me) {
+      const p0 = [a[0] + u[0] * t, a[1] + u[1] * t], p1 = [a[0] + u[0] * (t + ml), a[1] + u[1] * (t + ml)];
+      blocks.push([p0, p1, [p1[0] + n[0] * md, p1[1] + n[1] * md], [p0[0] + n[0] * md, p0[1] + n[1] * md]]);
+    }
+    carry = Math.max(0, t - L);
+  });
+  g.fillStyle = pat("stone.curb"); g.beginPath(); for (const q of blocks) sub(q); g.fill();
+  g.strokeStyle = "rgba(22,20,18,0.8)"; g.lineWidth = 0.05 * pp; g.beginPath(); for (const q of blocks) sub(q); g.stroke();
+  g.lineWidth = 0.07 * pp; g.beginPath(); sub(foot); g.stroke();
+  if (inner) { g.beginPath(); sub(inner); g.stroke(); }
+  g.restore();
+}
+
 export function paintOverhead(ctx, piece) {
   const { g, pp, layout: L, art } = ctx;
   const [x0, y0] = piece.box;
@@ -918,8 +1142,10 @@ export function paintOverhead(ctx, piece) {
     g.beginPath();
     for (const b of parts) { footprint(b).forEach(([x, y], k) => (k ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("nonzero");
-    // (each roof's art at true scale; chimneys a little over half a square across)
+    // (each roof's art at true scale; chimneys a little over half a square across; a castle's open tower or gatehouse
+    // its top's flagstones inside a parapet of merlons, as the wall walk has)
     for (const b of parts) {
+      if (b.castle && b.roofStyle === "flat") { battlements(g, b, X, Y, pp, art, [x0, y0]); continue; }
       const im = art(`roof.${b.roof}.${s}`, b.variant);
       paintRoof(g, b, { x: X(b.cx), y: Y(b.cy), pp, art, season: s, texPx: ((im?.width ?? ART_PX) * pp) / ART_PX, chimney: 0.6 });
     }

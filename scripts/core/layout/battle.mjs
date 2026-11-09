@@ -277,12 +277,16 @@ export const battleBack = (B) => (B ? { shed: BATTLE_BACK.shed, clutter: BATTLE_
  * (Patrick, 6 Nov). A roof is seen from the street as Foundry reveals a raised surface, more of it the lower it is.
  */
 export const ROOF_HEIGHT = { low: 10, tall: 20 };
-/** A building group's roof height: tall when any part is a tower or stands 40 ft or more (a layout's `tall` 1 or more). */
-export const roofHeight = (parts) => (parts.some((b) => b.tower || b.tall >= 1) ? ROOF_HEIGHT.tall : ROOF_HEIGHT.low);
+/**
+ * A building group's roof height: tall when any part is a tower or stands 40 ft or more (a layout's `tall` 1 or more);
+ * a building with floors above its ground floor (floorsAbove, from its interiors) has its roof on top of the highest, a
+ * floor's height (10 ft) each.
+ */
+export const roofHeight = (parts) => Math.max(parts.some((b) => b.tower || b.tall >= 1) ? ROOF_HEIGHT.tall : ROOF_HEIGHT.low, ROOF_HEIGHT.low * (1 + Math.max(0, ...parts.map((b) => b.floorsAbove ?? 0))));
 
 /** A building's walls: their thickness in squares (the art's band), a door's width, a window's; how far past the map's edge a building may run and still be entered; how near a way passes for it to be the building's street rather than a lane cut short at it. */
 export const SHELL = { thickness: 0.3, door: 1, wideDoor: 2, window: 0.5, windowEvery: 2.6, cornerKeep: 0.45, offMap: 0.5, nearStreet: 4 };
-const STONE_USES = new Set(["temple", "shrine", "keep", "watch", "tower", "chapel", "guildhall", "customs", "palace", "market-hall"]);
+const STONE_USES = new Set(["temple", "shrine", "keep", "watch", "tower", "gatehouse", "chapel", "guildhall", "customs", "palace", "market-hall"]);
 const hashOf = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
 
 /**
@@ -334,7 +338,8 @@ export function buildingShells(items, W = Infinity, H = Infinity) {
   let n = 0;
   for (const [g, parts] of groups) {
     const main = parts.find((b) => b.main) ?? parts[0];
-    if (parts.every((b) => b.round)) continue; // (towers and round sheds: later)
+    if (parts.some((b) => b.castle)) continue; // (a castle's tower or gatehouse: castle.mjs built its walls)
+    if (parts.every((b) => b.round)) continue; // (round sheds and towers off a wall: later)
     // The group's outline (a courtyard a hole in it), its walls' line half a thickness in: a piece for each part of
     // that line (a narrow neck may split it), the biggest first
     const pieces = shapes(offset(union(parts.map(footprint)).filter((r) => signedArea(r) !== 0), -T / 2)).filter((p) => Math.abs(signedArea(p.outer)) > 1);
