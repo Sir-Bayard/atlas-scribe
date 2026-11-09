@@ -18,7 +18,7 @@
   "license": "https://github.com/Sir-Bayard/atlas-scribe/blob/main/LICENSE",
   "compatibility": {
     "minimum": "14",
-    "verified": "14.369",
+    "verified": "14.370",
     "maximum": "14"
   },
   "esmodules": ["scripts/atlas-scribe.mjs"],
