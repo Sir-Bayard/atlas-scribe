@@ -48,6 +48,8 @@
     "chimney.stone": ["Chimney_Stone_Earthy_A_1x1.webp", "Chimney_Stone_Earthy_B_1x1.webp", "Chimney_Stone_Earthy_C_1x1.webp", "Chimney_Stone_Earthy_D_1x1.webp", "Chimney_Stone_Redrock_A_1x1.webp", "Chimney_Stone_Redrock_B_1x1.webp"],
     "prop.cart": ["Cart_Wood_Dark_A1_2x3.webp"],
     "prop.wagon": ["Wagon_Wood_Ashen_B3_3x6.webp"],
+    "prop.tent": ["Tent_Cloth_Tan_A1_3x3.webp", "Tent_Cloth_Olive_A1_3x3.webp", "Tent_Leather_Brown_Dark_A1_3x3.webp", "Tent_Leather_Tan_A1_3x3.webp", "Tent_Cloth_Green_A1_3x3.webp", "Tent_Cloth_Red_A1_3x3.webp"],
+    "prop.bedroll": ["Bedroll_Canvas_A_1x2.webp", "Bedroll_Brown_A_1x2.webp", "Bedroll_Green_A_1x2.webp", "Bedroll_Leather_Tan_A_1x2.webp"],
     "prop.well": ["Well_Stone_Earthy_C1_2x2.webp"],
     "prop.fountain": ["Fountain_Statue_Stone_Earthy_Clam_A1_2x2.webp", "Fountain_Statue_Marble_White_Clam_A1_2x2.webp"],
     "prop.statue": ["Statue_Dragon_Stone_Earthy_A1_1x1.webp", "Statue_Unicorn_Metal_Gold_A1_1x1.webp"],

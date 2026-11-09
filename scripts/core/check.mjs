@@ -326,6 +326,7 @@ function checkField(id, field, where, name, spec, v, { err, warn }, fallback = "
     if (!isNum(v)) err(id, field, `${where}: ${name} should be a number${spec.unit ? ` (${spec.unit})` : ""}.`);
     else if ((spec.min !== undefined && v < spec.min) || (spec.max !== undefined && v > spec.max))
       err(id, field, `${where}: ${name} is ${v}; it should be ${spec.max !== undefined ? `${spec.min} to ${spec.max}` : `at least ${spec.min}`}.`);
+    else if (spec.integer && !Number.isInteger(v)) err(id, field, `${where}: ${name} is ${v}; it should be a whole number.`);
   } else if (spec.kind === "point" && !isPoint(v)) err(id, field, `${where}: ${name} should be a point, [x, y].`);
   else if (spec.kind === "boolean" && typeof v !== "boolean") err(id, field, `${where}: ${name} should be true or false.`);
   else if (spec.kind === "string" && typeof v !== "string") err(id, field, `${where}: ${name} should be text.`);

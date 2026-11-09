@@ -113,8 +113,9 @@ export function lightsOf(items, seed, { size = null } = {}) {
   const ways = items.filter((i) => i.kind === "way" && Array.isArray(i.path) && i.path.length >= 2 && !i.faint);
   const squares = items.filter((i) => i.kind === "surface" && SQUARES.has(i.class) && Array.isArray(i.poly) && i.poly.length >= 3);
   // (how far to the nearest street, road or square: a door on a square is on the street)
+  const streets = ways.filter((w) => !w.approach); // (a path to a door isn't a street a lantern looks onto)
   const nearestWay = (p) => Math.min(
-    ways.reduce((best, w) => Math.min(best, distanceToPath(p, w.path) - (w.width ?? 0) / 2), Infinity),
+    streets.reduce((best, w) => Math.min(best, distanceToPath(p, w.path) - (w.width ?? 0) / 2), Infinity),
     squares.reduce((best, q) => Math.min(best, pointInPolygon(p, q.poly) ? 0 : distanceToPath(p, [...q.poly, q.poly[0]])), Infinity));
   const lanterns = [];
   for (const sh of items.filter((i) => i.kind === "shell" && !NO_LANTERN.has(i.use))) {

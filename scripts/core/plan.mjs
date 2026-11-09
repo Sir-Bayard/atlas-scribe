@@ -131,7 +131,7 @@ export const TYPES = {
       rot: num(0, { unit: "deg" }),
       chimney: { kind: "boolean", default: null }, // null: the generator decides
       roofStyle: { ...oneOf(ROOF_STYLES, "gable"), fallback: "it's drawn as a gable" },
-      variant: num(null, { min: 0 }), // which of the roof art's pieces (else from the seed)
+      variant: num(null, { min: 0, integer: true }), // which of the roof art's pieces (else from the seed)
       name: str(),
       use: { ...oneOf(USES, null), fallback: "it's taken as a house" }, // what it's for (a pinned building keeps its use); named on the scene's labels
       rooms: str(), // its rooms on a battle map, in words ("common room with stage, kitchen, 2 bedrooms"); else from its use
@@ -216,8 +216,9 @@ export const TYPES = {
   prop: {
     geometry: "point",
     // (campfire, fire pit, brazier, torch and lamp post: lights on a battle map, each lit where it stands)
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post"],
-    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }) },
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll"],
+    // (variant: which of its art's pieces, else from the seed: a soldiers' camp's tents all one cloth)
+    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }), variant: num(null, { min: 0, integer: true }) },
   },
   label: {
     geometry: "point",
@@ -244,7 +245,7 @@ export const CONIFERS = ["conifer", "fir", "pine", "spruce", "cedar", "larch", "
 export const isConifer = (species) => typeof species === "string" && CONIFERS.includes(species.trim().toLowerCase());
 
 /** How wide a prop is drawn, in squares, when the plan gives it no size (a prop's size, in feet, sets it). */
-export const PROP_SQUARES = { well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };
+export const PROP_SQUARES = { tent: 0.6, bedroll: 0.3, well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };
 
 /** A label's text height in squares, by its size word. */
 export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };

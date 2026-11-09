@@ -209,20 +209,22 @@ export function artPlacement(p, insets = [0, 0, 0, 0]) {
  * won't fit, `when` a feature the room must have (a hearth) and `min` the least floor. Then each room is filled out
  * with its kind's `fill` pieces along the walls, to its share of the floor (`cover`), so it looks lived in.
  */
+/** The room to pass around a table, in squares each side (a common room's tables close enough to read as busy). */
+const TABLE_PAD = 0.32;
 const RECIPES = {
   hall: { cover: 0.32, fill: ["chest", "barrel", "crate", "shelf", "stool"], steps: [
     { f: "hearth.large", at: "wall", want: "end", when: "hearth", min: 36, alt: [{ f: "hearth" }] },
     { f: "bed", at: "wall", want: "away", when: "bed", alt: [{ f: "bed.single" }] },
     { f: "chest", at: "foot", of: ["bed", "bed.single"] },
     { f: "table.square", at: "center", alt: [{ f: "table.round" }] },
-    { f: "rug", at: "rug", min: 18 },
+    { f: "table.long", at: "tables", min: 40 }, { f: "rug", at: "rug", min: 18 },
     { f: "shelf", at: "wall" }, { f: "barrel", at: "corner" }] },
   common: { cover: 0.34, fill: ["barrel", "bench", "stool", "crate"], steps: [
     { f: "stage", at: "wall", want: "far", when: "stage", alt: [{ f: "stage.small" }] },
     { f: "bar.long", at: "bar", when: "bar", min: 50, alt: [{ f: "bar" }] },
     { f: "barrel", at: "behind", n: 2 }, { f: "shelf.goods", at: "behind" },
     { f: "hearth.large", at: "wall", want: "end", when: "hearth", alt: [{ f: "hearth" }] },
-    { f: "table.round", at: "tables", alt: [{ f: "table.square" }] },
+    { f: "table.round", at: "tables", alt: [{ f: "table.square" }] }, { f: "table.square", at: "tables" },
     { f: "bench", at: "wall", n: 2 }, { f: "barrel", at: "corner", n: 2 }] },
   kitchen: { cover: 0.36, fill: ["barrel", "crate", "shelf.goods", "chest"], steps: [
     { f: "oven", at: "wall", want: "end", alt: [{ f: "hearth" }] },
@@ -355,8 +357,16 @@ function doorScore(laid, doors) {
     if (d.side === "front" && laid.rooms.some((x) => x.room.place === "front") && into.room.place !== "front") s += 10;
     if (d.side === "back" && laid.rooms.some((x) => x.room.place === "back") && into.room.place !== "back") s += 3;
   }
+  // (the front room keeps its share of the floor: a common room squeezed by the cuts finds no room for its tables)
+  const front = laid.rooms.find((x) => x.room.place === "front");
+  if (front) {
+    const all = laid.rooms.reduce((t, x) => t + area(x.poly), 0), shares = laid.rooms.reduce((t, x) => t + x.room.share, 0);
+    s += Math.max(0, (front.room.share / shares) * all - area(front.poly)) / all * FRONT_SHORT;
+  }
   return s;
 }
+/** How much a front room short of its share of the floor costs a layout (per whole floor short). */
+const FRONT_SHORT = 20;
 
 /**
  * Lays a program in a piece: the rooms that fit, the least important dropped first, the first room never (alone, it
@@ -730,7 +740,7 @@ function furnish(q, room, openings, buildingPoly, r, out) {
     }
     if (s.at === "tables") {
       // Tables with their chairs, as many as fit with room to pass around each (from the room's middle out)
-      const [bw, bh] = F.body, pad = 0.45;
+      const [bw, bh] = F.body, pad = TABLE_PAD;
       const c = [(x0 + x1) / 2, (y0 + y1) / 2], cands = [];
       for (let x = x0 + bw / 2; x <= x1 - bw / 2 + 1e-9; x += 0.25) for (let y = y0 + bh / 2; y <= y1 - bh / 2 + 1e-9; y += 0.25) cands.push([x, y]);
       cands.sort((p, q2) => Math.hypot(p[0] - c[0], p[1] - c[1]) - Math.hypot(q2[0] - c[0], q2[1] - c[1]));

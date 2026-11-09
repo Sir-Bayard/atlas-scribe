@@ -1,0 +1,165 @@
+/**
+ * Quick Start's Battle map tab (M6 chunk 7, Patrick's choices of 8 Nov): a Describe box over the brief's form. What
+ * the box reads (describe.mjs) is shown as chips and set in the form below it; a chip's × takes its choice out (back
+ * to the site's default) until the description changes; things it reads but can't build yet (a cellar, an upper
+ * floor) and words it doesn't know are listed too. The form is the brief (brief.mjs): the site, size, season, time,
+ * weather, ground, features and scatter, then the site's own settings.
+ */
+import { BRIEF, BRIEF_LABELS, normalizeBrief } from "../core/brief.mjs";
+import { readDescription } from "../core/describe.mjs";
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// (every field's name begins b-: the Settlement tab shares the form)
+const select = (name, title, key, value) => `<div class="form-group"><label>${title}</label><select name="b-${name}">${BRIEF[key].map((v) => `<option value="${v}" ${v === value ? "selected" : ""}>${esc(BRIEF_LABELS[key][v])}</option>`).join("")}</select></div>`;
+
+/** The tab's HTML, its form at the defaults. */
+export function battleTabHTML() {
+  const b = normalizeBrief({});
+  return `<section class="as-qs-battle" data-tab="battle" hidden>
+    <div class="form-group stacked"><label>Describe it (optional)</label><textarea name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk..."></textarea></div>
+    <div class="as-qs-chips" aria-live="polite"></div>
+    <h4>Site</h4>
+    <div class="as-qs-two">
+      ${select("site", "Site", "site", b.site)}${select("size", "Size", "size", b.size)}
+      ${select("season", "Season", "season", b.season)}${select("time", "Time of day", "time", b.time)}
+      ${select("weather", "Weather", "weather", b.weather)}${select("ground", "Ground", "ground", b.ground)}
+    </div>
+    <div class="form-group"><label>Features</label><div class="as-qs-features">${BRIEF.features.map((f) => `<label><input type="checkbox" name="b-f-${f}" ${b.features.includes(f) ? "checked" : ""}> ${esc(BRIEF_LABELS.features[f])}</label>`).join("")}</div></div>
+    <h4>Scatter</h4>
+    <div class="as-qs-two">
+      ${select("trees", "Trees", "trees", b.trees)}${select("litter", "Stumps and logs", "litter", b.litter)}
+      ${select("rocks", "Rocks", "rocks", b.rocks)}${select("brush", "Bushes and ferns", "brush", b.brush)}
+    </div>
+    <div data-site="roadside" hidden>
+      <h4>Building</h4>
+      <div class="as-qs-two">${select("use", "Use", "use", b.building.use)}${select("bsize", "Size", "buildingSize", b.building.size)}</div>
+      <div class="form-group stacked"><label>Rooms</label><input type="text" name="b-rooms" placeholder="From its use if empty (common room with a stage, kitchen, two bedrooms)"></div>
+      <div class="form-group"><label>Name</label><input type="text" name="b-bname" placeholder="Made up for an inn if empty"></div>
+    </div>
+    <div data-site="street" hidden>
+      <h4>Street</h4>
+      <div class="as-qs-two">${select("place", "Place", "place", b.street.place)}${select("quarter", "Quarter", "quarter", b.street.quarter)}</div>
+    </div>
+    <div data-site="camp" hidden>
+      <h4>Camp</h4>
+      <div class="as-qs-two">${select("camp", "Kind", "camp", b.camp.kind)}<div class="form-group"><label>Tents</label><input type="number" name="b-tents" min="1" max="16" step="1" placeholder="By its kind"></div></div>
+    </div>
+  </section>`;
+}
+
+/** The form's brief. */
+export function briefFromForm(form, seed) {
+  const v = (n) => form.elements[n === "name" ? n : `b-${n}`]?.value ?? "";
+  return normalizeBrief({
+    site: v("site"), size: v("size"), season: v("season"), time: v("time"), weather: v("weather"), ground: v("ground"),
+    features: BRIEF.features.filter((f) => form.elements[`b-f-${f}`]?.checked),
+    trees: v("trees"), litter: v("litter"), rocks: v("rocks"), brush: v("brush"),
+    building: { use: v("use"), size: v("bsize"), rooms: v("rooms"), name: v("bname") },
+    street: { place: v("place"), quarter: v("quarter") },
+    camp: { kind: v("camp"), tents: v("tents") ? Number(v("tents")) : null },
+    name: v("name"), seed,
+  });
+}
+
+/** Sets the form to a brief (every choice; the brief already filled in), the shared Name too. */
+function setForm(form, b) {
+  const set = (n, value) => { const el = form.elements[`b-${n}`]; if (el) el.value = value ?? ""; };
+  for (const k of ["site", "size", "season", "time", "weather", "ground", "trees", "litter", "rocks", "brush"]) set(k, b[k]);
+  for (const f of BRIEF.features) if (form.elements[`b-f-${f}`]) form.elements[`b-f-${f}`].checked = b.features.includes(f);
+  set("use", b.building.use); set("bsize", b.building.size); set("rooms", b.building.rooms); set("bname", b.building.name);
+  set("place", b.street.place); set("quarter", b.street.quarter);
+  set("camp", b.camp.kind); set("tents", b.camp.tents ?? "");
+  if (form.elements.name) form.elements.name.value = b.name ?? "";
+}
+
+/** Shows the site's own settings and hides the others'. */
+function showSite(root) {
+  const site = root.querySelector('[name="b-site"]')?.value;
+  for (const el of root.querySelectorAll("[data-site]")) el.hidden = el.dataset.site !== site;
+}
+
+/** A form field's brief key ("b-bsize" is "building.size", a feature's box "feature.pond"), or null for one that isn't. */
+const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents" };
+function keyOf(name) {
+  if (name === "name") return "name";
+  if (!name?.startsWith("b-") || name === "b-describe") return null;
+  const n = name.slice(2);
+  return n.startsWith("f-") ? `feature.${n.slice(2)}` : FIELD_KEYS[n] ?? n;
+}
+const getKey = (b, key) => key.split(".").reduce((o, k) => o?.[k], b);
+const setKey = (b, key, value) => { const [k, sub] = key.split("."); if (sub) b[k] = { ...(b[k] ?? {}), [sub]: value }; else b[k] = value; };
+
+/**
+ * Wires the tab: the description read as it's typed (a moment after the typing stops), its chips, a chip's ×, the
+ * site's own settings, and a new site's defaults when the site is picked by hand. What's set by hand is kept: the
+ * form is the description's chips over the choices made by hand, over the site's defaults. A chip's × puts its choice
+ * back to the hand's or the default; a hand's change wins over the chips until the description changes, and a
+ * changed description wins over the hand's choices it names. Returns { flush }, which reads a description still
+ * waiting to be read (for Make, pressed straight after typing).
+ */
+export function wireBattleTab(root) {
+  const form = root.closest("form") ?? root;
+  const box = root.querySelector('[name="b-describe"]'), chips = root.querySelector(".as-qs-chips");
+  const removed = new Set();
+  const hand = {}; // (brief key: value, as set by hand)
+  let timer = null, lastText = "";
+  const apply = () => {
+    clearTimeout(timer); timer = null;
+    const text = box.value.trim();
+    const read = text ? readDescription(text) : { chips: [], later: [], skipped: [], unknown: [] };
+    if (text !== lastText) {
+      lastText = text; removed.clear();
+      // (the description, newer, wins over what the hand set for the same choices: a feature it names, each)
+      for (const c of read.chips) delete hand[c.key === "features" ? `feature.${c.value}` : c.key];
+    }
+    // (the chips taken out are left out: each back to the hand's choice, else its site's default)
+    const kept = read.chips.filter((c) => !removed.has(`${c.key}=${c.value}`));
+    const partial = {};
+    for (const c of kept) {
+      if (c.key === "features") (partial.features ??= []).push(c.value);
+      else setKey(partial, c.key, c.value);
+    }
+    // (a feature taken out leaves the features read, not the site's default ones; a box checked or cleared by hand is
+    // laid over them, each on its own)
+    const handFeatures = Object.keys(hand).filter((k) => k.startsWith("feature."));
+    if (!partial.features && (read.chips.some((c) => c.key === "features") || handFeatures.length)) partial.features = read.chips.some((c) => c.key === "features") || !handFeatures.length ? [] : [...normalizeBrief({ site: partial.site ?? hand.site }).features];
+    for (const k of handFeatures) { const f = k.slice(8); partial.features = partial.features.filter((x) => x !== f); if (hand[k]) partial.features.push(f); }
+    for (const [k, v] of Object.entries(hand)) if (!k.startsWith("feature.")) setKey(partial, k, v);
+    setForm(form, normalizeBrief(partial));
+    showSite(root);
+    chips.innerHTML = [
+      kept.length || read.later.length || read.skipped.length || read.unknown.length ? `<div class="hint">What it understood (each also set in the form below; × takes it out):</div>` : "",
+      ...kept.map((c) => `<span class="as-qs-chip" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(c.label)} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip="Take this out">×</button></span>`),
+      ...read.later.map((l) => `<span class="as-qs-chip as-later" data-tooltip="Upper floors and cellars come with a later version">${esc(l.label)}</span>`),
+      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" data-tooltip="${esc(k.why)}">${esc(k.label)}: left out</span>`),
+      ...read.unknown.map((w) => `<span class="as-qs-chip as-unknown" data-tooltip="Not understood: left out">${esc(w)}</span>`),
+    ].join("");
+  };
+  box.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(apply, 250); });
+  chips.addEventListener("click", (event) => {
+    const x = event.target.closest(".as-qs-x");
+    if (!x) return;
+    event.preventDefault();
+    removed.add(x.closest("[data-chip]").dataset.chip);
+    apply();
+  });
+  // A choice made by hand: kept from now on; a site picked by hand brings its own ground, trees and features
+  const onHand = (event) => {
+    const key = keyOf(event.target?.name);
+    if (!key) return;
+    const now = briefFromForm(form, 1);
+    if (key === "site") {
+      for (const k of Object.keys(hand)) if (["ground", "trees", "litter", "rocks", "brush"].includes(k) || k.startsWith("feature.")) delete hand[k];
+      hand.site = now.site;
+      if (!lastText) { const d = normalizeBrief({ site: now.site }); setForm(form, { ...now, ground: d.ground, trees: d.trees, litter: d.litter, rocks: d.rocks, brush: d.brush, features: d.features }); showSite(root); return; }
+      removed.add(`site=${getKey(readDescription(lastText).brief, "site")}`);
+      apply();
+      return;
+    }
+    hand[key] = key.startsWith("feature.") ? !!event.target.checked : key === "camp.tents" ? (now.camp.tents ?? null) : getKey(now, key);
+  };
+  form.addEventListener("change", onHand);
+  for (const n of ["b-rooms", "b-bname", "b-tents", "name"]) form.elements[n]?.addEventListener("input", onHand);
+  showSite(root);
+  return { flush: () => { if (timer) apply(); } };
+}

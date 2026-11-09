@@ -14,6 +14,8 @@ import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
 import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY } from "./core/quick.mjs";
+import { briefPlan, BRIEF } from "./core/brief.mjs";
+import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
 
 const MOD = "atlas-scribe";
@@ -216,6 +218,26 @@ const api = {
   /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings, river and shape (a city's) }. */
   get quickChoices() {
     return structuredClone(QUICK);
+  },
+
+  /**
+   * A battle map's plan from its brief, as Quick Start's Battle map tab makes it: { site, size, season, time, weather,
+   * ground, features, trees, litter, rocks, brush, building { use, size, rooms, name }, street { place, quarter }, camp
+   * { kind, tents }, name, seed } (any left out has a default). Returns { plan, brief }. The choices are listed in
+   * api.briefChoices.
+   */
+  briefPlan(brief = {}) {
+    return briefPlan(brief);
+  },
+
+  /** The brief's choices: { site: [...], size, season, time, weather, ground, features, trees, litter, rocks, brush, use, buildingSize, place, quarter, camp }. */
+  get briefChoices() {
+    return structuredClone(BRIEF);
+  },
+
+  /** Reads a description in words, as the Describe box does: { brief, chips, later, unknown } (see core/describe.mjs). */
+  readDescription(text = "") {
+    return readDescription(text);
   },
 
   /**

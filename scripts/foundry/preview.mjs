@@ -18,6 +18,8 @@ import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, 
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
 import { addFeature, snapCorner, snapEnd, toolOf, wallIn } from "../core/draw.mjs";
+import { battleTabHTML, wireBattleTab, briefFromForm } from "./quick-battle.mjs";
+import { briefPlan } from "../core/brief.mjs";
 import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
 
@@ -1569,6 +1571,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     return this.#plan === before || this.#mayDiscard();
   }
 
+  /** Which Quick Start tab was used last (settlement or battle), shown first next time. */
+  #quickTab = "settlement";
+
   /** Quick Start: a few choices in a dialog, then a new plan in the window (not saved until Save). */
   static async #onQuick() {
     if (this.#working || !(await this.#mayDiscard())) return;
@@ -1580,22 +1585,63 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       return `<div class="form-group"><label>${title}</label><select name="${key}">${ANY.includes(key) ? any + opts : opts + any}</select></div>`;
     };
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
+    // (two tabs: a settlement from a few choices, or a battle map from its brief, described in words or chosen; the
+    // name and seed below both)
+    const tab = this.#quickTab === "battle" ? "battle" : "settlement";
     const content = `<div class="atlas-scribe as-quick">
-        <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Leave empty for a made-up name"></div>
-        ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}${QUICK.river ? select("river", "River (a city)") : ""}${QUICK.shape ? select("shape", "Outline (a city)") : ""}
-        <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
+        <input type="hidden" name="tab" value="${tab}">
+        <div class="as-qs-tabs" role="tablist"><button type="button" role="tab" data-qs-tab="settlement">Settlement</button><button type="button" role="tab" data-qs-tab="battle">Battle map</button></div>
+        <section data-tab="settlement">
+          ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}${QUICK.river ? select("river", "River (a city)") : ""}${QUICK.shape ? select("shape", "Outline (a city)") : ""}
+        </section>
+        ${battleTabHTML()}
+        <div class="as-qs-two">
+          <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Made up if empty"></div>
+          <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
+        </div>
         <p class="hint">Everything it makes can be changed afterwards.</p>
       </div>`;
+    const showTab = (root, which) => {
+      root.querySelector('[name="tab"]').value = which;
+      for (const el of root.querySelectorAll("section[data-tab]")) el.hidden = el.dataset.tab !== which;
+      for (const b of root.querySelectorAll("[data-qs-tab]")) { b.classList.toggle("active", b.dataset.qsTab === which); b.setAttribute("aria-selected", String(b.dataset.qsTab === which)); }
+    };
+    let battleTab = null; // (the Battle map tab's wiring: its flush reads a description still waiting to be read)
     const chosen = await foundry.applications.api.DialogV2.wait({
       window: { title: "AtlasScribe: Quick Start", icon: "fa-solid fa-wand-magic-sparkles" },
+      position: { width: 580 },
       content,
+      render: (event, dialog) => {
+        const root = (dialog.element ?? event?.target?.element)?.querySelector(".as-quick");
+        if (!root) return;
+        root.querySelectorAll("[data-qs-tab]").forEach((b) => b.addEventListener("click", () => { showTab(root, b.dataset.qsTab); this.#quickTab = b.dataset.qsTab; }));
+        battleTab = wireBattleTab(root.querySelector(".as-qs-battle"));
+        showTab(root, tab);
+      },
       buttons: [
-        { action: "make", label: "Make the plan", icon: "fa-solid fa-wand-magic-sparkles", default: true, callback: (event, button) => Object.fromEntries(new FormData(button.form)) },
+        { action: "make", label: "Make the plan", icon: "fa-solid fa-wand-magic-sparkles", default: true, callback: (event, button) => {
+          if (button.form.elements.tab.value !== "battle") return Object.fromEntries(new FormData(button.form));
+          battleTab?.flush();
+          return { battle: briefFromForm(button.form, Number(button.form.elements.seed.value) || seed) };
+        } },
         { action: "cancel", label: "Cancel" },
       ],
       rejectClose: false,
     });
     if (!chosen || chosen === "cancel") return;
+    // A battle map: its plan from the brief, into the window (not saved until Save)
+    if (chosen.battle) {
+      if (!(await this.#mayReplace(before))) return;
+      try {
+        // (what couldn't be made as asked, such as a cliff with no room beside the site, is said)
+        const { plan, notes } = briefPlan(chosen.battle);
+        await this.show(plan);
+        for (const n of notes) ui.notifications.info(n);
+      } catch (e) {
+        ui.notifications.error(e.message);
+      }
+      return;
+    }
     const opts = { ...chosen, seed: Number(chosen.seed) || seed };
     for (const k of Object.keys(QUICK)) if (!opts[k]) delete opts[k];
     if (!(await this.#mayReplace(before))) return;

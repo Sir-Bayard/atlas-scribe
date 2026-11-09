@@ -284,6 +284,70 @@
   font-size: 0.85em;
   opacity: 0.75;
 }
+/* Quick Start's tabs, and the Battle map tab's Describe box, chips and two columns */
+.atlas-scribe.as-quick .as-qs-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 0.5rem;
+}
+.atlas-scribe.as-quick .as-qs-tabs button {
+  flex: 1;
+  opacity: 0.65;
+}
+.atlas-scribe.as-quick .as-qs-tabs button.active {
+  opacity: 1;
+  font-weight: 600;
+}
+.atlas-scribe.as-quick textarea {
+  width: 100%;
+  min-height: 3.6em;
+}
+.atlas-scribe.as-quick .as-qs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0.2rem 0 0.5rem;
+}
+.atlas-scribe.as-quick .as-qs-chips .hint {
+  flex-basis: 100%;
+}
+.atlas-scribe.as-quick .as-qs-chip {
+  padding: 1px 4px 1px 8px;
+  border-radius: 10px;
+  font-size: 0.85em;
+  border: 1px solid rgb(90, 160, 110);
+  background: rgba(80, 160, 110, 0.18);
+}
+.atlas-scribe.as-quick .as-qs-chip.as-later {
+  border-color: rgb(130, 130, 200);
+  background: rgba(120, 120, 200, 0.18);
+  padding-right: 8px;
+}
+.atlas-scribe.as-quick .as-qs-chip.as-unknown {
+  border-color: rgb(200, 130, 90);
+  background: rgba(200, 120, 80, 0.18);
+  padding-right: 8px;
+}
+.atlas-scribe.as-quick .as-qs-x {
+  all: unset;
+  cursor: pointer;
+  padding: 0 4px;
+  font-weight: 700;
+}
+.atlas-scribe.as-quick h4 {
+  margin: 0.5rem 0 0.2rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.35);
+}
+.atlas-scribe.as-quick .as-qs-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 0.8rem;
+}
+.atlas-scribe.as-quick .as-qs-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+}
 .atlas-scribe.as-import textarea {
   width: 100%;
   font-family: monospace;

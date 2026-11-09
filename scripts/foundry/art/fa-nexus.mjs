@@ -100,6 +100,18 @@ export async function resolve(roles, progress = () => {}) {
   }
 }
 
+/**
+ * A catalog entry's file name. FA Nexus's catalog gave it as `filename`; its newer catalog (schema 2) gives the
+ * file's path without its type as `id` ("!Core_Settlements/.../Tent_Cloth_Tan_A1_3x3") and its type as
+ * `selected_source.ext`.
+ */
+export function fileNameOf(a) {
+  if (typeof a?.filename === "string" && a.filename) return a.filename;
+  if (typeof a?.id !== "string" || !a.id) return "";
+  const ext = typeof a.selected_source?.ext === "string" && a.selected_source.ext ? a.selected_source.ext.replace(/^(?!\.)/, ".") : "";
+  return a.id.split("/").pop() + ext;
+}
+
 async function resolveWith(app, roles, progress, state) {
   const art = {};
   const missing = [];
@@ -113,7 +125,7 @@ async function resolveWith(app, roles, progress, state) {
   }
   const byName = new Map();
   for (const a of catalog) {
-    const k = String(a?.filename ?? "").toLowerCase();
+    const k = fileNameOf(a).toLowerCase();
     if (!k) continue;
     if (!byName.has(k)) byName.set(k, a);
     const b = k.replace(/\.\w+$/, "");

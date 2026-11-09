@@ -16,6 +16,13 @@ import { union, offset, signedArea, shapes } from "../lots/poly.mjs";
  * its gate's half width; its least width.
  */
 export const YARD = { depths: [5, 4, 3, 2.5], offStreet: 0.7, offBuilding: 0.4, gate: 0.6, minWidth: 3 };
+/** A plan's own building gets a yard too, unless it's one of these (a temple, a keep, a stable or shed of a yard's own). */
+const NO_YARD = new Set(["temple", "chapel", "shrine", "keep", "palace", "barracks", "watch", "tower", "tomb", "stable", "shed", "store", "warehouse", "market-hall", "guildhall", "customs", "windmill", "watermill", "armory"]);
+/**
+ * A path to a front door that stands off the road (Patrick, 8 Nov: a lone inn had none): from how far off the nearest
+ * way's edge a door gets one, its width, how far out from the door it starts straight, its longest run, in squares.
+ */
+export const APPROACH = { from: 1.2, width: 1, out: 1, longest: 30 };
 /**
  * A walled yard's wall: its gate's half width and the shortest side that takes one, in squares; how far it keeps off a
  * street's center beyond half the street's width (its own half thickness and the curb), and how near its ends that's
@@ -156,7 +163,7 @@ export function battleYards(items, W, H) {
   ];
   const allWalls = items.filter((i) => (i.kind === "wall" || i.kind === "boundary") && Array.isArray(i.path));
   const yards = [];
-  for (const b of buildings.filter((x) => x.main && !x.round)) {
+  for (const b of buildings.filter((x) => (x.main || (x.id === x.from && !NO_YARD.has(x.use ?? "house"))) && !x.round)) {
     const a = ((b.rot ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
     // Its back: the long side farther from the nearest street
     const sideD = (sg) => Math.min(Infinity, ...ways.map((w) => distanceToPath([b.cx + (nx * sg * b.dep) / 2, b.cy + (ny * sg * b.dep) / 2], w.path) - (w.width ?? 0) / 2));
@@ -195,7 +202,60 @@ export function battleYards(items, W, H) {
     fences.forEach((path, k) => items.push({ kind: "boundary", id: `${b.id}/yard-f${k + 1}`, from: b.from, class: "fence", path }));
   }
   const shells = buildingShells(items, W, H);
-  return { yards: yards.length, walls: walls.length, shells };
+  const approaches = approachPaths(items, W, H);
+  return { yards: yards.length, walls: walls.length, shells, approaches };
+}
+
+/**
+ * Worn paths to the front doors that stand off every way (and off every square): from a square out from the door,
+ * straight to the nearest point of the nearest way, when that runs clear of other buildings, walls, fences and water
+ * (else none). Items `way` class path, surface trodden, `approach: true` (lamp posts and lanterns don't count them as
+ * streets). Returns how many.
+ */
+export function approachPaths(items, W = Infinity, H = Infinity) {
+  const ways = items.filter((i) => i.kind === "way" && !i.faint && !i.approach && Array.isArray(i.path) && i.path.length >= 2);
+  if (!ways.length) return 0;
+  const squares = items.filter((i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza") && Array.isArray(i.poly));
+  const feet = items.filter((i) => i.kind === "building").map((b) => ({ b, f: footprint(b) }));
+  const fences = items.filter((i) => (i.kind === "wall" || i.kind === "boundary") && Array.isArray(i.path) && i.class !== "cliff");
+  const water = items.filter((i) => i.kind === "water");
+  const inWater = (p) => water.some((w) => (Array.isArray(w.poly) ? pointInPolygon(p, w.poly) : Array.isArray(w.path) && distanceToPath(p, w.path) < (w.width ?? 1) / 2 + 0.3));
+  const edgeD = (p) => Math.min(...ways.map((w) => distanceToPath(p, w.path) - (w.width ?? 0) / 2));
+  let n = 0;
+  for (const sh of items.filter((i) => i.kind === "shell" && !i.closed)) {
+    const door = sh.walls.find((w) => w.type === "door" && w.side === "front");
+    if (!door) continue;
+    const m = [(door.a[0] + door.b[0]) / 2, (door.a[1] + door.b[1]) / 2], o = [-door.inward[0], -door.inward[1]];
+    const p0 = [m[0] + o[0] * ((sh.thickness ?? 0.3) / 2 + 0.05), m[1] + o[1] * ((sh.thickness ?? 0.3) / 2 + 0.05)];
+    if (edgeD(p0) <= APPROACH.from || squares.some((q) => pointInPolygon(p0, q.poly) || distanceToPath(p0, [...q.poly, q.poly[0]]) <= APPROACH.from)) continue;
+    const p1 = [p0[0] + o[0] * APPROACH.out, p0[1] + o[1] * APPROACH.out];
+    // (the nearest point of the nearest way's middle line, from a square out)
+    let best = null;
+    for (const w of ways) for (let i = 1; i < w.path.length; i++) {
+      const a = w.path[i - 1], b = w.path[i], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p1[0] - a[0]) * dx + (p1[1] - a[1]) * dy) / L2)), q = [a[0] + dx * t, a[1] + dy * t];
+      const d = Math.hypot(q[0] - p1[0], q[1] - p1[1]);
+      if (!best || d < best.d) best = { d, q, w };
+    }
+    if (!best || best.d > APPROACH.longest) continue;
+    // (it stops at the way's edge)
+    const L = best.d || 1, half = (best.w.width ?? 1) / 2;
+    const end = [best.q[0] + ((p1[0] - best.q[0]) / L) * Math.max(0, half - 0.3), best.q[1] + ((p1[1] - best.q[1]) / L) * Math.max(0, half - 0.3)];
+    const path = [p0, p1, end];
+    const pts = [];
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1], b = path[i], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.25));
+      for (let j = 0; j <= k; j++) pts.push([a[0] + ((b[0] - a[0]) * j) / k, a[1] + ((b[1] - a[1]) * j) / k]);
+    }
+    const own = (x) => (x.b.group ?? x.b.id) === sh.group;
+    const clear = pts.slice(1).every((p) => p[0] > 0 && p[1] > 0 && p[0] < W && p[1] < H && !inWater(p) &&
+      !feet.some((x) => !own(x) ? pointInPolygon(p, x.f) || distanceToPath(p, [...x.f, x.f[0]]) < 0.3 : pointInPolygon(p, x.f)) &&
+      !fences.some((w) => distanceToPath(p, w.path) < 0.25));
+    if (!clear) continue;
+    items.push({ kind: "way", id: `${sh.group}/approach`, from: sh.from, class: "path", surface: "trodden", width: APPROACH.width, path, approach: true });
+    n++;
+  }
+  return n;
 }
 
 /**

@@ -792,7 +792,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const sized = size === null ? s : size / ((species === "bare" ? 2.2 * 0.75 : 0.85) * 1.1);
       items.push({ kind: "tree", id: f.id, from: f.id, x, y, species, size: species === "conifer" ? "large" : null, s: sized, rot: r.next() * 360, variant: r.int(8) });
     } else {
-      items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: r.int(8), ...(size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45) } : {}) });
+      const variant = r.int(8);
+      items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: Number.isInteger(f.variant) ? f.variant : variant, ...(size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45) } : {}) });
     }
   }
 
@@ -1588,7 +1589,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       if (rooms.length > ROOM.most) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: ${rooms.length} rooms named; only the first ${ROOM.most} are laid out.` });
     }
     // What the battle style doesn't draw yet (it comes with later steps of battle maps)
-    const NOT_YET = { field: "fields", ditch: "ditches", dock: "quays and piers", reed: "reeds", lily: "lily pads", pit: "pits", kiln: "kilns" };
+    const NOT_YET = { field: "fields", ditch: "ditches", dock: "quays and piers", pit: "pits", kiln: "kilns" };
     const NOT_YET_SURFACE = { park: "parks", bed: "flower beds", farmyard: "farmyards", croft: "crofts" };
     const missing = [...new Set(items.map((i) => NOT_YET[i.kind] ?? (i.kind === "surface" ? NOT_YET_SURFACE[i.class] : i.kind === "boundary" && i.class === "clipped" ? "clipped hedges" : null)).filter(Boolean))];
     if (missing.length) notes.push({ level: "warning", id: "plan", message: `A battle map doesn't draw ${missing.join(", ")} yet; they're left off this map.` });

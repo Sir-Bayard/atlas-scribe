@@ -183,6 +183,8 @@ export function rolesFor(layout) {
     }
     if (i.kind === "tree" && i.wild && s !== "winter") roles.add(`ground.forest.${s}`);
     if (i.kind === "prop" && i.class === "fountain") roles.add(s === "winter" ? "water.ice" : "water.pond");
+    if (i.kind === "reed") roles.add("prop.reeds");
+    if (i.kind === "lily") roles.add("prop.lily");
     if (i.kind === "prop" && i.class !== "grave" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : `prop.${i.class}`);
   }
   return [...roles];
@@ -386,6 +388,17 @@ export function paint(ctx) {
     const inner = offset(Lv.rings, -(edgeSpan({ drop: Lv.shore ?? 10, style: Lv.style }) - 0.1));
     soft((k) => { for (const r of inner) poly(k, r); k.fill("evenodd"); }, tex(role), { blur: 0.06, box });
     if (!w?.frozen) soft((k) => { for (const r of offset(Lv.rings, -1.6)) poly(k, r); k.fill("evenodd"); }, "rgb(8,40,52)", { blur: 1, alpha: 0.3, box });
+  }
+
+  // 3a. Reeds along a pond's or lake's shallows and lily pads on its water, at their art's size (none frozen in)
+  for (const [kind, role] of [["lily", "prop.lily"], ["reed", "prop.reeds"]]) {
+    for (const t of items(kind).filter((t) => meets([t.x, t.y, t.x, t.y], 1.5))) {
+      const im = art(role, t.variant ?? 0);
+      if (!im) continue;
+      // (a reed's art fills under half its square: drawn half again as big, so a clump reads at battle size)
+      const k = Math.min(1.2, t.s ?? 1) * (kind === "reed" ? 1.5 : 1), w = (im.width / ART_PX) * k, h = (im.height / ART_PX) * k;
+      g.save(); g.translate(X(t.x), Y(t.y)); g.rotate(((t.rot ?? 0) * Math.PI) / 180); g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp); g.restore();
+    }
   }
 
   // 3b. Edges where the ground drops, as FA builds them (the Map Dressing Guide's tiers): a cliff in a tier of rock
@@ -814,8 +827,10 @@ export function paint(ctx) {
   }
   for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain" && !(isWild(p) && p.class !== "bush"))) {
     const bush = p.class === "bush";
-    const size = bush ? p.scale ?? 0.5 : (PROP_SQUARES[p.class] ?? 0.45) * (p.scale ?? 1);
     const im = art(bush ? bushRole(s) : `prop.${p.class}`, p.variant);
+    // (a prop sized by the layout or the plan at that size; else at its art's own, true size, as the wild ones are: a
+    // cart or a well isn't the overview's few feet across)
+    const size = bush ? p.scale ?? 0.5 : p.scale != null ? (PROP_SQUARES[p.class] ?? 0.45) * p.scale : im ? im.width / ART_PX : 0.45;
     if (!im || !meets([p.x, p.y, p.x, p.y], size + 0.5)) continue;
     g.save(); g.translate(X(p.x), Y(p.y)); g.rotate(((p.rot ?? 0) * Math.PI) / 180);
     g.shadowColor = "rgba(16,24,40,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetX = SHADOW[0] * pp * 0.2; g.shadowOffsetY = SHADOW[1] * pp * 0.2;

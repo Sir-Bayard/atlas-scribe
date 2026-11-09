@@ -126,6 +126,7 @@ export const FIELD_TEXT = {
   "prop.rot": { label: "Turned", help: "Degrees clockwise", notFor: ["tree"] }, // a tree is turned at random
   "prop.species": { label: "Tree", kind: "enum", values: ["conifer", "bare"], names: { conifer: "fir", bare: "leafy" }, auto: "leafy" },
   "prop.size": { label: "Size", help: "How wide it is, in feet (a tree's crown); else the usual size", more: true },
+  "prop.variant": { label: "Look", help: "Which of its pictures it's drawn with, counting from 0 (a tent's cloth, say); else one picked from its seed", auto: "picked from its seed", more: true },
 
   "label.text": { label: "Text" },
   "label.show": { label: "Shown to", names: { gm: "the GM only", all: "everyone" } },
