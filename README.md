@@ -4,7 +4,7 @@ A map plan in, a map out, inside Foundry VTT.
 
 You decide what matters: where the roads run, the river and its crossings, the square, the walls and gates, the landmarks, and what each district is like. AtlasScribe fills in everything nobody wants to place by hand (side streets, plots, houses, gardens, trees and clutter) and draws the map: illustrated in ink and color with no art needed, or painted from map art you already have. Every random choice is seeded, so the same plan always gives the same map, and each district has its own seed: reroll one and the districts beside it don't move (only trees its new houses and streets crowd can change), and lock the ones you like so a reroll leaves them alone.
 
-It's system agnostic and GM only. On battle maps it also follows the rules of Pathfinder Second Edition and D&D 5e when the world runs either (see Battle map rules below), and other systems can be added.
+It's system agnostic and GM only. On battle maps it also follows the rules of Pathfinder Second Edition when the world runs it (see Battle map rules below), and other systems can be added.
 
 ## Status
 
@@ -51,8 +51,8 @@ As the GM, open the Scenes tab and click **AtlasScribe**.
 A battle map works in any game system with Foundry's own region behaviors: banks, slopes and shallow water slow walkers, deep water is swum, stairs change level, and with the Battle map heights setting a token's elevation follows the ground and a walker can't go up or down a cliff. The Battle map rules setting adds the game system's own rules (or leave it on Foundry's own):
 
 - **Pathfinder Second Edition:** the scene's environment (urban, forest or plains) and the places in it of another kind (a wood, deep water, a cellar), so terrain-based abilities see the terrain a token stands in; a scene's environment you set yourself is kept. With PF2E Visioner, fences, low walls and parapets give standard cover.
-- **D&D 5e:** banks, slopes, shallows and ice are the system's own difficult terrain of their kind, and the ground and every floor are laid as the floors its falling reads: a token walking down a bank is moved down with it, and one that jumps off a cliff top falls (unless it flies or the world's falling is off). Those floors also stop a token burrowing down through them. Keep the system's rules in a D&D 5e world: with Foundry's own, a token on raised ground counts as falling.
-- **Climbing:** a walker stopped at a cliff gets a card, whispered to them and the GM, with an Athletics check at the cliff's Climb DC (15, or 20 for a cut or built face, unless a cliff's own Climb DC setting says otherwise), a button in either system.
+- **Climbing:** a walker stopped at a cliff gets a card, whispered to them and the GM, with an Athletics check at the cliff's Climb DC (15, or 20 for a cut or built face, unless a cliff's own Climb DC setting says otherwise): a button in Pathfinder Second Edition, plain words in other systems.
+- **D&D 5e:** planned for after 1.0. Until then a 5e world gets Foundry's own rules. Its own falling automation marks a token standing on raised ground as falling; turn off its falling setting, or AtlasScribe's Battle map heights setting, to avoid that.
 
 Another module can add the rules for its system with `registerRules` (see From a script).
 

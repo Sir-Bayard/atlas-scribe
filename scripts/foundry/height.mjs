@@ -11,7 +11,7 @@
  * moves it makes.
  *
  * A walker stopped at a cliff is shown a card (to them and the GM) with the check to climb it at the cliff's Climb DC,
- * in the game system's own words (rules.mjs). Where the system has falling of its own (D&D 5e), a token that leaves a
+ * in the game system's own words (rules.mjs). Where the system has falling of its own (an adapter's falls), a token that leaves a
  * cliff top in the air (a jump, say) is left at its height for the system to drop it.
  */
 import { groundAt, blockedBy, groundWay, WALKING, OFF_GROUND } from "../core/height.mjs";
