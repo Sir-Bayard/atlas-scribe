@@ -84,6 +84,8 @@ export const TYPES = {
       depth: num(null, { unit: "ft", min: 0, max: 60, byClass: { stream: 5, river: 10, canal: 5 }, only: RUNNING }),
       banks: { ...oneOf(["bank", "cliff", "slope"], "bank"), only: RUNNING },
       rock: { ...oneOf(["earthy", "slate", "mossy"], null), only: RUNNING, fallback: "picked from its seed" },
+      // (a Climb DC for its banks where they're cliffs; else natural rock's, CLIMB_DC in rules.mjs)
+      climbDC: { ...num(null, { min: 1, max: 60, integer: true }), only: RUNNING, fallback: "15, natural rock's" },
     },
   },
   height: {
@@ -95,6 +97,8 @@ export const TYPES = {
       height: num(10, { unit: "ft", min: -60, max: 60 }),
       edge: { ...oneOf(["cliff", "bank", "slope"], null), fallback: "a bank for 5 ft or less, else a cliff" },
       rock: { ...oneOf(["earthy", "slate", "mossy"], null), fallback: "picked from its seed" },
+      // (the Climb DC of its edge where it's a cliff; else natural rock's, or a cut or built face's when straight)
+      climbDC: { ...num(null, { min: 1, max: 60, integer: true }), fallback: "15, or 20 with sharp corners (a cut or built face)" },
       rot: num(0, { unit: "deg" }),
       straight: bool(false), // its corners kept sharp (a quarry's cut, a built terrace); else rounded as ground lies
     },
@@ -218,6 +222,7 @@ export const TYPES = {
       // A cliff: its path is its top edge, the drop on its side (the low ground, left or right going along it); its
       // rock is the stone it's cut in
       rock: { ...oneOf(["earthy", "slate"], null), only: ["cliff"], fallback: "picked from its seed" },
+      climbDC: { ...num(null, { min: 1, max: 60, integer: true }), only: ["cliff"], fallback: "15, natural rock's" },
     },
   },
   prop: {

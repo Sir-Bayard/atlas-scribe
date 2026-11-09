@@ -17,6 +17,7 @@ import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY } from "./core/quick.mjs";
 import { briefPlan, BRIEF } from "./core/brief.mjs";
 import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
+import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
 
 const MOD = "atlas-scribe";
 const worker = new WorkerClient();
@@ -122,6 +123,20 @@ const api = {
   /** True while a job (render, publish or test) is running. */
   get busy() {
     return job !== null || worker.busy;
+  },
+
+  /**
+   * Adds the rules adapter for a game system (see scripts/foundry/rules.mjs for what an adapter can give), used by
+   * battle maps made or updated from then on. Returns true when it was taken.
+   */
+  registerRules(systemId, adapter) {
+    return registerRules(systemId, adapter);
+  },
+
+  /** The rules battle maps follow now: { id, label } of the game system's adapter, or Foundry's own ("core"). */
+  get rules() {
+    const R = rules();
+    return { id: R.id, label: R.label ?? R.id };
   },
 
   /** Stops the running job at its next step (a paint stops at once). Returns true if there was one to stop. */
@@ -451,6 +466,7 @@ Hooks.once("init", () => {
     default: 2,
   });
   registerHeight();
+  registerRulesSetting();
 });
 
 // An AtlasScribe button at the top of the Scenes tab, for the GM

@@ -318,7 +318,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
           if (!Array.isArray(f.path) || f.path.length < 2) break;
           const c = cliffOf(f, sq, [W, H]);
           const cr = streamFor(f.id), rock = ["earthy", "slate"].includes(f.rock) ? f.rock : cr.fork("rock").chance(0.6) ? "earthy" : "slate";
-          items.push({ kind: "cliff", id: f.id, from: f.id, path: c.line, taper: c.taper, toe: c.toe, w: c.w, sign: c.sign, rock, height: f.height ?? 30, variant: cr.fork("look").int(2), top: cr.fork("top").int(4) });
+          items.push({ kind: "cliff", id: f.id, from: f.id, path: c.line, taper: c.taper, toe: c.toe, w: c.w, sign: c.sign, rock, height: f.height ?? 30, variant: cr.fork("look").int(2), top: cr.fork("top").int(4), ...(f.climbDC != null ? { climbDC: f.climbDC } : {}) });
           // (on a battle map it's drawn in tiers of rock, terrain.mjs, so it keeps only their ground clear, its fallen
           // rock lying past them)
           const span = edgeSpan({ drop: Math.max(5, f.height ?? 30), style: "cliff" }) + 0.3;
@@ -374,7 +374,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const path = c.sign > 0 ? [...c.path].reverse() : c.path.map((p) => [...p]);
       // (its foot on whatever ground lies below it, a rise's or a hollow's)
       const foot = shiftRight(resample(path, 0.5), 0.5), low = t.elevAt(foot[Math.floor(foot.length / 2)]);
-      items.push({ kind: "edge", id: `${c.id}/edge1`, from: c.from, path, closed: false, drop: h, high: low + h, low, style: "cliff", rock: c.rock, bed: false, line: true });
+      items.push({ kind: "edge", id: `${c.id}/edge1`, from: c.from, path, closed: false, drop: h, high: low + h, low, style: "cliff", rock: c.rock, bed: false, line: true, ...(c.climbDC != null ? { climbDC: c.climbDC } : {}) });
     }
     // A bridge over a stream's bed reaches from bank top to bank top: its deck is lengthened until both its ends stand
     // clear of the bed (a deck as long as the water alone would end down in the bed, under its banks)

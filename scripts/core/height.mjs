@@ -15,6 +15,7 @@ import { pointInPolygon, insidePoint } from "./geom.mjs";
 import { bands, difference, intersect, offset, union } from "./lots/poly.mjs";
 import { edgeSpan, shiftRight, resample } from "./layout/terrain.mjs";
 import { footprint } from "./layout/battle.mjs";
+import { climbDC } from "./rules.mjs";
 
 /**
  * shallows: how far shallow water reaches in from a river's or a pond's edge before it turns deep, in squares;
@@ -75,8 +76,8 @@ export function deckOf(c) {
 /**
  * A battle layout's height as region specs, in squares:
  * { kind: "ground", name, polys, elevation, order, over } (over: a bridge's deck, ground only for a token up on it),
- * { kind: "face", name, polys, style, bottom, top, cost, lines, alone } (lines: a cliff's top line, its high side on
- * its left; alone: a cliff drawn as a line, with the same ground either side),
+ * { kind: "face", name, polys, style, bottom, top, cost, lines, alone, climb } (lines: a cliff's top line, its high
+ * side on its left; alone: a cliff drawn as a line, with the same ground either side; climb: a cliff's Climb DC),
  * { kind: "shallow" | "deep" | "ice", name, polys, top, cost }, polys being [{ points, hole }].
  * A face's range runs from the low ground to the high (a token walking down it is still at the top's elevation until
  * it lands); water's from below to the ground above its banks (a token wading in from the bank is still at the bank's).
@@ -111,7 +112,8 @@ export function heightRegions(layout) {
     const span = edgeSpan(e);
     const band = bands([{ path: shiftRight(resample(e.path, 0.5), span / 2), half: span / 2 }]);
     const polys = withHoles(clip(offDecks(band)));
-    if (polys.length) out.push({ kind: "face", name: FACE_NAME[e.style] ?? "Bank", polys, style: e.style, bottom: e.low, top: e.high, cost: COST[e.style] ?? null, lines: e.style === "cliff" ? [e.path] : [], alone: !!e.line });
+    const climb = e.style === "cliff" ? climbDC(e) : null;
+    if (polys.length) out.push({ kind: "face", name: climb ? `Cliff face (climb, DC ${climb})` : FACE_NAME[e.style] ?? "Bank", polys, style: e.style, bottom: e.low, top: e.high, cost: COST[e.style] ?? null, lines: e.style === "cliff" ? [e.path] : [], alone: !!e.line, climb });
   }
   const fords = items.filter((i) => i.kind === "crossing" && i.class === "ford" && Array.isArray(i.at)).map(deckOf);
   for (const w of items.filter((i) => i.kind === "water")) {
@@ -197,7 +199,12 @@ function sideOf(line, p, near) {
  * deep water from out of it (a token already swimming may walk out). step: how finely the way is checked for water;
  * near: how close to a line counts as on it (both in the zones' unit); current: the token's elevation (for a deck).
  */
-export function walkBlocked(zones, a, b, step, { near = step * 0.2, current = Infinity } = {}) {
+export function walkBlocked(zones, a, b, step, opts = {}) {
+  return blockedBy(zones, a, b, step, opts)?.why ?? null;
+}
+
+/** As walkBlocked, with the zone that stops the step: { why, zone } (a cliff's face, or the deep water), or null. */
+export function blockedBy(zones, a, b, step, { near = step * 0.2, current = Infinity } = {}) {
   let ground = null;
   for (const z of zones) {
     if (z.kind !== "face" || z.style !== "cliff") continue;
@@ -205,9 +212,9 @@ export function walkBlocked(zones, a, b, step, { near = step * 0.2, current = In
       let close = false;
       for (let i = 1; i < line.length && !close; i++) close = segGap(a, b, line[i - 1], line[i]) <= near;
       if (!close) continue;
-      if (z.alone) { if (sideOf(line, a, near) !== sideOf(line, b, near)) return "cliff"; continue; }
+      if (z.alone) { if (sideOf(line, a, near) !== sideOf(line, b, near)) return { why: "cliff", zone: z }; continue; }
       ground ??= [groundAt(zones, a, current), groundAt(zones, b, current)];
-      if (ground[0] !== ground[1]) return "cliff";
+      if (ground[0] !== ground[1]) return { why: "cliff", zone: z };
     }
   }
   const deep = zones.filter((z) => z.kind === "deep" && !inZone(z, a));
@@ -215,8 +222,91 @@ export function walkBlocked(zones, a, b, step, { near = step * 0.2, current = In
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / Math.max(step, 1e-6)));
     for (let k = 1; k <= n; k++) {
       const p = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n];
-      if (deep.some((z) => inZone(z, p))) return "deep";
+      const z = deep.find((d) => inZone(d, p));
+      if (z) return { why: "deep", zone: z };
     }
   }
   return null;
+}
+
+/**
+ * The ground of a battle layout as surfaces to stand on, in squares: each piece of the map at the elevation of the
+ * ground seen there (the topmost level, as groundAt reads it; the rest of the map at 0), and each bridge's deck at its
+ * banks' height over the bed it spans. The pieces of ground don't overlap, so a token is over just one (a deck lies
+ * over the ground under it, higher). [{ name, elevation, polys: [{ points, hole }], deck }]
+ */
+export function groundSurfaces(layout) {
+  const items = layout?.items ?? [];
+  const [W, H] = layout?.size?.squares ?? [0, 0];
+  if (!(W > 0 && H > 0)) return [];
+  const map = [[[0, 0], [W, 0], [W, H], [0, H]]];
+  const levels = items.filter((i) => i.kind === "level" && Array.isArray(i.rings) && i.rings.length);
+  // (each level's rings made one even-odd area first, whichever way they wind, so two overlapping ones never cancel)
+  const areas = levels.map((L) => union(evenOdd(L.rings)));
+  const out = [];
+  // (each level where it's the ground seen: the levels laid after it over it are cut out)
+  levels.forEach((L, k) => {
+    const above = areas.slice(k + 1).flat();
+    const seen = intersect(above.length ? difference(areas[k], union(above)) : areas[k], map);
+    const polys = withHoles(seen);
+    if (polys.length) out.push({ name: `Ground (${L.elevation} ft)`, elevation: L.elevation, polys, deck: false });
+  });
+  const all = areas.flat();
+  const base = withHoles(all.length ? difference(map, union(all)) : map);
+  if (base.length) out.unshift({ name: "Ground (0 ft)", elevation: 0, polys: base, deck: false });
+  const top = (p) => { for (let k = levels.length - 1; k >= 0; k--) if (!levels[k].bed && inRings(levels[k].rings, p)) return levels[k].elevation; return 0; };
+  for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
+    const polys = withHoles(intersect([deckOf(c)], map));
+    if (polys.length) out.push({ name: `${c.class === "footbridge" ? "Footbridge" : "Bridge"} deck`, elevation: top(c.at), polys, deck: true });
+  }
+  return out;
+}
+
+/**
+ * A level's rings as plain areas read even-odd: a ring inside an even number of others is an area, less the rings just
+ * inside it (an island in a hole is an area again).
+ */
+function evenOdd(rings) {
+  const ok = rings.filter((r) => r.length >= 3);
+  const depth = ok.map((r, i) => ok.filter((o, j) => j !== i && inRings([o], r[0])).length);
+  const out = [];
+  ok.forEach((r, i) => {
+    if (depth[i] % 2) return;
+    const holes = ok.filter((h, j) => depth[j] === depth[i] + 1 && inRings([r], h[0]));
+    out.push(...(holes.length ? difference([r], union(holes)) : [r]));
+  });
+  return out;
+}
+
+/**
+ * The ground's heights for a move, worked out before it's made (for a game system whose own falling takes a token
+ * left above the ground). start: { p, elevation }, where the move begins; steps: [{ p, elevation, action }], each
+ * waypoint (p its middle, in the zones' unit). A token standing on the ground walks over the ground's heights: each
+ * waypoint is set to the ground there. A token above the ground it starts from (flying, or raised by hand) is left
+ * alone; from a waypoint whose elevation was changed by hand, or where the token flies or burrows, the rest keep the
+ * mover's own heights; a jump down over a cliff's edge stays in the air when falls(i, elevation) says the system will
+ * drop it there (else it lands, as a walk would), and the move ends there, where it falls. Returns the elevation of each
+ * waypoint the move keeps (all of them, or up to the jump), or null when nothing changes.
+ */
+export function groundWay(zones, start, steps, { step, falls = () => false } = {}) {
+  if (!start || !Array.isArray(steps) || !steps.length) return null;
+  if (start.elevation > groundAt(zones, start.p, start.elevation) + 0.01) return null;
+  const out = [];
+  let cur = start.elevation, prevP = start.p, prevOrig = start.elevation, shift = null, cut = 0;
+  steps.forEach((s, i) => {
+    if (cut) return;
+    let e;
+    if (shift !== null) e = s.elevation + shift;
+    else if (s.elevation !== prevOrig || OFF_GROUND.includes(s.action)) { shift = cur - prevOrig; e = s.elevation + shift; }
+    else {
+      const g = groundAt(zones, s.p, cur);
+      const over = s.action === "jump" && g < cur && blockedBy(zones, prevP, s.p, step, { current: cur })?.why === "cliff";
+      if (over && falls(i, cur)) { e = cur; shift = cur - s.elevation; cut = i + 1; }
+      else e = g;
+    }
+    out.push(e);
+    prevOrig = s.elevation; prevP = s.p; cur = e;
+  });
+  const kept = cut ? out.slice(0, cut) : out;
+  return kept.length < steps.length || kept.some((e, i) => e !== steps[i].elevation) ? kept : null;
 }

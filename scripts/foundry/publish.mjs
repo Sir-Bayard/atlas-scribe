@@ -4,8 +4,9 @@
  * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
  * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
  * title; a battle map's roof and tree tiles: overhead, kind; its furniture: furniture; its mist: atmosphere; its walls,
- * roof, indoor, ground and water regions and lights: built, kind), so a second publish replaces only its own labels,
- * title, tiles, walls, regions and lights and leaves the GM's own alone.
+ * roof, indoor, ground and water regions, the game system's regions and lights: built, kind), so a second publish
+ * replaces only its own labels, title, tiles, walls, regions and lights and leaves the GM's own alone. A battle map
+ * follows the game system's rules through its adapter (rules.mjs) when the world has one.
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
@@ -17,6 +18,8 @@ import { FURNITURE } from "../core/layout/rooms.mjs";
 import { heightRegions, groundOf, WALKING } from "../core/height.mjs";
 import { LIGHTS, LIT_FROM } from "../core/layout/lights.mjs";
 import { CASTLE } from "../core/layout/castle.mjs";
+import { COVER } from "../core/rules.mjs";
+import { rules as rulesInUse, CORE } from "./rules.mjs";
 
 const MOD = "atlas-scribe";
 const THUMB = 300;
@@ -33,6 +36,7 @@ const FONT = { min: 8, max: 256 };
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
   const opts = plan.output.scene;
+  const R = rulesInUse();
   let backup = null;
 
   // The scene to update, if one was named, and a backup of it first
@@ -128,6 +132,15 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     } catch (e) {
       warnings.push(`The floors above and below the ground couldn't all be made levels (${e.message}).`);
     }
+  }
+  // The game system's own settings for the scene (PF2e's environment types, say), through its adapter; ones AtlasScribe
+  // set before and no adapter sets now (the rules turned to Foundry's own, or a settlement map) come off again, unless
+  // the GM changed them
+  try {
+    const change = battle && typeof R.sceneData === "function" ? R.sceneData({ plan, layout, scene: sceneById(sceneId) }) : unsetScene(sceneById(sceneId));
+    if (change && Object.keys(change).length) await sceneById(sceneId).update(change);
+  } catch (e) {
+    warnings.push(`The scene's ${R.label ?? R.id} settings couldn't be made (${e.message}).`);
   }
   // Labels: every label AtlasScribe put in this scene out (an earlier map's, whatever plan it came from), the plan's in,
   // on the ground's level when the scene has floors (an inn's name isn't in its cellar)
@@ -239,7 +252,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // yard's gate a door), over each building a roof Foundry shows to a token outside (a raised surface it partly
   // reveals), and its ground, banks, cliffs and water (height.mjs): new ones in, then AtlasScribe's old ones out (a
   // settlement map just takes the old ones out)
-  let walls = 0, roofs = 0, heights = 0, lights = 0, stairs = 0;
+  let walls = 0, roofs = 0, heights = 0, lights = 0, stairs = 0, ruled = 0;
   if (layout) {
     const { sceneX, sceneY } = sceneById(sceneId).dimensions;
     const pps = plan.output.pxPerSquare;
@@ -247,9 +260,10 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     const mine = (docs, kinds) => docs.filter((d) => isObj(d.flags?.[MOD]) && "built" in d.flags[MOD] && (!kinds || kinds(d.flags[MOD].kind))).map((d) => d.id);
     const isHeight = (k) => HEIGHT_KINDS.includes(k);
     for (const [type, make, what, kinds, count] of [
-      ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null), "walls and doors", null, (n) => (walls = n)],
-      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs", (n) => (roofs = n)],
-      ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null), "ground and water regions", isHeight, (n) => (heights = n)],
+      ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null).map((w) => (typeof R.wall === "function" ? R.wall(w) ?? w : w)), "walls and doors", null, (n) => (walls = n)],
+      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs" && k !== "rules", (n) => (roofs = n)],
+      ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null, R), "ground and water regions", isHeight, (n) => (heights = n)],
+      ["Region", () => rulesRegions(R, { plan, layout, levels: levelOf, sceneX, sceneY, pps }), `${R.label ?? R.id} regions`, (k) => k === "rules", (n) => (ruled = n)],
       ["Region", () => (levelOf ? battleStairs(layout, sceneX, sceneY, pps, plan.id ?? null).filter((r) => r._floors.filter((f) => levelOf.has(f)).length > 1) : []), "stairs between floors", (k) => k === "stairs", (n) => (stairs = n)],
       ["AmbientLight", () => battleLights(layout, sceneX, sceneY, pps, plan.id ?? null), "lights", null, (n) => (lights = n)],
     ]) {
@@ -269,7 +283,34 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, mist, walls, roofs, heights, lights, stairs, levels: levelOf ? levelOf.size : 1, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, mist, walls, roofs, heights, lights, stairs, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
+}
+
+/**
+ * Takes off a scene's environment types AtlasScribe set for a game system (PF2e's), when no adapter sets them now: the
+ * types themselves only if they're still the ones it set. Null when there's nothing to take off.
+ */
+export function unsetScene(scene) {
+  const ours = scene?.flags?.[MOD]?.environment;
+  if (!Array.isArray(ours)) return null;
+  const now = scene.flags?.pf2e?.environmentTypes;
+  const same = Array.isArray(now) && now.length === ours.length && now.every((x) => ours.includes(x));
+  // (Foundry 14's way to take a flag off; the older "-=" key where there's none, as under node)
+  const FD = globalThis.foundry?.data?.operators?.ForcedDeletion;
+  const off = FD ? { [`flags.${MOD}.environment`]: new FD() } : { [`flags.${MOD}.-=environment`]: null };
+  return { ...off, ...(same ? { "flags.pf2e.environmentTypes": [] } : {}) };
+}
+
+/**
+ * The game system's own regions for a battle map, from its adapter (rules.mjs): each marked as AtlasScribe's, of the
+ * kind "rules", so a republish replaces them.
+ */
+export function rulesRegions(R, { plan, layout, levels, sceneX, sceneY, pps }) {
+  if (typeof R?.regions !== "function") return [];
+  return (R.regions({ plan, layout, levels, sceneX, sceneY, pps, floorFt: FLOOR_FT }) ?? []).map((r) => ({
+    ...r,
+    flags: { ...(r.flags ?? {}), [MOD]: { ...(r.flags?.[MOD] ?? {}), built: plan.id ?? null, kind: "rules", rules: R.id } },
+  }));
 }
 
 /** How many documents go to Foundry in one request (a big battle map has thousands of walls). */
@@ -407,9 +448,11 @@ const doorGrid = (thick) => Math.round(DOOR_BAND / thick);
 
 /** A battle layout's walls as Wall data: buildings' walls, doors and windows; fences and low walls; yard gates. */
 export function battleWalls(layout, sceneX, sceneY, pps, plan) {
-  const S = CONST.WALL_SENSE_TYPES, M = CONST.WALL_MOVEMENT_TYPES, D = CONST.WALL_DOOR_TYPES;
+  // (Foundry 14 names the sense types EDGE_SENSE_TYPES; WALL_SENSE_TYPES is the old, deprecated name)
+  const S = CONST.EDGE_SENSE_TYPES ?? CONST.WALL_SENSE_TYPES, M = CONST.WALL_MOVEMENT_TYPES, D = CONST.WALL_DOOR_TYPES;
   const c = (a, b) => [a, b].flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
-  const flags = (kind, grid = null) => ({ [MOD]: { built: plan, kind }, ...(grid ? { core: { textureGridSize: grid } } : {}) });
+  // (a wall a creature can take cover behind carries the cover mark, core/rules.mjs, for an adapter to read)
+  const flags = (kind, grid = null) => ({ [MOD]: { built: plan, kind, ...(COVER[kind] ? { cover: COVER[kind] } : {}) }, ...(grid ? { core: { textureGridSize: grid } } : {}) });
   const dist = layout.size?.ftPerSquare ?? 5;
   const swing = (texture, double = false) => ({ type: "swing", texture, double, duration: 500, direction: 1, flip: false, strength: 1 });
   const out = [];
@@ -625,13 +668,15 @@ const HEIGHT_COLOR = { ground: "#8a7a4a", face: "#6b5a48", shallow: "#4a90b0", d
  * A battle layout's height as Region data (height.mjs): the ground of each level at its elevation (no behavior: the
  * height hook reads it for a token's elevation), and over each bank, slope, cliff face and water a cost for walkers
  * (the scene's own Modify Movement Cost, its walking actions slowed; flying and swimming left alone). Each carries
- * what the hook needs in its flags. Seen only in the Regions controls.
+ * what the hook needs in its flags (a cliff's Climb DC among them). Seen only in the Regions controls. rules: the game
+ * system's adapter (rules.mjs), which may give a region its system's own behaviors in place of Foundry's.
  */
-export function battleHeights(layout, sceneX, sceneY, pps, plan) {
+export function battleHeights(layout, sceneX, sceneY, pps, plan, rules = CORE) {
   const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
   // (the actions the scene's movement cost knows, so a system that leaves some out isn't given them)
   const keys = Object.keys(CONFIG.RegionBehavior?.dataModels?.modifyMovementCost?.schema?.fields?.difficulties?.fields ?? {});
   const slows = (cost) => [{ type: "modifyMovementCost", name: "Walking cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? cost : 1])) } }];
+  const core = (r) => (r.kind === "ground" || !keys.length || !r.cost ? [] : slows(r.cost));
   return heightRegions(layout).map((r) => ({
     name: r.name,
     color: HEIGHT_COLOR[r.kind] ?? "#888888",
@@ -639,9 +684,9 @@ export function battleHeights(layout, sceneX, sceneY, pps, plan) {
     // (a top elevation counts as inside, so a token standing at a bank's top or wading in from the bank is in it)
     elevation: r.kind === "ground" ? { bottom: r.elevation, top: r.elevation, topInclusive: true } : { bottom: r.kind === "face" ? r.bottom : null, top: r.top, topInclusive: true },
     visibility: CONST.REGION_VISIBILITY.LAYER,
-    behaviors: r.kind === "ground" || !keys.length || !r.cost ? [] : slows(r.cost),
+    behaviors: (typeof rules?.heightBehaviors === "function" ? rules.heightBehaviors(r, { core: () => core(r) }) : undefined) ?? core(r),
     locked: true,
-    flags: { [MOD]: { built: plan, kind: r.kind, elevation: r.elevation ?? null, order: r.order ?? null, over: !!r.over, style: r.style ?? null, lines: (r.lines ?? []).map((l) => pts(l)), alone: !!r.alone } },
+    flags: { [MOD]: { built: plan, kind: r.kind, elevation: r.elevation ?? null, order: r.order ?? null, over: !!r.over, style: r.style ?? null, lines: (r.lines ?? []).map((l) => pts(l)), alone: !!r.alone, climb: r.climb ?? null } },
     _floor: 0,
   }));
 }

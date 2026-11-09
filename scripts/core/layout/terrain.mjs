@@ -63,7 +63,8 @@ export function terrainOf({ plan, items, sq, pick }) {
     const h = Number.isFinite(f.height) ? f.height : 10;
     const style = EDGE_STYLES.includes(f.edge) ? f.edge : Math.abs(h) <= TERRAIN.tier ? "bank" : "cliff";
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(f.id).fork("rock").pick(ROCKS);
-    levels.push({ id: f.id, from: f.id, name: f.name ?? null, rings: [ring], elevation: h, style, rock, bed: false });
+    // (a cliff's Climb DC when the plan gives one; a straight one is a cut or built face, harder to climb)
+    levels.push({ id: f.id, from: f.id, name: f.name ?? null, rings: [ring], elevation: h, style, rock, bed: false, ...(f.climbDC != null ? { climbDC: f.climbDC } : {}), ...(f.straight ? { built: true } : {}) });
   }
   // (the ground a point stands on, before the beds: a stream through a rise is sunk below the rise)
   const top = (p, upto = levels.length) => { for (let k = upto - 1; k >= 0; k--) if (inLevel(levels[k], p)) return k; return -1; };
@@ -87,7 +88,7 @@ export function terrainOf({ plan, items, sq, pick }) {
     const rings = bands([{ path: w.path, half: (w.width ?? 1) / 2 + shelfOf(style) + edgeSpan({ drop: depth, style }) }]);
     if (!rings.length) continue;
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(w.from ?? w.id).fork("rock").pick(ROCKS);
-    levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class });
+    levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class, ...(f.climbDC != null ? { climbDC: f.climbDC } : {}) });
     // (each hollow it runs through fills with its water, a pool its depth below the hollow's floor, the hollow's own
     // edge its shore: a level of its own over the hollow and the bed, so the stream falls into it and out again)
     // (in the order the hollows lie, so one inside another is filled over it; each only where it's the ground seen, not
@@ -96,7 +97,7 @@ export function terrainOf({ plan, items, sq, pick }) {
       const H = levels[k], over = levels.slice(k + 1, before).flatMap((x) => x.rings);
       const seen = over.length ? difference(H.rings, over) : H.rings.map((r) => r.map((p) => [...p]));
       if (!seen.length) continue;
-      levels.push({ id: `${w.id}/pool-${H.id}`, from: w.from ?? w.id, name: null, rings: seen, elevation: H.elevation - depth, style: H.style, rock: H.rock, bed: true, water: w.id, waterClass: w.class, within: H.id, shore: base - (H.elevation - depth) });
+      levels.push({ id: `${w.id}/pool-${H.id}`, from: w.from ?? w.id, name: null, rings: seen, elevation: H.elevation - depth, style: H.style, rock: H.rock, bed: true, water: w.id, waterClass: w.class, within: H.id, shore: base - (H.elevation - depth), ...(H.climbDC != null ? { climbDC: H.climbDC } : {}), ...(H.built ? { built: true } : {}) });
     }
   }
   return { levels, edges: edgesOf(levels), elevAt, notes };
@@ -152,7 +153,7 @@ export function edgesOf(levels) {
         // (a bed's bank deeper than TERRAIN.bankMost, where it cuts through higher ground, is a cliff)
         // (a pool's shore is its hollow's own edge, kept as the hollow has it)
         const style = L.bed && !L.within && L.style === "bank" && r.hi - r.lo > TERRAIN.bankMost ? "cliff" : L.style;
-        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}), ...(L.shore ? { shore: L.shore } : {}), ...(L.within ? { pool: L.id } : {}) });
+        out.push({ kind: "edge", id: `${L.id}/edge${++n}`, from: L.from, path, closed: closedAll, drop: r.hi - r.lo, high: r.hi, low: r.lo, style, rock: L.rock, bed: L.bed, ...(r.fall ? { fall: true, water: L.water } : {}), ...(L.shore ? { shore: L.shore } : {}), ...(L.within ? { pool: L.id } : {}), ...(L.climbDC != null ? { climbDC: L.climbDC } : {}), ...(L.built ? { built: true } : {}) });
       }
     }
   });

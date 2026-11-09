@@ -4,7 +4,7 @@ A map plan in, a map out, inside Foundry VTT.
 
 You decide what matters: where the roads run, the river and its crossings, the square, the walls and gates, the landmarks, and what each district is like. AtlasScribe fills in everything nobody wants to place by hand (side streets, plots, houses, gardens, trees and clutter) and draws the map: illustrated in ink and color with no art needed, or painted from map art you already have. Every random choice is seeded, so the same plan always gives the same map, and each district has its own seed: reroll one and the districts beside it don't move (only trees its new houses and streets crowd can change), and lock the ones you like so a reroll leaves them alone.
 
-It's system agnostic and GM only.
+It's system agnostic and GM only. On battle maps it also follows the rules of Pathfinder Second Edition and D&D 5e when the world runs either (see Battle map rules below), and other systems can be added.
 
 ## Status
 
@@ -46,6 +46,16 @@ As the GM, open the Scenes tab and click **AtlasScribe**.
 3. **Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and exported.
 4. **Make scene** saves the plan, draws the map in its style (painting it with your art, for the textured style) and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise) and a small hidden label on each notable building naming its use ("Inn", "Temple", "Smithy", "Market hall"), or the name you gave it when you pinned it. Where two would overlap, the more telling one stays (a district's centerpiece first, then buildings of their own, then trades, then street-corner shrines and watch posts). Cancel stops the painting. Through the API, `publish` given only an image path lays the plan out again for these labels, which takes a moment for a big city; if that fails, the scene is made without them and a warning says so. If some art couldn't be had, it says so and paints those parts in plain colors. After changes, **Update scene** repaints that scene (it's backed up first). The art FA Nexus found is remembered until Foundry reloads, so later scenes and updates don't wait for it again.
 
+## Battle map rules
+
+A battle map works in any game system with Foundry's own region behaviors: banks, slopes and shallow water slow walkers, deep water is swum, stairs change level, and with the Battle map heights setting a token's elevation follows the ground and a walker can't go up or down a cliff. The Battle map rules setting adds the game system's own rules (or leave it on Foundry's own):
+
+- **Pathfinder Second Edition:** the scene's environment (urban, forest or plains) and the places in it of another kind (a wood, deep water, a cellar), so terrain-based abilities see the terrain a token stands in; a scene's environment you set yourself is kept. With PF2E Visioner, fences, low walls and parapets give standard cover.
+- **D&D 5e:** banks, slopes, shallows and ice are the system's own difficult terrain of their kind, and the ground and every floor are laid as the floors its falling reads: a token walking down a bank is moved down with it, and one that jumps off a cliff top falls (unless it flies or the world's falling is off). Those floors also stop a token burrowing down through them. Keep the system's rules in a D&D 5e world: with Foundry's own, a token on raised ground counts as falling.
+- **Climbing:** a walker stopped at a cliff gets a card, whispered to them and the GM, with an Athletics check at the cliff's Climb DC (15, or 20 for a cut or built face, unless a cliff's own Climb DC setting says otherwise), a button in either system.
+
+Another module can add the rules for its system with `registerRules` (see From a script).
+
 ## From a script
 
 The window edits an ordinary plan, a JSON object, so anything it does can also be written into a plan by hand; these calls, from the browser console (F12) or a script macro as a GM, read, check, reroll, preview, render and publish one. Positions are in grid squares from the top left, sizes in feet. Every setting a plan can have, with its range, is listed in `TYPES` in `scripts/core/plan.mjs`. The API is ready from Foundry's `ready` hook (and fires `atlas-scribe.ready` with it).
@@ -73,6 +83,7 @@ await as.render(plan, { publish: true }); // paints it, saves it, and makes a ne
 - `lock(plan, ids)` and `unlock(plan, ids)`: a copy of the plan with those features locked or unlocked; a reroll leaves locked ones alone. Seeds and locks are kept in the plan (`seeds`, `locked`), so a plan always draws the same map.
 - `preview(plan)`: lays the plan out and draws it in plain colors, with no art, in a window, in a second or two (a few seconds for a city), its districts and areas outlined and named. Each district and area has a button to reroll it and one to lock it, Reroll all rerolls everything that isn't locked, and Undo steps back. Click a district, area, road, river, wall, pond, lake, sea or dock to show its handles, or Shapes to show them all: drag a corner or point to reshape (corners two districts share move together, and bridges follow a moved road or river), drag a side's middle dot to add a corner, alt-click or right-click a corner to remove it; a circle's or ellipse's edge handle sets its size. Scroll to zoom, drag to move, double-click to fit. Click anything to change its settings in the side panel, or the gear for the plan's own (see Making a map). Copy plan puts the plan, with its new seeds and locks, on the clipboard, and the window's `plan` holds it too: `const app = await as.preview(plan); /* reroll until you like it */ await as.render(app.plan, { publish: true });`
 - If the window holds a plan you haven't saved, `preview` shows it and asks before replacing it, and throws if you keep it.
+- `registerRules(systemId, adapter)`: adds the battle map rules for a game system; what an adapter can give (region behaviors, more regions, the scene's own settings, walls, the climb check, falling) is described at the top of `scripts/foundry/rules.mjs`. A module can also add its adapter on the `atlas-scribe.rules` hook, fired at setup with this function. `rules` names the rules battle maps follow now.
 - `cancel()`: stops the job that's running. One job runs at a time; `busy` says whether one is, and `version` is the module's version.
 
 The output folder is a setting (by default `worlds/<your world>/atlas-scribe`).
@@ -100,3 +111,7 @@ Written with Claude and tested in Foundry 14.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Pathfinder
+
+AtlasScribe is an unofficial, free module for Foundry VTT. It is not published, endorsed or specifically approved by Paizo Inc. or Wizards of the Coast. Pathfinder is a trademark of Paizo Inc. and Dungeons & Dragons a trademark of Wizards of the Coast, used here only to say which games its battle map rules work with. The module follows those games' rules (Paizo publishes Pathfinder's under the ORC License; the D&D System Reference Document is published under Creative Commons Attribution 4.0) and refers to them by name; it doesn't reproduce either's rules text, art or setting material.

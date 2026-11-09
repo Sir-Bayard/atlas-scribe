@@ -44,6 +44,7 @@ export const FIELD_TEXT = {
   "water.depth": { label: "Depth", help: "On a battle map: how far below the ground its bed lies, in feet (0 for none). Its middle is deep water to swim on a river or canal; a stream is shallow all across" },
   "water.banks": { label: "Banks", names: { bank: "steep banks", cliff: "cliffs", slope: "walkable slopes" }, help: "On a battle map: how its banks come down to the water. A cliff stops walkers (they climb, leap or fly); a bank or slope slows them. A bank deeper than 10 ft (where a stream cuts through higher ground) is a cliff" },
   "water.rock": { label: "Bank rock", names: { earthy: "earthy brown stone", slate: "gray slate", mossy: "mossy stone" }, auto: "picked from its seed", more: true },
+  "water.climbDC": { label: "Climb DC", help: "On a battle map, where its banks are cliffs: the DC of the check to climb them, shown when a walker is stopped at one", auto: "15, natural rock's", more: true },
 
   "dock.width": { label: "Width", help: "How wide it is, in feet" },
   "dock.material": { label: "Built of", names: { stone: "stone", wood: "timber" } },
@@ -113,6 +114,7 @@ export const FIELD_TEXT = {
   "height.height": { label: "Height", help: "In feet: how far its ground stands above the ground around it (below zero, a hollow). A token's elevation follows it on the scene" },
   "height.edge": { label: "Edge", names: { cliff: "a cliff", bank: "a steep bank", slope: "a walkable slope" }, help: "How its edge comes down. A cliff stops walkers (they climb, leap or fly); a bank or slope slows them", auto: "a bank for 5 ft or less, else a cliff" },
   "height.rock": { label: "Rock", names: { earthy: "earthy brown stone", slate: "gray slate", mossy: "mossy stone" }, auto: "picked from its seed" },
+  "height.climbDC": { label: "Climb DC", help: "Where its edge is a cliff: the DC of the check to climb it, shown when a walker is stopped at it", auto: "15, or 20 with sharp corners (a cut or built face)", more: true },
   "height.rot": { label: "Turned", help: "Degrees clockwise; a turned rise can't be reshaped by its corners yet", more: true },
   "height.straight": { label: "Sharp corners", help: "Its corners kept sharp (a quarry's cut, a built terrace); else rounded as ground lies", more: true },
 
@@ -126,6 +128,7 @@ export const FIELD_TEXT = {
   "wall.ditchWidth": { label: "Ditch width", help: "How wide its ditch or moat is, in feet" },
   "wall.side": { label: "Outside is on the", names: { left: "left", right: "right" }, help: "For a wall that isn't a closed loop: which side is outside, going along it from its first point (a closed loop's outside is outward)", more: true, byClass: { cliff: { label: "Drop is on the", help: "Which side of its line the low ground lies, going along it from its first point: its line is the top edge", more: false } } },
   "wall.rock": { label: "Rock", names: { earthy: "earthy brown stone", slate: "gray slate" }, auto: "picked from its seed" },
+  "wall.climbDC": { label: "Climb DC", help: "On a battle map: the DC of the check to climb the cliff, shown when a walker is stopped at it", auto: "15, natural rock's" },
 
   "prop.rot": { label: "Turned", help: "Degrees clockwise", notFor: ["tree"] }, // a tree is turned at random
   "prop.species": { label: "Tree", kind: "enum", values: ["conifer", "bare"], names: { conifer: "fir", bare: "leafy" }, auto: "leafy" },
