@@ -52,7 +52,7 @@ A battle map works in any game system with Foundry's own region behaviors: banks
 
 - **Pathfinder Second Edition:** the scene's environment (urban, forest or plains) and the places in it of another kind (a wood, deep water, a cellar), so terrain-based abilities see the terrain a token stands in; a scene's environment you set yourself is kept. With PF2E Visioner, fences, low walls and parapets give standard cover.
 - **Climbing:** a walker stopped at a cliff gets a card, whispered to them and the GM, with an Athletics check at the cliff's Climb DC (15, or 20 for a cut or built face, unless a cliff's own Climb DC setting says otherwise): a button in Pathfinder Second Edition, plain words in other systems.
-- **D&D 5e:** planned for after 1.0. Until then a 5e world gets Foundry's own rules. Its own falling automation marks a token standing on raised ground as falling; turn off its falling setting, or AtlasScribe's Battle map heights setting, to avoid that.
+- **Other systems:** Foundry's own rules for now; more systems' rules may come after 1.0. A system that automates falling may mark a token standing on raised ground as falling: turn off its falling setting, or AtlasScribe's Battle map heights setting, to avoid that.
 
 Another module can add the rules for its system with `registerRules` (see From a script).
 
@@ -114,4 +114,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Pathfinder
 
-AtlasScribe is an unofficial, free module for Foundry VTT. It is not published, endorsed or specifically approved by Paizo Inc. or Wizards of the Coast. Pathfinder is a trademark of Paizo Inc. and Dungeons & Dragons a trademark of Wizards of the Coast, used here only to say which games its battle map rules work with. The module follows those games' rules (Paizo publishes Pathfinder's under the ORC License; the D&D System Reference Document is published under Creative Commons Attribution 4.0) and refers to them by name; it doesn't reproduce either's rules text, art or setting material.
+AtlasScribe is an unofficial, free module for Foundry VTT. It is not published, endorsed or specifically approved by Paizo Inc. Pathfinder is a trademark of Paizo Inc., used here only to say which game its battle map rules work with. The module follows the game's rules, which Paizo publishes under the ORC License, and refers to them by name; it doesn't reproduce Paizo's rules text, art or setting material.
