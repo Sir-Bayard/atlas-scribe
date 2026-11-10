@@ -313,3 +313,60 @@ export function pastEdge([x, y], w) {
 
 /** How far a water's bank (a stream's or river's stone bank, a lake's shore) reaches past its edge. */
 export const bankOf = (w) => (w.body ? w.reach ?? BANK : BANK);
+
+/**
+ * How a stream or river on a battle map wanders (Patrick, 9 Nov: running water there was too even): its middle line
+ * swings a little either side of the plan's path, sway squares at most (a share of its width), over a long wave; and
+ * its width swells and narrows by up to swell of itself over a shorter one. Both fade out near a crossing, so a
+ * bridge's abutments stand on straight banks, and both come from the plan's seed and the water's id.
+ */
+export const WANDER = { sway: 0.12, swayMin: 0.2, swayMost: 0.7, swayWave: 9, swell: 0.12, swellWave: 5.5, step: 0.5, calm: 1.5 };
+
+/**
+ * A running water's path and widths on a battle map, wandering as WANDER says. path: its middle line (smoothed);
+ * widths: its width at each point (squares), or null for width all along; near: [[x, y, r]] places it keeps straight
+ * near (a crossing, r its half length). Returns { path, widths } (resampled every WANDER.step squares), or null for a
+ * path too short to wander.
+ */
+export function wander(path, widths, width, { seed = 1, id = "water", near = [] } = {}) {
+  if (!Array.isArray(path) || path.length < 2) return null;
+  // (the path every half square, each point with its share along it, for the widths to follow)
+  const pts = [path[0]], at = [0];
+  const arcs = [0];
+  for (let i = 1; i < path.length; i++) arcs.push(arcs[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+  const total = arcs.at(-1);
+  if (!(total > 2 * WANDER.step)) return null;
+  const n = Math.max(2, Math.ceil(total / WANDER.step));
+  let k = 1;
+  for (let j = 1; j <= n; j++) {
+    const s = (total * j) / n;
+    while (k < path.length - 1 && arcs[k] < s) k++;
+    const u = arcs[k] > arcs[k - 1] ? (s - arcs[k - 1]) / (arcs[k] - arcs[k - 1]) : 0;
+    pts.push([path[k - 1][0] + (path[k][0] - path[k - 1][0]) * u, path[k - 1][1] + (path[k][1] - path[k - 1][1]) * u]);
+    at.push(s);
+  }
+  const widthAt = (s) => {
+    if (!Array.isArray(widths) || widths.length !== path.length) return width;
+    let i = 1;
+    while (i < arcs.length - 1 && arcs[i] < s) i++;
+    const u = arcs[i] > arcs[i - 1] ? Math.max(0, Math.min(1, (s - arcs[i - 1]) / (arcs[i] - arcs[i - 1]))) : 0;
+    return widths[i - 1] + (widths[i] - widths[i - 1]) * u;
+  };
+  const sway = makeNoise(seed, `wander-${id}`, { scale: WANDER.swayWave, octaves: 2 });
+  const swell = makeNoise(seed, `swell-${id}`, { scale: WANDER.swellWave, octaves: 2 });
+  const smooth = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+  const outPath = [], outW = [];
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+    // (still near a crossing: nothing wanders within its half length and a square, easing in over the next calm squares)
+    let keep = 1;
+    for (const [x, y, r] of near) keep = Math.min(keep, smooth((Math.hypot(p[0] - x, p[1] - y) - r - 1) / WANDER.calm));
+    const w = widthAt(at[i]);
+    const amp = Math.min(WANDER.swayMost, Math.max(WANDER.swayMin, w * WANDER.sway)) * keep;
+    const d = sway(at[i], 0.37) * amp;
+    outPath.push([p[0] + nx * d, p[1] + ny * d]);
+    outW.push(Math.max(0.5, w * (1 + swell(at[i], 0.71) * WANDER.swell * keep)));
+  });
+  return { path: outPath, widths: outW };
+}

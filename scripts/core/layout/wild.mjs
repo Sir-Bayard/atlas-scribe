@@ -23,6 +23,8 @@ export const WILD = {
 };
 /** The wild props' classes (each a prop item, drawn at its art's own size). */
 export const WILD_PROPS = ["fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"];
+/** A wild prop's scale (of its art) when a plan places one without a size: the middle of what the woods give theirs. */
+export const WILD_SCALE = { fern: 0.95, log: 0.88, stump: 0.52, rock: 0.75, boulder: 0.85, branch: 0.95, roots: 0.95, leaves: 0.8 };
 
 /**
  * Fills one woods area at battle size. area: the plan feature; r: its random stream; free(x, y, rad): whether a spot
@@ -121,6 +123,51 @@ export function rockfall({ edge, r, free }) {
     });
   }
   return out;
+}
+
+/**
+ * Loose rock on a wild battle map's open ground (M6 chunk 10: Patrick's hand-built winter map has snowy rocks and boulders lying
+ * about the open snow, which made AtlasScribe's look bare): groups of a boulder and a stone or two, and lone stones,
+ * so many for each hundred squares of the map (OPEN_ROCKS), each kept clear of what's there (free: the layout's test;
+ * near(x, y, r): whether anything already laid, a tree or a prop, lies within r).
+ */
+export const OPEN_ROCKS = { groups: 0.45, singles: 1.2, gap: 1.6, clump: 7, edge: 2, edgeBoost: 2.5 };
+
+/**
+ * edges: the map's drops ([{ path, style }]): rock gathers along the top of a bank or cliff, as it does where ground
+ * breaks, edgeBoost times as likely within edge squares of one. Elsewhere it lies in looser and thicker patches (a noise
+ * over clump squares), so the open ground isn't evenly peppered.
+ */
+export function openRocks({ W, H, r, free, near = () => false, edges = [] }) {
+  const items = [];
+  const groups = Math.round((W * H * OPEN_ROCKS.groups) / 100), singles = Math.round((W * H * OPEN_ROCKS.singles) / 100);
+  const gr = r.fork("groups"), sr = r.fork("singles");
+  const patch = makeNoise(r.int(2 ** 31), "open-rocks", { scale: OPEN_ROCKS.clump, octaves: 2 });
+  const lines = edges.filter((e) => Array.isArray(e.path) && e.path.length >= 2 && e.style !== "slope");
+  // (how likely a spot is to take a rock, 0 to 1: thick and thin patches, more by a drop's top)
+  const likely = (x, y) => Math.min(1, Math.max(0.08, 0.5 + patch(x, y) * 0.8) * (lines.some((e) => distanceToPath([x, y], e.path) < OPEN_ROCKS.edge) ? OPEN_ROCKS.edgeBoost : 1));
+  const taken = [];
+  const clash = (x, y, d) => taken.some((t) => Math.hypot(t[0] - x, t[1] - y) < d + t[2]);
+  let g = 0;
+  for (let i = 0; i < groups * 6 && g < groups; i++) {
+    const x = gr.range(1, W - 1), y = gr.range(1, H - 1), turn = gr.next() * 360, vs = [gr.int(12), gr.int(12), gr.int(12)];
+    const parts = [[0, 0, "boulder", gr.range(0.55, 0.85)], [gr.range(0.9, 1.4), gr.range(-0.5, 0.5), "rock", gr.range(0.5, 0.8)], [gr.range(-1.2, -0.7), gr.range(0.2, 0.9), "rock", gr.range(0.4, 0.6)]];
+    const keep = gr.next() < 0.5 ? 2 : 3;
+    if (gr.next() > likely(x, y) || !free(x, y, 1.2) || near(x, y, OPEN_ROCKS.gap) || clash(x, y, 2)) continue;
+    g++;
+    taken.push([x, y, 1.6]);
+    const t = (turn * Math.PI) / 180;
+    parts.slice(0, keep).forEach(([u, v, cls, sc], j) => items.push({ kind: "prop", id: `ground/rocks${g}-${j + 1}`, from: "ground", class: cls, x: x + u * Math.cos(t) - v * Math.sin(t), y: y + u * Math.sin(t) + v * Math.cos(t), rot: (turn + j * 83) % 360, variant: vs[j], scale: sc, wild: true }));
+  }
+  let k = 0;
+  for (let i = 0; i < singles * 6 && k < singles; i++) {
+    const x = sr.range(0.5, W - 0.5), y = sr.range(0.5, H - 0.5);
+    if (sr.next() > likely(x, y) || !free(x, y, 0.5) || near(x, y, 0.9) || clash(x, y, 0.6)) continue;
+    k++;
+    taken.push([x, y, 0.4]);
+    items.push({ kind: "prop", id: `ground/stone${k}`, from: "ground", class: "rock", x, y, rot: sr.next() * 360, variant: sr.int(12), scale: sr.range(0.4, 0.7), wild: true });
+  }
+  return items;
 }
 
 /** The noise value under which the share `q` of a polygon lies (measured on a grid over it). */

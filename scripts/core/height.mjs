@@ -143,6 +143,13 @@ export function heightRegions(layout) {
       if (polys.length) out.push({ kind: "ice", name: `Ice (${name})`, polys, top: surface, cost: COST.ice });
       continue;
     }
+    // (ice along its banks: the shelves are ice, the water only the channel open between them)
+    if (Array.isArray(w.shelves) && w.shelves.length) {
+      const ice = withHoles(clip(offDecks(w.shelves)));
+      if (ice.length) out.push({ kind: "ice", name: `Ice (${name} banks)`, polys: ice, top: surface, cost: COST.ice });
+      area = difference(area, w.shelves);
+      if (deep.length) deep = difference(deep, w.shelves);
+    }
     const shallow = withHoles(clip(offDecks(deep.length ? difference(area, deep) : area)));
     if (shallow.length) out.push({ kind: "shallow", name: `Shallow water (${name})`, polys: shallow, top: surface, cost: COST.shallow });
     const dp = deep.length ? withHoles(clip(offDecks(deep))) : [];

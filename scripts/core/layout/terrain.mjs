@@ -12,6 +12,7 @@
  */
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../geom.mjs";
 import { bands, difference } from "../lots/poly.mjs";
+import { makeNoise } from "../noise.mjs";
 
 /**
  * Sizes, in squares and feet. tier: the feet of drop each tier of a cliff or bank stands for (one strip of art a
@@ -36,6 +37,68 @@ export function edgeSpan(e) {
   if (e.style === "slope") return n * TERRAIN.slope;
   if (e.style === "bank") return TERRAIN.bankBand + (n - 1) * TERRAIN.bankStep;
   return 0.45 + (n - 1) * TERRAIN.step;
+}
+
+/**
+ * The ground a running water's band covers (share of its width), add squares past its edge each side: its own width at each point where it
+ * varies (a battle map's wandering stream, a river widening), else its one width. A water item: { path, width, widths }.
+ */
+export function waterBand(w, add = 0, share = 1) {
+  const ws = Array.isArray(w?.widths) && w.widths.length === w.path?.length ? w.widths : null;
+  if (!ws) return bands([{ path: w.path, half: ((w.width ?? 1) * share) / 2 + add }]);
+  return bands(w.path.slice(1).map((q, i) => ({ path: [w.path[i], q], half: (Math.max(ws[i], ws[i + 1]) * share) / 2 + add })));
+}
+
+/**
+ * Ice along a stream in winter (Patrick, 9 Nov, from his hand-built winter map: shelves along both banks, a narrower channel open
+ * between them, "irregularity" along their edges). The open channel is channel of the water's width, swelling and
+ * narrowing by up to ragged of itself over a wave of wave squares, its middle swinging up to sway of the width either
+ * side, never narrower than least; a finer wobble (fine, over fineWave) makes its edges ragged, and now and then a
+ * bite (up to bite squares, over biteWave) is broken out of a shelf's edge, each side on its own. The shelves reach
+ * reach squares past the water's edge, onto the foot of its banks, so no strip of bed shows between. All seeded.
+ */
+export const ICE = { channel: 0.42, ragged: 0.4, wave: 2.6, sway: 0.18, least: 0.6, fine: 0.16, fineWave: 0.45, bite: 0.9, biteWave: 1.7, reach: 0.45 };
+
+/**
+ * A running water's ice shelves: its band less the open channel down it. Returns { shelves: rings, channel: ring }
+ * (squares), or null when the water is too short. w: { path, width, widths }.
+ */
+export function iceShelves(w, { seed = 1, id = "water" } = {}) {
+  if (!Array.isArray(w?.path) || w.path.length < 2) return null;
+  const ws = Array.isArray(w.widths) && w.widths.length === w.path.length ? w.widths : null;
+  // (its path every quarter square, each point with its width and its distance along)
+  const pts = [], wid = [], at = [];
+  let s0 = 0;
+  for (let i = 1; i < w.path.length; i++) {
+    const a = w.path[i - 1], b = w.path[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.25));
+    for (let k = i === 1 ? 0 : 1; k <= n; k++) {
+      const t = k / n;
+      pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      wid.push(ws ? ws[i - 1] + (ws[i] - ws[i - 1]) * t : w.width ?? 1);
+      at.push(s0 + L * t);
+    }
+    s0 += L;
+  }
+  if (pts.length < 3) return null;
+  const swell = makeNoise(seed, `ice-${id}`, { scale: ICE.wave, octaves: 2 }), sway = makeNoise(seed, `ice-sway-${id}`, { scale: ICE.wave * 2.5, octaves: 2 });
+  const fine = makeNoise(seed, `ice-fine-${id}`, { scale: ICE.fineWave, octaves: 2 });
+  const bite = makeNoise(seed, `ice-bite-${id}`, { scale: ICE.biteWave, octaves: 2 });
+  // (a bite only where the noise runs high: most of an edge has none)
+  const bitten = (v) => Math.max(0, v - 0.35) / 0.65 * ICE.bite;
+  const left = [], right = [];
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L, W = wid[i];
+    const half = Math.max(ICE.least / 2, ((W * ICE.channel) / 2) * (1 + swell(at[i], 0.3) * ICE.ragged));
+    // (its middle kept far enough in that the channel never reaches the bank)
+    const room = Math.max(0, W / 2 - half - 0.25), mid = Math.max(-room, Math.min(room, sway(at[i], 0.6) * ICE.sway * W));
+    const l = mid + half + fine(at[i], 1.1) * ICE.fine + bitten(bite(at[i], 3.7)), r = mid - half + fine(at[i], 2.3) * ICE.fine - bitten(bite(at[i], 8.9));
+    left.push([p[0] + nx * l, p[1] + ny * l]);
+    right.push([p[0] + nx * r, p[1] + ny * r]);
+  });
+  const channel = [...left, ...right.reverse()];
+  const shelves = difference(waterBand(w, ICE.reach), [channel]).filter((r) => r.length >= 3);
+  return { shelves, channel };
 }
 
 /** Whether a point is in a level: inside an odd number of its rings (so a ring inside another is a hole). */
@@ -85,7 +148,7 @@ export function terrainOf({ plan, items, sq, pick }) {
     const base = level.length ? Math.min(...level) : under.length ? Math.min(...under) : 0;
     const style = EDGE_STYLES.includes(f.banks) ? f.banks : "bank";
     // (the bed: the water, a shelf of stones each side below a cliff, and the banks coming down to it)
-    const rings = bands([{ path: w.path, half: (w.width ?? 1) / 2 + shelfOf(style) + edgeSpan({ drop: depth, style }) }]);
+    const rings = waterBand(w, shelfOf(style) + edgeSpan({ drop: depth, style }));
     if (!rings.length) continue;
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(w.from ?? w.id).fork("rock").pick(ROCKS);
     levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class, ...(f.climbDC != null ? { climbDC: f.climbDC } : {}) });

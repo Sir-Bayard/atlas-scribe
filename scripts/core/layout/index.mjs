@@ -8,7 +8,7 @@
  * tiles it's painted in. Pure: runs in the worker and under node.
  */
 import { roadWaterCrossings, snapCrossings, fordDetail, easeOnto } from "./crossings.mjs";
-import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, isConifer, OLD_PROFILES } from "../plan.mjs";
+import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, PROP_SIZE, isConifer, OLD_PROFILES } from "../plan.mjs";
 import { smoothPlanPaths } from "../smooth.mjs";
 import { rng, hash128 } from "../rng.mjs";
 import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap, spansAt } from "../geom.mjs";
@@ -29,7 +29,7 @@ import { LOOK, characterOf, lookOf } from "../character.mjs";
 import { anchorFor, layAnchor } from "./anchors.mjs";
 import { poissonInPolygon } from "../scatter.mjs";
 import { makeNoise } from "../noise.mjs";
-import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, frozenOf, keepOf, nearWater, segClears, pastEdge, SHORE_REACH } from "../water.mjs";
+import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, frozenOf, keepOf, nearWater, segClears, pastEdge, wander, SHORE_REACH } from "../water.mjs";
 import { layDock, shoreRuns } from "./docks.mjs";
 import { shoreLife } from "./shores.mjs";
 import { marketStalls } from "./market.mjs";
@@ -38,8 +38,8 @@ import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf, offsetLine } from "../cliffs.mjs";
 import { battleYards, battleBack } from "./battle.mjs";
 import { castleWorks } from "./castle.mjs";
-import { terrainOf, edgeSpan, shiftRight, resample } from "./terrain.mjs";
-import { battleWoods, rockfall } from "./wild.mjs";
+import { terrainOf, edgeSpan, shiftRight, resample, iceShelves } from "./terrain.mjs";
+import { battleWoods, rockfall, openRocks, WILD_PROPS, WILD_SCALE } from "./wild.mjs";
 import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
 import { lightsOf, mistOf, LIGHT_PROPS } from "./lights.mjs";
 
@@ -193,6 +193,13 @@ export function trimAtBuildings(streets, feet, ftPerSquare = 5) {
   return out;
 }
 
+/**
+ * Where a battle map's bridge parapet and a footbridge's rail stand, in squares out from the deck's edge to their
+ * middle line: a parapet half its painted thickness (0.48), so its inner face is the deck's edge; a rail as thin. A stone
+ * bridge's wing walls run wing squares on from each end of each parapet, turned wingTurn degrees out from the deck.
+ */
+export const PARAPET = { out: 0.24, rail: 0.07, wing: 1.6, wingTurn: 35 };
+
 export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // Roads, rivers and walls curve through their points (the plan itself is left as it is)
   const asGiven = normalize(rawPlan);
@@ -254,6 +261,12 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const bodies = []; // ponds, lakes and seas
   const cliffBands = []; // { path, half }: the ground each cliff takes
   const winter = seasonOf(plan) === "winter";
+  // (a stream's or river's ice along its banks, on a battle map in winter unless it's frozen over or its plan says none)
+  const shelvesOf = (f, w) => {
+    if (!battle || !winter || f.frozen || f.ice === "none" || (f.class === "canal" && f.ice !== "edges")) return {};
+    const ice = iceShelves(w, { seed: seedOf(plan, f.id), id: f.id });
+    return ice?.shelves.length ? { shelves: ice.shelves, channel: ice.channel } : {};
+  };
   for (const f of plan.features) {
     switch (f.type) {
       case "road": {
@@ -269,11 +282,11 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
           if (f._w) {
             // Wider at one end, or opening out into a lake: a width at each point, and the widest for its box
             const width = Math.max(...f._w);
-            items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width, widths: f._w, frozen: !!f.frozen });
+            items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width, widths: f._w, frozen: !!f.frozen, ...shelvesOf(f, { path: f.path, width, widths: f._w }) });
             space.water.push({ path: f.path, clear: width / 2 + 0.225, clears: segClears(f._w, 0.225) });
           } else {
             const width = ft(f.width ?? 60); // a pond, lake or sea along a path is drawn as a river (the checker says so)
-            items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width, frozen: !!f.frozen });
+            items.push({ kind: "water", id: f.id, from: f.id, class: f.class, path: f.path, width, frozen: !!f.frozen, ...shelvesOf(f, { path: f.path, width }) });
             space.water.push({ path: f.path, clear: width / 2 + 0.225 });
           }
         } else if (f._poly) {
@@ -799,7 +812,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       items.push({ kind: "tree", id: f.id, from: f.id, x, y, species, size: species === "conifer" ? "large" : null, s: sized, rot: r.next() * 360, variant: r.int(8) });
     } else {
       const variant = r.int(8);
-      items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: Number.isInteger(f.variant) ? f.variant : variant, ...(size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45) } : {}) });
+      // (a wild one, a rock or a stump, at its own size when the plan gives one, else at the size the woods give theirs;
+      // anything else scaled to its size)
+      const sized = WILD_PROPS.includes(f.class) ? (size !== null ? { size } : { scale: WILD_SCALE[f.class] ?? 0.8 }) : size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45) } : PROP_SIZE[f.class] ? { size: PROP_SIZE[f.class] } : {};
+      items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: Number.isInteger(f.variant) ? f.variant : variant, ...sized });
     }
   }
 
@@ -1525,6 +1541,13 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   }
   // Fallen rock at the foot of each cliff
   if (battle) for (const e of items.filter((i) => i.kind === "edge" && i.style === "cliff")) items.push(...rockfall({ edge: e, r: rng(seedOf(plan, e.from), e.id, "fall"), free }));
+  // Loose rock about a wild battle map's open ground (none in a town's: a battle map with a district or building)
+  if (battle && !plan.features.some((f) => f.type === "district" || f.type === "building" || f.type === "landmark")) {
+    const standing = items.filter((i) => (i.kind === "tree" || i.kind === "prop") && Number.isFinite(i.x));
+    const woods = plan.features.filter((f) => f.type === "area" && f.class === "woods" && f.shape).map((f) => shapeToPolygon(f.shape, f.rot ?? 0));
+    const near = (x, y, d) => woods.some((p) => pointInPolygon([x, y], p)) || standing.some((i) => Math.hypot(i.x - x, i.y - y) < d);
+    items.push(...openRocks({ W, H, r: rng(plan.seed, "ground", "rocks"), free, near, edges: items.filter((i) => i.kind === "edge") }));
+  }
   for (const f of plan.features.filter((f) => f.type === "wall" && f.class === "hedge")) {
     const before = items.length;
     hedgeBushes({ wall: f, r: streamFor(f.id), items });
@@ -1575,9 +1598,10 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
   if (battle) {
     // A bridge's parapets: a low stone wall along each side of its deck (a footbridge's wooden rails), which stop
-    // movement as any low wall or fence does
+    // movement as any low wall or fence does. Each stands just outside the deck (Patrick, 9 Nov: inside it, a two-square
+    // bridge had one square to walk on), so the whole width the plan gives is walked on
     for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
-      const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2, hw = (c.width ?? 4) / 2 - 0.2;
+      const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2, hw = (c.width ?? 4) / 2 + (c.class === "bridge" ? PARAPET.out : PARAPET.rail);
       if (hw < 0.5) continue;
       [-1, 1].forEach((sg, k) => {
         const at = (u) => [c.at[0] + u * ux - sg * hw * uy, c.at[1] + u * uy + sg * hw * ux];
@@ -1585,6 +1609,12 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
         items.push(c.class === "bridge"
           ? { kind: "wall", id: `${c.id}/parapet${k + 1}`, from: c.from ?? c.id, class: "stone", path, height: 3 / sq, parapet: true }
           : { kind: "boundary", id: `${c.id}/rail${k + 1}`, from: c.from ?? c.id, class: "fence", path });
+        // (a stone bridge's wing walls: at each end of each parapet a short wall splaying out over the bank, holding
+        // it back where the deck comes onto it)
+        if (c.class === "bridge") [-1, 1].forEach((end, j) => {
+          const e = at(end * hl), a2 = Math.atan2(uy, ux) + (end > 0 ? 0 : Math.PI) + sg * end * PARAPET.wingTurn * (Math.PI / 180);
+          items.push({ kind: "wall", id: `${c.id}/wing${k + 1}-${j + 1}`, from: c.from ?? c.id, class: "stone", path: [e, [e[0] + Math.cos(a2) * PARAPET.wing, e[1] + Math.sin(a2) * PARAPET.wing]], height: 3 / sq, parapet: true, wing: true });
+        });
       });
     }
     castleWorks(items, W, H, plan.seed);
@@ -1725,6 +1755,13 @@ function withWater(plan, given) {
     const width = Number.isFinite(f.width) ? f.width / sq : null;
     const mouth = w || width > 0 ? mouthWidths(f.path, w, width, bodies) : null;
     const ws = mouth ?? w;
+    // (a stream or river on a battle map wanders a little, its width too, kept straight near its crossings; a canal
+    // or one drawn straight keeps its line)
+    if (plan.kind === "battle" && !f.straight && f.class !== "canal" && !mouth) {
+      const near = plan.features.filter((c) => c.type === "crossing" && Array.isArray(c.at)).map((c) => [c.at[0], c.at[1], (Number.isFinite(c.length) ? c.length / sq : 2) / 2]);
+      const wd = wander(f.path, ws, width ?? 1, { seed: seedOf(plan, f.id), id: f.id, near });
+      if (wd) return { ...f, path: wd.path, _w: wd.widths };
+    }
     return ws ? { ...f, _w: ws } : f;
   });
   return { ...plan, features };

@@ -84,6 +84,9 @@ export const TYPES = {
       depth: num(null, { unit: "ft", min: 0, max: 60, byClass: { stream: 5, river: 10, canal: 5 }, only: RUNNING }),
       banks: { ...oneOf(["bank", "cliff", "slope"], "bank"), only: RUNNING },
       rock: { ...oneOf(["earthy", "slate", "mossy"], null), only: RUNNING, fallback: "picked from its seed" },
+      // On a battle map in winter: ice along its banks (shelves either side of an open channel), unless it's frozen
+      // over or none; outside winter it stays open
+      ice: { ...oneOf(["edges", "none"], null), only: RUNNING, fallback: "ice along its banks in winter on a battle map" },
       // (a Climb DC for its banks where they're cliffs; else natural rock's, CLIMB_DC in rules.mjs)
       climbDC: { ...num(null, { min: 1, max: 60, integer: true }), only: RUNNING, fallback: "15, natural rock's" },
     },
@@ -228,7 +231,9 @@ export const TYPES = {
   prop: {
     geometry: "point",
     // (campfire, fire pit, brazier, torch and lamp post: lights on a battle map, each lit where it stands)
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll"],
+    // (cairn, standing stone, sledge, tracks and ribbon: what tells a place's story on a battle map; tracks are
+    // footprints in snow, drawn in winter only)
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll", "cairn", "standing-stone", "sledge", "tracks", "ribbon"],
     // (variant: which of its art's pieces, else from the seed: a soldiers' camp's tents all one cloth)
     fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }), variant: num(null, { min: 0, integer: true }) },
   },
@@ -255,6 +260,9 @@ export const WOOD_DENSITY = { thick: 1 / 2.4 };
 /** A plan tree's species words drawn as a conifer (any other is a broadleaf, bare in winter). */
 export const CONIFERS = ["conifer", "fir", "pine", "spruce", "cedar", "larch", "yew", "cypress", "juniper", "hemlock", "evergreen"];
 export const isConifer = (species) => typeof species === "string" && CONIFERS.includes(species.trim().toLowerCase());
+
+/** How wide a battle map draws a prop the plan gives no size, in squares, where its art's own size is too big for it. */
+export const PROP_SIZE = { tracks: 0.6, ribbon: 0.7, "standing-stone": 1.2, cairn: 2.2 };
 
 /** How wide a prop is drawn, in squares, when the plan gives it no size (a prop's size, in feet, sets it). */
 export const PROP_SQUARES = { tent: 0.6, bedroll: 0.3, well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };

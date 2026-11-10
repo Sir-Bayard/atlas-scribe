@@ -44,6 +44,7 @@ export const FIELD_TEXT = {
   "water.depth": { label: "Depth", help: "On a battle map: how far below the ground its bed lies, in feet (0 for none). Its middle is deep water to swim on a river or canal; a stream is shallow all across" },
   "water.banks": { label: "Banks", names: { bank: "steep banks", cliff: "cliffs", slope: "walkable slopes" }, help: "On a battle map: how its banks come down to the water. A cliff stops walkers (they climb, leap or fly); a bank or slope slows them. A bank deeper than 10 ft (where a stream cuts through higher ground) is a cliff" },
   "water.rock": { label: "Bank rock", names: { earthy: "earthy brown stone", slate: "gray slate", mossy: "mossy stone" }, auto: "picked from its seed", more: true },
+  "water.ice": { label: "Ice", names: { edges: "along its banks", none: "none" }, help: "On a battle map in winter: shelves of ice along both banks with an open channel between (ice is difficult terrain). Frozen covers it all", auto: "along its banks in winter", more: true },
   "water.climbDC": { label: "Climb DC", help: "On a battle map, where its banks are cliffs: the DC of the check to climb them, shown when a walker is stopped at one", auto: "15, natural rock's", more: true },
 
   "dock.width": { label: "Width", help: "How wide it is, in feet" },
