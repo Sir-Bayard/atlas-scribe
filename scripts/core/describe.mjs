@@ -1,10 +1,8 @@
 /**
- * The Describe box's reader: a description in plain words into a battle map's brief (brief.mjs), with no AI (plan
- * decision 44: it knows a fixed set of words, works offline, and shows what it understood as chips the GM can take
- * out). "I need a wilderness map on a cliff, in summer, littered with trees, stumps, and logs." reads as a wilderness
- * with a cliff, in summer, trees thick, stumps and logs lots. Room programs go into the building's Rooms ("a stage,
- * a kitchen" into "common room with a stage, kitchen"); cellars and upper floors are noted as coming with levels.
- * Pure: runs anywhere.
+ * The Describe box's reader: a description in plain words into a battle map's brief (brief.mjs), from a fixed set of
+ * words with no AI, works offline, and shows what it understood as chips the GM can take out. "A wilderness map on a
+ * cliff, in summer, littered with trees, stumps and logs" reads as a wilderness with a cliff, in summer, trees thick,
+ * stumps and logs lots. Room words go into the building's Rooms, a cellar and floors above into its own. Pure.
  */
 import { BRIEF_LABELS, SITE_LACKS } from "./brief.mjs";
 
@@ -22,7 +20,7 @@ const WORDS = {
   size: { small: ["small", "tiny", "little", "cramped"], medium: ["medium", "medium-sized", "mid-sized", "modest"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand"] },
   towers: { roofed: ["roofed towers", "roofed tower", "tower roofs", "conical roofs", "cone roofs", "pointed roofs", "spires", "spire"], open: ["battlements", "crenellated", "crenelated", "crenellations", "open towers", "open tower"] },
 };
-/** Words that say a map is a wilderness, a camp, a street or a castle: "wilderness", "camp", "street", "castle". */
+/** Words that name the site: a wilderness, a camp, a street or a castle. */
 const SITE_WORDS = { wilderness: ["wilderness", "wild", "wilds"], camp: ["camp", "encampment", "bivouac", "tents", "tent"], street: ["street", "streets", "quarter", "square"], castle: ["castle", "fort", "fortress", "stronghold", "citadel", "bailey", "curtain wall", "ramparts", "rampart"] };
 /** A castle's size from its own word, when no size is said: a fort small, a fortress or great castle large. */
 const CASTLE_SIZE_WORDS = { small: ["fort", "small castle"], large: ["fortress", "great castle", "great fortress", "citadel"] };
@@ -42,7 +40,6 @@ const ROOM_WORDS = {
 };
 /** Words that put a room or a thing on another floor: a cellar, or floors above (each a level of the scene). */
 const LATER = { cellar: ["cellar", "cellars", "basement", "undercroft"], upstairs: ["upstairs", "upper floor", "second floor", "first floor", "attic", "loft", "upper floors", "two floors", "three floors", "2 floors", "3 floors", "stories", "storeys", "story", "storey"] }; // (read in British spelling too)
-/** Number words. */
 const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, a: 1, an: 1, single: 1, pair: 2, dozen: 12 };
 /** Words not worth reporting as not understood. */
 const STOP = new Set(`i me my we our you your it its a an the and or but of in on at by to for from with into onto over under near beside along across around between through up down out off is are be been being was were has have had having do does did need needs want wants like would could should can will make made makes give gives map battlemap battle scene place area spot set setting some any all this that these those there here where which who what when while then than so very really just also plus please something somewhere filled full lots lot sort kind type bit little more most much one ones side sides back front middle center centre edge edges top bottom left right north south east west inside outside around near far nearby next close open nice good cool interesting dark`.split(/\s+/)); // (read in British spelling too)
@@ -52,13 +49,10 @@ const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const pattern = (p) => new RegExp(`\\b${esc(p).replace(/ /g, "\\s+")}(?:s|es)?\\b`, "g");
 
 /**
- * Reads a description. Returns { brief, chips, later, skipped, unknown }: brief holds only the choices it found (site, size,
- * season, time, weather, ground, features, trees, litter, rocks, brush, building { use, size, rooms, name, floors,
- * cellar, upstairs, cellarRooms }, street { place, quarter }, camp { kind, tents }, castle { towers }, name); chips, what it understood, each { key, value, label } (key the brief's
- * field, "building.use" and so on); later, kept for the window and always empty now (a cellar and floors above are
- * read into the building's own);
- * skipped, what it read but left out for the site it chose ({ label, why }: the village of "a village inn"); unknown,
- * the words it didn't know.
+ * Reads a description. Returns { brief, chips, later, skipped, unknown }: brief, only the choices it found; chips,
+ * what it understood, each { key, value, label } (key the brief's field, "building.use" and so on); later, always
+ * empty (kept for the window); skipped, what it read but left out for the site ({ label, why }); unknown, the words
+ * it didn't know.
  */
 export function readDescription(text = "") {
   const raw = String(text ?? "");
@@ -108,10 +102,9 @@ export function readDescription(text = "") {
   }
   const inLater = (m) => laterSpans.some(([s, e]) => m.at >= s && m.end <= e);
 
-  // What kind of site: a building's words make a roadside, a camp's a camp, a place's a street, else a wilderness
-  // (a camp's own words make a camp; a caravan or soldiers do only with no building or place said: "an inn with a
-  // wagon out front" is an inn. A street's words win over a building's, a building's over a place's: "a village inn"
-  // is an inn by its road, and what isn't used is listed as skipped)
+  // What kind of site: a building's words make a roadside, a camp's a camp, a place's a street, else a wilderness (a
+  // caravan or soldiers make a camp only with no building or place said; "a village inn" is an inn by its road, the
+  // village skipped)
   const useHits = Object.values(WORDS.use).flat().flatMap((w) => find(w));
   const use = first(WORDS.use);
   const place = first(WORDS.place);
@@ -191,9 +184,8 @@ export function readDescription(text = "") {
   const kept = features.filter((f) => !SITE_LACKS[brief.site]?.[f]);
   if (kept.length) { brief.features = kept; kept.forEach((f) => chip("features", f, BRIEF_LABELS.features[f])); }
 
-  // Scattered things: each with the nearest amount word before it in its own part of the sentence (back to a comma,
-  // semicolon or period), carried back over a list of scattered things: "littered with trees, stumps and logs" makes
-  // all three lots, "dense fog, a few trees" trees few, "heavy rain, with trees" trees some; else some
+  // Scattered things: each takes the nearest amount word before it in its part of the sentence, carried back over a
+  // list ("littered with trees, stumps and logs" makes all three lots); else some
   const items = Object.values(SCATTER_ITEMS).flat().map(esc).join("|");
   const ITEM = new RegExp(`\\b(?:${items})\\b`, "g"), ENDS_WITH_ITEM = new RegExp(`\\b(?:${items})\\s*$`);
   const reach = (at) => {
@@ -211,8 +203,7 @@ export function readDescription(text = "") {
     if (!hits.length) continue;
     const m = hits.sort((a, b) => a.at - b.at)[0];
     const before = reach(m.at);
-    // (the nearest amount word before it wins; a "with" straight after another amount word, "littered with", "covered
-    // with", is that word's)
+    // (the nearest amount word wins; a "with" straight after another one, "littered with", is that word's)
     const said0 = [];
     for (const [a, aw] of Object.entries(AMOUNTS)) for (const w of aw) for (const x of before.matchAll(pattern(w))) said0.push({ a, w, at: x.index, end: x.index + x[0].length });
     said0.sort((x, y) => y.at - x.at);

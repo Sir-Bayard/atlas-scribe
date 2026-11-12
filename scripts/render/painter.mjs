@@ -19,14 +19,12 @@ export function styleOf(layout) {
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt, overheads, furniture, mist }:
- * thumb is a 300 px WebP for the scene list, failedArt the roles whose files wouldn't load (painted in plain colors),
- * brokenArt the roles any file failed for (painted with fewer variants, or plain), overheads the pieces a style paints
- * apart to lie over the map as tiles (a battle map's roofs and tree crowns): [{ name, kind, x, y, width, height (px,
- * from the map's corner), elevation, blob }], empty for a style without them; furniture a battle map's pieces to lie
- * over it as tiles, [{ src, f, x, y (their middle), width, height (px), rotation, floor, lock }]; levels a battle map's
- * floors above and below the ground, each its own image, [{ floor, blob }] (1 and up, -1 a cellar).
- * progress(pct, label) runs from 0 to 1 across loading, painting and encoding.
+ * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt,
+ * overheads, furniture, mist, levels }: thumb a 300 px WebP; failedArt the roles whose files all failed (painted
+ * plain); brokenArt the roles any file failed for; overheads the pieces painted apart to lie over the map as tiles
+ * ([{ name, kind, x, y, width, height (px from the map's corner), elevation, blob }]); furniture [{ src, f, x, y
+ * (middle), width, height, rotation, floor, lock }]; mist the fog tiles; levels a battle map's other floors ([{
+ * floor, blob }]). progress(pct, label) runs from 0 to 1.
  */
 export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
   const t0 = performance.now();
@@ -67,9 +65,8 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     return u ? loaded.get(u) : null;
   };
 
-  // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur, a single
-  // one too, so soft edges don't fade toward the map's border. The margin is capped, so a map at hundreds of pixels a
-  // square doesn't need tiles of many thousand pixels for the widest blur (the ground's soft patches) alone
+  // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur (one
+  // tile too, so soft edges don't fade at the map's border), capped so a fine map doesn't need huge tiles
   const margin = Math.min(1024, Math.ceil(3 * (style.MAX_BLUR ?? 4) * pp));
   const single = W + 2 * margin <= 4096 && H + 2 * margin <= 4096;
   const cols = single ? 1 : Math.ceil(W / tileSize), rows = single ? 1 : Math.ceil(H / tileSize);
@@ -105,8 +102,8 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   const floors = style.floorsOf?.(layout) ?? [];
   const n = cols * rows;
   const out = paintAll(0, 0.1, floors.length ? 0.6 : 0.9);
-  // (the ground saved, and its thumbnail made, and let go before any other floor is painted, so only one map-sized
-  // canvas is held at a time)
+  // (the ground saved, its thumbnail made and let go before any other floor is painted: one map-sized canvas at a
+  // time)
   progress(floors.length ? 0.6 : 0.9, "Saving the image");
   const blob = await out.convertToBlob({ type: "image/webp", quality });
   progress(floors.length ? 0.62 : 0.94, "Making the thumbnail");

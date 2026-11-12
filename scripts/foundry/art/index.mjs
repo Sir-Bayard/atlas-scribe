@@ -1,6 +1,6 @@
 /**
- * Art: turns the roles a Layout needs into image URLs, through the providers in order (FA Nexus for now; art
- * folders later). A role nobody fills is listed as missing and painted in a plain color.
+ * Art: turns the roles a Layout needs into image URLs, asking each provider in turn (only FA Nexus so far). A role
+ * nobody fills is listed as missing and painted in a plain color.
  */
 import * as faNexus from "./fa-nexus.mjs";
 import { safeMessage } from "./fa-nexus.mjs";

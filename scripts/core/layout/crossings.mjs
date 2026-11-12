@@ -45,8 +45,8 @@ export function roadWaterCrossings(roads, waters) {
 
 /**
  * plan crossings: [{ id, at, angle, length, width, class }]. Returns a Map id -> the crossing snapped (a copy, with
- * snappedTo: road id) or unchanged (snappedTo: null). Each road-over-water point takes one crossing at most, the
- * nearest first; a crossing reaches its length, and at least 3 squares.
+ * snappedTo: road id) or unchanged (snappedTo: null). A crossing looks for road-over-water points within its own
+ * length of it (at least 3 squares); each point takes one crossing at most, the nearest pair first.
  */
 export function snapCrossings(list, crossings) {
   const pairs = [];

@@ -141,7 +141,8 @@ export class SegGrid {
 
 /**
  * True when every path is a list with no holes of points that are lists of finite numbers (so a grid sees them where
- * a full scan would). Anything else goes to the full scan, which fails on a broken path just as it did before.
+ * a full scan would). Anything else goes to the full scan, so a broken path fails the same way with or without the
+ * grid.
  */
 export const finitePaths = (paths) => {
   for (let i = 0; i < paths.length; i++) {

@@ -1,17 +1,14 @@
 /**
- * A battle map's castle works (M6 chunk 8, the choices of 8 Nov): what a stone town wall becomes up close. Its
- * curtain is solid masonry with a wall walk along its top, a level of its own at 20 ft behind a parapet, reached by
- * open flights of stairs up its inner face and through its towers. Its towers (round at the corners, square along the
- * walls) and its gatehouse are buildings of thick masonry with floors: a tower a room on each floor, curling stairs
- * painted around a round tower's wall (FA has only straight flights) or a straight flight in a square one, and doors
- * onto the walk at its level (20 ft); a gatehouse a passage with doors at each end and a portcullis, a guard room
- * each side, and a room over the passage reached from the walk.
+ * A battle map's castle works: what a stone town wall becomes up close. Its curtain is solid masonry with a wall walk
+ * on top, a level of its own at 20 ft behind a parapet, reached by open stairs up its inner face and through its
+ * towers. Its towers (round at the corners, square along the walls) and gatehouse are thick-walled buildings with
+ * floors: a tower a room a floor with stairs (painted curling around a round tower, as FA has only straight flights)
+ * and doors onto the walk; a gatehouse a passage with doors and a portcullis, a guard room each side and a room over
+ * it.
  *
- * Laid out after the walls and their towers (walls.mjs: a tower or gatehouse is a building with `works`), before the
- * buildings' shells: each works building gets its shell (its ground floor's walls and doors), an interior for each
- * floor and its stairs, all as a building's (rooms.mjs), so the style and publish draw and wall them the same way;
- * each curtain run its Foundry walls (`curtain` on the wall item); and the wall stairs are stairs items of their own.
- * Pure: runs anywhere.
+ * Laid out after the walls (walls.mjs marks a tower or gatehouse works) and before the shells: each works building
+ * gets its shell, floors and stairs as a building's (rooms.mjs); each curtain run its Foundry walls (curtain on the
+ * wall item); the wall stairs are stairs items. Pure.
  */
 import { pointInPolygon, distanceToPath, polygonsOverlap, solidOverlap, shapeToPolygon } from "../geom.mjs";
 import { offset } from "../lots/poly.mjs";
@@ -184,11 +181,10 @@ const GUARD_ROOM = ["weapon.rack", "table.square", "stool", "chest"];
 const GATE_ROOM = ["table.work", "weapon.rack", "weapon.rack", "crate", "crate", "barrel"];
 
 /**
- * The castle works on a battle map: every works building (a tower or gatehouse a stone town wall set up, `works` its
- * kind) gets its shell, floors and stairs, and is marked `castle` (buildingShells leaves it); every stone town wall's
- * run gets `curtain` (its Foundry walls: face and back on the ground and the floor above, the parapet and the walk's
- * inner edge at the walk); and wall stairs go up the runs' inner faces. W, H: the map's size in squares. Returns how
- * many works were built.
+ * The castle works on a battle map: every works building gets its shell, floors and stairs and is marked castle
+ * (buildingShells leaves it); every stone town wall's run gets curtain (its walls on the ground and floor above, the
+ * parapet and the walk's inner edge at the walk); wall stairs go up the runs' inner faces. Returns how many were
+ * built.
  */
 export function castleWorks(items, W, H, seed) {
   const runs = items.filter((i) => i.kind === "wall" && i.class === "town" && Array.isArray(i.path) && i.path.length >= 2 && Array.isArray(i.face) && Array.isArray(i.back));
@@ -335,10 +331,8 @@ export function castleWorks(items, W, H, seed) {
     added.push({ kind: "interior", id: `${b.group}/shell/interior-floor2`, from: b.from, group: b.group, use: "gatehouse", floor: 2, rooms: [{ kind: "gateroom", poly: floor, floor: "stone", private: true }], walls: [], thickness: 0.3, material: "masonry", outerThickness: TW, outer: ringWalls(ring, [...ops2, ...slits(ops2)], mid), furniture: alongWalls(floor, GATE_ROOM, { doors: ops2.map((o) => atLength(ring, o.s)), r: rng(seed ?? 1, "castle", b.id, 2) }), foot });
   }
 
-  // Each run's curtain: its faces on the ground (and the floor above, below the walk), cut where the works stand; at
-  // the walk, the parapet along its face and its inner edge
-  // (cut where an open works building stands, whose walls close it at every level; a closed one has no floors above, so
-  // the curtain and its walk run on through it)
+  // Each run's curtain: its faces below the walk, cut where an open works building stands (a closed one has no floors
+  // above, so the curtain runs on through it); at the walk, the parapet and the inner edge
   const rings = works.filter((b) => !geo.get(b).closed).map((b) => ringOf.get(b));
   const otherFeet = items.filter((i) => i.kind === "building" && !i.works).map((b) => b.round ? shapeToPolygon({ circle: [b.cx, b.cy, b.len / 2] }, 0, 24) : Array.isArray(b.poly) ? b.poly : boxAt([b.cx, b.cy], [Math.cos(((b.rot ?? 0) * Math.PI) / 180), Math.sin(((b.rot ?? 0) * Math.PI) / 180)], b.len, b.dep));
   const ways = items.filter((i) => i.kind === "way" && !i.faint && Array.isArray(i.path) && i.path.length >= 2);
@@ -409,7 +403,6 @@ function trimEnds(w, rings) {
   const inAny = (p) => rings.some((ring) => pointInPolygon(p, ring));
   for (const atStart of [true, false]) {
     if (atStart) path.reverse();
-    // (the end is the path's last point now)
     const end = path[path.length - 1];
     if (!inAny(end)) {
       let walked = 0;

@@ -20,14 +20,18 @@ const jobs = {
     return { layout, roles: styleOf(layout).rolesFor(layout) };
   },
 
-  /** Layout to image. art: { role: [url, ...] }. Returns { blob, thumb, width, height, tiles, failedArt, brokenArt, ms }. */
+  /**
+   * Layout to image. art: { role: [url, ...] }. Returns paintLayout's result: { blob, thumb, width, height, tiles,
+   * failedArt, brokenArt, overheads, furniture, mist, levels, ms }.
+   */
   async paint({ layout, art, tileSize, quality }, progress) {
     return paintLayout({ layout, art, tileSize, quality }, progress);
   },
 
   /**
    * A quick look at a plan: laid out, then painted in plain colors (the sketch style, no art) with the longer side
-   * about px pixels. Returns { blob, width, height, pxPerSquare, squares, notes, counts, ms }.
+   * about px pixels. Returns { blob, width, height, pxPerSquare, squares, notes, labels, crossings, pinnables,
+   * counts, ms }.
    */
   async preview({ plan, px = 1600 }, progress) {
     const t0 = performance.now();
@@ -113,8 +117,8 @@ async function loadBitmap(url) {
 }
 
 /**
- * The soft-edge technique from the prototype: draw shapes blurred into a mask, fill the mask with a color or
- * pattern (source-in), and lay it down. Blurring the mask, never the texture, keeps the texture sharp.
+ * Soft edges: draw shapes blurred into a mask, fill the mask with a color or pattern (source-in), and lay it down.
+ * Blurring the mask, never the texture, keeps the texture sharp.
  */
 function softFill(g, width, height, shape, fill, blurPx, alpha = 1, op = "source-over") {
   const m = new OffscreenCanvas(width, height);
@@ -134,7 +138,7 @@ function softFill(g, width, height, shape, fill, blurPx, alpha = 1, op = "source
   g.restore();
 }
 
-// A message that can't be read (it failed to clone) would otherwise leave its job waiting for ever
+// A message that can't be read (it failed to clone) would otherwise leave its job waiting forever
 self.onmessageerror = () => self.postMessage({ id: null, error: { message: "a message to the worker couldn't be read" } });
 
 self.onmessage = async (event) => {

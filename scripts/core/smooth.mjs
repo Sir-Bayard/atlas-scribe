@@ -1,23 +1,18 @@
 /**
- * Curves for the plan's roads, rivers and walls. A plan gives a path as a few points; drawn straight between them,
- * every point is a sharp corner. Each path is replaced, for the layout only, by a smooth curve through the same points
- * (centripetal Catmull-Rom, which never loops or overshoots wildly at a tight turn), so a point placed by hand stays
- * on the line. A sharp turn (over 60 degrees) on a road or river is rounded off instead, cutting the corner by about
- * half a square, so the road never swings wide; a wall keeps its sharp corners and curves only its gentle bends. A
- * path that ended on another path still ends on it: its end is moved onto the other's curve.
- * A feature with straight: true is left as it is. The plan itself is never changed. Pure: runs anywhere.
- * Numbers are in squares.
+ * Smooth curves for a plan's roads, rivers and walls, for the layout only (the plan is never changed). Each path
+ * becomes a centripetal Catmull-Rom curve through its own points; a road's or river's sharp turn is rounded off
+ * instead of swung wide, a wall keeps its sharp corners, and an end that met another path is moved onto that path's
+ * curve. Features with straight: true are left as they are. Squares throughout.
  */
 
 /** The types whose paths are smoothed. */
-const CURVED = new Set(["road", "water", "wall"]); // (a cliff curves as a road does: its sharp corners rounded off)
+const CURVED = new Set(["road", "water", "wall"]); // (a cliff curves as a road does)
 
 /** Turns sharper than this (degrees) stay corners on a wall: a wall's corners are built, its gentle bends drift. */
 const WALL_CORNER = 50;
 
 /**
- * Turns sharper than this (degrees) on a road or river are rounded corners rather than part of the curve: a curve
- * forced through a sharp turn swings wide on both sides of it (over a square at a right angle), which reads wrong.
+ * Turns sharper than this (degrees) on a road or river are rounded corners: a curve forced through them swings wide.
  */
 const ROAD_CORNER = 60;
 
@@ -26,18 +21,16 @@ const ROUND = 1.5;
 
 const same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6;
 
-/** How far the path turns at point i, in degrees (prev and next given). */
+/** How far a path turns at `at`, coming from prev and going on to next, in degrees. */
 function turnAt(prev, at, next) {
   const a = Math.atan2(at[1] - prev[1], at[0] - prev[0]), b = Math.atan2(next[1] - at[1], next[0] - at[0]);
   return (Math.abs(((b - a + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) * 180) / Math.PI;
 }
 
 /**
- * A smooth curve through pts, a point about every step squares. Two points (or fewer) come back as they are.
- * corner: turns sharper than this many degrees are corners: the path is curved in pieces between them, so it never
- * swings wide to pass through a sharp turn. round: a corner is rounded off this far along each side (squares; 0
- * leaves it sharp). A path whose last point is its first (a ring road, a wall around a yard) is curved all the way
- * round, with no kink at the join.
+ * A smooth curve through pts, a point about every step squares (two points or fewer come back as they are). corner:
+ * turns sharper than this many degrees are kept as corners; round: how far along each side a corner is rounded off (0
+ * leaves it sharp). A closed path is curved all the way around.
  */
 export function smoothPath(pts, step = 1, corner = 180, round = 0) {
   if (!Array.isArray(pts) || pts.length < 3) return pts;
@@ -85,7 +78,7 @@ export function smoothPath(pts, step = 1, corner = 180, round = 0) {
     if (ringCorner && k === corners - 1) pieces[0] = headB.path; // the ring's join: the first piece starts after it
   }
   const out = pieces.flatMap((piece, k) => (k ? piece : piece));
-  if (ringCorner) out.push([...out[0]]); // close the ring again
+  if (ringCorner) out.push([...out[0]]);
   return out;
 }
 
@@ -116,8 +109,7 @@ function cutForward(path, d) {
 function catmullRom(p, step, closed, alpha = 0.5) {
   if (p.length < 3) return p.map((q) => [q[0], q[1]]);
   const n = p.length;
-  // Past each end: for a ring, the points on the other side of the join; else a point mirrored, so the curve leaves
-  // each end heading the way the path does
+  // Past each end: the points beyond the join for a ring, else a mirrored point so the curve leaves along the path
   const first = closed ? p[n - 2] : [2 * p[0][0] - p[1][0], 2 * p[0][1] - p[1][1]];
   const last = closed ? p[1] : [2 * p[n - 1][0] - p[n - 2][0], 2 * p[n - 1][1] - p[n - 2][1]];
   const q = [first, ...p, last];
@@ -157,9 +149,8 @@ function nearestOn(pt, path) {
 }
 
 /**
- * A copy of a (normalized) plan with its roads, rivers and walls along smooth curves. Ends that met another path of
- * the same type (within 0.05 squares of it, as the plan drew it) are moved onto that path's curve, so junctions and
- * river mouths still meet.
+ * A copy of a normalized plan with its roads, rivers and walls on smooth curves; ends that met another path of the
+ * same type (within 0.05 squares) are moved onto its curve, so junctions still meet.
  */
 export function smoothPlanPaths(plan, step = 1) {
   const features = Array.isArray(plan?.features) ? plan.features : [];

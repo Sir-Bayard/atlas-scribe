@@ -126,10 +126,9 @@ export function rockfall({ edge, r, free }) {
 }
 
 /**
- * Loose rock on a wild battle map's open ground (M6 chunk 10: a hand-built winter map has snowy rocks and boulders lying
- * about the open snow, which made AtlasScribe's look bare): groups of a boulder and a stone or two, and lone stones,
- * so many for each hundred squares of the map (OPEN_ROCKS), each kept clear of what's there (free: the layout's test;
- * near(x, y, r): whether anything already laid, a tree or a prop, lies within r).
+ * Loose rock on a wild battle map's open ground: groups of a boulder and a stone or two, and lone stones, so many per
+ * hundred squares, each clear of what's there (free: the layout's test; near(x, y, r): anything already laid within
+ * r).
  */
 export const OPEN_ROCKS = { groups: 0.45, singles: 1.2, gap: 1.6, clump: 7, edge: 2, edgeBoost: 2.5 };
 

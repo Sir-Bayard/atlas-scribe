@@ -16,11 +16,13 @@ export const CHARACTER_LABELS = {
 
 /**
  * Per character, changes to its profile's plot numbers (see LOT_TYPES) and street numbers (see DISTRICT_TYPES).
+ *
  * lots: frontage, depth and houseDepth multiply the profile's ranges; cover and setback are ranges in their own
- * right, or { add } to shift the profile's; outbuilding, croft, merge and rows are shares (number) or { add } or
- * { mul };
- * shapes and extras: each share multiplied (mul) then raised (add), kept between 0 and 1; roofs: weights multiplied
- * by name (missing names unchanged), add: new weights; styles: weights multiplied likewise; fill: a mix of its own.
+ * right, or { add } to shift the profile's, or { min } to raise it; outbuilding, croft, merge and rows are shares
+ * (number) or { mul, add }; shapes and extras: each share multiplied (mul) then raised (add), kept between 0 and 1;
+ * roofs: weights multiplied by name (missing names unchanged), add: new weights (a LOOK's roofs replace them);
+ * styles: weights multiplied likewise; fill: a mix of its own; wild multiplies.
+ *
  * gardens: the share of houses with a tended garden when the district doesn't say. streets: spacing, width and the
  * lanes' spacing multiply; bend multiplies; trim replaces.
  */
@@ -117,14 +119,10 @@ export const CHARACTER = {
 };
 
 /**
- * How each character shows from above, beyond its plots (1 Nov: the quarters must read apart at a glance,
- * as on good fantasy city maps). ground: what covers the district under its houses (a surface's art at alpha, or
- * lush grass); street: its streets' surface when the district doesn't say; streetTrees: trees along its streets;
- * roofs: its own roof materials, all of them used (not a random few from its profile's); back: the empty middles of
- * its blocks built up (sizes in feet, the gap between buildings, their use; clutter between them, or gardens and
- * orchards); sheds: the share of plots whose back is built up with sheds and stores rather than left open; extras:
- * how many small things stand by its streets (wells, fountains, wayside shrines, watch posts), as in good city maps
- * (more shrines and watch posts where the poor live, fountains where the rich do).
+ * How each character shows from above beyond its plots, so quarters read apart at a glance. ground: what covers the
+ * district under its houses (a surface's art at alpha, or lush grass); street: its streets' surface when unset;
+ * streetTrees; roofs: its own materials, all used; back: its blocks' middles built up (feet, gap, use, clutter or
+ * gardens); sheds: the share of plots with sheds behind; extras: how many wells, fountains, shrines and watch posts.
  */
 export const LOOK = {
   homes: {},
@@ -173,10 +171,7 @@ export const LOOK = {
   },
 };
 
-/**
- * How ordinary housing looks in a city district: trodden ground, its block middles built up with houses and yards (a
- * city's homes are packed, not houses on grass), and a few wells (1 Nov).
- */
+/** Ordinary housing in a city district: trodden ground, block middles built up with houses and yards, a few wells. */
 const CITY_HOMES = {
   ground: { surface: "trodden", alpha: 0.6 }, street: "cobble",
   back: { len: [16, 26], dep: [12, 18], gap: 4, use: "house", clutter: ["barrel", "firewood"] },

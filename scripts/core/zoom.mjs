@@ -1,12 +1,8 @@
 /**
- * Zooming into an overview: a battle map of a rectangle picked on a town or city, made as a plan of its own (7 Nov,
- * M6 chunk 3). Its streets, roads, water, squares, bridges, woods, parks
- * and a centerpiece's walls and fountains carry over where the overview has
- * them, at the zoom (twice true size by default, so there's room to fight); its districts keep their kind, character
- * and roofs and are filled again at battle size, so their houses are re-made; its notable buildings (a temple, an inn,
- * a smithy, a centerpiece, the plan's own buildings) stay where they stand, with their use, as landmarks. The new plan
- * is independent: it only remembers where it came from (`source`), so the same area can be zoomed again later.
- * Pure: runs in the worker, on the page and under node.
+ * Zooming into an overview: a battle map of a rectangle of a town or city, made as a plan of its own. Its streets,
+ * roads, water, squares, bridges, woods, parks and a centerpiece's walls and fountains carry over at the zoom (twice
+ * true size by default); its districts keep their kind, character and roofs and are filled again at battle size; its
+ * notable buildings stay where they stand as landmarks. The plan only remembers where it came from (source). Pure.
  */
 import { intersect, shapes, area } from "./lots/poly.mjs";
 import { shapeToPolygon, polygonsOverlap, unturn, pointInPolygon } from "./geom.mjs";
@@ -156,9 +152,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       features.push({ id: idFor(i.id.replace(/^.*\//, "")), type: "prop", class: "tree", at: P([i.x, i.y]), ...(i.species && i.species !== "bare" ? { species: i.species } : {}) });
     }
   }
-  // Bridges and fords where the overview put them (each lands again on its road over the water)
-  // (a stone town wall's moat comes over with the wall, which bridges it again where the roads cross: its own bridges
-  // aren't carried)
+  // Bridges and fords where the overview put them (a stone town wall's moat comes with the wall, which bridges it
+  // again)
   const moated = new Set((plan?.features ?? []).filter((f) => f.type === "wall" && f.class === "town" && f.outside === "moat").map((f) => f.id));
   for (const c of items.filter((i) => i.kind === "crossing" && Array.isArray(i.at) && !moated.has(i.from))) {
     if (c.at[0] < box[0] || c.at[0] > box[2] || c.at[1] < box[1] || c.at[1] > box[3]) continue;
@@ -172,10 +167,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       features.push({ ...structuredClone(f), id: idFor(f.id), at: P(f.at) });
     }
   }
-  // The plan's own low walls, hedges and fences, cut to the rectangle; its stone town walls too, built up close as a
-  // castle's are (layout/castle.mjs: a walk along the top, towers and gatehouses with floors), at their true thickness
-  // and height, their towers as far apart for the zoom as on the overview (a palisade or cliff isn't drawn on a battle
-  // map yet: it's left off, and the notes say so)
+  // The plan's own low walls, hedges and fences, cut to the rectangle; its stone town walls too, built up as a
+  // castle's (layout/castle.mjs), towers spaced for the zoom (a palisade or cliff is left off, and the notes say so)
   const LOW_WALLS = new Set(["drystone", "hedge", "fence", "stone"]);
   const notYet = new Set();
   for (const f of plan?.features ?? []) {
@@ -208,9 +201,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     for (const piece of pieces) features.push({ ...structuredClone(f), id: idFor(f.id), path: piece.map(P) });
   }
   for (const what of notYet) notes.push(`A battle map doesn't draw ${what} yet, so the ${what.slice(0, -1)} here is left off.`);
-  // Districts, cut to the rectangle: their kind, character and roofs kept, filled again at battle size. Their streets and
-  // notable buildings come from the overview (above and below), so they lay no streets of their own, and place no
-  // notable buildings and no centerpiece
+  // Districts cut to the rectangle, kind, character and roofs kept, filled again at battle size; their streets and
+  // notable buildings come from the overview, so they lay none of their own
   for (const d of items.filter((i) => i.kind === "district" && Array.isArray(i.poly))) {
     const src = planFeature.get(d.from);
     if (!src) continue;
@@ -239,9 +231,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     const notable = planned || /\/h-(anchor|shrine|watch)\d+$/.test(key) || parts.some((b) => USE_INFO[b.use]?.notable);
     if (!notable) continue;
     if (!parts.some((b) => polygonsOverlap(footOf(b), boxPoly))) continue;
-    // (one that fronted a street on the overview fronts it still: everything else grows with the zoom but streets keep
-    // their true width, so it's moved up to the street by what that leaves between them, along each street it fronted)
-    // (a centerpiece stays with its grounds, its plaza, lawns and wall, which aren't moved)
+    // (one that fronted a street still fronts it: streets keep their true width while everything else grows, so it's
+    // moved up to each street it fronted; a centerpiece stays with its grounds)
     const [dx, dy] = /\/h-anchor\d+$/.test(key) ? [0, 0] : frontShift(parts.map(footOf), fronts, (E - ft / 5) / E);
     const moved = dx || dy ? parts.map((b) => ({ ...b, cx: b.cx + dx, cy: b.cy + dy, ...(Array.isArray(b.poly) ? { poly: b.poly.map(([x, y]) => [x + dx, y + dy]) } : {}) })) : parts;
     features.push({ id: idFor(key.replace(/^.*\//, "") || "building"), type: "landmark", buildings: moved.map((b) => scaled(b, P, E)) });
@@ -261,7 +252,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     size: { squares: [W, H], ftPerSquare: 5 },
     features,
     source: { plan: plan?.id ?? null, name: plan?.name ?? null, rect: [x0, y0, x1, y1].map(r3), zoom },
-    // (100 px a square, fewer for a box so big its image would pass the 16383 px a side Foundry's images can have)
+    // (100 px a square, fewer for a box so big its image would pass OUTPUT_LIMITS.maxSide, WebP's 16383 px a side;
+    // never under 20)
     output: { pxPerSquare: Math.max(20, Math.min(100, Math.floor(OUTPUT_LIMITS.maxSide / Math.max(W, H, 1)))), scene: { name: name ?? `${plan?.name ?? "Map"} (battle map)` } },
   };
   return { plan: out, notes };
@@ -294,10 +286,9 @@ function frontOf(feet, w) {
 }
 
 /**
- * The move, in overview squares, that brings a notable building up to the streets it fronted once the zoom has grown
- * it but not them: for the nearest way it stood within FRONTED squares of, and another at a corner (turned more than
- * 45 degrees from the first), (half the way's width + the gap) x share toward each, share being what the zoom adds over
- * true size as a share of the zoom ((E - ft/5) / E): so each stands from it as it did at true size.
+ * The move, in overview squares, that brings a notable building back up to the streets it fronted (the nearest within
+ * FRONTED squares, and another at a corner): (half the way's width + the gap) times what the zoom adds over true
+ * size, as a share of the zoom ((E - ft/5) / E).
  */
 const FRONTED = 0.25;
 export function frontShift(feet, ways, share) {

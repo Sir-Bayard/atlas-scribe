@@ -73,13 +73,14 @@ export function joinLots(list) {
 }
 
 /**
- * Lays out a building of its own. form: temple, mansion, warehouse, barracks or inn. lot: joined (joinLots). use: what
- * it's for (a warehouse form can be a stable or an armory). fits(corners): true when a rectangle stands in the plot,
- * clear of the streets. sq(ft). r: its stream. roof, style: the district's picks for it (never thatch for a
- * temple). profile, character: the district's. Returns null when it doesn't fit, else { parts: [{ key, building, use,
- * wing }], surfaces: [{ class, poly, surface }], gardens: [{ cx, cy, w, d, rot }], trees: [{ x, y, s, species }],
- * walls: [path] (the grounds' wall along the street, with its gate), yard: { at(along, back), from, to, width } where
- * the yard's clutter goes, or null }.
+ * Lays out a building of its own. form: temple, mansion, warehouse, barracks or inn. lot: joined (joinLots). use:
+ * what it's for (a warehouse form can be a stable or an armory). fits(corners): true when a rectangle stands in the
+ * plot, clear of the streets. sq(ft). r: its stream. roof, style: the district's picks for it; safeRoof: the roof
+ * used instead of thatch on a temple, warehouse or barracks; ownStyles: the district names its own roof styles (else
+ * long ranges are gabled); profile, character: the district's; variant: the roof art's variant, shared by every part.
+ * Returns null when it doesn't fit, else { parts: [{ key, building, use, wing }], surfaces: [{ class, poly, surface
+ * }], gardens: [{ cx, cy, w, d, rot }], trees: [{ x, y, s, species }], walls: [path] (the grounds' wall along the
+ * street, with its gate), yard: { at(along, back), from, to, width } where the yard's clutter goes, or null }.
  */
 export function layForm({ form, lot, use, fits, sq, r, roof, safeRoof = roof, style, ownStyles = false, profile, character, variant }) {
   const [ux, uy] = lot.along, [nx, ny] = lot.inward;

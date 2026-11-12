@@ -1,14 +1,9 @@
 /**
- * Reshaping districts, areas, ponds, lakes, seas, roads, rivers, walls and docks by their points, for the preview
- * window. A road, river, wall or dock has a handle on each point of its path and one in the middle of each stretch
- * (dragging it adds a point there); a point where two paths meet moves for both, and after a road or river moves, the
- * plan's bridges and fords move to where the roads and the water now cross. For districts, areas and water drawn as
- * a shape: a shape given as a list of points or a rect has a handle on each corner (a rect becomes a list of points
- * once one is moved) and one in the middle of each side (dragging it adds a corner there); a circle has one handle on
- * its edge for its radius, an ellipse one on each axis. A shape turned by rot isn't reshaped here yet. Corners two
- * shapes share (within 0.05 squares) move together, and adding or removing a corner on a side two shapes share does
- * it to both, so a shared border stays shared. Every function returns a new plan and leaves the one given alone.
- * Pure: runs anywhere. Numbers are in squares.
+ * Reshaping shapes and paths by their points in the window. A path has a handle on each point and one mid-stretch
+ * (dragging it adds a point); a point where two paths meet moves for both, and bridges and fords follow the roads and
+ * water. A shape has a handle on each corner (a rect becomes points once moved) and mid-side; a circle one for its
+ * radius, an ellipse one per axis; a turned shape has no handles. Corners two shapes share (within SAME) move
+ * together, and a corner added or removed on a shared side is for both. Every function returns a new plan. Pure.
  */
 import { isObj } from "./plan.mjs";
 import { rerollable } from "./seeds.mjs";
@@ -234,12 +229,10 @@ function crossingSpots(plan) {
 }
 
 /**
- * After a road or the water moves (in a plan copy, changed in place): each of the plan's bridges and fords moves to the
- * nearest place a road now crosses the water (one each, nearest first), so they follow the road and the river. A
- * crossing that sat where a road crossed the water (in the plan before, when given) follows that same road over that
- * same water however far it moved; any other only moves within a few squares (or its own length), so a footbridge
- * placed off the roads, or one left after its road was deleted, doesn't jump across the map. One with no place left
- * for it stays put.
+ * After a road or the water moves (in a plan copy, changed in place): each bridge and ford moves to the nearest place
+ * a road now crosses the water. One that sat on a road's crossing (in the plan before) follows that road over that
+ * water however far it moved; any other moves only within a few squares, so a lone footbridge doesn't jump across the
+ * map.
  */
 export function refit(plan, before = null) {
   const feats = plan?.features ?? [];

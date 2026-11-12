@@ -3,16 +3,18 @@
  * frame (squares, x along len, y along dep, centered on the building). Pure: runs anywhere.
  *
  * A facet is { poly, down (its downslope, a unit vector; [0, 0] for a flat piece), eaveAngle (degrees: the texture's
- * rows run along the eave, its lower edge downslope), eaves (outline edges), flat (true for a flat piece) }. The list also carries:
- *   ridge: [a, b] or null; creases: [{ seg: [a, b], kind: "hip" | "valley" }]; caps: the ridge and hips, which get
- *   a ridge cap; parapet: for a flat roof, { w, joined: { start, end }, crenels, and for a round tower round: true and R };
- *   skylight: { cx, cy, len, dep } or null.
+ * rows run along the eave, its lower edge downslope), eaves (outline edges), flat (true for a flat piece) }. The list
+ * also carries:
+ * - ridge: [a, b] or null; creases: [{ seg: [a, b], kind: "hip" | "valley" }]; caps: the ridge and hips, which get a
+ *   ridge cap;
+ * - parapet: for a flat roof, { w, joined: { start, end }, crenels, and for a round tower round: true and R };
+ * - skylight: { cx, cy, len, dep } or null.
  *
  * A building with a footprint of its own (b.poly, a city row house) is drawn by rowFacets.
  *
- * Every form assumes equal pitches, so hips and valleys run at 45 degrees in plan (Tom Cartos-style roofs). A wing's
- * end that runs into another roof (b.join.start: the -x end, b.join.end: +x) has no hip or gable: its slopes carry on
- * half its width past the end and meet in a point, forming the valleys where it joins the other roof.
+ * Every form assumes equal pitches, so hips and valleys run at 45 degrees in plan. A wing's end that runs into
+ * another roof (b.join.start: the -x end, b.join.end: +x) has no hip or gable: its slopes carry on half its width
+ * past the end and meet in a point, forming the valleys where it joins the other roof.
  */
 
 import { spansAt } from "../core/geom.mjs";

@@ -106,7 +106,10 @@ function groupsHTML(fields, disabled, fonts) {
     ${more.length ? `<details class="as-pv-more" ${more.some((f) => f.value !== undefined) ? "open" : ""}><summary>More</summary>${more.map((f) => fieldHTML(f, disabled, fonts)).join("")}</details>` : ""}`;
 }
 
-/** The inspector for one feature: its kind, reroll and lock (districts and areas), its settings, Delete. */
+/**
+ * The inspector for one feature: its kind, reroll and lock (for whatever a reroll can redraw: seeds.mjs rerollable),
+ * its settings, Delete.
+ */
 export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
   const f = featureOf(plan, id);
   if (!f) return "";

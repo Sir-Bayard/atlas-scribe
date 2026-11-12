@@ -1,9 +1,8 @@
 /**
- * Quick Start's Battle map tab (M6 chunk 7, the choices of 8 Nov): a Describe box over the brief's form. What
- * the box reads (describe.mjs) is shown as chips and set in the form below it; a chip's × takes its choice out (back
- * to the site's default) until the description changes; things it reads but can't build yet (a cellar, an upper
- * floor) and words it doesn't know are listed too. The form is the brief (brief.mjs): the site, size, season, time,
- * weather, ground, features and scatter, then the site's own settings.
+ * Quick Start's Battle map tab: a Describe box over the brief's form. What the box reads (describe.mjs) shows as
+ * chips and is set in the form; a chip's × takes its choice out; what it read but left out, and words it doesn't
+ * know, are listed. The form is the brief (brief.mjs): site, size, season, time, weather, ground, features and
+ * scatter, then the site's own settings.
  */
 import { BRIEF, BRIEF_LABELS, SITE_LACKS, normalizeBrief } from "../core/brief.mjs";
 import { readDescription } from "../core/describe.mjs";
@@ -58,7 +57,6 @@ export function battleTabHTML() {
   </section>`;
 }
 
-/** The form's brief. */
 export function briefFromForm(form, seed) {
   const v = (n) => form.elements[n === "name" ? n : `b-${n}`]?.value ?? "";
   return normalizeBrief({
@@ -115,12 +113,11 @@ const getKey = (b, key) => key.split(".").reduce((o, k) => o?.[k], b);
 const setKey = (b, key, value) => { const [k, sub] = key.split("."); if (sub) b[k] = { ...(b[k] ?? {}), [sub]: value }; else b[k] = value; };
 
 /**
- * Wires the tab: the description read as it's typed (a moment after the typing stops), its chips, a chip's ×, the
- * site's own settings, and a new site's defaults when the site is picked by hand. What's set by hand is kept: the
- * form is the description's chips over the choices made by hand, over the site's defaults. A chip's × puts its choice
- * back to the hand's or the default; a hand's change wins over the chips until the description changes, and a
- * changed description wins over the hand's choices it names. Returns { flush }, which reads a description still
- * waiting to be read (for Make, pressed straight after typing).
+ * Wires the tab: the description read a moment after typing stops, its chips, a chip's ×, the site's own settings,
+ * and a new site's defaults when the site is picked by hand. The form is the description's chips over the choices
+ * made by hand, over the site's defaults: a choice set by hand is kept until the description newly says otherwise,
+ * and a chip taken out stays out while the description still says it. Returns { flush } (reads a pending description,
+ * for Make).
  */
 export function wireBattleTab(root) {
   const form = root.closest("form") ?? root;

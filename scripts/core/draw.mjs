@@ -1,14 +1,10 @@
 /**
- * Drawing new features in the window: the tools, where a clicked point snaps to, and the feature a finished drawing
- * makes. A district or area is drawn corner by corner (or as a box); its corners snap onto other districts' and
- * areas' corners and sides, and onto the map's edge, and a corner put on another shape's side adds that corner to
- * the other shape too, so the two share the side (their streets meet at gates there, and the shared corner moves for
- * both). A road, river or wall is drawn point by point; its points snap onto another of its kind (a road onto a
- * road, water onto water, a wall onto a wall) or onto the map's edge. Where a new road crosses water (or a new river
- * or stream crosses a road) with no bridge or ford there yet, one is added: a bridge, or a ford where a track or
- * path crosses a stream. A pond, lake or sea is drawn corner by corner as a district is; a quay along the water's edge
- * and a pier out into the water point by point. Bridges, fords, props and labels are a single click. Every function
- * returns a new plan and leaves the one given alone. Pure: runs anywhere. Numbers are in squares.
+ * Drawing new features in the window: the tools, where a clicked point snaps, and the feature a finished drawing
+ * makes. A district or area is drawn corner by corner (or as a box), its corners snapping onto other shapes' corners
+ * and sides and the map's edge (a corner on another shape's side is added to it too, so the two share the side). A
+ * road, river or wall is drawn point by point, snapping onto its own kind or the map's edge; where a new road crosses
+ * water, a bridge or ford is added. Bridges, fords, props and labels are a click. Every function returns a new plan.
+ * Pure; squares.
  */
 import { isObj, normalize } from "./plan.mjs";
 import { wallReach } from "./layout/walls.mjs";
@@ -248,15 +244,11 @@ export function waterTest(plan) {
 }
 
 /**
- * A way in for a new district or square (in the copy it's given), so what's drawn away from the roads is reached. A
- * district with no road into it and no street from a neighbor gets a lane from the nearest road to a point well
- * inside it, so its streets have somewhere to start (a hamlet builds along it). A square inside a district with no
- * road at it gets a street from the nearest road into it (a lane in a village or hamlet), so houses line the way to
- * it. Either runs from a road point it can reach without running through another district, a yard, park, farm,
- * square, plan building or pond, nor along a river inside its banks, nor (if a dry way is near enough) crossing
- * water, and not from off the map or the water's edge; with none, nothing is added and
- * the plan's problems say so. (Farms, yards, parks and squares out in the country get a lane in the layout.) Returns
- * the ids of anything added.
+ * A way in for a new district or square (in the copy it's given): a district with no road into it and no street from
+ * a neighbor gets a lane from the nearest road, and a square in a district off the roads a street from the nearest
+ * road. Each runs from a road point it can reach without crossing another district, yard, park, farm, square,
+ * building, pond or (when a dry way is near) water, and not from off the map; with none, nothing is added and the
+ * plan's problems say so. Returns the ids added.
  */
 function addAccess(plan, f) {
   const full = normalize(plan);
@@ -312,11 +304,8 @@ function segCross(a, b, c, d) {
 }
 
 /**
- * The plan with a new feature made by a tool from what was drawn: points (corners, a path's points, or one point),
- * or box: [x0, y0, x1, y1]. A new road or water gets bridges and fords where it crosses the other (crossings: their
- * ids); a district with no way in gets a lane from the nearest road, and a square in a district off the roads gets
- * streets around it (access: what was added). Returns { plan, id, crossings, access } or { error } (too few points, a shape that crosses itself, one too
- * small, or anything else the checker would refuse about the new feature).
+ * The plan with a new feature made by a tool: points (corners, a path's points, or one point), or box [x0, y0, x1,
+ * y1]. Returns { plan, id, crossings, access } (the bridges, fords and ways in added) or { error }.
  */
 export function addFeature(plan, toolId, { points = [], box = null } = {}) {
   const tool = toolOf(toolId);

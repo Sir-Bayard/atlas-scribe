@@ -23,7 +23,8 @@ export function houseOf(id) {
 
 /**
  * What the window can pick and pin from a layout: houses ({ id, from, parts: [building items], pinnable }, parts in
- * the order they're drawn; a district's centerpiece isn't pinnable, as its Centerpiece setting makes it) and the districts' own streets and lanes ({ id, from, class, faint, path, width, surface }).
+ * the order they're drawn; a district's centerpiece isn't pinnable, as its Centerpiece setting makes it) and the
+ * districts' own streets and lanes ({ id, from, class, path, width, surface, crossings }).
  */
 export function pinnables(layout) {
   const houses = new Map();

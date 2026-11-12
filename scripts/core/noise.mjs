@@ -1,6 +1,7 @@
 /**
- * Smooth seeded noise for bending streets and, later, ground variation. Value noise on a lattice with smooth
- * interpolation and a few octaves: cheap, deterministic, and enough for gentle wobble. Pure: runs anywhere.
+ * Smooth seeded noise for wobbly edges: shores, wandering rivers, ice and a battle map's ground. Value noise on a
+ * lattice with smooth interpolation and a few octaves: cheap, deterministic, and enough for gentle wobble. Pure: runs
+ * anywhere.
  */
 import { rng } from "./rng.mjs";
 

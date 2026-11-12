@@ -1,12 +1,8 @@
 /**
- * Blocks and lots for one district, after Vanegas et al. 2012 (the strip method CityEngine uses) and the burgage
- * and toft-and-croft plots of real medieval towns and villages.
- *
- * Blocks: the district minus every street, road, river and square, each buffered to its width.
- * Lots: along each street side of a block, a band as deep as the district type's plots, cut square to the street
- * at varied frontages. The wider street goes first, so it takes the corner plot. Slivers are merged into their
- * neighbor. Whatever is left of a block (its middle, its back edges) is back land.
- * Everything in squares. Pure: runs anywhere.
+ * Blocks and lots for one district, after Vanegas et al. 2012 (the strip method) and the burgage and toft-and-croft
+ * plots of medieval towns. Blocks: the district minus every street, road, river and square at its width. Lots: along
+ * each street side, a band as deep as the type's plots, cut square at varied frontages, the wider street first so it
+ * takes the corner; slivers merged; the rest is back land. Squares; pure.
  */
 import { pointInPolygon } from "../geom.mjs";
 import { OLD_PROFILES } from "../plan.mjs";
@@ -15,22 +11,13 @@ import { bands, difference, intersect, union, offset, area, shapes, centroid } f
 import { SegGrid, finitePaths } from "../spatial.mjs";
 
 /**
- * Plot numbers per district type, in feet. frontage and depth: ranges; cover: the share of the frontage the
- * house takes; houseDepth; setback: from the street; outbuilding: the chance of one behind the house; croft: the
- * chance the back of the plot is a small fenced field, croftDepth how far back it runs (a share of the plot behind
- * the yard) and croftFence how it's fenced (24 Oct: a quarter of village plots, half depth, open at the
- * back); bounds: the plot-line style when a district turns plotLines on (yards and crofts; else faint strips);
- * shapes: the chance a house has one rear wing (L), two (U) or wings and a back range around a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
- * merge: the chance a plot is joined to the one before it (a double plot); roofs: roof materials and their weights,
- * of which each district keeps `palette` (picked from its seed), so neighboring districts can differ; styles: the
- * share of each roof form (a terrace row shares its material and form, so it reads as a row); shapes also take T (a
- * wing from the middle of the back); extras: the chance of a bay out to the street (a cross-gable), gabled dormers on
- * a long roof, a round corner turret, a long house built in stepped sections, a square shed being round, and a range
- * at the far end of a long plot (rear); fill: what the back of a plot behind the yard holds (a strip garden, an
- * orchard in rows, a few trees, open ground) by share;
- * wild: the spacing, in squares, of trees scattered over ground no plot takes (beyond the back lanes, inside blocks);
- * rows: the chance a plot's house is a row house, the plot's whole street front under one roof, turning along a
- * second street at a corner (2 Nov: city quarters built up as continuous frontages, yards behind).
+ * Plot numbers per district type, in feet. frontage, depth: ranges; cover: the house's share of the frontage;
+ * houseDepth; setback; outbuilding: its chance; croft: the chance of a small fenced field at the back (croftDepth,
+ * croftFence); bounds: plot-line style when plotLines is on; shapes: the chance of one rear wing (L), two (U), a
+ * court, or T; merge: the chance of a double plot; roofs: materials by weight (each district keeps palette of them);
+ * styles: each roof form's share; extras: chances of a bay, dormers, a turret, stepped sections, a round shed, a rear
+ * range; fill: what the back of a plot holds; wild: spacing of trees on unbuilt ground; rows: the chance of a row
+ * house.
  */
 export const LOT_TYPES = {
   hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, shapes: { L: 0.25, T: 0.1, U: 0, court: 0 }, extras: { bay: 0.1, dormers: 0.05, turret: 0, steps: 0.2, roundShed: 0.25 },
@@ -44,10 +31,9 @@ export const LOT_TYPES = {
 };
 
 /**
- * Plot numbers on a battle map (5 ft squares), in feet, over a profile's own: a house big enough to fight in, so a few
- * to a street front rather than the true dozen (3 Nov: "some artistic fantasy map combat license"). Its roofs,
- * roof forms and what the back of a plot holds stay the profile's, so a corner zoomed from a map keeps that map's look.
- * No rows (a row's whole street front under one roof is a hall at this scale), no double plots, crofts or extras.
+ * Plot numbers on a battle map, in feet, over a profile's own: a house big enough to fight in, a few to a street
+ * front. Roofs, forms and back fill stay the profile's, so a zoomed corner keeps its map's look. No rows, double
+ * plots, crofts or extras.
  */
 export const BATTLE_LOTS = {
   hamlet: { frontage: [55, 80], depth: [60, 90], cover: [0.55, 0.8], houseDepth: [30, 40], setback: [10, 20], outbuilding: 0.5, wild: 2.5 },
@@ -91,8 +77,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
     ...ways.map((w) => ({ path: w.path, half: w.width / 2 })),
     ...water.map((w) => ({ path: w.path, half: w.width / 2 + 0.2 })),
   ]);
-  // Squares, yards and named buildings keep a little clear ground around them (on a battle map more: a plot's
-  // buildings keep half a square in from its edge, and a square in all from a named building, build.mjs)
+  // Squares, yards and named buildings keep a little clear ground around them (more on a battle map: build.mjs)
   const raw = difference([poly], [...cut, ...offset(blocked, district.battleScale ? 0.55 : 0.12)]);
   const blocks = shapes(raw).filter((b) => area(b.outer) - b.holes.reduce((s, h) => s + area(h), 0) > 0.5);
   // A fixed order, by position, so the same plan always cuts the same lots

@@ -84,10 +84,9 @@ const RANK = { hamlet: 0, village: 1, town: 2, city: 3 };
 
 /**
  * The notable buildings of each settlement, shared out among its districts. dlist: [{ id, poly, feature }] every
- * district (with seed: its own seed); squares: [polygon] squares and greens; roadIds: the plan's roads; ways: the plan's ways. Returns a Map
- * from a district id to { want: [use...], ctx } where ctx describes its settlement for the siting rules: { center,
- * radius, gates: [point], squares: [polygon] }. Depends only on the plan, except that a city of ten or more districts
- * thins its notables by each district's own seed (so a reroll changes only that district's).
+ * district; squares: polygons of squares and greens; roads; gates. Returns a Map of district id to { want: [use], ctx
+ * } (ctx: { center, radius, gates, squares } for the siting rules). Depends only on the plan, except that a city of
+ * ten or more districts thins its notables by each district's own seed.
  */
 export function notablesFor({ dlist, squares = [], roads = [], gates: wallGates = [], r }) {
   const out = new Map();
@@ -188,14 +187,11 @@ function characterWants(district, hasWater) {
 }
 
 /**
- * Which plots this district gives to which use. district: the plan feature; lots: from lotsFor; ways: [{ id, path,
- * width, class }]; want: the notable buildings the settlement gave it; ctx: its settlement (see notablesFor); water:
- * [{ path, width }] streams and rivers, in the order they flow, and [{ ring }] lakes and the sea; roadIds: the plan's
- * roads; ftPerSquare; r: the district's stream for uses; tryForm(use, form, lots): lays a building of its own out on
- * those plots, or null where it doesn't fit (the next best plots are tried). Returns { sites: [{ use, form, lots: [i],
- * made }] (a building of its own on those plots, joined, and what tryForm made of it), missed: [use] (notable
- * buildings it had no room for), dry: [trade] (trades it was given that need water, with none near), useOf: Map(i, use) (the usual house, put to that use), noThatch: Set(i), rear,
- * out } (what a plot's back range and outbuildings are used for in this district).
+ * Which plots this district gives to which use. lots: from lotsFor; ways: [{ id, path, width, class }]; want: the
+ * notable buildings it was given; ctx: its settlement (notablesFor); water: running water in flow order, and lakes
+ * and the sea ([{ ring }]); r: the district's uses stream; tryForm(use, form, lots): lays a building of its own on
+ * those plots, or null. Returns { sites: [{ use, form, lots, made }], missed (notables with no room), dry (water
+ * trades with no water near), useOf: Map(lot, use), noThatch: Set(lot), rear, out }.
  */
 export function planUses({ district, lots, ways, want = [], ctx, water = [], roadIds = new Set(), ftPerSquare, r, tryForm = null }) {
   const sq = (ft) => ft / ftPerSquare;
@@ -267,12 +263,13 @@ export function planUses({ district, lots, ways, want = [], ctx, water = [], roa
     }
     return v;
   };
-  /** The plots beside lot i along its street (same block and street, touching), in order. */
+  /** Whether plot b follows plot a along their street (same block and street, touching). */
   const joins = (a, b) => lots[a].block === lots[b].block && lots[a].way === lots[b].way && Math.hypot(lots[a].front.b[0] - lots[b].front.a[0], lots[a].front.b[1] - lots[b].front.a[1]) < 0.1;
   const runs = [];
   for (let i = 0; i < lots.length; i++) { if (i && joins(i - 1, i)) runs[i] = runs[i - 1]; else runs[i] = []; runs[i].push(i); }
+  // (the plots joined to lot i, in order)
   const run = (i) => runs[i];
-  /** Gives the best free plot (or plots, for a building of its own) to a use. */
+  /** Helpers for give(use), below, which gives the best free plot (or plots, for a building of its own) to a use. */
   // A temple is bigger in a town or city, and biggest in a temple district: it wants more frontage
   const bigger = (use) => (use !== "temple" ? 1 : ({ town: 1.5, city: 1.8 }[district.profile] ?? 1) * (characterOf(district) === "temple" ? 1.6 : 1));
   // (the depth that two plots in five here reach)

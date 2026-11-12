@@ -132,7 +132,6 @@ async function resolveWith(app, roles, progress, state) {
     if (!byName.has(`~${b}`)) byName.set(`~${b}`, a);
   }
 
-  // What each role needs
   const wanted = [];
   for (const role of roles) {
     const key = roleChain(role).find((r) => map[r]);

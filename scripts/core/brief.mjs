@@ -1,18 +1,16 @@
 /**
- * A battle map's brief: what Quick Start's Battle map tab asks, and what the Describe box reads from words (plan
- * decision 44, the choices of 8 Nov: one brief, two ways in). A brief in, an ordinary battle plan out (roads,
- * water, heights, woods, buildings, props), so everything after it (the window, rerolls, render, publish) works on
- * it as on any plan. Every choice left out has a default, and the same brief and seed always give the same plan.
- * Pure: runs anywhere. Numbers are in battle squares (5 ft).
+ * A battle map's brief: what Quick Start's Battle map tab asks and the Describe box reads from words. A brief in, an
+ * ordinary battle plan out (roads, water, heights, woods, buildings, props), so everything after it works on it as on
+ * any plan. Every choice left out has a default, and the same brief and seed always give the same plan. Pure; battle
+ * squares (5 ft).
  *
  * The sites:
  *   - wilderness: the ground and its features, scattered as thickly as asked;
- *   - roadside: a road through the country with one building (an inn, a farmstead, a shrine, a smithy or a
- *     watchtower) set back from it, its outbuildings beside it;
- *   - street: a hamlet's, village's, town's or city quarter's street at battle size, the district building the rest;
+ *   - roadside: a road with one building (an inn, a farmstead, a shrine, a smithy or a watchtower) set back from it;
+ *   - street: a hamlet's, village's, town's or city's street at battle size, the district building the rest;
  *   - camp: tents around a fire (a campsite), inside a ring of wagons (a caravan), or in rows (soldiers);
- *   - castle: a curtain wall with its towers and gatehouse (layout/castle.mjs builds their floors and the wall walk), a
- *     keep and buildings around its yard, its road in through the gate; a fort, a castle or a great castle by size.
+ *   - castle: a curtain wall with towers and a gatehouse, a keep and buildings around its yard (layout/castle.mjs
+ *     builds their floors and the wall walk); a fort, a castle or a great castle by size.
  */
 import { rng, hash128 } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
@@ -62,7 +60,6 @@ export const BRIEF_LABELS = {
   castleSize: { small: "Fort (40 by 38)", medium: "Castle (48 by 46)", large: "Great castle (58 by 54)" },
 };
 
-/** The map in squares, by size. */
 /**
  * The features a site never has room for (its castle's walls, a street's houses fill the map), offered grayed out for
  * it, with why.
@@ -71,6 +68,7 @@ export const SITE_LACKS = {
   castle: { pond: "A castle's walls and yard leave no room for a pond", cliff: "A castle's walls and yard leave no room for a cliff" },
   street: { rise: "A street's houses leave no room for a rise", hollow: "A street's houses leave no room for a hollow" },
 };
+/** The map in squares, by size. */
 export const BRIEF_SIZES = { small: [30, 24], medium: [45, 34], large: [60, 45] };
 
 /**
@@ -156,8 +154,8 @@ export function normalizeBrief(input = {}) {
 }
 
 /**
- * A battle plan from a brief. Returns { plan, brief } (the brief as used, every choice filled in; the plan keeps it
- * as `brief`, so the window can show what it was made from).
+ * A battle plan from a brief. Returns { plan, brief, notes } (brief: as used, every choice filled in, which the plan
+ * keeps as `brief` so the window can show what it was made from; notes: what couldn't be made as asked).
  */
 export function briefPlan(input = {}) {
   const b = normalizeBrief(input ?? {});
@@ -178,9 +176,8 @@ export function briefPlan(input = {}) {
   // 1. The road: across the map's long way, a little below its middle, wandering gently (a roadside's and a camp's by
   // it; a street's is the district's main street, below)
   let road = null;
-  // (a camp's road low enough to leave its camp the room above it)
-  // (a camp under a cliff keeps the top of the map for it: the camp squashes into the room between)
-  // (as long as that leaves the smallest ring of its kind room squashed to half its width; else no cliff, said so below)
+  // (a camp's road low enough to leave room above it; under a cliff the camp squashes into the room between, as long
+  // as its smallest ring still fits at half its width, else no cliff)
   let campTop = 0;
   if (b.site === "camp" && has("cliff")) {
     const d = campDims(b, W, H), least = d.kind === "soldiers" ? 2 * d.span : 2 * (d.span - d.R + RING_LEAST);
@@ -516,9 +513,8 @@ function street(b, r, W, H, features, taken, has) {
 /** A camp: its fire and tents (a campsite's around the fire, a caravan's inside its ring of wagons, soldiers' in rows). */
 function camp(b, r, W, H, road, features, taken, topFrom = 0) {
   const { kind, want, per, R, RW, span } = campDims(b, W, H);
-  // (beside the road, above it and clear of it, when there's one; else the map's middle. Above a road the room is
-  // from the map's top to the road's highest point under the camp; a ring with too little room either way is
-  // squashed to fit, and takes as many tents as go around it)
+  // (beside the road and above it when there's one, else the map's middle; a ring with too little room is squashed to
+  // fit and takes as many tents as go around it)
   let c, room;
   if (road) {
     const x = W * 0.5;
@@ -530,9 +526,8 @@ function camp(b, r, W, H, road, features, taken, topFrom = 0) {
     room = H - 2 - topFrom;
     c = [W / 2 + r.range(-2, 2), topFrom + (H - topFrom) / 2 + r.range(-1, 1)];
   }
-  // (a ring with too little room is squashed: the ring of tents takes what's left up and down once its outside (a
-  // caravan's wagons, kept their full distance outside the tents) is allowed for, but no less than a tent's room
-  // across from its middle)
+  // (a squashed ring takes the room left once its outside, a caravan's wagons, is allowed for, no less than a tent's
+  // room across from its middle)
   const extra = span - R;
   const ry = kind === "soldiers" ? R : Math.min(R, Math.max(RING_LEAST, room / 2 - extra));
   const sy = kind === "soldiers" ? 1 : ry / R;

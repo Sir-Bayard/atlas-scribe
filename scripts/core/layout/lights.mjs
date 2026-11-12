@@ -1,24 +1,17 @@
 /**
- * A battle map's lights and atmosphere (M6 chunk 6, the choices of 8 Nov): where its fires, candles, lanterns,
- * torches and lamp posts stand, each a Foundry light, most also a piece of FA art laid as a tile beside the furniture;
- * and the mist lying in its low places.
+ * A battle map's lights and mist: its fires, candles, lanterns, torches and lamp posts, each a Foundry light and most
+ * a piece of FA art laid as a tile with the furniture, and fog overlays in its low places.
  *
- *   - Indoor fires and candles: a light on each hearth, oven and forge the interiors placed; candles on each table and
- *     at each end of an altar, an oil lamp on each desk.
- *   - Floors above and below the ground: wall lanterns that always burn, spaced down an upstairs corridor (its rooms lit
- *     through their doors), else one in each room of a cellar or of a floor with no corridor.
- *   - Door lanterns: a wall lantern beside the street door of each inn, temple, shop and workshop that serves the
- *     street, and of a house now and then; a torch each side of a town gate, on its outer face.
- *   - Street lamps: in a city's districts (a town's and village's get none), lamp posts evenly spaced at the curb, in
- *     facing pairs along its highways and main roads and down one side of its streets and lanes; and in from each
- *     corner of a square and evenly along its sides; kept off doors, buildings and water.
- *   - Fires in the wild: a plan's campfire, fire pit, brazier, torch or lamp post (props) lit where it stands.
+ * - Indoors: a light on each hearth, oven and forge; candles on tables and an altar, an oil lamp on each desk.
+ * - Floors above and below: wall lanterns that always burn, down a corridor or one a room.
+ * - Door lanterns by the street door of each inn, temple, shop and workshop (a house's now and then); a torch each
+ *   side of a town gate.
+ * - Street lamps in a city's districts only: posts evenly spaced at the curb, in facing pairs on main roads and down
+ *   one side elsewhere, and around each square; off doors, buildings and water.
+ * - A plan's campfire, fire pit, brazier, torch or lamp post, lit where it stands.
  *
- * A fire or candle always burns; a lantern, torch or lamp post is lit only once it's dark (dawn, dusk or night: a
- * light's darkness range). Each light's numbers (LIGHTS) are in feet, as Foundry's are, and its color warm.
- *
- * Mist: fog overlays lying in the low places (on the map, under the tokens), faint
- * (10 to 30%), along a stream's bed, over a pool and in a hollow, never over the whole map.
+ * A fire or candle always burns; a lantern, torch or lamp post is lit only from dusk (a light's darkness range).
+ * LIGHTS are in feet, as Foundry's are. Mist lies faint (10 to 30%) along stream beds, over pools and in hollows.
  */
 import { rng } from "../rng.mjs";
 import { pointInPolygon, distanceToPath } from "../geom.mjs";
@@ -63,12 +56,10 @@ export const LANTERN_USES = new Set(["inn", "temple", "chapel", "shrine", "shop"
 const NO_LANTERN = new Set(["shed", "store", "tomb", "mausoleum", "barn", "granary", "warehouse", "stable", "ruin"]);
 const HOUSE_LANTERN = 0.3;
 /**
- * Lamp posts: how far apart along a street (squares), and along a lane, how far in from its edge (on its paving, at
- * the curb, so a row of house fronts never pushes one out of line), the classes of way
- * that get them; around a square's edge, how far apart and how far in. Each way's posts are evenly spaced along it
- * and keep their rhythm: one whose place is taken slides a little along the street (up to SLIDE), else is left out.
- * Paired: a highway's posts, or any way's PAIRED wide (squares) or wider, face each other across it (main roads:
- * chosen 8 Nov); the rest have theirs all down one side.
+ * Lamp posts: spacing along a street and a lane (squares), how far in from the edge (on the paving at the curb), the
+ * classes that get them, and a square's spacing and inset. Each way's posts keep their rhythm; one whose place is
+ * taken slides up to SLIDE along, else is left out. A highway's posts, or any way PAIRED wide or wider, face each
+ * other; others run down one side.
  */
 const LAMPS = { step: 7, laneStep: 12, curb: 0.35, classes: new Set(["highway", "street"]), lanes: new Set(["lane"]), squareStep: 6, squareIn: 0.7, apart: 3 };
 const SLIDE = [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8];
@@ -76,13 +67,6 @@ const PAIRED = 5;
 /** The open places whose edges get lamp posts in a city. */
 const SQUARES = new Set(["square", "plaza", "market"]);
 
-/**
- * The map's lights: [{ kind: "light", id, from, class, at: [x, y], elevation, prop: { f, x, y, rot, variant } | null }]
- * (class a key of LIGHTS; prop the art piece placed as furniture is, x, y its body's middle). items: the battle
- * layout's items so far (interiors, shells, ways, buildings, districts, gates, props, levels); size: the map's
- * [width, height] in squares (street lamps stay on it). Light props the plan placed are taken out of items (they're
- * drawn as lights, not painted).
- */
 /** A floor's height in feet. */
 const FLOOR_FT = FLOORS.height;
 
@@ -141,6 +125,11 @@ function floorLanterns(it, stairBoxes) {
   return out;
 }
 
+/**
+ * The map's lights: [{ kind: "light", id, from, class, at, elevation, prop: { f, x, y, rot, variant } | null }].
+ * items: the battle layout's items so far; size: the map's [width, height] in squares. Light props the plan placed
+ * are taken out of items (they're drawn as lights).
+ */
 export function lightsOf(items, seed, { size = null } = {}) {
   const r = rng(seed ?? 1, "lights");
   const out = [];
@@ -343,7 +332,6 @@ function along(path, step, first = step / 2) {
   return out;
 }
 
-/** A path's length. */
 function pathLength(path) {
   let L = 0;
   for (let i = 1; i < path.length; i++) L += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);

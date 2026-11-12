@@ -253,7 +253,6 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   else if (NOT_DRAWN_YET[f.type]?.includes(f.class))
     warn(f.id, "class", `"${where}": ${f.type}s of class "${f.class}" aren't drawn yet; it stays in the plan but won't appear on the map.`);
 
-  // Geometry
   const g = t.geometry;
   const need = (ok, field, message) => (ok ? true : (err(f.id, field, message), false));
   if (g === "point" && !(f.type === "label" && typeof f.of === "string" && f.of)) need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y]${f.type === "label" ? " (or of: the id of the district, area or landmark it names)" : ""}.`);
@@ -343,7 +342,7 @@ function isPath(p) {
   return Array.isArray(p) && p.length >= 2 && p.every(isPoint);
 }
 
-/** The smallest a shape may be, in squares across (and so a tenth of a square across, squared, in area). */
+/** The smallest a shape may be across, in squares (its area at least this squared). */
 const MIN_SIZE = 0.1;
 /** A landmark's part may be smaller (a pinned house's dormer is a sliver of roof): a fiftieth of a square. */
 const MIN_PART = 0.02;

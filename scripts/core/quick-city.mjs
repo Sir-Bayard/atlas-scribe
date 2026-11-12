@@ -161,7 +161,7 @@ function simplify(path, tol) {
 
 /**
  * The city's plan pieces: { W, H, features, label, center, px }. choices: Quick Start's (size city or metropolis,
- * water from CITY_WATER, roads, center, surroundings, season); seed; the name.
+ * water from CITY_WATER, river, shape, roads, center, surroundings, season); seed: the plan's.
  */
 export function cityPlan(choices, seed) {
   const S = CITY_SIZES[choices.size];
@@ -286,9 +286,8 @@ export function cityPlan(choices, seed) {
       features.push({ id: "lake", type: "water", class: "lake", shape: lake });
     }
   }
-  // Running water: one of four river forms (from the review of the first city renders: "every river through a city
-  // reads almost exactly the same"), the choice's or picked by the seed. A river meeting the sea takes a form that can
-  // reach it
+  // Running water: one of four river forms, chosen or picked by the seed, so cities don't all read alike; a river
+  // meeting the sea takes a form that can reach it
   let rivers = [], island = null;
   if (water === "river" || water === "estuary") {
     made ??= riverForm({ form, water, r: rng(seed, "quick", "river"), C, R, W, H, S, radiusAt, riverAngle, sea, bendSize: shape === "shore" || shape === "cliff" ? R * 0.6 : R });
@@ -298,9 +297,8 @@ export function cityPlan(choices, seed) {
   }
   river = rivers[0] ?? null;
   features.push(...rivers);
-  // The rivers as bands nothing is built in (half their widest, and a bank; the layout curves them a little off these
-  // points, and widens a river up to 1.9 times within 6 squares of the sea), each stretch buffered by Clipper and
-  // joined, so a bend never folds a band over itself; and a disc around a mouth, where it flares into the sea
+  // The rivers as bands nothing is built in (half their widest plus a bank), each stretch buffered and joined so a
+  // bend never folds a band over itself, and a disc around a mouth where it flares into the sea
   for (const rv of rivers) {
     const ft = feetOf(rv), dense = [rv.path[0]], wide = [ft[0] / 25];
     for (let i = 1; i < rv.path.length; i++) {
@@ -352,10 +350,8 @@ export function cityPlan(choices, seed) {
   }
   const inWater = (p) => wet.some((q) => inside(p, q));
 
-  // Gates: spread around the land side of the wall, none toward the sea or the lake. Each main road runs from the
-  // center straight out to the wall (a slight jog on the way), then wanders to the map's edge; a road is kept only
-  // when it stays out of the sea and the lake and crosses the river squarely enough (at 40 degrees or more). Gates
-  // stand at least a share of an even spacing apart, the share eased when the land side is narrow
+  // Gates spread around the land side of the wall. Each main road runs from the center out to the wall, then wanders
+  // to the map's edge, kept only when it stays out of the sea and lake and crosses the river at 40 degrees or more
   const gateCount = S.gates[choices.roads] ?? S.gates.through;
   const blocked = (a) => (headland ? apart(a, seaward + Math.PI) > 0.6 : sea || lake ? apart(a, seaward) < 1.15 : false);
   const roadAt = (a) => {
@@ -394,7 +390,6 @@ export function cityPlan(choices, seed) {
       const path = roadAt(a);
       if ((sea || lake) && densify(path, 0.5).some((p) => inside(p, sea ?? lake))) continue;
       if (!crossesWell(path)) continue;
-      // (none up or down the cliff, and none at the wall's end by it)
       // (none up or down the cliff or along its face, and none at the wall's end by it)
       if (cliff && (densify(path, 0.5).some((p) => distToPath(p, cliffKeep.path) < cliffKeep.half + 0.9) || distToPath(add(C, mul(dirOf(a), radiusAt(a))), cutLine) < 5)) continue;
       // (its gate clear of where a river passes the wall, where the wall stops at a tower each side)
@@ -462,9 +457,8 @@ export function cityPlan(choices, seed) {
   }
   const landArea = land.reduce((s, p) => s + area(p), 0);
 
-  // Sectors between neighboring main roads (each road's own line is the edge, out to beyond the wall), split by the
-  // water into pieces; an island in the river is a piece of its own, the main roads crossing it (cut into wedges, it
-  // left slivers too small to build on)
+  // Sectors between neighboring main roads, split by the water into pieces; an island in the river is a piece of its
+  // own (cut into wedges it left slivers too small to build on)
   const far = R * 3;
   const pieces = island ? intersect(land, [island]).filter((p) => area(p) > 4) : [];
   const mainland = island ? difference(land, [island]) : land;
@@ -524,10 +518,8 @@ export function cityPlan(choices, seed) {
   // Points the same up to rounding become one point, so shared corners stay shared
   const all = order.flatMap((w) => w.poly);
   for (const p of all) for (const q of all) if (p !== q && Math.abs(p[0] - q[0]) < 0.15 && Math.abs(p[1] - q[1]) < 0.15 && Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.15) { q[0] = p[0]; q[1] = p[1]; }
-  // A corner of one ward lying on another's side (where a ward street meets a main road, say) goes into that side too,
-  // so the two share it exactly
-  // (only where the ward itself runs along that side from the corner: a corner merely near another ward's side, on
-  // a side of its own, would pull that side over)
+  // A corner of one ward lying on another's side goes into that side too, so the two share it exactly (only where the
+  // ward runs along that side from the corner)
   const along = (u, v) => { const lu = Math.hypot(...u) || 1, lv = Math.hypot(...v) || 1; return Math.abs(u[0] * v[1] - u[1] * v[0]) / (lu * lv) < 0.1; };
   for (const w of order) w.poly.forEach((p, i) => {
     const prev = w.poly[(i + w.poly.length - 1) % w.poly.length], next = w.poly[(i + 1) % w.poly.length];
@@ -542,11 +534,11 @@ export function cityPlan(choices, seed) {
   });
   const districts = order.map((w, k) => ({
     id: `ward-${k + 1}`, type: "district",
-    profile: "city", // dense inside the walls (its character sets how dense, chunk 4)
+    profile: "city", // dense inside the walls, its character setting how dense
     shape: tidyRing(outline(w.poly)),
   })).filter((d) => d.shape.length >= 3);
-  // Last repairs: an outline that crosses itself is untangled (its biggest piece kept), and where two wards still
-  // overlap (a road meeting a river's bank at a shallow angle can leave a sliver both claim) the smaller gives way
+  // Last repairs: an outline crossing itself is untangled (its biggest piece kept), and where two wards still overlap
+  // the smaller gives way
   const inset = (poly) => offset([poly], -0.03);
   for (const d of districts) if (polygonCrossesItself(d.shape)) { const u = biggest(union([d.shape])); if (u) d.shape = tidyRing(outline(u)); }
   for (let i = 0; i < districts.length; i++) for (let j = i + 1; j < districts.length; j++) {
@@ -734,11 +726,10 @@ function compass(a) {
 const cap = (w) => w[0].toUpperCase() + w.slice(1);
 
 /**
- * Gives each ward a character by rule (1 Nov: by the city's geography, varied by seed): the market on the
- * central square, a temple beside it, docks on the water, the garrison against the wall by a gate (sometimes walled
- * in as a citadel), the nobles on the quiet side away from the main roads and upstream, crafts by the water downstream
- * and near the gates, the poor by the wall away from the nobles, merchants along the main roads; the rest are homes.
- * Sets each district's character and name in place. Returns the citadel ({ features }) or null.
+ * Gives each ward a character by the city's geography, varied by seed: the market on the central square, a temple
+ * beside it, docks on the water, the garrison by a gate (sometimes walled as a citadel), the nobles on the quiet side
+ * upstream, crafts by the water downstream and near the gates, the poor by the wall, merchants along the main roads,
+ * the rest homes. Sets each district's character and name. Returns the citadel ({ features }) or null.
  */
 function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island, ringPoly, oldPoly, gateRoads, allRoads, squarePoly = null, harbor = true, r }) {
   if (!districts.length) return null;
@@ -837,13 +828,12 @@ function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island,
   return { features };
 }
 
-/** A polygon's area-weighted check: true when every point of `pts` is on the map, off the water and clear of polys. */
+/** True when no point of `pts` lies inside any of polys. */
 const clearOfAll = (pts, polys) => pts.every((p) => !polys.some((q) => inside(p, q)));
 
 /**
- * Outside the walls: suburbs (village districts strung along the main roads beyond about half the gates, more in a
- * metropolis: the poor and the crafts that weren't let in), farmsteads by the roads farther out, field systems in the
- * land between the roads (to the map's edge in farmland, a ragged way out in mixed country) and woods. Plan features.
+ * Outside the walls: suburbs along the roads beyond about half the gates, farmsteads farther out, field systems
+ * between the roads, and woods. Plan features.
  */
 function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater, rivers = [], r }) {
   const out = [];
@@ -878,8 +868,8 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
     for (let n = 2; out.some((f) => f.name === name); n++) name = `${name.replace(/ [IVX]+$/, "")} ${["", "", "II", "III", "IV", "V", "VI"][n] ?? n}`;
     out.push({ id: `suburb-${suburbs.length}`, type: "district", profile: "village", ...(character !== "homes" ? { character } : {}), name, shape: poly });
   }
-  // Cemeteries outside the walls: one or two (two in a metropolis) beside a main road past the suburbs (their own
-  // stream, so the rest draws as before)
+  // Cemeteries outside the walls: one or two beside a main road past the suburbs (their own stream, so the rest is
+  // unchanged)
   const graves = [];
   {
     const cr = r.fork("cemeteries"), want = metro ? 2 : cr.chance(0.5) ? 2 : 1;
@@ -1167,9 +1157,8 @@ function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle, sea, b
   }
 
   if (form === "loop") {
-    // Around the city just outside its wall, all but across a neck of land: in from the map's edge, around, and out
-    // again beside where it came in (the neck turned toward the side with the most room beyond it)
-    // (the wall's corners stand up to 3% out; its outer half, its towers, the river's half width and its no-build bank)
+    // Around the city just outside its wall, all but across a neck of land turned toward the side with the most room
+    // (the wall's corners stand up to 3% out, then its towers, the river's half width and its bank)
     const need = (a) => radiusAt(a) * 1.03 + 12 / 25 / 2 + 0.9 + half + 1.2 + 0.3;
     const room = (a) => toEdge(C, dirOf(a), W, H) - 1.5;
     const dTheta = 1.5 / (R * 1.1);

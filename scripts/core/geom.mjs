@@ -177,7 +177,6 @@ export function solidOverlap(a, b, eps = 0.01) {
   return polygonsOverlap(a, shrunk) || pointInPolygon(cb, a) || pointInPolygon(ca, b);
 }
 
-/** Length of a path. */
 export function pathLength(path) {
   let n = 0;
   for (let i = 0; i < path.length - 1; i++) n += Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]);

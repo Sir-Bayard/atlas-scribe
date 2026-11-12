@@ -55,17 +55,18 @@ function crossAt(px, py, qx, qy, s) {
 /**
  * poly: the district polygon. field: from makeField. roads: [{ path }] the plan's roads (and any streets already
  * there). water: [{ path, clear }] (clear: distance from the center line to keep out of; clears, one a segment, where
- * it varies; body, a lake's polygon, its path then its shore). blocked: polygons
- * streets end at and never cross (squares, yards, landmarks). gates: [{ at, nx, ny, kind }] points on the edge
- * shared with another district (nx, ny: the way into this district) where a street of that kind must start, so
- * the two districts' streets meet. borders: the edges shared with other districts, as paths: a street that reaches
- * one away from a gate bends onto a gate nearby or is cut back to its last junction. passes: [{ kind, spacing, minLength, bridge }] in order (spacing in squares;
- * bridge: "bridge" or "footbridge" lets that pass cross water; only: "major" or "minor" keeps that pass to one of
- * the field's two directions). A pass { kind: "back", depth } traces nothing: it lays back lanes, depth behind the
- * streets and roads so far that run with the field's major direction (see backLanes). r: the district's random stream. trimDeadEnds:
- * drop short spurs that end nowhere.
- * Returns { streets: [{ path, kind, ends: [start, end] }], bridges: [{ at, angle, length, kind }] }; ends are
- * "road", "junction", "edge", "gate", "blocked", "water" or "open"; bridge angle in degrees, length in squares.
+ * it varies; body, a lake's polygon, its path then its shore). blocked: polygons streets end at and never cross
+ * (squares, yards, landmarks). gates: [{ at, nx, ny, kind }] points on the edge shared with another district (nx, ny:
+ * the way into this district) where a street of that kind must start, so the two districts' streets meet. borders:
+ * the edges shared with other districts, as paths: a street that reaches one away from a gate bends onto a gate
+ * nearby or is cut back to its last junction. passes: [{ kind, spacing, minLength, bridge }] in order (spacing in
+ * squares; bridge: "bridge" or "footbridge" lets that pass cross water; only: "major" or "minor" keeps that pass to
+ * one of the field's two directions). A pass { kind: "back", depth } traces nothing: it lays back lanes, depth behind
+ * the streets and roads so far that run with the field's major direction (see backLanes). r: the district's random
+ * stream. trimDeadEnds: drop short spurs that end nowhere.
+ *
+ * Returns { streets: [{ path, kind, ends: [start, end] }], bridges: [{ at, angle, length, kind }] }; ends are "road",
+ * "junction", "edge", "gate", "blocked", "water" or "open"; bridge angle in degrees, length in squares.
  */
 export function traceStreets({ poly, field, roads = [], water = [], blocked = [], gates = [], borders = [], passes = [], r, step = 0.35, maxLength = 300, trimDeadEnds = false }) {
   const finest = Math.min(...passes.filter((p) => p.spacing).map((p) => p.spacing), 8);

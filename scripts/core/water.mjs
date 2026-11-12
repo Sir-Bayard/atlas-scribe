@@ -1,9 +1,8 @@
 /**
- * Water as the layout, the checker and the drawing tools all see it. A stream, river or canal runs along a path, as
- * wide as its width at its first point and its endWidth at its last (or a width at each point), and opens out where it
- * meets a lake or the sea. A pond, lake or sea is a body of water drawn as a shape: its outline is curved (unless it's
- * straight) and a little ragged, and a sea's corners near the map's edge are moved past it, so its outline is the
- * coast. Pure: runs anywhere. Numbers are in squares unless they say feet.
+ * Water as the layout, the checker and the drawing tools see it. A stream, river or canal runs along a path, its
+ * width at its first point and its endWidth at its last (or one at each point), opening out where it meets a lake or
+ * the sea. A pond, lake or sea is a curved, slightly ragged shape; a sea's corners near the map's edge are moved past
+ * it, so its outline is the coast. Pure; squares unless they say feet.
  */
 import { BODIES, RUNNING, SHORES } from "./plan.mjs";
 import { shapeToPolygon, pointInPolygon, distanceToPath, polygonCrossesItself } from "./geom.mjs";
@@ -65,10 +64,8 @@ export const frozenOf = (f, winter) => (typeof f.frozen === "boolean" ? f.frozen
 const bodyMemo = new WeakMap();
 
 /**
- * A body of water's outline: { poly, ring } (ring closed on its first point), or null when its shape has fewer than
- * three usable corners. W, H: the map's size; seed: the plan's seed (for the ragged shore; not the lake's own, so
- * rerolling a lake changes its shore and reeds but never its outline, which steers the streets around it). The same
- * feature, map and seed always give the same outline.
+ * A body of water's outline: { poly, ring } (ring closed), or null with fewer than three usable corners. W, H: the
+ * map's size; seed: the plan's (not the lake's own, so a reroll never moves its outline, which steers the streets).
  */
 export function bodyOf(f, { W, H, seed = 1 }) {
   const key = JSON.stringify([W, H, seed, f.id, f.class, f.straight, f.shape]);
@@ -91,9 +88,8 @@ function makeBody(f, W, H, seed) {
   };
   pts = tidy(pts);
   if (pts.length < 3) return null;
-  // Sharp corners (a box's) are rounded off inside the outline rather than curved through, so a shape keeps to
-  // what was drawn; gentle ones are curved through
-  // (a point at least every half square either way, for the ragged edge to move)
+  // Sharp corners are rounded off inside the outline, gentle ones curved through; a point at least every half square
+  // for the ragged edge to move
   const curve = (path) => densify(path.length >= 3 ? smoothPath(path, 0.5, 60, 4) : path, 0.5);
   let ring = null;
   if (f.class === "sea" && Number.isFinite(W) && Number.isFinite(H)) {
@@ -315,10 +311,9 @@ export function pastEdge([x, y], w) {
 export const bankOf = (w) => (w.body ? w.reach ?? BANK : BANK);
 
 /**
- * How a stream or river on a battle map wanders (9 Nov: running water there was too even): its middle line
- * swings a little either side of the plan's path, sway squares at most (a share of its width), over a long wave; and
- * its width swells and narrows by up to swell of itself over a shorter one. Both fade out near a crossing, so a
- * bridge's abutments stand on straight banks, and both come from the plan's seed and the water's id.
+ * How running water wanders on a battle map: its middle swings up to sway of its width either side of the plan's path
+ * over a long wave, and its width swells by up to swell over a shorter one. Both fade out near a crossing, so a
+ * bridge stands on straight banks, and come from the plan's seed and the water's id.
  */
 export const WANDER = { sway: 0.12, swayMin: 0.2, swayMost: 0.7, swayWave: 9, swell: 0.12, swellWave: 5.5, step: 0.5, calm: 1.5 };
 

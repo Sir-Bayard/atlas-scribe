@@ -7,7 +7,7 @@ import { poissonInPolygon } from "../scatter.mjs";
 import { WOOD_DENSITY } from "../plan.mjs";
 import { makeNoise } from "../noise.mjs";
 
-/** Cap on random tries for one area, so a huge or odd shape can't run on for ever. */
+/** Cap on random tries for one area, so a huge or odd shape can't run on forever. */
 const MAX_TRIES = 20000;
 const MAX_CHARACTER = 60000; // a sparse, open or dense wood's ceiling, however big
 
@@ -53,11 +53,10 @@ export function fillFarmstead({ area, r, free, addBuilding, items }) {
 }
 
 /**
- * Woods: groves of trees whose crowns touch, rather than trees dotted evenly. Trees are spread by Poisson-disk sampling
- * (Bridson 2007) at a close spacing, but only where a noise is high enough, the threshold set so the area holds about
- * the number of trees asked for (trees; else about one per 2.4 square squares): a few trees make a few groves with
- * open ground between, many make a forest with clearings. Points are laid out before checking for anything else, so
- * what another district places can remove trees but never moves the rest. mix gives the share of each species.
+ * Woods: groves of trees whose crowns touch. Trees are spread by Poisson-disk sampling (Bridson 2007) where a noise
+ * is high enough, its threshold set so the area holds about the number asked for (else one per 2.4 square squares).
+ * Points are laid out before anything else is checked, so another district's things can remove trees but never move
+ * the rest. mix gives each species' share.
  */
 export function fillWoods({ area, r, free, items, winter = false }) {
   if (area.trees === 0) return []; // a wood with no trees asked for: open ground
@@ -127,7 +126,7 @@ function fillCharacter({ area, poly, r, free, items, winter }) {
     const level = vals.length ? vals[Math.floor(vals.length / 10)] : -Infinity;
     keep = (x, y) => gaps(x, y) >= level;
   }
-  // As many tries as the wood can hold (a fixed budget ran out partway across a big wood, leaving bare swathes)
+  // As many tries as the wood can hold, so a big wood has no bare swathes
   const room = Math.ceil((1.3 * polyArea(poly)) / (spacing * spacing)) + 100;
   const base = poissonInPolygon(poly, spacing, r.fork("points"), { keep, max: Math.min(MAX_CHARACTER, Math.max(MAX_TRIES, room)) });
   const [bx0, by0, bx1, by1] = bbox(poly), cell = spacing / Math.SQRT2;
@@ -164,9 +163,8 @@ function fillCharacter({ area, poly, r, free, items, winter }) {
 }
 
 /**
- * A wood's share of broadleaf trees when its mix doesn't say: mostly broadleaf, so summer woods read as leafy
- * canopies; in winter mostly firs, so winter woods keep a snowy evergreen look rather than bare branches. Open
- * woodland leans broadleaf, sparse ground and dense woods less so.
+ * A wood's share of broadleaf trees when its mix doesn't say: mostly broadleaf in summer, mostly firs in winter (so
+ * winter woods stay evergreen and snowy); open woodland leans broadleaf, sparse and dense less so.
  */
 export function leafyShare(kind, winter) {
   const summer = { sparse: 0.5, open: 0.75, thick: 0.7, dense: 0.6 }[kind] ?? 0.7;
@@ -179,7 +177,7 @@ function polyArea(poly) {
   return Math.abs(s / 2);
 }
 
-/** A hedgerow: small bushes every 0.4 squares along the wall's path. */
+/** A hedgerow: small bushes every step squares along the wall's path. */
 export function hedgeBushes({ wall, r, items, step = 0.4, scale = [0.7, 0.3] }) {
   const pts = wall.path;
   let n = 0;
@@ -200,12 +198,10 @@ export function groundPatches(r, W, H) {
 }
 
 /**
- * A park, by its style. "green" (the default): a village green of open grass, big trees in groups around its edges and
- * a few in the open, and trodden paths from where the roads meet it to a point near the middle. "formal": a garden laid
- * out square to the area's rot: gravel paths around it and across it, a round basin where they cross, four hedged
- * beds, and avenues of trees along the long walk. Everything is clipped to the area's shape. Returns
- * { surface, trees, beds, hedges }: surface { poly, style, paths: [{ path, width }], basin }, trees [{ x, y, s, ... }],
- * beds (gardens), hedges (paths). Squares throughout; ftPerSquare for widths in feet.
+ * A park by its style. "green" (the default): open grass, big trees in groups around its edge and a few in the open,
+ * trodden paths from where the roads meet it to near its middle. "formal": a garden square to its rot, gravel paths
+ * around and across it, a round basin, four hedged beds and avenues of trees. Clipped to the area. Returns { surface:
+ * { poly, style, paths, basin }, trees, beds, hedges }. Squares; ftPerSquare for widths in feet.
  */
 export function fillPark({ area, r, roads = [], ftPerSquare }) {
   const sq = (ft) => ft / ftPerSquare;
@@ -224,10 +220,9 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
   const c = [(bx0 + bx1) / 2, (by0 + by1) / 2];
 
   if (style === "green") {
-    // Where the roads meet it: at most one entry a side, four in all. A road or lane that ends at its edge gives its
-    // end, exactly; else the road that runs closest along a side (within 2.5 squares, on average) gives that side's
-    // middle, shifted a little. Every draw comes from a fork keyed by what it's for (the side, the entry), so a street
-    // appearing or going near one side (a district rerolled) moves nothing else in the park.
+    // Where the roads meet it: at most one entry a side: a road ending at its edge gives its end, else the road
+    // running closest along a side gives that side's middle, shifted a little. Each draw comes from a fork keyed by
+    // side and entry, so a street appearing near one side moves nothing else
     const [px0, py0, px1, py1] = [bx0 - 3, by0 - 3, bx1 + 3, by1 + 3];
     const near = roads.filter((road) => road.path.some((q, k) => k && Math.max(q[0], road.path[k - 1][0]) >= px0 && Math.min(q[0], road.path[k - 1][0]) <= px1 && Math.max(q[1], road.path[k - 1][1]) >= py0 && Math.min(q[1], road.path[k - 1][1]) <= py1));
     const sideOf = (p) => { let bi = 0, bd = Infinity; poly.forEach((a, i) => { const d = distSeg(p, a, poly[(i + 1) % poly.length]); if (d < bd) { bd = d; bi = i; } }); return bi; };

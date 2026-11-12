@@ -1,10 +1,8 @@
 /**
- * The "textured" style: map art laid down layer by layer, as the overview prototype did. One sun for every shadow,
- * soft edges by blurring a mask and filling it with the texture (never blurring the texture), multiply tints for
- * wear and slush. Paints one window of the map (a tile) at a time; every pattern is anchored to the map, so tiles
- * meet without seams. Numbers are in squares.
- *
- * rolesFor(layout) lists the art roles a Layout needs; paint(ctx) paints one window.
+ * The "textured" style: map art laid down layer by layer, one sun for every shadow, soft edges by blurring a mask and
+ * filling it with the texture (never blurring the texture). Paints one tile at a time; every pattern is anchored to
+ * the map, so tiles meet without seams. Squares throughout. rolesFor(layout) lists the art roles a layout needs;
+ * paint(ctx) paints one tile.
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
@@ -16,7 +14,10 @@ export { roofFacets };
 const SNOWY_IN_WINTER = new Set(["slate", "wood-shingle"]);
 /** A tree's art: a deciduous tree is bare in winter and in leaf in the other seasons; conifers by size. */
 const treeRole = (t, s) => (t.species === "bare" ? (s === "winter" ? "tree.bare.winter" : `tree.deciduous.${s}`) : `tree.conifer.${t.size ?? "large"}.${s}`);
-/** How wide a tree's art is drawn, before its own scale: a bare winter tree's art spreads wider than one in leaf. */
+/**
+ * How wide a tree's art is drawn, before its own scale: a broadleaf's art about twice a conifer's, a little smaller
+ * when bare in winter.
+ */
 const treeSize = (t, s) => (t.species === "bare" ? (s === "winter" ? 2.0 : 2.2) : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0);
 /** A hedge's bushes: bare in winter, in leaf otherwise. */
 const bushRole = (s) => (s === "winter" ? "bush.bare.winter" : `bush.leafy.${s}`);
@@ -38,7 +39,7 @@ const CLIFF_FOOT_ROW = 0.33;
  * How heavy the drawn lines are: a road's dark middle line (its ruts when it has them), its worn middle, its trodden
  * verge, the outline around roofs, and the dark edge along water. 1 is full strength.
  */
-const LINES = { center: 0, worn: 0.6, verge: 0.6, eave: 0.75, waterEdge: 0.5 }; // chosen (31 Oct) over heavier lines
+const LINES = { center: 0, worn: 0.6, verge: 0.6, eave: 0.75, waterEdge: 0.5 };
 
 const hasFlat = (b) => (!b.round || b.tower) && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 /** The flat roof's role: stone paving, or planks on a palisade's open tower. */
@@ -155,13 +156,12 @@ export function paint(ctx) {
   /** A stream's or river's line at its width (times mul, plus add): stroked when it's the same all along. */
   const waterLine = (k, w, add = 0, mul = 1) => (w.widths ? strokeVar(k, w.path, w.widths, add, mul) : strokeLine(k, w.path, mul === 1 ? w.width + add : w.width * mul + add));
   /**
-   * Draw shapes into the mask, blur it, fill it with a fill, lay it on the map. The shapes are drawn sharp and the
-   * mask blurred once (on a second canvas, ctx.blur): a canvas blur filter costs a whole-tile blur per drawing call,
-   * so a hundred house shadows drawn under the filter cost a hundred blurs. Without ctx.blur, each call is blurred.
+   * Draws shapes into the mask, blurs it once on a second canvas (ctx.blur) and lays it on the map filled. A canvas
+   * blur filter costs a whole-tile blur per drawing call, so drawing under it is far slower; without ctx.blur each
+   * call is blurred.
    */
   const bq = ctx.blur?.getContext("2d") ?? null;
-  // box: [x0, y0, x1, y1] in squares, when the shapes lie within it: only that part of the tile (with room for the
-  // blur) is cleared, blurred, filled and laid down, which is much cheaper than the whole tile for a small thing
+  // box: [x0, y0, x1, y1] in squares bounding the shapes, so only that part of the tile is worked on
   const soft = (shape, fill, blur, alpha = 1, op = "source-over", box = null) => {
     let rx = 0, ry = 0, rw = W, rh = H;
     if (box) {
@@ -245,7 +245,6 @@ export function paint(ctx) {
     g.restore();
   };
 
-  // Ground
   progress(0.02, "Ground");
   const ground = L.items.find((i) => i.kind === "ground");
   const gb = ground?.base ?? "grass";
@@ -339,7 +338,6 @@ export function paint(ctx) {
   const balks = items("boundary", "balk");
   if (balks.length) soft((k) => { for (const b of balks) strokeLine(k, b.path, 0.16); }, tex(`ground.${gb}.grassy`, 4), 0.05, 0.95);
 
-  // Yards, farmyards, gardens
   progress(0.12, "Yards and gardens");
   const yards = items("surface", "yard"), farmyards = items("surface", "farmyard");
   if (yards.length) soft((k) => { for (const y of yards) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.25, 0.95, "source-over", boxOf(yards.map((y) => y.poly)));
@@ -535,7 +533,6 @@ export function paint(ctx) {
     if (winter) soft((q) => strokeLine(q, shiftLine(c.path, -c.sign * 0.05), 0.2), "rgb(236,239,243)", 0.06, 0.7, "source-over", box);
   }
 
-  // Walls and hedges
   progress(0.25, "Walls and hedges");
   const walls = items("wall").filter((w) => !w.thickness); // town walls and palisades come after the water
   if (walls.length) {
@@ -579,7 +576,6 @@ export function paint(ctx) {
   if (rutted.length) soft((k) => { for (const w of rutted) for (const d of [-0.22, 0.22]) strokeLine(k, offsetPath(w.path, d), 0.07); }, "rgb(70,62,54)", 0.03, 0.4, "multiply");
   if (LINES.center > 0) soft((k) => { for (const w of ways) if (!w.ruts) strokeLine(k, w.path, 0.06); }, "rgb(70,62,54)", 0.03, LINES.center, "multiply");
 
-  // Squares
   progress(0.45, "Squares");
   // A square sits in the roads rather than on them: a worn apron around it that the roads and streets run into, the
   // paving laid with a soft, slightly ragged edge, then the roads' worn lines carried on faintly across it
@@ -674,7 +670,6 @@ export function paint(ctx) {
     }
   }
 
-  // Crossings
   progress(0.55, "Crossings");
   for (const c of items("crossing")) {
     if (c.class === "ford") paintFord(c);
@@ -1028,10 +1023,9 @@ export function wayDirectionAt(L, [x, y]) {
 const SUN = [0, 1];
 
 /**
- * One building's roof, its middle at x, y on g (px): every facet in its roof art (rows along its eave), shaded by which
- * way it faces, with valleys, ridge caps, a flat roof's parapet, a mansard's skylight, the eaves outlined, and its
- * chimney. texPx: how many px the roof art's width is drawn across; chimney: a chimney's width in squares. Shared with
- * the battle style, which paints each roof onto a tile of its own.
+ * One building's roof, its middle at x, y on g (px): each facet in its roof art, shaded by which way it faces, with
+ * valleys, ridge caps, a flat roof's parapet, a mansard's skylight, outlined eaves and its chimney. texPx: the roof
+ * art's drawn width in px; chimney: its width in squares. Shared with the battle style.
  */
 export function paintRoof(g, b, { x, y, pp, art, season: s, texPx, chimney = 0.3 }) {
   const th = (b.rot * Math.PI) / 180, c = Math.cos(th), sn = Math.sin(th);
@@ -1089,7 +1083,6 @@ export function paintRoof(g, b, { x, y, pp, art, season: s, texPx, chimney = 0.3
   }
   // A flat roof's parapet: a low stone wall around its edge (not across a wing's join), casting a little shade inward
   if (facets.parapet) paintParapet(g, b, facets.parapet, pp, c, sn, s);
-  // A mansard's skylight
   if (facets.skylight) paintSkylight(g, facets.skylight, pp, s);
   // The outline: only the eaves and verges, so a wing's roof joins its house's without a seam
   g.strokeStyle = `rgba(28,28,36,${0.85 * LINES.eave * (b.grand ? 1.15 : 1)})`; g.lineWidth = Math.max(1, pp * 0.035 * LINES.eave * (b.grand ? 1.8 : 1));

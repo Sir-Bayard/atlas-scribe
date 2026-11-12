@@ -300,7 +300,7 @@ export const okChimney = (c) => !!c && typeof c === "object" && [c.u, c.v, c.var
 /** District profiles this version knows: how built up a district is. */
 export const PROFILES = ["hamlet", "village", "town", "city"];
 
-/** Older names for profiles, read as their new ones: "roadside" (M1) is a hamlet, "core" (to 0.3.0) a city. */
+/** Older profile names still read as their new ones: "roadside" is a hamlet, "core" a city. */
 export const OLD_PROFILES = { roadside: "hamlet", core: "city" };
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
@@ -399,7 +399,7 @@ function normalizeFeature(f) {
   if (t.classes && !t.classes.includes(out.class)) out.class = t.classes[0]; // unknown classes are drawn as the default (the checker says so)
   for (const [name, spec] of Object.entries(t.fields)) if (out[name] === undefined) out[name] = fieldDefault(spec, out.class);
   if (f.type === "district" && Object.hasOwn(OLD_PROFILES, out.profile)) out.profile = OLD_PROFILES[out.profile];
-  if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? null : 0; // M1 plans said true (gardens: its character's share) or false
+  if (f.type === "district" && typeof out.gardens === "boolean") out.gardens = out.gardens ? null : 0; // older plans give true (its character's share) or false
   // A stream, river or canal given a shape is drawn as a lake: frozen in winter unless the plan says
   if (f.type === "water" && !Array.isArray(f.path) && f.shape != null && f.frozen === undefined && RUNNING.includes(out.class)) out.frozen = null;
   if (f.type === "landmark") out.buildings = (Array.isArray(f.buildings) ? f.buildings : []).map((b) => normalizeFeature({ ...(isObj(b) ? b : {}), type: "building" }));

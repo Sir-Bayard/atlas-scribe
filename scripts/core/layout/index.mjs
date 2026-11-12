@@ -1,11 +1,8 @@
 /**
- * Plan to Layout: everything the generator works out from a plan, as plain items in squares.
- *
- * Fixed features become items as they are; districts and areas are filled. Each district or area has its own
- * random stream (the plan seed, or its own seed in plan.seeds, and its id), and draws from it the same number of
- * times whatever fits, so reseeding one moves only what it places and anything that was crowding against it.
- * Every random choice is made here, never in the painter, so the same plan always paints the same map, whatever
- * tiles it's painted in. Pure: runs in the worker and under node.
+ * Plan to Layout: everything the generator works out from a plan, as plain items in squares. Fixed features become
+ * items as they are; districts and areas are filled, each from its own random stream (the plan seed or its own seed,
+ * and its id), drawing the same number of times whatever fits, so reseeding one moves only what it places. Every
+ * random choice is made here, never in the painter, so a plan always paints the same map. Pure: worker and node.
  */
 import { roadWaterCrossings, snapCrossings, fordDetail, easeOnto } from "./crossings.mjs";
 import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, PROP_SIZE, isConifer, OLD_PROFILES } from "../plan.mjs";
@@ -46,9 +43,9 @@ import { lightsOf, mistOf, LIGHT_PROPS } from "./lights.mjs";
 export const LAYOUT_VERSION = 9;
 
 
-/** An ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
 /** A building's chimney: the one drawn, unless it's pinned where it stood ({ u, v, variant }). */
 const chimneyOf = (b, drawn) => (drawn && okChimney(b.chimneyAt) ? { u: b.chimneyAt.u, v: b.chimneyAt.v, variant: b.chimneyAt.variant } : drawn);
+/** How tall a building is: an ordinary house is 20 ft; each 20 ft above that is one step of "tall" (longer shadows). */
 const tallOf = (heightFt) => Math.max(0, (Number(heightFt) - 20) / 20);
 
 /**
@@ -105,12 +102,10 @@ const GATE_WIDTH = {
 };
 
 /**
- * What each district made, kept from earlier layouts so a district whose inputs haven't changed isn't laid out again
- * (an edit in the window redraws only what it touched). Keyed by a hash of everything a district's fill reads: its
- * own settings and seed; the plan's seed and size; all water and radial squares (they steer every district's
- * streets); its gates and shared edges; the roads in or beside it; and whatever was placed before the districts
- * (squares, yards, parks, farms, buildings and their footprints, roads) within KEY_MARGIN squares of it. Holds the
- * last DISTRICT_CACHE_SIZE districts; per worker (or page), never saved.
+ * What each district made, kept so a district whose inputs haven't changed isn't laid out again. Keyed by a hash of
+ * everything its fill reads: its settings and seed, the plan's seed and size, all water and radial squares, its gates
+ * and shared edges, the roads in or beside it, and what was placed before the districts within KEY_MARGIN squares.
+ * Holds the last DISTRICT_CACHE_SIZE districts, per worker, never saved.
  */
 const DISTRICT_CACHE_SIZE = 96;
 const KEY_MARGIN = 4;
@@ -150,11 +145,9 @@ function boxOf(v) {
 }
 
 /**
- * Streets cut where they'd run into a building (their edge inside it): each street is split there, pieces shorter
- * than a square are dropped, and so are pieces cut at both ends shorter than STUB feet that no other street meets (a
- * scrap of lane between two buildings, crossing a road). A piece's cut ends are marked (wallEnds: [start, end]), so a battle map draws it on to
- * the wall, its rounded end under the building (7 Nov: lanes ended in a round cap short of a wall). A street
- * that only passes a building, its edge at most touching the wall (a house on the street line), is left whole.
+ * Streets cut where they'd run into a building: split there, pieces under a square dropped, and pieces cut at both
+ * ends shorter than STUB feet that no other street meets. Cut ends are marked (wallEnds: [start, end]) so a battle
+ * map draws them on to the wall. A street that only touches a building's wall is left whole.
  */
 const STUB = 40;
 export function trimAtBuildings(streets, feet, ftPerSquare = 5) {
@@ -194,9 +187,9 @@ export function trimAtBuildings(streets, feet, ftPerSquare = 5) {
 }
 
 /**
- * Where a battle map's bridge parapet and a footbridge's rail stand, in squares out from the deck's edge to their
- * middle line: a parapet half its painted thickness (0.48), so its inner face is the deck's edge; a rail as thin. A stone
- * bridge's wing walls run wing squares on from each end of each parapet, turned wingTurn degrees out from the deck.
+ * A battle map's bridge parapet and footbridge rail, in squares out from the deck's edge to their middle line (a
+ * parapet half its painted thickness out, so its inner face is the deck's edge); a stone bridge's wing walls run wing
+ * squares on from each parapet's end, turned wingTurn degrees out.
  */
 export const PARAPET = { out: 0.24, rail: 0.07, wing: 1.6, wingTurn: 35 };
 
@@ -218,9 +211,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   const streamFor = (id) => rng(seedOf(plan, id), id); // as a reroll reads it: a seed that isn't a number is ignored
   const progress = (pct, label) => onProgress?.(pct, label);
 
-  // Everything placed so far that new things must keep clear of. While a district fills, what other districts
-  // placed is ignored (each district's houses and gardens stay inside it, so they can't overlap), which keeps
-  // districts independent: reseeding one never moves another.
+  // Everything placed so far that new things keep clear of. While a district fills, what other districts placed is
+  // ignored (each district's things stay inside it), so reseeding one never moves another.
   const owner = new WeakMap(); // a polygon or building item to the district that placed it
   const districts = plan.features.filter((f) => f.type === "district").map((f) => ({ id: f.id, poly: shapeToPolygon(f.shape) }));
   const districtIds = new Set(districts.map((d) => d.id));
@@ -290,8 +282,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
             space.water.push({ path: f.path, clear: width / 2 + 0.225 });
           }
         } else if (f._poly) {
-          // A pond, lake or sea: its shore, and frozen in winter unless the plan says (a sea never freezes unasked)
-          // Its shore's reach is what's painted; things keep clear by keep, which a reroll never changes
+          // A pond, lake or sea: its shore, frozen in winter unless the plan says (a sea never freezes unasked);
+          // things keep clear by keep, which a reroll never changes
           const shore = f._shore;
           const reach = SHORE_REACH[shore];
           const frozen = frozenOf(f, winter);
@@ -389,8 +381,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       const foot = shiftRight(resample(path, 0.5), 0.5), low = t.elevAt(foot[Math.floor(foot.length / 2)]);
       items.push({ kind: "edge", id: `${c.id}/edge1`, from: c.from, path, closed: false, drop: h, high: low + h, low, style: "cliff", rock: c.rock, bed: false, line: true, ...(c.climbDC != null ? { climbDC: c.climbDC } : {}) });
     }
-    // A bridge over a stream's bed reaches from bank top to bank top: its deck is lengthened until both its ends stand
-    // clear of the bed (a deck as long as the water alone would end down in the bed, under its banks)
+    // A bridge over a stream's bed is lengthened until both its ends stand clear of the bed, bank top to bank top
     const beds = t.levels.filter((x) => x.bed);
     const inBed = (p) => beds.some((Lv) => { let n = 0; for (const r of Lv.rings) if (pointInPolygon(p, r)) n++; return n % 2 === 1; });
     for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
@@ -471,8 +462,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   function addBuilding(b, id, r, from = id) {
     let cx, cy, len, dep, round = false, poly = null;
     if (Array.isArray(b.shape) && shapeToPolygon(b.shape).length >= 3) {
-      // A footprint of any shape (a city row house, fitted to its plot), turned by rot as any shape is: drawn under a
-      // gable whose ridge runs the way it's turned, so it's measured in that frame, its box centered on its middle
+      // A footprint of any shape (a city row house), measured in the frame of its turn, under a gable whose ridge
+      // runs that way
       poly = shapeToPolygon(b.shape, b.rot ?? 0);
       const a = ((b.rot ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
       const us = poly.map(([x, y]) => x * ux + y * uy), vs = poly.map(([x, y]) => -x * uy + y * ux);
@@ -588,7 +579,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const us = piece.map(([x, y]) => (x - cx0) * ux + (y - cy0) * uy), vs = piece.map(([x, y]) => (x - cx0) * nxv + (y - cy0) * nyv);
     const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
     const ext = (range) => (range[0] + r.next() * (range[1] - range[0])) / sq;
-    // (a battle map's sheds a square apart at least, and a square off any other building, 6 Nov)
+    // (a battle map's sheds a square apart at least, and a square off any other building)
     const gap = battle ? Math.max(B.gap / sq, 1) : B.gap / sq;
     const placed = [];
     const roomy = (pts) => {
@@ -601,10 +592,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // Corners in the piece, none of its corners (or a hole's) poking in, and no hole under it
     const inside = (pts) => pts.every((p) => pointInPolygon(p, piece)) && !piece.some((p) => pointInPolygon(p, pts)) && !holes.some((h) => polygonsOverlap(h, pts)) && !onPlot(pts);
     let n = 0, m = 0;
-    // A battle map packs the middle of a block by trying places at random (a block's middle there is a ragged leftover
-    // between plots, which rows from its corner mostly miss): first back houses, then sheds beside a house, then the
-    // ground between, a garden or a yard with its clutter. All of it stays near the street fronts' plots, so a block's
-    // middle fills while open ground (a temple's precinct, a green) stays open
+    // A battle map packs a block's middle by trying places at random (it's a ragged leftover between plots): back
+    // houses, then sheds beside a house, then a garden or a yard between, all near the street fronts' plots, so open
+    // ground (a precinct, a green) stays open
     if (battle) {
       const BEHIND = 6; // how far behind a plot back land is built on, in squares
       // (a place whose middle is in the piece and on the map, found in a few draws: the piece is often a thin ragged
@@ -784,8 +774,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const us = poly.map(([x, y]) => (x - cx) * ux + (y - cy) * uy), vs = poly.map(([x, y]) => -(x - cx) * uy + (y - cy) * ux);
     const step = 14 / sq, row = 20 / sq;
     const spots = [];
-    // Only this district's own trees (another district's never reach into its temple's yard, and reading another
-    // feature's would tie these graves to it, outside the district's cache key; a grave under a plan's tree is taken
+    // Only this district's own trees, so its graves stay inside its cache key (a grave under a plan's tree is taken
     // out after, with the other districts' clean-up)
     const trees = items.filter((t) => t.kind === "tree" && t.from === d.id);
     for (let v = Math.min(...vs) + row / 2; v < Math.max(...vs); v += row) for (let u = Math.min(...us) + step / 2; u < Math.max(...us); u += step) {
@@ -966,10 +955,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       notes.push({ level: "warning", id: f.id, message: `"${f.id}" was moved onto the water's edge, outside "${home.id}", so no houses there face it. Take "${home.id}" out to the water.` });
   }
 
-  // Squares: a fountain or a market cross near the middle (as the square's setting says, else by its seed: a
-  // market square mostly a cross, a paved one often a fountain), clear of the roads through it; then market stalls
-  // in rows along the road through it, off the roads, water, buildings and props there, and clear of that. Laid
-  // once the walls, their towers and moats and the docks are (a square a wall runs through keeps clear of it)
+  // Squares: a fountain or market cross near the middle (as set, else by seed), clear of the roads through it; then
+  // market stalls in rows along the road, clear of everything there. Laid after the walls, moats and docks
   for (const f of plan.features.filter((x) => x.type === "square")) {
     const poly = shapeToPolygon(f.shape), ring = [...poly, poly[0]];
     if (poly.length < 3 || !poly.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) continue; // (the checker refuses it)
@@ -1140,10 +1127,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const [bx0, by0, bx1, by1] = bbox(poly);
     const near = ([, b]) => !b || (b[0] <= bx1 + KEY_MARGIN && b[2] >= bx0 - KEY_MARGIN && b[1] <= by1 + KEY_MARGIN && b[3] >= by0 - KEY_MARGIN);
     const around = Object.fromEntries(Object.entries(placed).map(([k, list]) => [k, list.filter(near).map(([v]) => v)]));
-    // Squares, yards and buildings placed before the districts, for plots and houses to keep off. The streets are traced
-    // around the squares and yards only: a building (a plan's, or a pinned house) would stop a street being seeded
-    // anywhere near it, so a pinned house would take its own street away. Streets that run into one are cut short of it
-    // after (trimAtBuildings)
+    // Squares, yards and buildings placed before the districts, for plots and houses to keep off. Streets are traced
+    // around the squares and yards only (a building would stop streets being seeded near it, so a pinned house would
+    // lose its street); streets running into a building are cut short after (trimAtBuildings)
     const blocked = [...around.zones, ...around.plots];
     const streetBlocked = [...around.zones];
     // Laid out before with the same inputs: what it made is put back as it was (a district overlapping another sees
@@ -1179,10 +1165,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // plots keep off it (where it stands hangs on the district's shape and roads, not its seed)
     const anchorAt = anchorFor({ district: d, poly, roads: nearHere, water: space.water, blocked: [...around.zones, ...around.plots], ftPerSquare: sq, seed: plan.seed, margin: (sq ? (typeOf(d).streets?.width ?? 15) / sq : 0.6) + 0.15 });
     const anchor = anchorAt ? layAnchor(anchorAt, r.fork("anchor"), sq, { apart: battle ? 1.05 : 0 }) : null;
-    // A band along a path (half its width each side) that stays in the district, off water, the plan's roads, squares,
-    // yards and buildings: where the anchor's ring and approach streets may run
-    // (bandWhy says what's in the way: "road" when it's only a plan road, which can stand in for the street; skip: a
-    // road it may meet)
+    // A band along a path (half its width each side) inside the district, off water, plan roads, squares, yards and
+    // buildings: where the anchor's ring and approach streets may run. bandWhy says what's in the way ("road" when
+    // only a plan road, which can stand in for the street); skip: a road it may meet
     const bandWhy = (path, half, skip = null) => {
       catchUp();
       let road = false;
@@ -1198,9 +1183,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     // A street all around the anchor's block, so the houses about it face it, as a square's do (where it fits); the
     // district's own streets then stop at its outer edge rather than on the block's walls
     const ringWidth = sq ? (typeOf(d).streets?.width ?? 15) / sq : 0.6;
-    // A side the main road already runs along is left to the road (the anchor often stands by it); anything else in
-    // the way, and there's no ring. anchorRing: the ring's corners; ringRuns: the stretches laid, front (the side
-    // facing out, R[0] to R[1]) first if it's laid
+    // A side the main road runs along is left to the road; anything else in the way, and there's no ring. anchorRing:
+    // the ring's corners; ringRuns: the stretches laid, the front first if laid
     let anchorRing = null, ringRuns = [], frontOnRoad = false;
     if (anchor) {
       const g = ringWidth / 2 + 0.02;
@@ -1239,9 +1223,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     });
     made.streets = trimAtBuildings(made.streets, around.plots, sq);
     for (const path of ringRuns) made.streets.push({ path, kind: "street", width: ringWidth, ends: [], ring: true });
-    // The anchor's square opens onto the town: a street straight out from the middle of its front to the nearest
-    // street or road it meets, where that way is clear
-    // (none when its front is on the main road already); checked up to the edge of the way it meets
+    // The anchor's square opens onto the town: a street straight out from its front to the nearest way it meets,
+    // where clear (none when its front is on the main road)
     if (anchor?.approach && !frontOnRoad) {
       const [front, dir] = anchor.approach;
       const from = anchorRing ? [front[0] + dir[0] * ringWidth, front[1] + dir[1] * ringWidth] : front;
@@ -1445,11 +1428,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const r = streamFor(f.id);
     const c = fillCemetery({ area: f, r, roads: [...ways, ...lanes.filter((l) => l.from === f.id), ...streets], ftPerSquare: sq });
     if (c.surface.poly.length < 3) return; // (a shape with no area: nothing to lay out)
-    // What's there already keeps its place: roads, water of any kind, buildings, props and trees (the plan's and
-    // the generator's), each by its own size; the cemetery's paths are cut at water, its graves, yews, tombs, chapel,
-    // wall and hedge left out where they'd stand on any of it
-    // (only buildings, props and trees standing in it count, so nothing a neighbor places by its edge, and no reroll
-    // of a neighbor, changes it)
+    // What's there already keeps its place (roads, water, buildings, props and trees); the cemetery's paths are cut
+    // at water, and its graves, yews, tombs, chapel, wall and hedge are left out where they'd stand on any of it.
+    // Only things standing in it count, so a neighbor's reroll never changes it
     const outline = shapeToPolygon(f.shape, f.rot ?? 0);
     const here = (x) => x.from !== f.id;
     const foots = items.filter((i) => i.kind === "building" && here(i)).map((b) => footOf(b)).filter((ft) => ft.some((q) => pointInPolygon(q, outline)) || outline.some((q) => pointInPolygon(q, ft)));
@@ -1478,11 +1459,9 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     });
   }
 
-  // Tracks: a district's street that stops at the district's edge carries on as a trodden track out into the land, as
-  // the lanes of a village run out to its fields, wandering a little, until it reaches a field (its gate), a road,
-  // water, another district or area, something in the way or its length. Laid after the fields, which never depend on
-  // them, and from what the plan, the field systems and this district placed, so rerolling one district never changes
-  // another's (rerolling a field system can move where a track meets its fields)
+  // Tracks: a district street that stops at its edge carries on as a trodden track into the land, wandering a little,
+  // until it reaches a field gate, a road, water, another district or its length. Laid after the fields, from what
+  // the plan, the fields and this district placed, so rerolling one district never changes another's
   const fieldItems = items.filter((i) => i.kind === "field");
   const areaPolys = plan.features.filter((f) => f.type === "area" && f.class !== "fields").map((f) => shapeToPolygon(f.shape, f.rot ?? 0, 32));
   for (const d of dfeats) {
@@ -1554,9 +1533,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     dropWet(before);
   }
 
-  // A tree laid before another feature's street (a green's, or one district's wild tree by the next one's lane) is
-  // dropped where that street runs over it, as a house crowding a wood removes the trees it stands on
-  // (and a hedge's bushes where a farm's or a park's lane goes through it)
+  // A tree laid before another feature's street is dropped where that street runs over it (and a hedge's bushes where
+  // a farm's or park's lane goes through)
   const hard = items.filter((i) => i.kind === "way" && (!i.faint || lanes.includes(i))).map((w) => { const [x0, y0, x1, y1] = bbox(w.path), m = w.width / 2 + 0.05; return { w, m, box: [x0 - m, y0 - m, x1 + m, y1 + m] }; });
   for (let k = items.length - 1; k >= 0; k--) {
     const t = items[k];
@@ -1597,9 +1575,8 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   for (const c of items) if (c.kind === "crossing" && c.class === "ford") Object.assign(c, fordDetail(c, allWays));
 
   if (battle) {
-    // A bridge's parapets: a low stone wall along each side of its deck (a footbridge's wooden rails), which stop
-    // movement as any low wall or fence does. Each stands just outside the deck (9 Nov: inside it, a two-square
-    // bridge had one square to walk on), so the whole width the plan gives is walked on
+    // A bridge's parapets: a low stone wall along each side of its deck (a footbridge's wooden rails), stopping
+    // movement as any low wall does. Each stands just outside the deck, so its whole width is walked on
     for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
       const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2, hw = (c.width ?? 4) / 2 + (c.class === "bridge" ? PARAPET.out : PARAPET.rail);
       if (hw < 0.5) continue;
@@ -1642,7 +1619,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       if (unknown.length) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: rooms not known (${unknown.join(", ")}); they're left out.` });
       if (rooms.length > ROOM.most) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: ${rooms.length} rooms named; only the first ${ROOM.most} are laid out.` });
     }
-    // What the battle style doesn't draw yet (it comes with later steps of battle maps)
+    // What the battle style doesn't draw: left off the map, with a note
     const NOT_YET = { field: "fields", ditch: "ditches", dock: "quays and piers", pit: "pits", kiln: "kilns" };
     const NOT_YET_SURFACE = { park: "parks", bed: "flower beds", farmyard: "farmyards", croft: "crofts" };
     const missing = [...new Set(items.map((i) => NOT_YET[i.kind] ?? (i.kind === "surface" ? NOT_YET_SURFACE[i.class] : i.kind === "boundary" && i.class === "clipped" ? "clipped hedges" : null)).filter(Boolean))];
@@ -1749,11 +1726,10 @@ function shrink(poly, by) {
 }
 
 /**
- * The plan with its water worked out once, for everything that reads it (the fields and the walls too): each pond's,
- * lake's and sea's outline (_poly, and _ring closed on its first point), shore (_shore) and how far things keep from
- * its edge (_keep), and the width at each point (_w, in squares)
- * of a stream or river that varies in width or opens out into a lake or the sea. given: the plan as it came, its
- * paths as drawn (smoothed, the layout's are longer). Features are in the same order in both.
+ * The plan with its water worked out once for everything that reads it: each pond's, lake's and sea's outline (_poly,
+ * _ring), shore (_shore) and keep distance (_keep), and the width at each point (_w, squares) of a stream or river
+ * that varies or opens into a lake or the sea. given: the plan as it came, its paths as drawn; features in the same
+ * order.
  */
 function withWater(plan, given) {
   const sq = plan.size.ftPerSquare, [W, H] = plan.size.squares;
@@ -1785,8 +1761,7 @@ function withWater(plan, given) {
 }
 
 /**
- * The pieces of a path that keep out of somewhere (wet(point) is true there), each a square long or more: the path
- * walked in steps of a tenth of a square, keeping its own points and the last dry step before each cut. The path
+ * The pieces of a path that keep out of somewhere (wet(point) true there), each a square long or more; the path
  * itself when it's dry all along.
  */
 function dryPieces(path, wet) {

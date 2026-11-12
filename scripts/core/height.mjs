@@ -1,15 +1,8 @@
 /**
- * Height in play: a battle map's ground, its banks and cliffs, and its water as the regions a scene gets, and how a
- * token's elevation and its walking follow them.
- *
- * heightRegions turns a battle layout into region specs (in squares): the ground of each level at its elevation (a
- * rise, a hollow, a stream's bed, a bridge's deck over it), the face of each edge (a cliff to climb, a bank or a slope
- * that slows a walker), and the water (shallows that slow a walker; deep water to swim; ice that slows). Publishing
- * makes each a Region. groundAt and walkBlocked read those regions back as zones (in any one unit: squares here,
- * pixels in the scene), for the hook that sets a token's elevation and keeps a walker off a cliff face and out of deep
- * water.
- *
- * Pure: runs in the worker, the page and under node.
+ * Height in play: a battle map's ground, banks, cliffs and water as the regions a scene gets, and how a token's
+ * elevation and walking follow them. heightRegions turns a battle layout into region specs (squares); groundAt and
+ * walkBlocked read those regions back as zones (any one unit), for the hook that sets a token's elevation and keeps a
+ * walker off a cliff face and out of deep water. Pure.
  */
 import { pointInPolygon, insidePoint } from "./geom.mjs";
 import { bands, difference, intersect, offset, union } from "./lots/poly.mjs";
@@ -28,9 +21,8 @@ export const WALKING = ["walk", "crawl", "travel", "deploy", "drive"];
 export const OFF_GROUND = ["fly", "burrow"];
 /**
  * What each region does to a walker's cost: 2 difficult terrain, 3 greater difficult terrain (the most a Pathfinder
- * scene allows). A cliff costs nothing more: its face is drawn on the low ground at its foot, where a token may stand
- * and walk along it; what stops a walker is crossing the cliff's top line, which the hook checks (walkBlocked), as it
- * stops one walking into deep water.
+ * scene allows). A cliff costs nothing: its face lies on the low ground at its foot; what stops a walker is crossing
+ * its top line, which the hook checks (walkBlocked), as it checks walking into deep water.
  */
 export const COST = { cliff: null, bank: 2, slope: 2, shallow: 2, deep: 3, ice: 2 };
 /** The words each region is named by in the scene's region list. */
@@ -74,13 +66,11 @@ export function deckOf(c) {
 }
 
 /**
- * A battle layout's height as region specs, in squares:
- * { kind: "ground", name, polys, elevation, order, over } (over: a bridge's deck, ground only for a token up on it),
- * { kind: "face", name, polys, style, bottom, top, cost, lines, alone, climb } (lines: a cliff's top line, its high
- * side on its left; alone: a cliff drawn as a line, with the same ground either side; climb: a cliff's Climb DC),
- * { kind: "shallow" | "deep" | "ice", name, polys, top, cost }, polys being [{ points, hole }].
- * A face's range runs from the low ground to the high (a token walking down it is still at the top's elevation until
- * it lands); water's from below to the ground above its banks (a token wading in from the bank is still at the bank's).
+ * A battle layout's height as region specs, in squares: { kind: "ground", name, polys, elevation, order, over }
+ * (over: a bridge's deck, ground only for a token up on it), { kind: "face", name, polys, style, bottom, top, cost,
+ * lines, alone, climb } (lines: a cliff's top line, its high side on its left; alone: a cliff drawn as a line; climb:
+ * its Climb DC), { kind: "shallow" | "deep" | "ice", name, polys, top, cost }; polys [{ points, hole }]. A face runs
+ * from the low ground to the high, and water from below to the ground above its banks.
  */
 export function heightRegions(layout) {
   const items = layout?.items ?? [];
@@ -178,9 +168,8 @@ export function groundAt(zones, p, current = Infinity) {
 const GROUND_STEP = 2;
 
 /**
- * The ground's elevation where a walk from a to b ends, the way read every `step` along it, so a deck counts only for
- * a token at about its height when it comes to it (walking down off a bank and on under a bridge stays in the bed; up
- * out of the bed and onto the bridge stands on it). current: the elevation it sets off at.
+ * The ground's elevation where a walk from a to b ends, read every step along it, so a bridge's deck counts only for
+ * a token at about its height when it comes to it. current: the elevation it sets off at.
  */
 export function groundAlong(zones, a, b, current, step) {
   const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.min(400, Math.max(1, Math.ceil(L / Math.max(step, 1e-6))));
@@ -214,12 +203,10 @@ function sideOf(line, p, near) {
 }
 
 /**
- * Whether a walking step from a to b is stopped, and why: "cliff" when it goes up or down a cliff (it passes within
- * `near` of a cliff's top line and the ground under its two ends differs, so walking along a cliff's top or foot, or
- * across a bridge's deck over one, isn't stopped; for a cliff drawn as a line, with the same ground both sides, when
- * its ends lie on different sides of the line, a point on the line counting as below it), "deep" when it runs into
- * deep water from out of it (a token already swimming may walk out). step: how finely the way is checked for water;
- * near: how close to a line counts as on it (both in the zones' unit); current: the token's elevation (for a deck).
+ * Whether a walking step from a to b is stopped, and why: "cliff" when it crosses within near of a cliff's top line
+ * and the ground at its two ends differs (walking along a top or foot, or over a bridge, isn't stopped; a cliff drawn
+ * as a line stops a step between its sides), "deep" when it runs into deep water from out of it. step: how finely
+ * water is checked; near: how close counts as on a line (both in the zones' unit); current: the token's elevation.
  */
 export function walkBlocked(zones, a, b, step, opts = {}) {
   return blockedBy(zones, a, b, step, opts)?.why ?? null;
@@ -252,10 +239,9 @@ export function blockedBy(zones, a, b, step, { near = step * 0.2, current = Infi
 }
 
 /**
- * The ground of a battle layout as surfaces to stand on, in squares: each piece of the map at the elevation of the
- * ground seen there (the topmost level, as groundAt reads it; the rest of the map at 0), and each bridge's deck at its
- * banks' height over the bed it spans. The pieces of ground don't overlap, so a token is over just one (a deck lies
- * over the ground under it, higher). [{ name, elevation, polys: [{ points, hole }], deck }]
+ * The ground of a battle layout as surfaces to stand on, in squares: each piece of the map at the elevation seen
+ * there (as groundAt reads it, 0 elsewhere), and each bridge's deck at its banks' height over its bed. The pieces
+ * don't overlap. [{ name, elevation, polys: [{ points, hole }], deck }]
  */
 export function groundSurfaces(layout) {
   const items = layout?.items ?? [];
@@ -302,13 +288,11 @@ function evenOdd(rings) {
 
 /**
  * The ground's heights for a move, worked out before it's made (for a game system whose own falling takes a token
- * left above the ground). start: { p, elevation }, where the move begins; steps: [{ p, elevation, action }], each
- * waypoint (p its middle, in the zones' unit). A token standing on the ground walks over the ground's heights: each
- * waypoint is set to the ground there. A token above the ground it starts from (flying, or raised by hand) is left
- * alone; from a waypoint whose elevation was changed by hand, or where the token flies or burrows, the rest keep the
- * mover's own heights; a jump down over a cliff's edge stays in the air when falls(i, elevation) says the system will
- * drop it there (else it lands, as a walk would), and the move ends there, where it falls. Returns the elevation of each
- * waypoint the move keeps (all of them, or up to the jump), or null when nothing changes.
+ * left above the ground). start: { p, elevation }; steps: [{ p, elevation, action }], each waypoint. A token on the
+ * ground walks over the ground's heights; one above it is left alone; from a waypoint whose elevation was set by
+ * hand, or where it flies or burrows, the rest keep the mover's heights; a jump down over a cliff stays in the air
+ * where falls(i, elevation) says the system drops it, and the move ends there. Returns each kept waypoint's
+ * elevation, or null when nothing changes.
  */
 export function groundWay(zones, start, steps, { step, falls = () => false } = {}) {
   // (the ground under the way is read every GROUND_STEP steps between waypoints, for a deck on the way)

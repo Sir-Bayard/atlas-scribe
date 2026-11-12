@@ -14,7 +14,6 @@ import { edgeSpan, shiftRight, resample } from "../../core/layout/terrain.mjs";
 /** No blur, so no tile margin. */
 export const MAX_BLUR = 0;
 
-/** A sketch needs no art. */
 export const rolesFor = () => [];
 
 /** "#rrggbb" or "rgb(...)" mixed toward [r, g, b] by k (0 to 1), as an rgb() color. */
@@ -354,11 +353,12 @@ export function paint(ctx) {
     g.restore();
   }
   for (const p of items("prop").filter((p) => !["bush", "fountain", "stall", "stall-long", "sails", "waterwheel", "boat", "ship", "cross"].includes(p.class))) dot(p.x, p.y, 0.18 * (p.scale ?? 1), col(`prop.${p.class}`));
-  // Sized as the textured style sizes them; leafy trees are crowns, and only in winter are they bare
+  // Leafy trees are crowns; a broadleaf tree is bare only in winter
   const crown = winter ? "rgb(88,104,84)" : col("tree"), leafy = winter ? crown : mix(col("tree"), [120, 150, 60], 0.25), bare = col("tree.bare");
   for (const t of [...items("tree")].sort((a, b) => a.y - b.y)) {
     const deciduous = t.species === "bare";
-    // Sized as the textured style draws them: a bare winter tree's art spreads wider than one in leaf
+    // Sized as the textured style sizes them (its treeSize): a broadleaf's art twice a conifer's, a little smaller
+    // when bare in winter
     const size = (deciduous ? (winter ? 2.0 : 2.2) : { large: 1.0, medium: 0.78, small: 0.55 }[t.size] ?? 1.0) * (t.s ?? 1) * 1.1;
     const r = size * (deciduous ? (winter ? 0.3 : 0.36) : 0.4);
     dot(t.x + r * 0.3, t.y - r * 0.3, r, "rgba(28,38,58,0.25)"); // shadow

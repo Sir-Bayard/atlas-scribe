@@ -69,10 +69,10 @@ function along(path, d) {
 }
 
 /**
- * districts: [{ id, poly, streetSpacing, laneSpacing }] (squares; null where the district has none). roads:
- * [{ path }] (a road already crossing the edge is a connection, so no gate goes near it). water: a function
- * telling whether a point is in water. seed: the plan's seed.
- * Returns a map from district id to [{ at, nx, ny, kind }]: nx, ny point into that district.
+ * districts: [{ id, poly, streetSpacing, laneSpacing }] (squares; null where the district has none). roads: [{ path
+ * }] (a road already crossing the edge is a connection, so no gate goes near it). inWater(p): whether a point is in
+ * water. seed: the plan's seed. Returns a map from district id to [{ at, nx, ny, kind }]: nx, ny point into that
+ * district.
  */
 export function districtGates(districts, { roads = [], inWater = () => false, seed = 1 } = {}) {
   const gates = new Map(districts.map((d) => [d.id, []]));

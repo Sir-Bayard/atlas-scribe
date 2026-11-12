@@ -1,18 +1,13 @@
 /**
- * Height in play, on a battle map AtlasScribe published (its ground and water regions, core/height.mjs): a token's
- * elevation follows the ground it moves onto (up a slope, down into a stream's bed, onto a bridge's deck), and one
- * walking can't cross a cliff's top line, up or down, or walk into deep water (it climbs, leaps, flies or swims
- * instead). A token placed
- * on the map starts at the ground's elevation there. All of it is off when the "Battle map heights" setting is.
+ * Height in play on a battle map AtlasScribe published (its ground and water regions, core/height.mjs): a token's
+ * elevation follows the ground it moves onto, a placed token starts on the ground, and a walker can't cross a cliff's
+ * top line or walk into deep water. All off when the "Battle map heights" setting is.
  *
- * A token's elevation is left alone when it flies or burrows, when its move changes its elevation itself, or when it
- * stands above the ground it's leaving (flying, or raised by hand). Only a move made on the map (dragged, or with the
- * keys) is stopped, as walls stop only those; a script's move is grounded but not stopped. Each client works for the
- * moves it makes.
- *
- * A walker stopped at a cliff is shown a card (to them and the GM) with the check to climb it at the cliff's Climb DC,
- * in the game system's own words (rules.mjs). Where the system has falling of its own (an adapter's falls), a token that leaves a
- * cliff top in the air (a jump, say) is left at its height for the system to drop it.
+ * Elevation is left alone when a token flies or burrows, its move sets its own elevation, or it stands above the
+ * ground it's leaving. Only a move made on the map is stopped, as walls stop only those, and not one that ignores
+ * walls; a script's move is grounded but not stopped. Each client handles the moves it makes. A walker stopped at a
+ * cliff is shown a card with the check to climb it (rules.mjs); where the system has falling of its own, a token
+ * leaving a cliff top in the air is left for the system to drop.
  */
 import { groundAt, groundAlong, blockedBy, groundWay, WALKING, OFF_GROUND } from "../core/height.mjs";
 import { rules } from "./rules.mjs";
@@ -120,8 +115,8 @@ function onPreMove(doc, movement, operation) {
     }
   }
   if (!falls || !all.length) return;
-  // (Foundry 14 reads a region's shape without working it out first when a move changes height at its ends, which
-  // fails on a scene no one is viewing; reading each one's shape first works it out, before the system is asked too)
+  // (Foundry 14 reads a region's shape unprepared when a move changes height at its ends, which fails on a scene no
+  // one is viewing: reading each polygonTree first prepares it)
   for (const r of doc.parent?.regions ?? []) void r.polygonTree;
   const way = groundWay(zs, { p: middle(doc, movement.origin), elevation: movement.origin.elevation },
     all.map((w) => ({ p: middle(doc, w), elevation: w.elevation, action: w.action })),

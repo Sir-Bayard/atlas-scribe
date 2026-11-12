@@ -28,8 +28,8 @@ export const QUICK = {
 export const QUICK_ANY = ["river", "shape"];
 
 /**
- * What a choice left out is picked from: the sizes and water a village or town can have (a city is made only when it's
- * asked for, and the plans earlier seeds made stay the same).
+ * What a choice left out is picked from: the sizes and water a village or town can have (a city only when asked, so
+ * earlier seeds' plans stay the same).
  */
 const PICK = { size: ["village", "hamlet", "town"], water: ["river", "stream", "none"] };
 const CITIES = ["city", "metropolis"];
@@ -149,20 +149,19 @@ function placeName(r, water) {
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "quick-start";
 
 /**
- * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, river, shape, name, seed } (any left out
- * is picked from the seed; seed itself defaults to 1). Returns { plan, choices }: choices are the ones used.
+ * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, river, shape, name, seed }
+ * (any left out is picked from the seed; seed itself defaults to 1). Returns { plan, choices }: choices are the ones
+ * used.
  */
 export function quickPlan(options = {}) {
-  if (options.center === undefined && options.centre !== undefined) options = { ...options, center: options.centre }; // the name before 0.4.0
+  if (options.center === undefined && options.centre !== undefined) options = { ...options, center: options.centre }; // the name before 0.4.0, still read
   const seed = Number.isFinite(Number(options.seed)) && Number(options.seed) >= 1 ? Math.floor(Number(options.seed)) : 1;
   const pick = rng(seed, "quick", "choices");
   const choices = {};
   for (const [k, list] of Object.entries(QUICK)) if (!QUICK_ANY.includes(k)) choices[k] = list.includes(options[k]) ? options[k] : pick.pick(PICK[k] ?? list);
   if (RIVER_FORMS.includes(options.river)) choices.river = options.river;
   // A city's water left out is any a city can have, a stream is a river there, and a village or town by the sea or a
-  // lake has a river for now
-  // Its outline the one asked for when it goes with the water (water left out is picked to go with it), else picked
-  // from those that do
+  // lake gets a river; its outline the one asked for when it goes with the water, else one that does
   if (CITIES.includes(choices.size)) {
     const asked = CITY_SHAPES.includes(options.shape) ? options.shape : null;
     // (a river form asked for means a river)
@@ -219,7 +218,10 @@ export function quickPlan(options = {}) {
     at(u1 + (ragged.includes("e") ? jig() : 0), v1 + (ragged.includes("s") ? jig() : 0)),
     at(u0 + (ragged.includes("w") ? jig() : 0), v1 + (ragged.includes("s") ? jig() : 0)),
   ];
-  /** Where the main road actually runs (its v) at a given u, so a district strung along it sits on it. */
+  /**
+   * The main road as one path, and roadV(u): where it runs (its v) at a given u, so a district strung along it sits
+   * on it.
+   */
   const mainPath = [...[...mainA].reverse(), ...mainB.slice(1)];
   const roadV = (u) => {
     let best = 0, bestD = Infinity;
@@ -281,9 +283,8 @@ export function quickPlan(options = {}) {
   const cluster = districts.map((d) => d.poly);
   const nearCluster = (p, m) => cluster.some((poly) => distToPoly(p, poly) < m);
 
-  // The center: a square where the roads meet, or a green beside them
-  // (its paving, and its roads', from a stream of its own: a town about half the time paves its main roads and its
-  // square, a village seldom; an unpaved place has a dirt, trodden or gravel square; its shape by its seed too)
+  // The center: a square where the roads meet, or a green beside them (its paving, its roads' and its shape from its
+  // own stream: a town paves about half the time, a village seldom)
   const sr = r.fork("square");
   const paved = choices.size === "town" ? sr.chance(0.55) : choices.size === "village" ? sr.chance(0.12) : false;
   const paving = sr.pick(PAVINGS), bare = choices.size === "hamlet" ? "trodden" : sr.pick(UNPAVED);
@@ -375,8 +376,8 @@ export function quickPlan(options = {}) {
   const onMap = (p) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1;
   const clearOf = (p, m) => clearOfThings(p, m) && onMap(p);
 
-  // Mills (their own stream, so the rest of the plan draws as before): a watermill on a race beside the river or
-  // stream by the edge of a village or town (sometimes a hamlet's), and a windmill out among the fields
+  // Mills (their own stream, so adding them changes nothing else): a watermill on a race by the edge of a village or
+  // town, and a windmill out among the fields
   {
     const mr = r.fork("mills");
     const wantWater = water && (choices.size !== "hamlet" || mr.chance(0.5));
@@ -406,8 +407,7 @@ export function quickPlan(options = {}) {
     }
   }
 
-  // A town's cemetery: beside a road a little beyond its edge, clear of everything (its own stream, so the rest of
-  // the plan draws as before)
+  // A town's cemetery beside a road a little beyond its edge, clear of everything (its own stream)
   let cemetery = null;
   if (choices.size === "town") {
     const cr = r.fork("cemetery");
@@ -454,10 +454,9 @@ export function quickPlan(options = {}) {
   }
   farms.forEach((f, n) => features.push({ id: `farm-${n + 1}`, type: "area", class: "farmstead", shape: { rect: [r1(f.c[0] - f.size / 2), r1(f.c[1] - f.size / 2), r1(f.c[0] + f.size / 2), r1(f.c[1] + f.size / 2)] }, rot: f.rot }));
 
-  // Field systems: in some of the wedges of land between the roads leaving the center (a wide gap split in two), each
-  // filled with enclosed fields or open strips by the layout, which keeps them off the roads, water and farmyards and
-  // a ragged margin of grass around the districts. Farmland runs to the map's edge; mixed country has fields around the
-  // village and rough ground beyond
+  // Field systems in some of the wedges between the roads leaving the center; the layout keeps them off roads, water,
+  // farmyards and a ragged margin around the districts. Farmland runs to the map's edge; mixed country has fields
+  // around the village and rough ground beyond
   const fields = [];
   if (choices.surroundings !== "open") {
     // The lines the wedges lie between: each road leaving the center, and a wandering line through a wide gap
@@ -541,9 +540,8 @@ export function quickPlan(options = {}) {
   }
   woods.forEach((w, n) => features.push({ id: `woods-${n + 1}`, type: "area", class: "woods", shape: outline(w.blob) }));
 
-  // Now and then an escarpment out in the country (its own stream, so the rest draws as before): a cliff in from the
-  // map's edge, wandering a little, clear of the place, its roads, its water, its mills and its farms (a wood it may
-  // run through)
+  // Now and then an escarpment in the country (its own stream): a cliff in from the map's edge, clear of the place,
+  // its roads, water, mills and farms
   {
     const er = rng(seed, "quick", "escarpment");
     if (er.chance(0.2)) for (let t = 0; t < 60; t++) {

@@ -1,12 +1,8 @@
 /**
- * A battle map's yards and walls, laid over what the districts built. At 5 ft a square the plot lines a town map
- * draws (every lot's edge a fence) read as fences running at odd angles beside houses and into the street, and a
- * walled yard's wall follows its plot's odd outline. So on a battle map (3 Nov):
- *  - each house gets a fenced yard behind it, square to it, as a map maker would draw one, with a gate in its back
- *    fence; its depth is cut short, or it's left out, to keep clear of streets, other buildings, water and other yards;
- *  - a walled yard (a churchyard, a manor's grounds) is walled around its outline made convex, with a gate on the side
- *    nearest a street.
- * Everything in squares. Pure: runs anywhere.
+ * A battle map's yards and walls, laid over what the districts built (a town map's plot lines would read as fences at
+ * odd angles at this scale): each house gets a fenced yard behind it, square to it, with a gate in its back fence,
+ * shortened or left out to keep clear of streets, buildings, water and other yards; a walled yard is walled around
+ * its outline made convex, with a gate on the side nearest a street. Squares; pure.
  */
 import { shapeToPolygon, pointInPolygon, distanceToPath, polygonsOverlap } from "../geom.mjs";
 import { union, offset, signedArea, shapes } from "../lots/poly.mjs";
@@ -19,8 +15,8 @@ export const YARD = { depths: [5, 4, 3, 2.5], offStreet: 0.7, offBuilding: 0.4, 
 /** A plan's own building gets a yard too, unless it's one of these (a temple, a keep, a stable or shed of a yard's own). */
 const NO_YARD = new Set(["temple", "chapel", "shrine", "keep", "palace", "barracks", "watch", "tower", "tomb", "stable", "shed", "store", "warehouse", "market-hall", "guildhall", "customs", "windmill", "watermill", "armory"]);
 /**
- * A path to a front door that stands off the road (8 Nov: a lone inn had none): from how far off the nearest
- * way's edge a door gets one, its width, how far out from the door it starts straight, its longest run, in squares.
+ * A path to a front door standing off the road: how far off the nearest way's edge a door gets one, its width, how
+ * far it runs straight out from the door, and its longest run, in squares.
  */
 export const APPROACH = { from: 1.2, width: 1, out: 1, longest: 30 };
 /**
@@ -118,12 +114,9 @@ export function battleYards(items, W, H) {
   const nearWay = (p, extra) => ways.some((w) => distanceToPath(p, w.path) < (w.width ?? 1) / 2 + extra);
   const inWater = (p) => water.some((w) => (Array.isArray(w.poly) ? pointInPolygon(p, w.poly) : Array.isArray(w.path) && distanceToPath(p, w.path) < (w.width ?? 1) / 2 + 0.5));
 
-  // Walled yards: each site's walls (lot: the site they wall in) walled again around their outline made convex, with a
-  // gate on the side nearest a street. Where that outline would run onto a street or through a building (a plot that
-  // bends around a corner, a wall cut where another district's street passes), the site's own walls are kept with their
-  // small jogs straightened, and where even those would, only their clear stretches
-  // (a wall keeps its stone off a street's curb, except where its end meets the street; it stays out of buildings and
-  // water)
+  // Walled yards: each site's walls walled again around their convex outline, with a gate nearest a street; where
+  // that would cross a street or a building, the site's own walls straightened, or only their clear stretches (off a
+  // street's curb but where an end meets the street, out of buildings and water)
   const buildings0 = items.filter((i) => i.kind === "building").map((b) => footprint(b));
   const clearAt = (p, atEnd) => !ways.some((w) => distanceToPath(p, w.path) < (w.width ?? 1) / 2 + (atEnd ? -0.1 : WALL_GATE.offCurb)) &&
     !inWater(p) &&
@@ -280,11 +273,9 @@ export function approachPaths(items, W = Infinity, H = Infinity) {
 }
 
 /**
- * What fills the middle of a block on a battle map, behind its street fronts (7 Nov: back houses, yards,
- * gardens and sheds, so a town zoomed to battle size reads as full as its overview): a quarter's own back numbers
- * (LOOK.back: a market's stores, a crafts quarter's workshops) with sheds and yard clutter added, else back houses.
- * Sizes in feet; gap: between buildings; shed: a shed's size, and how many are tried beside the houses (a share of
- * the houses' tries). Laid by the layout's fillBack, near the plots only, so open ground stays open.
+ * What fills a block's middle on a battle map behind its street fronts, so a zoomed town reads as full as its
+ * overview: the quarter's own back numbers (LOOK.back) with sheds and clutter added, else back houses. Feet; gap
+ * between buildings; shed: its size and its share of the houses' tries. Laid by fillBack near the plots only.
  */
 export const BATTLE_BACK = {
   len: [24, 34], dep: [18, 24], gap: 5, use: "house", gardens: true,
@@ -294,27 +285,29 @@ export const BATTLE_BACK = {
 export const battleBack = (B) => (B ? { shed: BATTLE_BACK.shed, clutter: BATTLE_BACK.clutter, ...B } : BATTLE_BACK);
 
 /**
- * How high a roof sits, in feet: an ordinary building's at 10, a tower's or a tall building's (a temple, a keep) at 20
- * (6 Nov). A roof is seen from the street as Foundry reveals a raised surface, more of it the lower it is.
+ * How high a roof sits, in feet: 10 for an ordinary building, 20 for a tower or tall building. Foundry reveals a
+ * raised surface to a token outside, more of it the lower it is.
  */
 export const ROOF_HEIGHT = { low: 10, tall: 20 };
 /**
- * A building group's roof height: tall when any part is a tower or stands 40 ft or more (a layout's `tall` 1 or more);
- * a building with floors above its ground floor (floorsAbove, from its interiors) has its roof on top of the highest, a
- * floor's height (10 ft) each.
+ * A building group's roof height: tall when any part is a tower or stands 40 ft or more; with floors above, on top of
+ * the highest (10 ft a floor).
  */
 export const roofHeight = (parts) => Math.max(parts.some((b) => b.tower || b.tall >= 1) ? ROOF_HEIGHT.tall : ROOF_HEIGHT.low, ROOF_HEIGHT.low * (1 + Math.max(0, ...parts.map((b) => b.floorsAbove ?? 0))));
 
-/** A building's walls: their thickness in squares (the art's band), a door's width, a window's; how far past the map's edge a building may run and still be entered; how near a way passes for it to be the building's street rather than a lane cut short at it; how far in front of a door must be clear of fences and on the map (doorClear). */
+/**
+ * A building's walls in squares: thickness (the art's band), door, wide door and window widths, window spacing,
+ * corner keep; offMap: how far past the map's edge a building may run and still be entered; nearStreet: how near a
+ * way passes to count as its street; doorClear: how far before a door must be clear of fences and on the map.
+ */
 export const SHELL = { thickness: 0.3, door: 1, wideDoor: 2, window: 0.5, windowEvery: 2.6, cornerKeep: 0.45, offMap: 0.5, nearStreet: 4, doorClear: 0.8 };
 const STONE_USES = new Set(["temple", "shrine", "keep", "watch", "tower", "gatehouse", "chapel", "guildhall", "customs", "palace", "market-hall"]);
 const hashOf = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
 
 /**
- * A battle map's building groups, one for each building that stands as one (one roof tile, one set of walls): a
- * group's parts that touch (a house and its wings) stay together, those that don't (an inn's stable across its
- * yard) each become a group of their own, and a centerpiece's or a plan landmark's parts (a pinned house), which come
- * without a group, are joined as they touch. Sets each building's `group`; the group that holds a plot's main house keeps its name.
+ * A battle map's building groups, one per building that stands as one (one roof tile, one set of walls): touching
+ * parts stay together, separate ones (an inn's stable) become groups of their own, and a centerpiece's or landmark's
+ * parts are joined as they touch. Sets each building's group; the one holding a plot's main house keeps its name.
  */
 export function battleGroups(items) {
   const buildings = items.filter((i) => i.kind === "building");
@@ -341,12 +334,10 @@ export function battleGroups(items) {
 }
 
 /**
- * Each building's walls, as rings of segments (wall, door, window) a half thickness inside its footprint, so the roof
- * covers them: a front door on the side nearest a street, a back door into its yard (or, around a courtyard, one into
- * the courtyard), windows along the walls clear of corners, doors and neighbors. Items `shell` are added, one for each
- * piece a group's walls make (its id the group's, then /shell, /shell2...); returns how many. W, H: the map's size in
- * squares, when known: a building the map's edge cuts is closed (7 Nov: houses that run off the map aren't
- * part of the fight), its doors made walls, and it gets no interior (closed: true).
+ * Each building's walls as rings of segments (wall, door, window) half a thickness inside its footprint, so the roof
+ * covers them: a front door nearest a street, a back door into its yard (or a courtyard), windows clear of corners,
+ * doors and neighbors. Adds a shell item per piece; returns how many. W, H: the map's size; a building the map's edge
+ * cuts is closed (no doors, no interior).
  */
 export function buildingShells(items, W = Infinity, H = Infinity) {
   const ways = items.filter((i) => i.kind === "way" && !i.faint && Array.isArray(i.path) && i.path.length >= 2);
@@ -362,17 +353,15 @@ export function buildingShells(items, W = Infinity, H = Infinity) {
   for (const [g, parts] of groups) {
     const main = parts.find((b) => b.main) ?? parts[0];
     if (parts.some((b) => b.castle)) continue; // (a castle's tower or gatehouse: castle.mjs built its walls)
-    // (a round building, a windmill or a round tower, is walled around its many-sided footprint as any other)
-    // The group's outline (a courtyard a hole in it), its walls' line half a thickness in: a piece for each part of
-    // that line (a narrow neck may split it), the biggest first
+    // The group's outline (a courtyard a hole in it; a round building its many-sided footprint), its walls' line half
+    // a thickness in: a piece for each part (a narrow neck may split it), the biggest first
     const pieces = shapes(offset(union(parts.map(footprint)).filter((r) => signedArea(r) !== 0), -T / 2)).filter((p) => Math.abs(signedArea(p.outer)) > 1);
     pieces.sort((a, b) => Math.abs(signedArea(b.outer)) - Math.abs(signedArea(a.outer)));
     const shed = main.use === "shed" || (/\/o-/.test(main.id) && !main.use);
     const use = main.use ?? (shed ? "shed" : "house");
     const material = STONE_USES.has(use) || main.tower ? "stone" : shed || use === "stable" || use === "barn" ? "wood" : use === "smithy" ? "stonewood" : "timber";
     const h = hashOf(g);
-    // (a lane cut short at this building's wall ends there, but isn't its street: left out of where its front door goes
-    // when another way passes within a few squares of the building, else it's the way to the door)
+    // (a lane cut short at this building's wall isn't its street when another way passes within a few squares)
     const feet = parts.map(footprint);
     const endsHere = (w) => (w.wallEnds ?? []).some((cut, i) => cut && feet.some((f) => { const p = i ? w.path[w.path.length - 1] : w.path[0]; return pointInPolygon(p, f) || distanceToPath(p, [...f, f[0]]) < (w.width ?? 1) / 2 + 1; }));
     const ownWays = ways.filter((w) => !endsHere(w));
@@ -383,9 +372,8 @@ export function buildingShells(items, W = Infinity, H = Infinity) {
       // (points on a straight line dropped)
       const tidy = (ring) => ring.filter((p, i) => { const a = ring[(i - 1 + ring.length) % ring.length], c = ring[(i + 1) % ring.length]; return Math.abs((p[0] - a[0]) * (c[1] - a[1]) - (p[1] - a[1]) * (c[0] - a[0])) > 1e-4; });
       const rings = [piece.outer, ...piece.holes].map(tidy).filter((r) => r.length >= 3);
-      // (a round building's many short sides are too short for a door: its wall runs straight across the arc facing its
-      // street, a front just wide enough for one)
-      // (toward the map's middle when no way runs on the map; wide enough for its own door, a temple's wide one)
+      // (a round building's sides are too short for a door: its wall runs straight across the arc facing its street,
+      // or the map's middle with no way on the map, just wide enough for its door)
       if (parts.every((b) => b.round) && rings[0]?.length >= 8) {
         const ring = rings[0], c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
         const near = streets.length ? streets.map((w) => nearestOnPath(c, w.path)).reduce((a, b) => (b.d < a.d ? b : a)).q : Number.isFinite(W) && Number.isFinite(H) ? [W / 2, H / 2] : [c[0], c[1] + 1];

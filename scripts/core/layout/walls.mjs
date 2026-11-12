@@ -43,7 +43,7 @@ function geometryOf(f, sq, battle = false) {
   const ft = (v) => v / sq;
   const palisade = f.class === "palisade";
   const T = ft(f.thickness ?? THICK_FT[f.class] ?? 12), half = T / 2;
-  // (on a battle map a stone wall's towers are buildings with rooms: a round one 35 ft across, a square one 32 ft)
+  // (on a battle map a stone wall's towers are buildings with rooms, sized by BATTLE_TOWER_FT)
   const D = palisade ? Math.max(3 * T, ft(14)) : battle ? Math.max(2.2 * T, ft(BATTLE_TOWER_FT.round)) : Math.max(2.2 * T, ft(24));
   const push = Math.max(0, D / 2 - half) * 0.7;
   const deep = Math.max(2 * T, ft(22)), gateOut = T * 0.25;
@@ -156,13 +156,10 @@ function crossings(path, cum, line) {
 
 /**
  * Lays out one town wall or palisade. f: the plan wall (normalized, its path smoothed). roads: [{ id, path, width,
- * over }] (over: false, a way that gets gates and keeps towers off it but doesn't stop the wall where it only runs
- * over it) and waters: [{ id, path, width }] in squares (with widths where it varies, or body and its shore's reach for a lake
- * or the sea, its path then the shore); sq: feet a square; r: the wall's stream. Returns { runs: [path],
- * towers: [building spec], gates: [{ at, road }], ditches: [{ path, width, closed, moat }] (a dry ditch stops short of
- * water, a moat runs on into it), bridges: [crossing spec],
- * band: { path, half } (what's kept clear), side, closed, notes }. A tower spec is what addBuilding takes, plus `kind`,
- * `at` and `key` (where it stands, for its stream).
+ * over }] (over: false for a way that gets gates but doesn't stop the wall where it only runs over it); waters: [{
+ * id, path, width }] in squares (or a lake's or sea's shore); sq: feet a square; r: the wall's stream. Returns {
+ * runs, towers (building specs plus kind, at, key), gates: [{ at, road }], ditches: [{ path, width, closed, moat }],
+ * bridges, band: { path, half } (kept clear), side, closed, notes }.
  */
 export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
   // Repeated points dropped (a closed loop keeps its closing point)
@@ -195,7 +192,8 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
   const R = (D / 2) * (shape === "round" ? 1 : Math.SQRT2); // how far a tower reaches from its center, at most
   const wrap = (s) => (closed ? ((s % L) + L) % L : s);
 
-  // True when a corner of the wall lies between lengths a and b (around a closed loop, either way over its start)
+  // The wall's corners (any turn of 5 degrees or more) as lengths along it; cornerIn(a, b): whether one lies between
+  // lengths a and b (around a closed loop, either way over its start)
   const cornerAt = [];
   for (let i = closed ? 0 : 1; i < path.length - 1; i++) {
     const prev = i === 0 ? path[path.length - 2] : path[i - 1], b = path[i], c = path[i + 1];
@@ -336,9 +334,8 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
   for (const g of gaps) {
     const gr = r.fork("gate", keyOf(g.at));
     const blockRoll = gr.next(), lookRoll2 = gr.next();
-    // (on a battle map, a gatehouse wherever one can stand: the full gatehouse asked for)
-    // (a battle map's, whose passage lies square to the wall, only over a road crossing it all but squarely, within
-    // about 25 degrees, so the road runs down its passage, not through its guard rooms: else a tower each side)
+    // (on a battle map a gatehouse only over a road crossing within about 25 degrees of square, so the road runs down
+    // its square passage, not through its guard rooms; else a tower each side)
     const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= (works ? GATE_SQUARE : 0.6) && !g.roads[0].corner && (works || blockRoll < 0.5);
     if (block) {
       const n = outward(g.u);

@@ -1,12 +1,7 @@
 /**
- * The AtlasScribe window. A plan laid out and drawn in plain colors in a second or so, with its districts and areas
- * outlined, so a change can be judged before a full render; and around it, the plan's file (Quick Start, open, import,
- * save, export), its problems, and making it into a scene. Rerolling, locking and undoing happen here; the window
- * keeps the plan they make (app.plan), and Copy plan puts it on the clipboard. With Shapes on, districts and areas
- * show handles on their corners: drag one to reshape (corners two shapes share move together, and a corner dropped
- * on another snaps to it), drag the dot in the middle of a side to add a corner, alt-click or right-click a corner to
- * remove it. Scroll to zoom, drag to pan, double-click to fit. Clicking a feature (on the map or in the list) opens
- * its settings in the side panel (the inspector), and the gear opens the plan's own; each change redraws the map.
+ * The AtlasScribe window: a plan laid out and drawn in plain colors in a second or so, its districts and areas
+ * outlined, so a change can be judged before a full render; around it the plan's file (Quick Start, open, import,
+ * save, export), its problems, rerolls, locks, undo, reshaping, drawing and the inspector, and making it a scene.
  */
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs";
@@ -49,9 +44,10 @@ const underStyle = (rect, px, opacity) => `left:${rect[0] * px}px;top:${rect[1] 
 /** Ids of picked things the generator made start with this (they aren't in the plan). */
 const GEN = "@gen:";
 /**
- * The Battle map tool: a box dragged (or clicked into place) over an area of a town map, made a battle map of its own
- * (zoom.mjs). Not one of the drawing tools: it adds nothing to the plan. PRESETS: a clicked box's side, in battle
- * squares; BIG: past this many squares a side the size shows amber (7 Nov: warn, still allow).
+ * The Battle map tool: a box dragged (or clicked into place) over a town map, made a battle map of its own
+ * (zoom.mjs). It adds nothing to the plan. PRESETS: a clicked box's side in battle squares; BIG: past this many
+ * squares a side the size shows amber; MOST: past this many it can't be made (one image's limit at the fewest pixels
+ * a square).
  */
 const BATTLE_TOOL = { id: "battle", label: "Battle map", geometry: "box", how: "battle" };
 const toolFor = (id) => (id === "battle" ? BATTLE_TOOL : toolOf(id));
@@ -251,8 +247,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         this.#url = URL.createObjectURL(result.blob);
         this.#result = result;
       }
-      // Changes made while it drew are applied first (just below), and show then: rendering now would put an input
-      // moved meanwhile (the underlay's slider) back where it was until they're applied
+      // Changes made while it drew are applied first and show then (rendering now would snap a moved slider back)
       if (!this.#queue.length) await this.render();
       return result;
     };
@@ -1061,7 +1056,6 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     }
   }
 
-  /** The scene this plan was made into last, if any. */
   /**
    * Applies an inspector change ((plan) => { plan } | { error }) and redraws; while the map is drawing it waits its
    * turn, so a change made then isn't lost. An error leaves the plan as it was.
@@ -1545,6 +1539,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     this.render();
   }
 
+  /** The scene this plan was made into last, if any. */
   #sceneFor() {
     const id = this.#plan?.id;
     if (!id) return null;

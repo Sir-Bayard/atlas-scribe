@@ -209,7 +209,7 @@ export function fieldsOf(plan, id) {
     const dflt = fieldDefault(spec, cls);
     let value = f[name];
     if (kind === "share") value = isObj(f[name]) ? f[name][txt.key] : undefined;
-    if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? null : 0; // an M1 plan's (true: its character's share)
+    if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? null : 0; // older plans give true (its character's share)
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
     if (f.type === "prop" && name === "species" && value !== undefined && value !== null) value = isConifer(value) ? "conifer" : "bare"; // "pine" is drawn, and shown, as a fir
     let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);
@@ -223,8 +223,8 @@ export function fieldsOf(plan, id) {
       unit: spec.unit ?? null, min: spec.min ?? null, max: spec.max ?? null,
       value, auto, more: !!txt.more,
     });
-    // A district's or area's name on the map: a label that follows it (after its name)
-    // A landmark's roof, for all its buildings at once (blank when they differ)
+    // A landmark's roof, for all its buildings at once (blank when they differ); then, for a district, area or
+    // landmark, its name on the map: a label that follows it (listed after its name)
     if (name === "name" && f.type === "landmark") {
       const roofs = new Set((Array.isArray(f.buildings) ? f.buildings : []).map((b) => b?.roof ?? "slate"));
       out.push({ name: ROOF_ALL, label: "Roof", help: "The roof of all its buildings", kind: "enum", values: ROOFS, names: null, unit: null, min: null, max: null, value: roofs.size === 1 ? [...roofs][0] : undefined, auto: roofs.size > 1 ? "mixed" : null, more: false, required: true });
@@ -308,8 +308,7 @@ export function setField(plan, id, name, raw) {
   // A river's width at each point (a Quick Start city's) gives way to a width or end width set in the window, which
   // would otherwise do nothing (not to one reset, or entered again as it was)
   if (g.type === "water" && (name === "width" || name === "endWidth") && value !== undefined && value !== f[name]) delete g.widths;
-  // A wood's character and its tree count are two ways to say how thick it is: the one set last wins (the count used
-  // to win whatever the density said, so an older wood's density did nothing)
+  // A wood's character and its tree count are two ways to say how thick it is: the one set last wins
   if (g.type === "area" && g.class === "woods" && value !== undefined) {
     if (name === "density") delete g.trees;
     if (name === "trees") delete g.density;

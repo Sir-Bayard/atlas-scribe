@@ -1,12 +1,8 @@
 /**
- * Publishing: a rendered map becomes a Foundry scene. A new scene is created unless the GM names one to update.
- * Before an existing scene is changed, all of it is saved as JSON to <output>/backups; updating keeps the scene's
- * name (the GM may have renamed it). A new scene gets a name no other scene has. Everything AtlasScribe adds carries
- * flags under "atlas-scribe" (the scene: plan, image, version, built; each label: batch, feature; the title tile:
- * title; a battle map's roof and tree tiles: overhead, kind; its furniture: furniture; its mist: atmosphere; its walls,
- * roof, indoor, ground and water regions, the game system's regions and lights: built, kind), so a second publish
- * replaces only its own labels, title, tiles, walls, regions and lights and leaves the GM's own alone. A battle map
- * follows the game system's rules through its adapter (rules.mjs) when the world has one.
+ * Publishing: a rendered map becomes a Foundry scene, a new one unless the GM names one to update (backed up first as
+ * JSON in <output>/backups, its name kept). Everything AtlasScribe adds carries flags under "atlas-scribe", so a
+ * republish replaces only its own labels, tiles, walls, regions and lights and leaves the GM's alone. A battle map
+ * follows the game system's rules through its adapter (rules.mjs).
  */
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
@@ -27,11 +23,11 @@ const THUMB = 300;
 const FONT = { min: 8, max: 256 };
 
 /**
- * plan: a normalized plan. image: the rendered map's path, width and height in pixels, and thumb (a Blob) when
- * the worker made one. folder: the output folder. layout: the map's layout, for its notable buildings' hidden labels
- * (none without it; api.publish lays the plan out again when it isn't given one). sceneId: a scene to update instead of creating one; one
- * AtlasScribe didn't make is refused unless force is true. check(): throws if the job was canceled; it's called
- * before anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, mist, walls, roofs, heights, lights, warnings } (title: whether a dressed map's name went in as a hidden tile; overheads: how many roof and tree tiles went over the map; furniture and mist: how many pieces and overlays; walls, roofs, heights and lights: how many walls, roof and indoor regions, ground and water regions and lights a battle map got).
+ * plan: a normalized plan. image: the rendered map's path, width, height and thumb (a Blob). folder: the output
+ * folder. layout: the map's layout (none: no notable-building labels or battle documents). sceneId: a scene to update
+ * (one AtlasScribe didn't make is refused unless force). check(): throws once the job is canceled; called before
+ * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, mist, walls,
+ * roofs, heights, lights, stairs, levels, rules, ruled, warnings }, counts of what was placed.
  */
 export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
   const warnings = [];
@@ -51,8 +47,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     backup = await upload(dir, await freeName(dir, `${scene.name}-${stamp()}`, "json"), new Blob([json], { type: "application/json" }));
   }
 
-  // The thumbnail is named after the scene, so a republish replaces it rather than adding another. It's made first and
-  // saved only after the last chance to stop, so a cancel never leaves a new thumbnail over the old
+  // The thumbnail is named after the scene, so a republish replaces it; it's saved only after the last chance to stop
   check();
   onProgress(0.3, "Making the thumbnail");
   const id = sceneId ?? foundry.utils.randomID();
@@ -90,9 +85,9 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   };
 
   onProgress(0.5, sceneId ? "Updating the scene" : "Creating the scene");
-  // A battle map's level reaches up to its roofs: Foundry draws a door's art at the top of the level, under a roof
-  // there. AtlasScribe sets that top only on a level with none, or the one it set before (kept as the scene's flag
-  // levelTop), and takes it off again when the scene becomes a settlement map; a top the GM set is left alone
+  // A battle map's level reaches up to its roofs (Foundry draws a door's art at the level's top). AtlasScribe sets
+  // that top only on a level with none or the one it set before (flag levelTop), and takes it off for a settlement
+  // map
   const reach = battle ? { elevation: { bottom: 0, top: ROOF_HEIGHT.low } } : {};
   let scene, created = false;
   if (sceneId) {
@@ -121,8 +116,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     created = true;
   }
 
-  // A battle map's floors above and below its ground (Foundry 14's levels): a level for each, its image over (or under)
-  // the ground's; every document AtlasScribe places below then goes on its own floor's level
+  // A battle map's floors above and below the ground, each a Foundry level with its image; every document placed
+  // below goes on its own floor's level
   let levelOf = null;
   if (!battle) {
     // (a settlement map over what was a battle map with floors: its floors' levels come out)
@@ -139,9 +134,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       warnings.push(`The floors above and below the ground couldn't all be made levels (${e.message}).`);
     }
   }
-  // The game system's own settings for the scene (PF2e's environment types, say), through its adapter; ones AtlasScribe
-  // set before and no adapter sets now (the rules turned to Foundry's own, or a settlement map) come off again, unless
-  // the GM changed them
+  // The game system's own scene settings (PF2e's environment types) through its adapter; ones AtlasScribe set that no
+  // adapter sets now come off again, unless the GM changed them
   try {
     // (a battle map with no layout, published by its path and not laid out again, keeps what it had)
     const change = battle && !layout ? null : battle && typeof R.sceneData === "function" ? R.sceneData({ plan, layout, scene: sceneById(sceneId) }) : unsetScene(sceneById(sceneId));
@@ -149,8 +143,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } catch (e) {
     warnings.push(`The scene's ${R.label ?? R.id} settings couldn't be made (${e.message}).`);
   }
-  // Labels: every label AtlasScribe put in this scene out (an earlier map's, whatever plan it came from), the plan's in,
-  // on the ground's level when the scene has floors (an inn's name isn't in its cellar)
+  // Labels: every label AtlasScribe put in this scene out, the plan's in, on the ground's level when there are floors
   onProgress(0.85, "Placing the labels");
   // The new labels go in before the old ones come out, so a failure never leaves the scene with none
   scene = sceneById(sceneId);
@@ -160,11 +153,10 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
 
   /**
-   * A document's data on the level of its floor (when the scene has floors: _floor, else the ground; _floors, several;
-   * _all, every level, as a roof's surface and the indoors under it are), its floor notes taken off.
+   * A document's data on its floor's level (_floor; _floors, several; _all, every level), its floor notes taken off.
    */
-  // (a document whose floors have no level, the scene's levels not made, say, is left out: never piled onto the ground;
-  // with no levels but the ground's, only the ground's documents go in, on every level as before)
+  // (one whose floors have no level is left out, never piled onto the ground; with no levels but the ground's, only
+  // the ground's documents go in)
   const onFloor = ({ _floor, _floors, _all, ...d }) => {
     const fs = _floors ?? [_floor ?? 0];
     if (_all) return d;
@@ -191,9 +183,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     }
   }
 
-  // A battle map's roofs and tree crowns, as tiles over the map: a roof fades when a token walks in under it, a crown
-  // opens around a token beneath it. The new ones go in before the old ones (AtlasScribe's, from any plan) come out; a
-  // map given by its path alone has none to give, so the scene keeps those it had
+  // A battle map's roofs and tree crowns as tiles over the map, new ones in before AtlasScribe's old ones come out; a
+  // map given by its path alone has none, so the scene keeps those it had
   onProgress(0.95, "Placing the roofs and trees");
   const oldOver = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "overhead" in t.flags[MOD]).map((t) => t.id);
   let overheads = 0;
@@ -231,9 +222,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     }
   } else if (oldMist.length) warnings.push("The mist was left as it was: it comes only with a map rendered for the scene.");
 
-  // A battle map's furniture, a tile for each piece (a bed made up, a table with its chairs and what's on it), for the
-  // GM to move as they like: new ones in, then AtlasScribe's old ones out; a map given by its path keeps those it had,
-  // and so does one whose furniture art wasn't found at all (the art folder moved, say)
+  // A battle map's furniture, a tile a piece for the GM to move: new in, then the old out; a map given by its path,
+  // or whose furniture art wasn't found at all, keeps those it had
   let furniture = 0;
   const oldFurn = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "furniture" in t.flags[MOD]).map((t) => t.id);
   const pieces = (layout?.items ?? []).filter((i) => i.kind === "interior").flatMap((i) => i.furniture ?? []).filter((f) => FURNITURE[f.f] && !FURNITURE[f.f].drawn).length
@@ -255,10 +245,9 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     }
   } else if (oldFurn.length) warnings.push("The furniture was left as it was: it comes only with a map rendered for the scene.");
 
-  // A battle map's walls, doors and windows (from its buildings' shells), its fences and low walls (movement only, a
-  // yard's gate a door), over each building a roof Foundry shows to a token outside (a raised surface it partly
-  // reveals), and its ground, banks, cliffs and water (height.mjs): new ones in, then AtlasScribe's old ones out (a
-  // settlement map just takes the old ones out)
+  // A battle map's walls, doors and windows, fences and low walls (movement only), a roof region over each building,
+  // and its ground, banks, cliffs and water (height.mjs): new ones in, then the old out (a settlement map just takes
+  // them out)
   let walls = 0, roofs = 0, heights = 0, lights = 0, stairs = 0, ruled = 0;
   if (layout) {
     const { sceneX, sceneY } = sceneById(sceneId).dimensions;
@@ -341,9 +330,9 @@ async function createAll(sceneId, type, data) {
 const OVERHEAD_ALPHA = { roof: 0.12, canopy: 0.25 };
 
 /**
- * An overhead piece (render's { path, kind, x, y, width, height, elevation }, in px from the map's corner) as Tile
- * data. A tile's x and y are its middle (Foundry 14 anchors tiles at their center). A roof fades as a whole when a
- * token is under it, and clears where a token outside sees in; a tree's crown opens in a circle around the token.
+ * An overhead piece (render's { path, kind, x, y, width, height, elevation }, px from the map's corner) as Tile data,
+ * x and y its middle (Foundry 14 anchors tiles at their center). A roof fades when a token is under it and clears
+ * where a token outside sees in; a crown opens around a token beneath it.
  */
 function overheadTile(o, sceneX, sceneY, plan) {
   const M = CONST.TILE_OCCLUSION_MODES;
@@ -379,7 +368,7 @@ function furnitureTile(f, sceneX, sceneY, plan) {
 }
 /**
  * A mist overlay's tile: faint, turned at random, lying on the map at the ground's height, under the tokens; it hides
- * nothing and doesn't fade (Map Dressing Guide, Atmosphere).
+ * nothing and doesn't fade.
  */
 function mistTile(m, sceneX, sceneY, plan) {
   return {
@@ -394,9 +383,8 @@ function mistTile(m, sceneX, sceneY, plan) {
 }
 
 /**
- * The times of day a plan can give (output.scene.time): the scene's darkness, whether its light outdoors is on and
- * bright (a day's sun) or dim (dawn and dusk), and the tint of its light. A lantern, torch or lamp post is lit from
- * LIT_FROM, so at dawn, dusk and night.
+ * The times of day a plan can give (output.scene.time): the scene's darkness, whether outdoor light is on and bright
+ * or dim, and its tint. A lantern, torch or lamp post is lit from LIT_FROM darkness on.
  */
 export const TIMES = {
   day: { darkness: 0, global: true, bright: true },
@@ -438,17 +426,15 @@ function localPath(src) {
 }
 
 /**
- * The doors Foundry itself ships (Forgotten Adventures' art, in every install), swung open by a door: a house's, by its
- * variant (a temple's wide door is two of them, a leaf each side); a yard's gate. Foundry fits a door's whole art to
- * the door (a leaf of a double door to half of it), so each is a one-square door.
+ * The doors Foundry ships (Forgotten Adventures' art, in every install): a house's by its variant (a temple's wide
+ * door two leaves), a yard's gate. Foundry fits a door's art to the door, so each is a one-square door.
  */
 const CORE_DOORS = ["canvas/doors/small/Door_Wood_Walnut_F_1x1.webp", "canvas/doors/small/Door_Wood_Dark_H_1x1.webp", "canvas/doors/small/Door_Wood_Ashen_A_1x1.webp", "canvas/doors/small/Door_Wood_Light_B_1x1.webp"];
 const CORE_GATE = "canvas/doors/small/Door_Wood_Light_G_1x1.webp";
 /**
- * How thick a door's art is drawn: Foundry scales it by the scene's grid over the art's own squares (flags.core.
- * textureGridSize, 200 px a square for this art). The door itself is a band 26 px (0.13 of a square) across the
- * middle of its art, so a smaller grid size thickens it to the wall it stands in (a wall's thickness, in squares), or
- * a gate to the fence it closes (the fence art's band, about 0.185 of a square).
+ * How thick a door's art is drawn: Foundry scales it by the scene's grid over flags.core.textureGridSize. The door is
+ * a 26 px band across the middle of its 200 px art, so a smaller grid size thickens it to its wall (or a gate to its
+ * fence's band, about 0.185 of a square).
  */
 const DOOR_BAND = 26, FENCE_THICK = 0.185;
 const doorGrid = (thick) => Math.round(DOOR_BAND / thick);
@@ -477,8 +463,8 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
       }
     }
   }
-  // Walls between rooms, and doors in them (an open doorway is left open: nothing there), on each floor; a floor above
-  // or below has its own outer walls (windows above, none in a cellar), each on its floor (_floor, for publish)
+  // Walls between rooms and the doors in them (an open doorway is left open), on each floor; a floor above or below
+  // has its own outer walls (windows above, none in a cellar)
   for (const it of layout.items.filter((i) => i.kind === "interior")) {
     const _floor = it.floor ?? 0;
     for (const w of it.walls) {
@@ -498,9 +484,8 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
   }
   // (fences and low walls stop movement only; a yard's gate between its back fences is a door that does the same)
   const fenceOnly = { move: M.NORMAL, sight: S.NONE, light: S.NONE, sound: S.NONE };
-  // A castle's curtain: solid on the ground and the floor above, its faces cut where its towers and gatehouses stand
-  // (their own walls close it); at the walk, its parapet and its inner edge (around the top of each flight up) stop
-  // movement only, a token seeing over them
+  // A castle's curtain: solid on the ground and the floor above, its faces cut where towers and gatehouses stand; at
+  // the walk its parapet and inner edge stop movement only
   const W2 = CASTLE.walk;
   for (const w of layout.items.filter((i) => i.kind === "wall" && i.curtain)) {
     for (const [a, b] of [...w.curtain.face, ...w.curtain.back, ...w.curtain.ends]) out.push({ c: c(a, b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, _floors: [0, 1], flags: flags("curtain") });
@@ -523,10 +508,9 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
 }
 
 /**
- * A battle layout's roofs as Region data: over each building, a surface at its roof's height (roofHeight) that
- * Foundry reveals to a token outside, more of it the farther the token stands (Define Surface, Reveal Elevated
- * Surface), and that makes the roof tile over it fade for a token beneath; and under it the indoors, a little darker
- * than outside (the roof tile keeps the weather out). A courtyard is a hole in both.
+ * A battle layout's roofs as Region data: over each building a surface at its roof's height that Foundry reveals to a
+ * token outside and that fades the roof tile for a token beneath (Define Surface, Reveal Elevated Surface), and under
+ * it the indoors, a little darker. A courtyard is a hole in both.
  */
 export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
   const groups = new Map();
@@ -617,11 +601,10 @@ export function battleStairs(layout, sceneX, sceneY, pps, plan) {
 }
 
 /**
- * Makes a scene's levels match a battle map's floors: AtlasScribe's own levels (flags floor) updated, made or taken out;
- * the ground's level (the one showing the map, groundPath) left as it is. wanted: render's levels ([{ floor, path }]),
- * or null for a map given by its path (the floors the scene has are kept). A floor above sees down to the ground and the
- * floors between; a cellar sees nothing else. Returns a Map of floor to level id (0 the ground), or null for a scene
- * with no floors but its ground.
+ * Makes a scene's levels match a battle map's floors: AtlasScribe's levels (flags floor) updated, made or taken out,
+ * the ground's level (showing groundPath) left as it is. wanted: render's levels ([{ floor, path }]), or null for a
+ * map given by its path (the scene's floors are kept). A floor above sees down to the floors below; a cellar sees
+ * nothing else. Returns a Map of floor to level id (0 the ground), or null when there are no floors but the ground.
  */
 async function syncLevels(sceneId, wanted, groundPath, names = {}) {
   let scene = sceneById(sceneId);
@@ -672,11 +655,10 @@ const HEIGHT_KINDS = ["ground", "face", "shallow", "deep", "ice"];
 const HEIGHT_COLOR = { ground: "#8a7a4a", face: "#6b5a48", shallow: "#4a90b0", deep: "#1f4f7a", ice: "#b8d8e8" };
 
 /**
- * A battle layout's height as Region data (height.mjs): the ground of each level at its elevation (no behavior: the
- * height hook reads it for a token's elevation), and over each bank, slope, cliff face and water a cost for walkers
- * (the scene's own Modify Movement Cost, its walking actions slowed; flying and swimming left alone). Each carries
- * what the hook needs in its flags (a cliff's Climb DC among them). Seen only in the Regions controls. rules: the game
- * system's adapter (rules.mjs), which may give a region its system's own behaviors in place of Foundry's.
+ * A battle layout's height as Region data (height.mjs): each level's ground at its elevation (no behavior: the height
+ * hook reads it), and a walkers' cost over each bank, slope, cliff face and water (Modify Movement Cost; flying and
+ * swimming left alone), with what the hook needs in its flags. rules: the game system's adapter (rules.mjs), which
+ * may give a region its system's own behaviors.
  */
 export function battleHeights(layout, sceneX, sceneY, pps, plan, rules = CORE) {
   const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
@@ -714,9 +696,8 @@ function freeSceneName(name) {
 }
 
 /**
- * A small preview for the scene list (saved in <output>/thumbs as <scene id>.webp, replaced on a republish; the
- * scene list may show the old one until the page reloads), as a Blob: the worker's thumbnail when there is one;
- * else Foundry makes one from the image.
+ * A small preview for the scene list (<output>/thumbs/<scene id>.webp, replaced on a republish), as a Blob: the
+ * worker's thumbnail, else one Foundry makes.
  */
 async function thumbOf(image) {
   if (image.thumb) return image.thumb;

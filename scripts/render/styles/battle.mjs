@@ -1,15 +1,13 @@
 /**
- * The battle map style: a Layout at 5 ft a square painted from Forgotten Adventures art at its own scale (200 px of
- * art to a square), as the battle mockup approved on 3 Nov: bright grass, crisp stone curbs along the paved
- * streets, flat paving (setts and flagstones; cobbles and herringbone read as noise at this scale), floors inside the
- * buildings, fenced yards, and one sun casting every shadow to the northwest.
+ * The battle map style: a 5 ft a square layout painted from Forgotten Adventures art at its own scale (200 px of art
+ * a square), with one sun casting every shadow to the northwest.
  *
- * Only the ground is painted on the map image. What sits over a token is painted apart, each piece onto an image of its
- * own, for the scene to lay over the map as tiles: a building's roof (fading when a token walks in) and the trees'
- * crowns (opening around a token beneath them). overheads(layout) lists the pieces; paintOverhead(ctx, piece) paints one.
+ * Only the ground goes on the map image. What sits over a token (a building's roof, the trees' crowns) is painted
+ * apart, one image a piece, for the scene to lay over the map as tiles: overheads(layout) lists the pieces and
+ * paintOverhead(ctx, piece) paints one.
  *
- * Paints one window of the map (a tile) at a time; every pattern and noise is anchored to the map, so tiles meet without
- * seams. Numbers are in squares.
+ * The map is painted a tile at a time; every pattern and noise is anchored to the map, so tiles meet without seams.
+ * Squares throughout.
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
@@ -27,43 +25,33 @@ import { CASTLE } from "../../core/layout/castle.mjs";
 /** The widest blur this style uses, in squares (tiles need this much margin). */
 export const MAX_BLUR = 1;
 
-/** How long a flight FA's stairs art draws, in squares (its tile is 1 by 3, the steps the top 2.09 of it). */
+/** A flight's drawn length in FA's stairs art, in squares (its tile is 1 by 3). */
 const STAIR_DRAWN = 2.09;
 
-/** How much a castle's masonry (its walls' tops) is darkened over the dressed stone, so it reads apart from the floors. */
+/** How much a castle's masonry tops are darkened, so they read apart from the floors. */
 const MASONRY_SHADE = 0.4;
 
 /** Forgotten Adventures' art is drawn at 200 px a square. */
 const ART_PX = 200;
 
 /**
- * How the battle style blends one thing into the next (M6 chunk 10, from a winter bridge map built by hand with FA
- * Nexus): one table to tune, never a setting. Each layer is laid at its alpha through a soft mask (blur, in squares)
- * cut ragged by noise (scale: its patches across, in squares; cut: the noise level its edge lies at, higher for less of
- * it; soft: how gradually it fades), and where lift is given, height-blended: along a soft edge the brighter parts of
- * the art (a stone's top, a ridge of snow) show first and the darker last, as snow settles into cracks rather than
- * fading evenly over everything (lift: how much the art's brightness moves its edge; gain: how sharp the edge is).
- *   ground: the map's own ground, a second and a third in broad patches (in winter rocky snow and grass through it),
- *     broad soft shade so no wide stretch reads flat (shade), and on a rise's top in winter rocky snow (rise)
- *   winter: snow's extra layers: drifts along the top of every bank and cliff, thin snow along their foot, snow along
- *     the top of low stone walls and a bridge's parapets (cap: its alpha, its width across in squares, which art, and
- *     the noise that breaks it into patches),
- *     frost on the
- *     ground (overlays scattered by a square grid: one in each cell of `cell` squares at chance, size across)
- *   way: a trodden way in winter: disturbed snow in a ragged band, a deep trail down its middle, wheel tracks on a
- *     track or wider, and footprints every `step` squares on a path
- *   ice: ice along a stream: the shadow its shelves' edges throw on the open water (width and blur in squares), the
- *     cracked ice and snow over the shelves, the ledge of snowy ice along their edges (edgeWidth across), and what drifts in the channel
- *     (one at most every step squares, at chance; floes, chunks and foam each this many squares across)
- *   rise: a rise's or hollow's bank lit as a slope is (dark: the face turned from the sun; light: turned toward it),
- *     over its face and reach squares past its foot
- *   quarter: an unpaved quarter's own ground (a town's worn earth, a crafts quarter's dirt) in ragged patches
- *   deadEnd: a paved street that stops short of anything, cut square at its end and carried on by a worn path of bare
- *     earth tapering to a point reach squares on (or perHalf times its half width, if longer; tip its width there):
- *     trodden ground the street's width, bare earth bare of it down the middle, ragged by noise rag squares across
- *     (cut its threshold)
- *   props: what stands on the ground: its drop shadow (alpha, blur and offset in squares, a boulder's longer) and a
- *     soft contact shadow under it (ao: its alpha; aoSize: its share of the prop across), so nothing floats
+ * How one thing blends into the next: one table to tune. Each layer is laid at alpha through a soft mask (blur, in
+ * squares) cut ragged by noise (scale: patch size in squares; cut: the noise level of its edge, higher for less;
+ * soft: how gradually it fades). Where lift is given it is height-blended: along a soft edge the art's brighter parts
+ * show first (lift: how far brightness moves the edge; gain: how sharp the edge is).
+ * - ground: the map's ground patches (second, third), broad shade, and in winter rocky snow, also on a rise's top
+ * - winter: drifts along the top of banks and cliffs, thin snow at their foot, a cap of snow on low walls and
+ *   parapets, and frost overlays (one per cell squares, at chance)
+ * - way: a trodden way in winter: disturbed snow, a trail down its middle, wheel tracks, footprints every step
+ *   squares
+ * - ice: along a stream: the shelves' shadow on the open water, the ice and snow over them, a ledge of ice at their
+ *   edge (edgeWidth), and floes, chunks and foam drifting in the channel
+ * - rise: a rise's or hollow's bank lit as a slope (dark facing away from the sun, light toward it), reach past its
+ *   foot
+ * - quarter: an unpaved quarter's own ground in ragged patches
+ * - deadEnd: past a paved street that stops short: trodden ground tapering to a point reach squares on (or perHalf of
+ *   its half width, if longer; tip wide there), bare earth (bare of its width) down the middle, ragged by noise
+ * - props: a prop's drop shadow (a boulder's longer) and a soft contact shadow under it (ao, aoSize)
  */
 export const BLEND = {
   ground: { second: { alpha: 0.5, scale: 10, cut: 0.25, soft: 0.2 }, third: { alpha: 0.6, scale: 7, cut: 0.45, soft: 0.15 }, rocky: { alpha: 0.8, scale: 6, cut: 0.32, soft: 0.22, lift: 0.9, gain: 1.6 }, shade: { alpha: 0.14, scale: 13, cut: 0.1, soft: 0.5 }, rise: { alpha: 0.45, scale: 3, cut: 0.05, soft: 0.4, lift: 0.9, gain: 1.6 } },
@@ -76,13 +64,11 @@ export const BLEND = {
   ice: { shadow: { width: 0.4, blur: 0.14, alpha: 0.5 }, cracked: 0.55, snow: 0.6, edge: 0.95, edgeWidth: 0.5, drift: { step: 1.3, chance: 0.5, floe: 0.85, icechunk: 0.55, foam: 0.75, foamAlpha: 0.85 } },
 };
 
-/** A grave's length, in squares, laid across its row (FA's grave art is a plot with its headstone, longer than it is wide). */
+/** A grave's length in squares, laid across its row. */
 const GRAVE_SQUARES = 1.4;
 /**
- * What's drawn in a grave's curb (sizes as shares of the art's width across and its length along, centers along it
- * from its middle, the head end negative). curb: the curb's half size, across and along, as shares of the art (which
- * has a margin around it), kept clear of streets and buildings. mound: the earth heaped inside, its corners rounded round squares, laid at
- * alpha. stone: the headstone at its head, deep squares thick, lightened by light, its shadow cast shadow times a prop's.
+ * What's drawn in a grave's curb, as shares of the art's width (across) and length (along), the head end negative.
+ * curb: the curb's half size, kept clear of streets and buildings; mound: the earth inside it; stone: the headstone.
  */
 const GRAVE = {
   curb: [0.3, 0.37],
@@ -90,13 +76,12 @@ const GRAVE = {
   stone: { at: -0.235, across: 0.27, deep: 0.17, round: 0.05, shadow: 2.5, light: 0.18 },
 };
 
-/** A wild prop's least size across, in squares, whatever its art: FA's arctic stump is a square where its other stumps are four. */
+/** A wild prop's least size across in squares (FA's arctic stump art is much smaller than its other stumps). */
 const WILD_LEAST = { stump: 1.5 };
 
 /**
- * The paving a way's or square's surface is laid in at battle size: flat stones (3 Nov: cobbles "don't
- * translate" at this scale, and herringbone fought the grass around it). A road's flagstones are the second variant,
- * a square's the first, so the two read apart where they meet.
+ * The stones a surface is paved in at battle size (cobbles and herringbone read as noise at this scale). A road takes
+ * the flagstones' second variant and a square the first, so the two read apart where they meet.
  */
 const PAVING = { cobble: "surface.setts", setts: "surface.setts", flagstone: "surface.flagstone", herringbone: "surface.flagstone", brick: "surface.brick", tiles: "surface.tiles" };
 const UNPAVED = { dirt: "surface.dirt", gravel: "surface.gravel", trodden: "surface.trodden" };
@@ -134,13 +119,9 @@ const BANK = { earthy: "edge.bank.earthy", slate: "edge.bank.slate", mossy: "edg
 const bankRole = (rock, s) => `${BANK[rock] ?? "edge.bank.earthy"}.${s}`;
 /** A prop's art in a season (a snowy rock, stump or log in winter; one with no art for the season keeps its own). */
 const propRole = (cls, s) => `prop.${cls}.${s}`;
-/** The wild props laid flat on the ground (drawn first, no shadow), and those standing up (shadowed). */
-/**
- * Whether a bank's art is laid flipped. FA's bank art has its grassy top along the top of the image, as its cliff art
- * has, so it isn't: the top lies on the high side, the grass (8 Nov: "your cliff top is on the water not the
- * grass" when it was flipped).
- */
+/** Whether a bank's art is laid flipped (FA's bank art has its grassy top at the top of the image: the high side). */
 const BANK_FLIP = false;
+/** The wild props laid flat on the ground (drawn first, no shadow); the rest stand up (shadowed). */
 const FLAT_PROPS = new Set(["fern", "leaves", "roots", "branch"]);
 /** The classes drawn as wild props (at their art's size) wherever they come from. */
 const WILD_CLASSES = new Set(["fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves"]);
@@ -172,7 +153,7 @@ export function toWall(w) {
   return { ...w, path };
 }
 
-/** A paved way's stone: a main road's flagstones, so it reads apart from the streets off it (as in the mockup). */
+/** A paved way's stone: a main road's flagstones, so it reads apart from the streets off it. */
 const wayPaving = (w) => (PAVING[w.surface] ? (w.class === "highway" ? "surface.flagstone" : PAVING[w.surface]) : null);
 /** An unpaved way's or quarter's ground in winter: trodden snow for a snowy lane, slush for mud, else its own winter art. */
 const WINTER_SURFACE = { snow: "surface.trodden.winter", mud: "surface.dirt.winter" };
@@ -191,7 +172,7 @@ const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `s
 export const groundRoles = (base, s) => {
   if (base === "snow" || (s === "winter" && base === "grass")) return ["ground.snow", "ground.snow.light", "ground.snow.grassy"];
   if (base === "grass" || !GROUND_SURFACE[base]) return ["ground.grass", "ground.grass.light", "ground.grass.clover"];
-  // (any other ground a plan may name, a town's cobbles or bare dirt, is that surface's art all over, its winter's in winter)
+  // (any other ground is that surface's art all over)
   const r = s === "winter" ? `${GROUND_SURFACE[base]}.winter` : GROUND_SURFACE[base];
   return [r, r, r];
 };
@@ -200,15 +181,14 @@ const GROUND_SURFACE = { dirt: "surface.dirt", mud: "surface.dirt", slush: "surf
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
 
 /**
- * A battle map's furniture, each piece a tile over the map (7 Nov: so a GM can move it): [{ role, variant,
- * piece }], rugs first (they lie under the rest).
+ * A battle map's furniture, each piece a tile over the map so a GM can move it: [{ role, variant, piece }], rugs
+ * first.
  */
 export function furniture(layout) {
   const out = [];
   for (const it of layout.items.filter((i) => i.kind === "interior")) for (const p of it.furniture ?? []) if (FURNITURE[p.f] && !FURNITURE[p.f].drawn) out.push({ role: `furn.${p.f}`, variant: p.variant ?? 0, piece: it.floor ? { ...p, floor: it.floor } : p });
-  // (a building's stairs on each of its floors: the same flight on every one, so a token climbs where it stands; a wall's
-  // flight only at the ground and the walk, FA's flights end to end (each draws 2.09 squares of its 1 by 3 tile); a round
-  // tower's are painted, not art)
+  // (a building's stairs: the same flight on each of its floors; a wall's only at the ground and the walk, FA's
+  // flights end to end; a round tower's are painted, not art)
   for (const st of layout.items.filter((i) => i.kind === "stairs" && !i.painted)) {
     const n = Math.max(1, Math.round((st.len ?? 3) / STAIR_DRAWN)), step = (st.len ?? 3) / n, a = (st.rot * Math.PI) / 180, u = [Math.cos(a), Math.sin(a)];
     for (const f of stairFloors(st)) for (let k = 0; k < n; k++) {
@@ -216,23 +196,22 @@ export function furniture(layout) {
       out.push({ role: `furn.stairs.${st.material === "stone" || f < 0 ? "stone" : "wood"}`, variant: 0, piece: { f: "stairs", x: st.at[0] + u[0] * off, y: st.at[1] + u[1] * off, rot: st.rot + 90, variant: 0, floor: f, lock: true } });
     }
   }
-  // (and each light's own piece: candles, a lamp, a lantern, a torch, a lamp post, a fire)
+  // (each light's own piece: candles, a lamp, a lantern, a torch, a lamp post, a fire)
   for (const l of layout.items.filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f])) out.push({ role: `furn.${l.prop.f}`, variant: l.prop.variant ?? 0, piece: l.prop });
-  // (a rug first, under the rest; what stands on a table last, over it)
+  // (a rug first; what stands on a table last)
   const order = (f) => (FURNITURE[f].floor ? 0 : FURNITURE[f].on ? 2 : 1);
   return out.sort((a, b) => order(a.piece.f) - order(b.piece.f));
 }
 
 /**
- * The mist over a battle map (its layout's mist items, layout/lights.mjs), each a fog overlay tile lying on the map
- * over the low place, under the tokens: [{ role, variant, x, y, size, rot, alpha }] (x, y its middle, size across, in
- * squares).
+ * The mist over a battle map's low places, each a fog tile under the tokens: [{ role, variant, x, y, size, rot, alpha
+ * }] (x, y its middle, size across, in squares).
  */
 export function mist(layout) {
   return layout.items.filter((i) => i.kind === "mist").map((m) => ({ role: "fog.light", variant: m.variant ?? 0, x: m.at[0], y: m.at[1], size: m.size, rot: m.rot ?? 0, alpha: m.alpha }));
 }
 
-/** The floors a flight of stairs joins: its own list (a wall's: the ground and the walk), else all from its lowest to its highest. */
+/** The floors a flight of stairs joins: its own list, else every floor from its lowest to its highest. */
 export function stairFloors(st) {
   if (Array.isArray(st.levels)) return st.levels;
   const out = [];
@@ -240,10 +219,7 @@ export function stairFloors(st) {
   return out;
 }
 
-/**
- * A battle map's floors other than the ground, lowest first (-1 a cellar, 1 and up the floors above), each its own
- * image: its buildings' floors, and a castle's wall walk.
- */
+/** A battle map's floors other than the ground, lowest first (-1 a cellar, 1 and up above), each its own image. */
 export function floorsOf(layout) {
   const fs = layout.items.filter((i) => i.kind === "interior" && i.floor).map((i) => i.floor);
   if (layout.items.some((i) => i.kind === "wall" && i.curtain)) fs.push(CASTLE.walk);
@@ -296,7 +272,7 @@ export function rolesFor(layout) {
     if (i.kind === "reed") roles.add("prop.reeds");
     if (i.kind === "lily") roles.add("prop.lily");
     if (i.kind === "prop" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : propRole(i.class, s));
-    // (a paved street's worn path past a dead end, in winter trodden snow)
+    // (a paved street's worn path past a dead end: trodden snow in winter)
     if (i.kind === "way" && !i.faint && s === "winter" && wayPaving(i)) roles.add("ground.snow.disturbed");
     if (i.kind === "way" && !i.faint && s === "winter" && !wayPaving(i)) { roles.add("ground.snow.disturbed"); roles.add("strip.snow.trail"); roles.add(i.width >= 1.6 ? "strip.track.wheel" : "prop.tracks.winter"); }
   }
@@ -311,17 +287,20 @@ export function rolesFor(layout) {
  */
 export function paint(ctx) {
   const { mask, W, H, x0, y0, pp, layout: L, art, progress = () => {} } = ctx;
-  // (the map's canvas; for a while a layer of its own, to be laid over it softened)
+  // (the map's canvas, or for a while a layer of its own to be laid over it softened)
   let g = ctx.g;
   const q = mask.getContext("2d");
   const bq = ctx.blur?.getContext("2d") ?? null;
   const s = L.season;
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
   /** A number from 0 to 1 for a place on the map (and a key), the same in every tile. */
-  // (a seed in words, which a plan may have, as a number)
+  // (a seed in words as a number)
   const seedN = Number.isFinite(Number(L.seed ?? 1)) ? Number(L.seed ?? 1) : [...String(L.seed)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 2147483647, 7);
   const hashAt = (a, b, k = 0) => Math.abs(Math.sin(a * 12.9898 + b * 78.233 + k * 37.719 + seedN * 0.618) * 43758.5453) % 1;
-  /** A clip around a piece drawn turned about its middle (w by h squares), so its shadow is worked out only near it. */
+  /**
+   * A clip around a piece drawn turned about its middle (w by h squares), so its shadow is worked out only near it
+   * (shadows are slow).
+   */
   const clipNear = (w, h) => { const r = (Math.hypot(w, h) / 2 + 0.6) * pp; g.beginPath(); g.rect(-r, -r, 2 * r, 2 * r); g.clip(); };
   const items = (kind, cls) => L.items.filter((i) => i.kind === kind && (cls === undefined || i.class === cls));
 
@@ -338,9 +317,9 @@ export function paint(ctx) {
   const stroke = (k, pts, w, cap = "round") => { k.lineCap = cap; k.lineJoin = "round"; k.lineWidth = w * pp; path(k, pts); k.stroke(); };
 
   /**
-   * Noise thresholded into a soft mask over this tile: opaque where noise(x, y) is above t, fading over softness. It's
-   * sampled every eighth pixel on a lattice anchored to the map's corner (so every tile samples the same points) and
-   * scaled up when used. Returns { canvas, x, y, w, h }: where it's drawn on the tile.
+   * Noise thresholded into a soft mask over this tile: opaque where it's above t, fading over softness. Sampled every
+   * eighth pixel on a lattice anchored to the map, so every tile samples the same points. Returns { canvas, x, y, w,
+   * h }.
    */
   const noiseMask = (key, scale, t, softness) => {
     const n = makeNoise(L.seed ?? 1, key, { scale, octaves: 3 });
@@ -363,10 +342,9 @@ export function paint(ctx) {
   const boxAround = (boxes, pad = 0) => boxes.length ? [Math.min(...boxes.map((b) => b[0])) - pad, Math.min(...boxes.map((b) => b[1])) - pad, Math.max(...boxes.map((b) => b[2])) + pad, Math.max(...boxes.map((b) => b[3])) + pad] : null;
 
   /**
-   * Draw shapes into the mask, blur it (blur in squares), cut it by a noise mask, fill it with a fill and lay it on the
-   * map at alpha. The texture is never blurred, only the mask, so it stays sharp. box: [x0, y0, x1, y1] in squares,
-   * when the shapes lie within it: only that part of the tile (with room for the blur) is worked on, and nothing at all
-   * when it misses the tile.
+   * Draws shapes into the mask, blurs it (blur in squares), cuts it by a noise mask, fills it and lays it on the map
+   * at alpha. Only the mask is blurred, so the texture stays sharp. box: [x0, y0, x1, y1] in squares bounding the
+   * shapes, so only that part of the tile is worked on (nothing when it misses the tile).
    */
   const soft = (shape, fill, { blur = 0, alpha = 1, noise = null, op = "source-over", box = null, lift = 0, gain = 1 } = {}) => {
     let rx = 0, ry = 0, rw = W, rh = H;
@@ -406,9 +384,9 @@ export function paint(ctx) {
     g.restore();
   };
   /**
-   * Height-based blending over a layer already filled (its alpha the soft mask): each pixel's alpha moved by how bright
-   * the art is there, so along the mask's soft edge the art's raised, bright parts show first (BLEND says how much).
-   * Inside the mask, where it's solid, nothing changes; outside it, nothing shows.
+   * Height blending over a filled layer whose alpha is the soft mask: each pixel's alpha moved by the art's
+   * brightness there, so along the soft edge the bright, raised parts show first. Solid and empty areas are
+   * unchanged.
    */
   const heightBlend = (k, rx, ry, rw, rh, lift, gain) => {
     if (rw <= 0 || rh <= 0) return;
@@ -425,8 +403,8 @@ export function paint(ctx) {
     k.putImageData(im, rx, ry);
   };
   /**
-   * In winter, snow lying along the top of low stone walls (FA has no snowy stone fence): a soft snow strip down the
-   * wall's middle, broken into patches by noise, so the stone shows between them and along its edges.
+   * Snow along the top of low stone walls (FA has no snowy stone fence): a soft strip down the middle, broken by
+   * noise.
    */
   const snowCap = (list) => {
     const C = BLEND.winter.cap, cap = s === "winter" && list.length ? art("strip.snow.cap", C.variant) : null;
@@ -441,8 +419,8 @@ export function paint(ctx) {
   /** A crisp fill straight onto the map. */
   const fill = (shape, style, alpha = 1) => { g.save(); g.globalAlpha = alpha; g.fillStyle = style; g.strokeStyle = style; shape(g); g.restore(); };
   /**
-   * A path art strip (FA's "_Path" art: a band along the middle of a 200 px tall image, repeating along its length)
-   * laid along a to b, its pattern starting at a (so tiles agree), carried ext0 and ext1 squares past each end.
+   * A path art strip (FA's "_Path" art: a band along the middle of a 200 px tall image) laid from a to b, its pattern
+   * starting at a so tiles agree, carried ext0 and ext1 squares past each end.
    */
   const stripPatterns = new Map();
   const strip = (im, a, b, ext0 = 0, ext1 = 0, phase = 0, { width = null, clip = null, flip = false } = {}) => {
@@ -462,9 +440,8 @@ export function paint(ctx) {
     g.restore();
   };
   /**
-   * A path art strip laid along a path, a piece for each stretch, each piece cut at its ends along the line halfway
-   * between its stretch and the next (a miter), so on a bend the pieces meet without the square corners of one sticking
-   * out past the next (9 Nov: the "square something" along a rise's edge).
+   * A path art strip laid along a path, one piece a stretch, each cut at its ends on the line halfway between
+   * stretches (a miter), so pieces meet cleanly on a bend.
    */
   const stripPath = (im, path, phase = 0, flip = false, { width = null } = {}) => {
     const n = path.length;
@@ -496,9 +473,9 @@ export function paint(ctx) {
   const ways = items("way").filter((w) => !w.faint && Array.isArray(w.path) && w.path.length >= 2).map(toWall).map((w) => ({ w, bb: bboxOf(w.path) })).filter(({ w, bb }) => meets(bb, (w.width ?? 1) / 2 + 2)).map(({ w }) => w);
   const feet = items("building").map((b) => { const f = footprint(b); return { b, f, bb: bboxOf(f) }; }).filter(({ bb }) => meets(bb, 6));
 
-  // Castle works (castle.mjs), painted from dressed stone: a curtain wall's top (its walk's flagstones between the
-  // parapet's merlons along its face and its inner edge), a tower's or gatehouse's masonry ring (its doors' thresholds
-  // and arrow slits cut through it) and a round tower's stairs curling around its wall
+  // Castle works, painted from dressed stone: a curtain wall's top (the walk between its parapet's merlons and its
+  // inner edge), each tower's or gatehouse's masonry ring (doors and arrow slits cut through it) and a round tower's
+  // stairs
   const curtains = items("wall").filter((w) => w.curtain && meets(bboxOf(w.path), (w.thickness ?? 2) + 1));
   const dark = "rgba(22,20,18,0.85)";
   const line = (k, pts, w) => { k.lineCap = "butt"; k.lineJoin = "miter"; k.lineWidth = w * pp; path(k, pts); k.stroke(); };
@@ -512,7 +489,7 @@ export function paint(ctx) {
       fill((k) => line(k, w.path, T), tex("stone.curb"));
       fill((k) => line(k, w.path, T), "rgb(20,18,16)", MASONRY_SHADE);
       fill((k) => line(k, offsetPath(w.path, (-side * md) / 2), T - md - 0.14), tex("surface.flagstone"), 0.9);
-      // (the merlons along its face: blocks of stone with gaps between, as the overview draws a parapet)
+      // (the merlons along its face: blocks with gaps between)
       const blocks = [];
       for (let i = 1; i < w.face.length; i++) {
         const a = w.face[i - 1], b = w.face[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -552,7 +529,7 @@ export function paint(ctx) {
     const { c, r0, r1, a0, a1, steps } = st.curl;
     const rad = (d) => (d * Math.PI) / 180;
     fill((k) => { poly(k, st.box); k.fill(); }, tex("stone.curb"));
-    // (each step a little lighter going up: the higher it is, the nearer the eye)
+    // (each step a little lighter going up)
     for (let k2 = 0; k2 < steps; k2++) {
       const t0 = rad(a0 + ((a1 - a0) * k2) / steps), t1 = rad(a0 + ((a1 - a0) * (k2 + 1)) / steps);
       fill((k) => { k.beginPath(); k.arc(X(c[0]), Y(c[1]), r1 * pp, t0, t1); k.arc(X(c[0]), Y(c[1]), r0 * pp, t1, t0, true); k.closePath(); k.fill(); }, "rgb(16,14,12)", 0.04 * (steps - k2));
@@ -568,10 +545,9 @@ export function paint(ctx) {
   if (ctx.floor) { paintFloor(ctx.floor); return; }
 
   /**
-   * A floor above or below the ground (floor 1 and up, -1 a cellar), as a level of its own over or under the map: clear
-   * but for the buildings that have that floor (a cellar dark rock all around), each with its floor, its rooms' floors,
-   * a shadow along its walls inside and, from a floor above, a soft shadow on the ground below around it; its walls
-   * between rooms, and its own outer walls with their windows (a cellar's of stone, with none).
+   * A floor above or below the ground (1 and up, -1 a cellar) as a level of its own: empty but for the buildings with
+   * that floor (a cellar dark rock all around), each with its floors, a shadow inside its walls and, from above, on
+   * the ground below; its walls between rooms and its outer walls with windows (a cellar's stone, with none).
    */
   function paintFloor(f) {
     const its = items("interior").filter((it) => it.floor === f && meets(bboxOf(it.rooms.flatMap((r) => r.poly)), 2));
@@ -579,7 +555,7 @@ export function paint(ctx) {
       g.fillStyle = "rgb(28,25,22)"; g.fillRect(0, 0, W, H);
       soft((k) => k.fillRect(0, 0, W, H), "rgb(54,48,42)", { noise: noiseMask("cellar-rock", 2.5, 0.15, 0.35), alpha: 0.55 });
     }
-    // (the wall walk: the curtain's top again, at its own level, its shadow falling on the yard below)
+    // (the wall walk: the curtain's top at its own level, its shadow falling on the yard below)
     if (f === CASTLE.walk && curtains.length) {
       soft((k) => { for (const w of curtains) line(k, w.path.map(([x, y]) => [x - 0.25, y - 0.25]), (w.thickness ?? 2.4) + 0.3); }, "rgb(10,12,18)", { blur: 0.35, alpha: 0.45, box: boxAround(curtains.map((w) => bboxOf(w.path)), 3) });
       wallTops(curtains);
@@ -626,8 +602,8 @@ export function paint(ctx) {
     progress(1, f < 0 ? "Cellars" : "Upper floors");
   }
 
-  // 1. The ground: its art, a second grass and a little clover in broad soft patches (in winter, snow, lighter snow
-  // and grass showing through)
+  // 1. The ground: its art and two more in broad soft patches (in winter, snow, lighter snow and grass showing
+  // through)
   progress(0.02, "Ground");
   const [gBase, gLight, gThird] = groundRoles(gb, s);
   const B = BLEND.ground;
@@ -636,34 +612,31 @@ export function paint(ctx) {
   if (art(gThird)) soft((k) => k.fillRect(0, 0, W, H), tex(gThird), { noise: noiseMask("battle-g2", B.third.scale, B.third.cut, B.third.soft), alpha: B.third.alpha });
   // (in winter, rocky snow in ragged patches, the stones showing through first at their edges)
   if (s === "winter" && gb === "grass" && art("ground.snow.rocky")) soft((k) => k.fillRect(0, 0, W, H), tex("ground.snow.rocky"), { noise: noiseMask("battle-g3", B.rocky.scale, B.rocky.cut, B.rocky.soft), alpha: B.rocky.alpha, lift: B.rocky.lift, gain: B.rocky.gain });
-  // (and broad soft shade across the ground, light and dark lying unevenly, as a GM's shade overlays lie)
+  // (broad soft shade, so no wide stretch reads flat)
   soft((k) => k.fillRect(0, 0, W, H), "rgb(40,48,64)", { noise: noiseMask("battle-shade", B.shade.scale, B.shade.cut, B.shade.soft), alpha: B.shade.alpha, op: "multiply" });
 
-  // 1b. A quarter's own ground, as its overview shows it (a market paved, a crafts quarter's dirt), worn into patches
-  // with the grass showing through
+  // 1b. A quarter's own ground (a market paved, a crafts quarter's dirt), worn into patches
   for (const q of L.items.filter(isQuarter)) {
     const bb = bboxOf(q.poly);
     if (!meets(bb, 1)) continue;
-    // (paving laid all over, as before; worn ground in ragged patches, the grass between them, its edges height-blended:
-    // laid over nearly all of it, a town's homes read as one flat olive brown (9 Nov))
+    // (paving laid all over; worn ground in ragged, height-blended patches with grass between)
     const Q = PAVING[q.surface] ? null : BLEND.quarter;
     soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), Q
       ? { blur: 0.5, alpha: Math.min(q.alpha ?? 0.7, Q.alpha), noise: noiseMask(`battle-q-${q.id}`, Q.scale, Q.cut, Q.soft), box: bb, lift: Q.lift, gain: Q.gain }
       : { blur: 0.5, alpha: q.alpha ?? 0.7, noise: noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
   }
 
-  // 1c. Height: the lower a level lies the darker its ground (light comes down into a cut less), a stream's bed of
-  // stones and gravel under its water; then under the woods a forest floor in soft patches
+  // 1c. Height: the lower a level, the darker its ground; a stream's bed of stones under its water; then a forest
+  // floor under the woods
   const levels = items("level").filter((Lv) => Lv.rings.some((r) => r.length >= 3 && meets(bboxOf(r), 2)));
-  // (the bed's stones only on its floor, the shelf along the water: up the banks each tier's top is the ground's own
-  // grass, a terrace stepping down, not a strip of stones between two banks)
+  // (the bed's stones only on its floor: up the banks each tier's top is the ground's own grass)
   for (const Lv of levels.filter((x) => x.bed && !x.within)) {
     const w = L.items.find((i) => i.id === Lv.water && Array.isArray(i.path));
     const floor = w ? waterBand(w, shelfOf(Lv.style) + 0.1) : Lv.rings;
     const box = boxAround(floor.map(bboxOf), 0.2);
     soft((k) => { k.beginPath(); for (const r of floor) sub(k, r); k.fill("evenodd"); }, tex(`surface.bed.${s}`), { blur: 0.2, box });
   }
-  // (a rise's top in winter: the wind blows it thin, rocky snow showing through in patches)
+  // (a rise's top in winter: thin, rocky snow in patches)
   if (s === "winter" && art("ground.snow.rocky")) for (const Lv of levels.filter((x) => x.elevation > 0 && !x.bed)) {
     const box = boxAround(Lv.rings.map(bboxOf), 0.4), R = BLEND.ground.rise;
     soft((k) => { k.beginPath(); for (const r of Lv.rings) sub(k, r); k.fill("evenodd"); }, tex("ground.snow.rocky"), { blur: 0.4, alpha: R.alpha, noise: noiseMask(`battle-rise-${Lv.id}`, R.scale, R.cut, R.soft), box, lift: R.lift, gain: R.gain });
@@ -672,7 +645,7 @@ export function paint(ctx) {
     const box = boxAround(Lv.rings.map(bboxOf), 0.4);
     soft((k) => { k.beginPath(); for (const r of Lv.rings) sub(k, r); k.fill("evenodd"); }, "rgb(14,20,34)", { blur: 0.35, alpha: Math.min(0.45, (-Lv.elevation / 10) * 0.3), box });
   }
-  // (a wood's own trees, not a park's or a hedgerow's; none in winter, when the snow lies over it)
+  // (a wood's own trees, not a park's or a hedgerow's; none in winter)
   const woods = s === "winter" ? [] : L.items.filter((i) => i.kind === "tree" && i.wild && meets([i.x, i.y, i.x, i.y], 4));
   if (woods.length && art(`ground.forest.${s}`)) soft((k) => { for (const t of woods) { k.beginPath(); k.arc(X(t.x), Y(t.y), 3.2 * pp, 0, 2 * Math.PI); k.fill(); } }, tex(`ground.forest.${s}`), { blur: 0.9, alpha: 0.4, noise: noiseMask("battle-forest", 4, -0.15, 0.3), box: boxAround(woods.map((t) => [t.x, t.y, t.x, t.y]), 3.5) });
 
@@ -707,10 +680,9 @@ export function paint(ctx) {
     }
   }
   /**
-   * Ice along a stream's banks (layout's shelves either side of its open channel), laid as a hand-made
-   * winter map lays it: the shelf's edge throwing a shadow on the open water, ice over the shelves with cracked ice and a dusting
-   * of snow on it in ragged patches, a strip of broken ice along each edge, and in the channel floes, chunks of ice and
-   * foam drifting with the flow.
+   * Ice along a stream's banks (the layout's shelves either side of its open channel): the shelves' shadow on the
+   * open water, ice with cracks and patchy snow over the shelves, a ledge of broken ice at each edge, and floes,
+   * chunks and foam drifting in the channel.
    */
   function iceAlong(w, box) {
     const I = BLEND.ice, shelves = (k) => { k.beginPath(); for (const r of w.shelves) sub(k, r); k.fill("evenodd"); };
@@ -719,11 +691,10 @@ export function paint(ctx) {
     soft(shelves, tex("water.ice"), { blur: 0.05, box });
     soft(shelves, tex("water.ice.cracked"), { blur: 0.05, alpha: I.cracked, noise: noiseMask(`ice-crack-${w.id}`, 2.2, -0.1, 0.4), box, lift: 0.6, gain: 1.3 });
     if (art("overlay.snow")) soft(shelves, tex("overlay.snow"), { blur: 0.12, alpha: I.snow, noise: noiseMask(`ice-snow-${w.id}`, 1.6, 0.05, 0.35), box });
-    // (the shelf's edge a low ledge of snowy ice down to the water: FA's snowy ice cliff, squeezed to edgeWidth, its
-    // snowy top on the shelf (the ring runs with the shelf on its right, so the art is flipped to face it))
+    // (the ledge: FA's snowy ice cliff squeezed to edgeWidth, flipped so its snowy top faces the shelf)
     const edge = art("edge.ice.winter", 0);
     if (edge) { g.save(); g.globalAlpha = I.edge; let t = 0.19; for (let i = 1; i < ring.length; i++) { strip(edge, ring[i - 1], ring[i], i > 1 ? 0.05 : 0, 0, t, { width: I.edgeWidth, flip: true }); t += Math.hypot(ring[i][0] - ring[i - 1][0], ring[i][1] - ring[i - 1][1]); } g.restore(); }
-    // (what drifts in the channel: one at most every step squares down the water, at chance, kept inside the channel)
+    // (what drifts: at most one every step squares, at chance, inside the channel)
     const pts = resample(w.path, I.drift.step);
     for (let i = 1; i < pts.length - 1; i++) {
       const p = pts[i];
@@ -749,40 +720,38 @@ export function paint(ctx) {
     if (!w?.frozen) soft((k) => { k.beginPath(); for (const r of offset(Lv.rings, -1.6)) sub(k, r); k.fill("evenodd"); }, "rgb(8,40,52)", { blur: 1, alpha: 0.3, box });
   }
 
-  // 3a. Reeds along a pond's or lake's shallows and lily pads on its water, at their art's size (none frozen in)
+  // 3a. Reeds along a pond's shallows and lily pads on its water (none when frozen)
   for (const [kind, role] of [["lily", "prop.lily"], ["reed", "prop.reeds"]]) {
     for (const t of items(kind).filter((t) => meets([t.x, t.y, t.x, t.y], 1.5))) {
       const im = art(role, t.variant ?? 0);
       if (!im) continue;
-      // (a reed's art fills under half its square: drawn half again as big, so a clump reads at battle size)
+      // (a reed's art fills under half its square: drawn half again as big)
       const k = Math.min(1.2, t.s ?? 1) * (kind === "reed" ? 1.5 : 1), w = (im.width / ART_PX) * k, h = (im.height / ART_PX) * k;
       g.save(); g.translate(X(t.x), Y(t.y)); g.rotate(((t.rot ?? 0) * Math.PI) / 180); g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp); g.restore();
     }
   }
 
-  // 3b. Edges where the ground drops, as FA builds them (the Map Dressing Guide's tiers): a cliff in a tier of rock
-  // face for every five feet, each a little lower than the one above it and drawn beneath it, the rubble at its foot,
-  // a shadow tucked under each tier, darker going down, and a lip along the top; a bank in tiers of bank art; a
-  // walkable slope as shade on the side turned from the sun. Each tier wanders a little on its own
+  // 3b. Edges where the ground drops, in tiers as FA builds them: a cliff in a tier of rock face for every five feet,
+  // each drawn beneath and a little lower than the one above, with rubble at its foot, a shadow under each tier and a
+  // lip on top; a bank in tiers of bank art; a slope as shade on the side turned from the sun. Each tier wanders a
+  // little
   progress(0.2, "Banks and cliffs");
   const edges = items("edge").filter((e) => meets(bboxOf(e.path), edgeSpan(e) + 1));
-  // (how far out a bank's foot lies from its line: by its own drop, or a pool's whole shore, so the step where a stream
-  // falls into the pool is laid as the foot of the shore around it)
+  // (how far out a bank's foot lies: by its own drop, or a pool's whole shore where a stream falls into the pool)
   const footOf = (e) => edgeSpan(e.shore ? { drop: e.shore, style: e.style } : e);
   const wob = makeNoise(L.seed ?? 1, "battle-edge", { scale: 3, octaves: 2 });
   const tierPath = (e, d, k) => {
     const pts = resample(e.path, 0.5), calm = e.style === "bank" && tiersOf(e.shore ?? e.drop, e.style) > 2;
     return pts.map((p, i) => {
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], Ln = Math.hypot(dx, dy) || 1;
-      // (a tall bank's many tiers wander less: they overlap less than a cliff's, and wandering apart would open gaps)
+      // (a tall bank's tiers wander less, so they don't open gaps)
       const dd = d + wob(p[0] + k * 17.3, p[1] - k * 9.1) * (calm ? 0.06 : 0.14) * Math.min(2, k);
       return [p[0] - (dy / Ln) * dd, p[1] + (dx / Ln) * dd];
     });
   };
   /**
-   * A drop's face lit by the sun: each stretch of it shaded as its downhill side turns from the sun, low in the
-   * southeast, and lightened as it turns toward it, over span squares down from its line. A slope's whole face; a rise's
-   * or hollow's bank too, so which way the ground falls reads at a glance (9 Nov: the rise read as a hollow).
+   * A drop's face lit by the sun: each stretch shaded as its downhill side turns from the sun and lightened as it
+   * turns toward it, over span squares down from its line, so which way the ground falls reads at a glance.
    */
   const lightFace = (e, span, dark, light) => {
     const pts = resample(e.path, 0.5), far = shiftRight(pts, span);
@@ -811,18 +780,17 @@ export function paint(ctx) {
   // (a rise's or hollow's bank, not a stream's: its face lit and shaded as a slope's, under its art)
   for (const e of edges.filter((x) => x.style === "bank" && !x.bed)) lightFace(e, edgeSpan(e) + BLEND.rise.reach, BLEND.rise.dark, BLEND.rise.light);
   for (const e of edges.filter((x) => x.style === "slope")) {
-    // (shaded as its downhill side turns from the sun, the side turned to it a little lighter)
+    // (shaded as its downhill side turns from the sun, a little lighter facing it)
     lightFace(e, edgeSpan(e), Math.min(0.75, 0.42 * tiersOf(e.drop)), 0.4);
     // (the brow: longer grass a little down from the top; in winter a soft ridge of snow)
     const grass = art(s === "winter" ? "edge.slope.winter" : "edge.grass", 0);
     if (grass) { g.save(); g.globalAlpha = s === "winter" ? 0.8 : 0.55; stripPath(grass, tierPath(e, 0.35, 1)); g.restore(); }
   }
-  // (where a stream's bed steps down, as into a hollow, its banks' art and shadows are kept off its water, which falls
-  // there in a line of white water instead)
+  // (where a stream's bed steps down, banks and shadows are kept off its water, which falls there as white water)
   const waterOf = new Map(items("water").filter((w) => Array.isArray(w.path)).map((w) => [w.id, w]));
   const fallWater = (e, by = 0.05) => { const w = e.fall ? waterOf.get(e.water) : null; return w ? waterBand(w, by) : null; };
   const shadeEdge = (e) => {
-    // (the drop's own shadow on the low ground past its foot, where it faces away from the sun: longer the higher)
+    // (the drop's shadow on the low ground past its foot where it faces away from the sun, longer the higher)
     const pts = resample(e.path, 0.5), foot = shiftRight(pts, edgeSpan(e)), far = shiftRight(pts, edgeSpan(e) + Math.min(3, (e.drop / 5) * 0.7));
     soft((k) => {
       for (let i = 1; i < pts.length; i++) {
@@ -836,7 +804,7 @@ export function paint(ctx) {
     }, "rgb(14,20,34)", { blur: 0.45, alpha: 0.32, box: boxAround([bboxOf(pts), bboxOf(far)], 0.6) });
   };
   const drawEdge = (e) => {
-    // (a fall into a pool is drawn, off its water, as the pool's whole shore, so the shore runs unbroken past the stream)
+    // (a fall into a pool is drawn, off its water, as the pool's whole shore, so the shore runs unbroken)
     const n = tiersOf(e.fall && e.shore ? e.shore : e.drop, e.style), cliff = e.style === "cliff";
     const face = cliff ? art(`edge.face.${e.rock}.${s}`, 0) : art(bankRole(e.rock, s), 0);
     const face2 = cliff ? art(`edge.face.${e.rock}.${s}`, 1) ?? face : art(bankRole(e.rock, s), 1) ?? face;
@@ -844,7 +812,7 @@ export function paint(ctx) {
     const footArt = cliff ? art(`edge.foot.${e.rock}`, 0) : null;
     if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
     if (!cliff && !e.fall) {
-      // (the bank's shadow on the water, cast where its face is turned from the sun, the longer the deeper it drops)
+      // (the bank's shadow on the water where its face is turned from the sun, longer the deeper)
       const span = footOf(e) + 0.04, pts = resample(e.path, 0.5), foot = [], far = [];
       pts.forEach((p, i) => {
         const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], Ln = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
@@ -855,12 +823,11 @@ export function paint(ctx) {
       soft((kk) => { poly(kk, [...foot, ...far.reverse()]); kk.fill(); }, "rgb(6,14,22)", { blur: 0.25, alpha: 0.4, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 2) });
     }
     for (let k = n; k >= 1; k--) {
-      // (a bank's tier laid with its top toward the edge's line and its face of earth and roots running down toward
-      // the low side, the lowest one's foot just into the water: FA's woodland cliff art, as a GM draws it along a stream)
+      // (a bank's tier: its top toward the line, its face running down to the low side, the lowest one's foot just
+      // into the water)
       const half = !cliff && face ? bandOf(face).h / ART_PX / 2 : TERRAIN.bankBand / 2;
       const d = cliff ? 0.25 + (k - 1) * TERRAIN.step : Math.max(half, footOf(e) - half - (n - k) * TERRAIN.bankStep + 0.04);
-      // (the shadow under this tier, tucked in below its middle line and painted soft, darker going down: the tier's
-      // art covers it where solid. Painted, not drawn from shadow art, whose pieces overlap in lines where it's
+      // (the shadow under this tier, painted soft and darker going down; FA's shadow art overlaps in lines where
       // see-through)
       if (cliff) soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       // (lighter between many tiers, where the lines would stack up)
@@ -873,18 +840,15 @@ export function paint(ctx) {
     if (!cliff && !e.fall) soft((kk) => stroke(kk, tierPath(e, footOf(e) - 0.04, n), 0.26, "butt"), "rgb(6,14,22)", { blur: 0.12, alpha: 0.45, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
     const lip = cliff ? art(`edge.top.${e.rock}.${s}`, 0) : null;
     if (lip) stripPath(lip, tierPath(e, -0.05, 0), 0.21);
-    // (in winter, snow drifted against the top of the drop and thin snow along its foot: FA's drift and thin snow
-    // strips, as a GM lays them along a snowy cliff)
-    // (only along a stream's bed and a cliff: on a rise or hollow's bank the drift read as a second rim, so the rise
-    // looked like a hollow)
+    // (in winter, a drift along the top and thin snow along the foot, only for a stream's bed and a cliff: on a
+    // rise's bank a drift reads as a second rim)
     if (s === "winter" && !e.fall && (cliff || e.bed)) {
       const drift = art("strip.snow.drift", 0), thin = cliff ? art("strip.snow.thin", 0) : null;
       if (drift) { g.save(); g.globalAlpha = BLEND.winter.drift; stripPath(drift, tierPath(e, -0.42, 0), 0.13); g.restore(); }
       if (thin) { g.save(); g.globalAlpha = BLEND.winter.thin; stripPath(thin, tierPath(e, footOf(e) + 0.15, n + 1), 0.57); g.restore(); }
     }
   };
-  // (a pool's edges, its shore and the falls where its stream comes and goes, are drawn as one: its hollow's whole rim,
-  // unbroken, its water's channel cut through it after, softly)
+  // (a pool's edges, its shore and its falls, drawn as one unbroken rim, its stream's channel cut through it softly)
   const plain = edges.filter((x) => x.style !== "slope" && !x.pool);
   for (const e of plain) shadeEdge(e);
   for (const e of plain) drawEdge(e);
@@ -922,18 +886,16 @@ export function paint(ctx) {
     g.restore();
   }
 
-  // 4. Ways: a trodden verge; an unpaved way's dirt; a paved one's curb (with its shadow on the grass and the joint
-  // between curb and paving), then its paving, narrower first, so the main road runs through a junction. Ways of one
-  // look share a pass
+  // 4. Ways: a trodden verge, an unpaved way's dirt, a paved one's curb (with its shadow and the joint) and paving,
+  // narrower first so the main road runs through a junction. Ways of one look share a pass
   progress(0.25, "Streets");
   const wayBox = (list, add) => boxAround(list.map((w) => { const bb = bboxOf(w.path), r = (w.width ?? 1) / 2 + add; return [bb[0] - r, bb[1] - r, bb[2] + r, bb[3] + r]; }));
   const paved = ways.filter(wayPaving);
-  // (no way is painted down in a stream's bed: a bridge carries it over, and the road showing under the deck, curving
-  // where the deck runs straight, read wrong; a ford's crossing is left open so its track runs through)
+  // (no way is painted in a stream's bed: a bridge carries it over; a ford's crossing is left open so its track runs
+  // through)
   const cutBeds = items("level").filter((Lv) => Lv.bed && meets(bboxOf(Lv.rings.flat()), 1));
-  // (a paved street that stops short of anything, another way, a square, a building, a bridge or the map's edge, as
-  // a street taken from a town map can: cut square at its end, not left with a round paved cap on the grass, and a worn
-  // path carried on from it, tapering out (9 Nov))
+  // (a paved street that stops short of anything, as one taken from a town map can, is cut square at its end and
+  // carried on by a worn path that tapers out)
   const deadEnds = [];
   {
     const [mw, mh] = L.size?.squares ?? [Infinity, Infinity];
@@ -944,10 +906,10 @@ export function paint(ctx) {
       const p = k ? w.path.at(-1) : w.path[0], q = k ? w.path.at(-2) : w.path[1], hw = (w.width ?? 1) / 2;
       const Ln = Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, dir = [(p[0] - q[0]) / Ln, (p[1] - q[1]) / Ln];
       if (p[0] < 0.5 || p[1] < 0.5 || p[0] > mw - 0.5 || p[1] > mh - 0.5) return;
-      // (a worn footpath meeting it, to a house's door, doesn't make it a junction: the path runs on from the taper)
+      // (a worn footpath meeting it doesn't make it a junction)
       if (allWays.some((o) => o !== w && o.class !== "path" && !o.approach && distanceToPath(p, o.path) < (o.width ?? 1) / 2 + hw + 0.3)) return;
       if (plazas.some((sq) => pointInPolygon(p, sq.poly) || distanceToPath(p, [...sq.poly, sq.poly[0]]) < hw + 0.5)) return;
-      // (a building it runs up to, its end at the wall; one merely beside its end doesn't count)
+      // (a building it runs up to; one merely beside its end doesn't count)
       if ([...allFeet, ...spans].some((f) => pointInPolygon(p, f) || pointInPolygon([p[0] + dir[0] * 0.6, p[1] + dir[1] * 0.6], f) || distanceToPath(p, [...f, f[0]]) < 0.4)) return;
       if (meets([p[0], p[1], p[0], p[1]], hw + BLEND.deadEnd.reach + 1)) deadEnds.push({ w, p, dir, hw });
     });
@@ -958,24 +920,20 @@ export function paint(ctx) {
   if (cutBeds.length || deadEnds.length) {
     g.beginPath();
     g.rect(0, 0, W, H);
-    // (one outline for all of them, the beds and the dead ends' boxes together less each ford's deck, so where they
-    // overlap nothing is cut twice, which even-odd would leave uncut: a pool's rings over its stream's bed, a ford's deck
-    // reaching past the bed onto dry ground)
+    // (one outline: the beds and dead ends' boxes together less each ford's deck, so where they overlap nothing is
+    // cut twice, which even-odd would leave uncut)
     const fords = items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at)).map(deckOf);
     const cut = union([...cutBeds.flatMap((Lv) => Lv.rings), ...deadEnds.map(capBox)]);
     for (const ring of fords.length ? difference(cut, fords) : cut) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("evenodd");
   }
-  // (an unpaved way narrows onto a footbridge's planks over its last squares, rather than running on under the deck
-  // at its own width: stroked a short piece at a time, each as wide as the way is there)
+  // (an unpaved way narrows onto a footbridge's planks over its last squares, stroked a short piece at a time)
   const decks = items("crossing").filter((c) => c.class === "footbridge" && Array.isArray(c.at)).map((c) => {
     const a = ((c.angle ?? 0) * Math.PI) / 180;
     return { at: c.at, ux: Math.cos(a), uy: Math.sin(a), hl: (c.length ?? 2) / 2, hw: (c.width ?? 2) / 2 };
   });
   const TAPER = 3.5;
-  // (a point of a way that runs onto decks, narrowed evenly about its middle to the deck's planks over its last squares
-  // (the layout has already bent it onto the deck's middle line), or null under the deck itself, where nothing of the
-  // way is drawn)
+  // (a point of a way running onto decks, narrowed about its middle to the planks, or null under the deck itself)
   const nearDecks = (p, onto, w, extra) => {
     let width = w + extra;
     for (const d of onto) {
@@ -1004,8 +962,8 @@ export function paint(ctx) {
   for (const w of ways.filter((w) => !wayPaving(w) && !snowWays.includes(w))) { const r = wayRole(w, s); if (!dirt.has(r)) dirt.set(r, []); dirt.get(r).push(w); }
   for (const [r, list] of dirt) soft((k) => { for (const w of list) wayStroke(k, w, 0); }, tex(r), { blur: 0.15, box: wayBox(list, 0) });
   if (snowWays.length) {
-    // (disturbed snow in a band with ragged edges, a little grayer than the snow either side, a deep trail worn down
-    // its middle, and wheel tracks on a track or anything wider; a narrow path has footprints instead, laid after)
+    // (disturbed snow in a ragged band, a trail down its middle, and wheel tracks on a track or wider; a path gets
+    // footprints instead, laid after)
     const V = BLEND.way, box = wayBox(snowWays, 0.6);
     soft((k) => { for (const w of snowWays) wayStroke(k, w, 0.3); }, tex("ground.snow.disturbed"), { blur: 0.3, alpha: V.snow, noise: noiseMask("battle-snow-way", 1.4, -0.4, 0.55), box });
     soft((k) => { for (const w of snowWays) wayStroke(k, w, -0.2); }, "rgb(96,108,128)", { blur: 0.35, alpha: V.edge, op: "multiply", box });
@@ -1023,15 +981,15 @@ export function paint(ctx) {
     for (const w of [...paved].sort((a, b) => a.width - b.width)) fill((k) => stroke(k, w.path, w.width), tex(wayRole(w, s), wayRole(w, s) === "surface.flagstone" ? 1 : 0));
   }
   g.restore();
-  // (each dead end's worn path, tapering from the street's width to a point, ragged, under nothing but the street)
+  // (each dead end's worn path, tapering from the street's width to a point)
   if (deadEnds.length) {
     const E = BLEND.deadEnd;
     const taper = ({ p, dir, hw }) => { const n = [-dir[1], dir[0]], b = hw * 0.85, t = E.tip / 2, reach = Math.max(E.reach, hw * E.perHalf), back = [p[0] - dir[0] * 0.3, p[1] - dir[1] * 0.3], tip = [p[0] + dir[0] * reach, p[1] + dir[1] * reach]; return [[back[0] + n[0] * b, back[1] + n[1] * b], [tip[0] + n[0] * t, tip[1] + n[1] * t], [tip[0] - n[0] * t, tip[1] - n[1] * t], [back[0] - n[0] * b, back[1] - n[1] * b]]; };
     const box = boxAround(deadEnds.map((d) => bboxOf(taper(d))), 0.5);
     soft((k) => { for (const d of deadEnds) { poly(k, taper(d)); k.fill(); } }, s === "winter" ? tex("ground.snow.disturbed") : trodden, { blur: E.blur, alpha: E.alpha, box });
-    // (bare earth worn down its middle, ragged, so it reads against the grass)
+    // (bare earth down its middle, so it reads against the grass)
     if (s !== "winter") soft((k) => { for (const d of deadEnds) { poly(k, taper({ ...d, hw: d.hw * E.bare })); k.fill(); } }, tex(`surface.dirt.${s}`), { blur: E.blur, alpha: E.alpha, noise: noiseMask("battle-dead-end", E.rag, E.cut, 0.35), box });
-    // (the curb's end across the cut, so the paving stops at a curb rather than a raw edge)
+    // (a curb across the cut end)
     fill((k) => { for (const { p, dir, hw } of deadEnds) { const n = [-dir[1], dir[0]]; stroke(k, [[p[0] + n[0] * (hw + 0.25), p[1] + n[1] * (hw + 0.25)], [p[0] - n[0] * (hw + 0.25), p[1] - n[1] * (hw + 0.25)]], 0.25, "butt"); } }, tex("stone.curb"));
   }
 
@@ -1045,7 +1003,7 @@ export function paint(ctx) {
     fill((k) => { poly(k, sq.poly); k.fill(); }, tex(PAVING[sq.surface] ?? "surface.flagstone"));
   }
 
-  // 6. Gardens in tilled rows, graves, bridges (every shape as a polygon on the map, so its pattern stays anchored)
+  // 6. Gardens in tilled rows, graves, bridges (every shape a polygon on the map, so its pattern stays anchored)
   progress(0.4, "Yards");
   for (const gd of items("surface").map((x) => x.garden).filter(Boolean)) {
     if (!meets([gd.cx, gd.cy, gd.cx, gd.cy], Math.max(gd.w, gd.d))) continue;
@@ -1058,8 +1016,7 @@ export function paint(ctx) {
       }
     }, "rgba(60,96,40,0.85)");
   }
-  // (a grave drawn at a battle map's size, bigger than a town map's, that would lie over a street or under a building,
-  // left out)
+  // (a grave that would lie over a street or under a building at battle size is left out)
   const graveWays = items("way").filter((o) => !o.faint && Array.isArray(o.path) && o.path.length >= 2), graveFeet = items("building").map(footprint);
   const graveClear = (gv) => {
     const a = (((gv.rot ?? 0) + 90) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), hx = GRAVE_SQUARES * GRAVE.curb[0], hy = GRAVE_SQUARES * 1.5 * GRAVE.curb[1];
@@ -1068,19 +1025,18 @@ export function paint(ctx) {
   };
   const graves = items("prop", "grave").filter((gv) => meets([gv.x, gv.y, gv.x, gv.y], 1.5) && graveClear(gv));
   if (graves.length) {
-    // (FA's grave art, headstone and plot; a plain stone where there's none)
+    // (FA's grave art; a plain stone where there's none)
     const drawn = graves.filter((gv) => art(propRole("grave", s), gv.variant ?? 0));
     for (const gv of drawn) {
       const im = art(propRole("grave", s), gv.variant ?? 0), w = GRAVE_SQUARES, h = (w * im.height) / im.width;
-      // (its long side across the row, so a row of graves reads as plots side by side)
-      // (its art turned with it, but its earth and stone filled with the map's own patterns, anchored to the map, not the
-      // grave: a path keeps the turn it was drawn in, a fill takes the one it's filled in)
+      // (its long side across the row; its art turned with it, but its earth and stone filled with map-anchored
+      // patterns: a path keeps the transform it was built in, a fill takes the one it's filled in)
       const base = g.getTransform();
       g.save(); g.translate(X(gv.x), Y(gv.y)); g.rotate((((gv.rot ?? 0) + 90) * Math.PI) / 180); clipNear(w, h);
       const fillFlat = () => { const t = g.getTransform(); g.setTransform(base); g.fill(); g.setTransform(t); };
       g.shadowColor = `rgba(16,24,40,${BLEND.props.alpha})`; g.shadowBlur = pp * BLEND.props.blur; g.shadowOffsetX = SHADOW[0] * pp * BLEND.props.offset; g.shadowOffsetY = SHADOW[1] * pp * BLEND.props.offset;
       g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
-      // (FA's art is the plot's stone curb alone: a mound of earth inside it and a headstone at its head make it a grave)
+      // (FA's art is only the plot's curb: a mound of earth and a headstone make it a grave)
       g.shadowColor = "transparent";
       const M = GRAVE.mound, T = GRAVE.stone, rr = (cx, cy, hw, hh, r) => { g.beginPath(); g.roundRect((cx - hw) * pp, (cy - hh) * pp, hw * 2 * pp, hh * 2 * pp, r * pp); };
       g.globalAlpha = M.alpha; g.fillStyle = tex(`surface.dirt.${s}`); rr(0, M.at * h, M.across * w, M.along * h, M.round); fillFlat();
@@ -1106,37 +1062,33 @@ export function paint(ctx) {
     const pts = [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([u, v]) => [c.at[0] + u * ux + v * nx, c.at[1] + u * uy + v * ny]);
     const bb = bboxOf(pts);
     if (!meets(bb, 2)) continue;
-    // (its shadow on the water, cast the farther and softer the deeper the bed below it)
+    // (its shadow on the water, farther and softer the deeper the bed)
     const lowBy = Math.max(0, levelAt(levelItemsAll, [c.at[0] + ux * hl, c.at[1] + uy * hl]) - levelAt(levelItemsAll, c.at));
     const off = 0.85 + (lowBy / 10) * 0.7;
-    // (only down in the bed it spans: where its ends rest on the bank, the deck lies on the ground and casts none)
+    // (only over the bed it spans: where its ends rest on the bank it casts none)
     const under = levelItemsAll.filter((Lv) => Lv.bed && Lv.rings.some((r) => r.some((p) => Math.hypot(p[0] - c.at[0], p[1] - c.at[1]) < hl + 4)));
     g.save();
     if (under.length) { g.beginPath(); for (const ring of union(under.flatMap((Lv) => Lv.rings))) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); } g.clip("evenodd"); }
     soft((k) => { poly(k, pts.map(([x, y]) => [x + SHADOW[0] * off, y + SHADOW[1] * off])); k.fill(); }, "rgb(0,0,0)", { blur: 0.4 + lowBy / 40, alpha: 0.4, box: [bb[0] - 2, bb[1] - 2, bb[2], bb[3]] });
     g.restore();
-    // (a road bridge in flagstones edged in stone; a footbridge a deck of planks laid across it, a dark beam along
-    // each side, its ends worn where the track comes on, so the way runs onto it rather than stopping at a box)
+    // (a road bridge in flagstones; a footbridge a deck of planks with a dark beam along each side and worn ends)
     if (c.class === "footbridge") {
       fill((k) => { poly(k, pts); k.fill(); }, tex("floor.wood", 1, (c.angle ?? 0) + 90));
       const side = (v) => [[-hl, v], [hl, v]].map(([u, w]) => [c.at[0] + u * ux + w * nx, c.at[1] + u * uy + w * ny]);
       soft((k) => { stroke(k, side(-hw + 0.06), 0.16, "butt"); stroke(k, side(hw - 0.06), 0.16, "butt"); }, "rgb(34,24,16)", { blur: 0.03, alpha: 0.75, box: bb });
-      // (a sill beam across each end, where the planks rest on the bank, and the track's dirt carried onto them by feet)
+      // (a sill beam across each end, with the track's dirt carried onto it)
       soft((k) => { for (const sg of [-1, 1]) stroke(k, [[-hw + 0.1, sg * (hl - 0.06)], [hw - 0.1, sg * (hl - 0.06)]].map(([v, u]) => [c.at[0] + u * ux + v * nx, c.at[1] + u * uy + v * ny]), 0.12, "butt"); }, "rgb(34,24,16)", { blur: 0.03, alpha: 0.6, box: bb });
       const onto = ways.find((w) => !wayPaving(w) && distanceToPath(c.at, w.path) < hw + 0.5);
       const worn = onto ? tex(wayRole(onto, s)) : trodden;
       soft((k) => { for (const sg of [-1, 1]) { const e = [c.at[0] + sg * ux * hl, c.at[1] + sg * uy * hl]; stroke(k, [[e[0] - sg * ux * 1.1, e[1] - sg * uy * 1.1], [e[0] + sg * ux * 0.05, e[1] + sg * uy * 0.05]], (hw - 0.2) * 2, "butt"); } }, worn, { blur: 0.35, alpha: 0.6, noise: noiseMask("battle-deck", 1.2, -0.3, 0.6), box: [bb[0] - 1, bb[1] - 1, bb[2] + 1, bb[3] + 1] });
     } else {
-      // (its parapets stand outside the deck along its sides, and its ends meet the road: no curb of its own, which
-      // showed as a brown bar across each end)
-      // (snow lying on it in winter, as on the ground either side)
+      // (no curb of its own: its parapets stand outside the deck, and its ends meet the road; snowy in winter)
       fill((k) => { poly(k, pts); k.fill(); }, s === "winter" ? tex("surface.flagstone.winter", 0, c.angle ?? 0) : tex("surface.flagstone", 1, c.angle ?? 0));
     }
   }
 
-  // 7. Yards: trodden ground inside each fenced yard; fences (rails on posts) and walls, with their shadows
-  // (a house's fenced yard behind it, and a trade's work yard)
-  // (a yard left as grass, a precinct's or a lawn, isn't worn)
+  // 7. Yards: trodden ground inside each house's fenced yard and each work yard (a grass yard isn't worn); fences and
+  // walls with their shadows
   const yards = items("surface").filter((i) => (i.class === "backyard" || (i.class === "yard" && i.surface !== "grass")) && Array.isArray(i.poly)).map((y) => ({ y, bb: bboxOf(y.poly) })).filter(({ bb }) => meets(bb, 1.5));
   if (yards.length) soft((k) => { for (const { y } of yards) { poly(k, y.poly); k.fill(); } }, trodden, { blur: 0.3, noise: noiseMask("battle-yd", 2.5, -0.3, 0.4), alpha: 0.7, box: boxAround(yards.map((x) => x.bb)) });
   // (rails: a yard's fence and any other fence or wall line; not hedges, balks or a garden's clipped box)
@@ -1179,12 +1131,12 @@ export function paint(ctx) {
     soft((k) => { for (const w of walls) stroke(k, w.path.map(([x, y]) => [x - 0.15, y - 0.15]), thick(w) + 0.25, "butt"); }, "rgb(16,20,30)", { blur: 0.12, alpha: 0.4, box: boxAround(walls.map((w) => bboxOf(w.path)), Math.max(...walls.map(thick)) / 2 + 0.5) });
     // (stone, or a palisade's logs)
     const wood = walls.filter((w) => w.class === "palisade"), stone = walls.filter((w) => w.class !== "palisade");
-    // (a yard's low wall from fence art where there is some; a town wall, thicker, stays a stone fill)
-    // (a bridge's parapet: a band of dressed stone, its edges dark)
+    // (a yard's low wall from fence art where there is some, a town wall a stone fill, a bridge's parapet a band of
+    // stone)
     const parapets = stone.filter((w) => w.parapet);
     if (parapets.length) {
-      // (FA's slate stone fence where there is some, as a GM walls a stone bridge; else a band of dressed stone. A wing
-      // wall's ends rounded, so its corner with the parapet it turns off is closed)
+      // (FA's slate stone fence where there is some, else a band of dressed stone; a wing wall's ends rounded so its
+      // corner with the parapet is closed)
       const slate = art("fence.stone.slate", 0);
       if (slate) {
         soft((k) => { for (const w of parapets) stroke(k, w.path.map(([x, y]) => [x + SHADOW[0] * 0.12, y + SHADOW[1] * 0.12]), 0.46, w.wing ? "round" : "butt"); }, "rgb(10,12,18)", { blur: 0.08, alpha: 0.45, box: boxAround(parapets.map((w) => bboxOf(w.path)), 0.6) });
@@ -1214,8 +1166,7 @@ export function paint(ctx) {
     fill((k) => { k.beginPath(); k.arc(X(f.x), Y(f.y), 0.4 * pp, 0, 2 * Math.PI); k.fill(); }, tex("stone.curb"));
   }
 
-  // 9. Buildings: their shadows, floors, a soft contact shadow along their walls, and the walls (from wall and window
-  // art, or plain without it)
+  // 9. Buildings: their shadows, floors, a contact shadow along their walls, and the walls (from art, or plain)
   progress(0.55, "Buildings");
   if (feet.length) soft((k) => {
     for (const { b, f } of feet) {
@@ -1224,9 +1175,8 @@ export function paint(ctx) {
     }
   }, "rgb(16,24,40)", { blur: 0.3, alpha: 0.24, box: boxAround(feet.map(({ b, bb }) => { const d = ((20 + (b.tall ?? 0) * 20 + (b.floorsAbove ?? 0) * 10) / 5) * 0.3 * 0.7; return [bb[0] - d, bb[1] - d, bb[2], bb[3]]; })) });
   for (const { b, f } of feet) fill((k) => { poly(k, f); k.fill(); }, tex(floorRole(b), floorRole(b) === "floor.wood" ? Math.round(b.cx * 3 + b.cy) : 0, b.rot ?? 0));
-  // Interiors: each room's floor where it isn't the building's (under the shadow along the walls), then below a stage
-  // and the walls between rooms (the building's wall art, thinner; a door's gap and an open doorway's left). The
-  // furniture isn't painted: it lies over the map as tiles (furniture(layout))
+  // Interiors: each room's floor where it differs from the building's, a stage, and the walls between rooms (the
+  // building's wall art, thinner, with gaps for doors). Furniture isn't painted: it lies over the map as tiles
   const interiors = items("interior").filter((it) => !it.floor && meets(bboxOf(it.rooms.flatMap((r) => r.poly)), 1)).map((it) => {
     const b = feet.find(({ b }) => (b.group ?? b.id) === it.group)?.b;
     return { it, b, rot: b?.rot ?? 0, woodV: b ? Math.round(b.cx * 3 + b.cy) : 0 };
@@ -1241,7 +1191,7 @@ export function paint(ctx) {
     soft((k) => outlines(k, 0.8), "rgb(10,12,18)", { blur: 0.25, alpha: 0.35, box: boxAround(feet.map((x) => x.bb), 0.4) });
   }
   for (const { it, woodV } of interiors) {
-    // (a stage: a raised wooden platform, its edge in shadow; the rest of the furniture lies over the map as tiles)
+    // (a stage: a raised wooden platform, its edge in shadow)
     for (const f of it.furniture.filter((x) => FURNITURE[x.f]?.drawn)) {
       const [aw, ah] = FURNITURE[f.f].body;
       const box = rectAt(f.x, f.y, aw, ah, f.rot);
@@ -1251,7 +1201,7 @@ export function paint(ctx) {
     }
     const im = art(`wall.${it.material}`, 0);
     for (const w of it.walls.filter((x) => x.type === "wall" && !x.join)) {
-      // (a wall runs to the outer wall's middle line and over any inner wall it meets already: no more past its ends)
+      // (a wall runs to the outer wall's middle line and over any inner wall it meets)
       if (it.material === "masonry") { fill((k) => line(k, [w.a, w.b], it.thickness), tex("stone.curb")); fill((k) => line(k, [w.a, w.b], it.thickness), "rgb(20,18,16)", 0.45); }
       else if (im) strip(im, w.a, w.b, 0, 0, 0, { width: it.thickness });
       else fill((k) => stroke(k, [w.a, w.b], it.thickness, "butt"), "rgb(110,96,78)");
@@ -1266,8 +1216,7 @@ export function paint(ctx) {
     }
   }
   for (const st of curls(0)) curlStairs(st);
-  // Each building's walls from wall art (its shell: walls and windows; a door's gap is left for the scene's door), or
-  // plain strokes along its footprint without art
+  // Each building's walls and windows from wall art (a door's gap is left for the scene's door), else plain strokes
   const shells = items("shell").filter((sh) => meets(bboxOf(sh.walls.flatMap((w) => [w.a, w.b])), 1));
   const noShell = feet.filter(({ b }) => !shells.some((sh) => sh.group === (b.group ?? b.id)));
   if (noShell.length) {
@@ -1297,37 +1246,33 @@ export function paint(ctx) {
     }
   }
 
-  // 10. Props on the ground (wells, carts, crates, a hedge's bushes), and tree shadows (each tree's own art, dark, to
-  // the northwest)
+  // 10. Props on the ground and tree shadows (each tree's own art, dark, to the northwest)
   progress(0.75, "Props and trees");
-  // (wild props at their art's own size: the flat ones first, under the logs, stumps and rocks)
-  // (a plan's own fern, log or rock too, so it's drawn as the woods' are)
+  // (wild props, a plan's own fern, log or rock too, at their art's own size)
   const isWild = (p) => p.wild || WILD_CLASSES.has(p.class);
   const P = BLEND.props;
   const hash = hashAt;
   const inBed = (p) => levels.some((Lv) => Lv.bed && Lv.rings.some((r) => r.length >= 3 && pointInPolygon(p, r)));
-  // (each prop's size across, in squares: the plan's own; else its art's at the layout's scale (a wild one never under its
-  // least, as FA's arctic stump is a square where its other stumps are four); else as the layout or plan sizes it)
+  // (each prop's size across in squares: the plan's own; else its art's at the layout's scale, never under its least)
   const wildSize = (p, im) => {
     if (Number.isFinite(p.size)) return [p.size, (p.size * im.height) / im.width];
     const k = Math.max(1, (WILD_LEAST[p.class] ?? 0) / (im.width / ART_PX)) * (p.scale ?? 1);
     return [(im.width / ART_PX) * k, (im.height / ART_PX) * k];
   };
   const placed = [];
-  // (a windmill's sails are on its roof's tile, over its cap: paintOverhead)
+  // (a windmill's sails go on its roof's tile: paintOverhead)
   for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain" && p.class !== "sails")) {
     const bush = p.class === "bush", wildOne = isWild(p) && !bush;
     const im = art(bush ? bushRole(s) : propRole(p.class, s), p.variant);
     if (!im) continue;
-    // (a prop sized by the layout or the plan at that size; else at its art's own, true size, as the wild ones are: a
-    // cart or a well isn't the overview's few feet across)
+    // (a prop sized by the layout or the plan; else at its art's true size)
     let w, h;
     if (wildOne) [w, h] = wildSize(p, im);
     else { w = Number.isFinite(p.size) ? p.size : bush ? p.scale ?? 0.5 : p.scale != null ? (PROP_SQUARES[p.class] ?? 0.45) * p.scale : im.width / ART_PX; h = (w * im.height) / im.width; }
     if (!meets([p.x, p.y, p.x, p.y], Math.max(w, h) / 2 + 0.5)) continue;
     placed.push({ p, im, w, h, wildOne, flat: FLAT_PROPS.has(p.class) });
   }
-  // (a soft contact shadow under everything that stands on the ground, all in one pass, so nothing floats)
+  // (a soft contact shadow under everything standing on the ground, in one pass)
   const standing = placed.filter((x) => !x.flat && x.p.class !== "tracks" && x.p.class !== "ribbon");
   if (standing.length) soft((k) => { for (const { p, w, h } of standing) { k.beginPath(); k.ellipse(X(p.x), Y(p.y), (w * P.aoSize * pp) / 2, (h * P.aoSize * pp) / 2, ((p.rot ?? 0) * Math.PI) / 180, 0, 2 * Math.PI); k.fill(); } }, "rgb(14,20,32)", { blur: 0.12, alpha: P.ao, box: boxAround(standing.map(({ p, w, h }) => [p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2]), 0.3) });
   // (the flat ones first, under the logs, stumps and rocks; then the wild ones; then the rest)
@@ -1352,8 +1297,7 @@ export function paint(ctx) {
         g.save(); g.globalAlpha = T.alpha; g.translate(X(q[0] + Math.cos(a) * side), Y(q[1] + Math.sin(a) * side)); g.rotate(a); g.drawImage(im, (-T.size / 2) * pp, (-T.size / 2) * pp, T.size * pp, T.size * pp); g.restore();
       }
     }
-    // Frost lying on the open ground: an overlay now and then on a grid of cells anchored to the map, kept off the
-    // ways, the water and the buildings
+    // Frost on the open ground: an overlay now and then on a grid anchored to the map, off ways, water and buildings
     const F = BLEND.winter.frost;
     const fx0 = Math.floor((x0 - 1) / F.cell), fy0 = Math.floor((y0 - 1) / F.cell), fx1 = Math.ceil((wx1 + 1) / F.cell), fy1 = Math.ceil((wy1 + 1) / F.cell);
     for (let cy = fy0; cy <= fy1; cy++) for (let cx = fx0; cx <= fx1; cx++) {
@@ -1377,12 +1321,11 @@ export function paint(ctx) {
     }
   }, "rgb(16,24,40)", { blur: 0.15, alpha: 0.35, box: boxAround(trees.map((t) => { const r = crownOf(t, s) / 2 + crownOf(t, s) * 0.26; return [t.x - r, t.y - r, t.x + r, t.y + r]; })) });
 
-  // 12. The edge grade (the Map Dressing Guide's rule 15): the map darkened across its outer squares, unevenly, so the
-  // frame sits back and the play area is the lightest part of it
+  // 12. The edge grade: the map darkened unevenly across its outer squares, so the play area is the lightest part
   const [MW, MH] = L.size?.squares ?? [0, 0], GRADE = 2.5;
   if (MW > 4 * GRADE && MH > 4 * GRADE) {
     const frame = (k) => { k.beginPath(); k.rect(X(-3), Y(-3), (MW + 6) * pp, (MH + 6) * pp); k.rect(X(GRADE), Y(GRADE), (MW - 2 * GRADE) * pp, (MH - 2 * GRADE) * pp); k.fill("evenodd"); };
-    // (painted once over the whole tile when it reaches any edge, so the corners aren't darkened twice)
+    // (painted once over the whole tile when it reaches any edge, so corners aren't darkened twice)
     const near = [[-3, -3, MW + 3, GRADE + 1.5], [-3, MH - GRADE - 1.5, MW + 3, MH + 3], [-3, -3, GRADE + 1.5, MH + 3], [MW - GRADE - 1.5, -3, MW + 3, MH + 3]].some((box) => meets(box, 1));
     if (near) soft(frame, "rgb(12,18,28)", { blur: 1.1, alpha: 0.24, noise: noiseMask("battle-grade", 3, -0.2, 0.9) });
   }
@@ -1390,9 +1333,9 @@ export function paint(ctx) {
 }
 
 /**
- * The pieces painted apart, to lie over the map as tiles: { name, kind: "roof" | "canopy", box: [x0, y0, x1, y1] in
- * squares, ids: the buildings or trees on it, elevation in feet }. A house and its wings are one roof (they fade
- * together); trees are gathered by where they stand. Boxes are cut to the map.
+ * The pieces painted apart to lie over the map as tiles: { name, kind: "roof" | "canopy", box: [x0, y0, x1, y1] in
+ * squares, ids, elevation in feet }. A house and its wings are one roof (they fade together); trees are gathered by
+ * where they stand. Boxes are cut to the map.
  */
 export function overheads(layout) {
   const [MW, MH] = layout.size.squares;
@@ -1433,10 +1376,6 @@ export function overheads(layout) {
   return out;
 }
 
-/**
- * Paints one overhead piece onto its own canvas, which covers the piece's box at pp px a square.
- * ctx: { g, W, H, pp, layout, art(role, variant) }. A roof is clipped to its building's walls, so it covers them exactly.
- */
 /** A castle tower's or gatehouse's open top, onto its roof's own image: flagstones inside a parapet, merlons along its edge. */
 function battlements(g, b, X, Y, pp, art, [x0, y0]) {
   const pat = (role) => {
@@ -1483,6 +1422,10 @@ function battlements(g, b, X, Y, pp, art, [x0, y0]) {
 const millSails = (layout, parts) => { const ids = new Set(parts.map((b) => `${b.id}/sails`)); return layout.items.filter((i) => i.kind === "prop" && i.class === "sails" && ids.has(i.id)); };
 const sailsSpan = (sl) => (PROP_SQUARES.sails ?? 2.4) * (sl.scale ?? 1);
 
+/**
+ * Paints one overhead piece onto its own canvas, covering the piece's box at pp px a square. ctx: { g, W, H, pp,
+ * layout, art(role, variant) }. A roof is clipped to its building's walls, so it covers them exactly.
+ */
 export function paintOverhead(ctx, piece) {
   const { g, pp, layout: L, art } = ctx;
   const [x0, y0] = piece.box;
@@ -1495,15 +1438,14 @@ export function paintOverhead(ctx, piece) {
     g.beginPath();
     for (const b of parts) { footprint(b).forEach(([x, y], k) => (k ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("nonzero");
-    // (each roof's art at true scale; chimneys a little over half a square across; a castle's open tower or gatehouse
-    // its top's flagstones inside a parapet of merlons, as the wall walk has)
+    // (each roof's art at true scale, chimneys a little over half a square; a castle's open top as battlements)
     for (const b of parts) {
       if (b.castle && b.roofStyle === "flat") { battlements(g, b, X, Y, pp, art, [x0, y0]); continue; }
       const im = art(`roof.${b.roof}.${s}`, b.variant);
       paintRoof(g, b, { x: X(b.cx), y: Y(b.cy), pp, art, season: s, texPx: ((im?.width ?? ART_PX) * pp) / ART_PX, chimney: 0.6 });
     }
     g.restore();
-    // (a windmill's sails over its cap, past its walls, with a shadow on the roof and the ground below)
+    // (a windmill's sails over its cap, with a shadow below)
     for (const sl of millSails(L, parts)) {
       const im = art(propRole("sails", s), sl.variant ?? 0);
       if (!im) continue;

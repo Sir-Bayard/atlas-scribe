@@ -1,7 +1,7 @@
 /**
- * AtlasScribe: a map plan in, a map out.
- * The entry point: settings and the API at game.modules.get("atlas-scribe").api. Everything that changes the
- * world is GM only. One job runs at a time; cancel() stops it between any two steps (and mid-paint).
+ * AtlasScribe: a map plan in, a map out. The entry point: settings and the API at
+ * game.modules.get("atlas-scribe").api. Everything that changes the world is GM only. One job runs at a time;
+ * cancel() stops it between any two steps.
  */
 import { WorkerClient } from "./foundry/worker-client.mjs";
 import { upload, freeName, freeDir, ensureDir } from "./foundry/files.mjs";
@@ -160,10 +160,10 @@ const api = {
   },
 
   /**
-   * Rerolls districts and areas: a copy of the plan with new seeds for the ids given (one id or a list), or for every
-   * district and area that isn't locked when ids is left out. Locked features, the plan's own seed and everything
-   * else stay as they are, and each rerolled one changes alone. Doesn't render: pass the plan to render.
-   * Returns { plan, rerolled: [id], skipped: [{ id, why }] }.
+   * Rerolls what a reroll can redraw (districts, areas, heights and shaped water: seeds.mjs rerollable): a copy of
+   * the plan with new seeds for the ids given (one id or a list), or for every such feature that isn't locked when
+   * ids is left out. Locked features, the plan's own seed and everything else stay as they are, and each rerolled one
+   * changes alone. Doesn't render: pass the plan to render. Returns { plan, rerolled: [id], skipped: [{ id, why }] }.
    */
   reroll(input, ids = null) {
     const { plan, error } = readPlan(input);
@@ -186,11 +186,9 @@ const api = {
   },
 
   /**
-   * A quick look at a plan: lays it out and draws it in plain colors (no art) in a window, in a second or so, with
-   * its districts and areas outlined. Reroll, lock and undo there, then take the plan the window has made with Copy
-   * plan or from the window's plan property. Only one preview window is open at a time: a second call shows the new
-   * plan in it. px: the longer side of the picture, in pixels. Returns the window; if the plan can't be drawn (another
-   * job is running, say) the window says why.
+   * A quick look at a plan: laid out and drawn in plain colors in the window in a second or so. Only one window is
+   * open at a time; a second call shows the new plan in it. px: the picture's longer side. Returns the window (it
+   * says why when the plan can't be drawn).
    */
   async preview(input, { px = 1600 } = {}) {
     requireGM();
@@ -236,10 +234,9 @@ const api = {
   },
 
   /**
-   * A battle map's plan from its brief, as Quick Start's Battle map tab makes it: { site, size, season, time, weather,
-   * ground, features, trees, litter, rocks, brush, building { use, size, rooms, name }, street { place, quarter }, camp
-   * { kind, tents }, name, seed } (any left out has a default). Returns { plan, brief }. The choices are listed in
-   * api.briefChoices.
+   * A battle map's plan from a brief, as Quick Start's Battle map tab makes it ({ site, size, season, time, weather,
+   * ground, features, trees, litter, rocks, brush, building, street, camp, castle, name, seed }; any left out has a
+   * default). Returns { plan, brief, notes }. The choices are listed in api.briefChoices.
    */
   briefPlan(brief = {}) {
     return briefPlan(brief);
@@ -259,18 +256,13 @@ const api = {
   },
 
   /**
-   * Renders a plan into an image, in the worker, and saves it to <output>/maps (never over an existing file).
-   * Steps: check the plan (errors stop it), lay it out, fetch the art its style needs (FA Nexus; roles with no art
-   * are painted in plain colors and listed in missingArt), paint, save.
-   * With publish: true the map is then published (see publish; scene and force as there). If publishing fails,
-   * the error carries the saved map's result as error.result.
-   * A battle map's roofs and tree crowns are saved too, each its own image in a folder beside the map, for publish to
-   * lay over it as tiles: overheads lists them ({ path, kind, x, y, width, height, elevation }; empty for other maps),
-   * and furniture its pieces of furniture, also tiles ({ src, f, x, y, width, height, rotation }).
-   * A battle map's floors above and below the ground are saved too, each an image (levels: [{ floor, path }]), for publish
-   * to make the scene's levels of.
-   * Returns { path, width, height, tiles, ms, layout, overheads, furniture, levels, missingArt, notes, artNotes, warnings }, and scene when
-   * published.
+   * Renders a plan into an image in the worker and saves it to <output>/maps (never over an existing file): check the
+   * plan (errors stop it), lay it out, fetch its art (FA Nexus; roles with none are painted plain and listed in
+   * missingArt), paint, save. With publish: true the map is then published (scene and force as there); if that fails,
+   * the error carries the saved map's result as error.result. A battle map also saves its roofs and crowns
+   * (overheads: [{ path, kind, x, y, width, height, elevation }]), its floors (levels: [{ floor, path }]) and lists
+   * its furniture and mist tiles. Returns { path, width, height, tiles, ms, layout, overheads, furniture, mist,
+   * levels, missingArt, notes, artNotes, warnings }, and scene when published.
    */
   async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
     requireGM();
@@ -297,8 +289,8 @@ const api = {
           const dir = `${outputFolder()}/maps`;
           const name = await freeName(dir, plan.id ?? "map", "webp");
           path = await upload(dir, name, img.blob);
-          // A battle map's roofs and tree crowns: beside the map, in a folder of their own named after it (never one
-          // already there, which an older scene may use). Should that fail, the error says where the map was saved
+          // A battle map's roofs and crowns go beside the map in a folder named after it (never one already there);
+          // on a failure the error says where the map was saved
           if (img.overheads?.length) {
             try {
               const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-overhead`)}`;
@@ -359,14 +351,10 @@ const api = {
   },
 
   /**
-   * Makes a rendered map into a scene: the image as its background, the grid and settings from the plan's
-   * output.scene, a thumbnail, and the plan's labels as locked text drawings (hidden from players unless show is
-   * "all"). image: the result of render, or a path. scene: the id of a scene to update instead of creating one.
-   * AtlasScribe only updates scenes it made, unless force is true; all of the scene is backed up to
-   * <output>/backups first, its name is kept, and the labels AtlasScribe added to it before (from whatever plan)
-   * are replaced; a dressed map's name goes in as a hidden tile the GM can show, and a battle map's roofs and tree crowns
-   * (render's overheads) as tiles over it, with its walls, doors, windows and roof regions. Returns { sceneId, created,
-   * backup, thumb, labels, title, overheads, walls, roofs, heights, warnings }.
+   * Makes a rendered map into a scene (see foundry/publish.mjs): the image, the plan's grid and scene settings, a
+   * thumbnail, the labels, and on a battle map its tiles, walls, regions, lights and levels. image: render's result
+   * or a path. scene: a scene to update (only one AtlasScribe made, unless force; backed up first). Returns publish's
+   * result.
    */
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();
@@ -400,7 +388,7 @@ const api = {
   },
 };
 
-/** What the window asks of the module. */
+/** The saved plans' folder, and (host, below) what the window asks of the module. */
 const plansDir = () => `${outputFolder()}/plans`;
 const host = {
   check: (input) => api.checkPlan(input),

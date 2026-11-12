@@ -1,10 +1,8 @@
 /**
- * The "illustrated" style: a map drawn, not textured. One light palette, ink lines along every edge, the built-up
- * ground of a town or city as a single pale mass, roofs in two tones, trees as clumped canopies, water with its banks
- * inked (lines following a lake's shore, a dashed ripple down a river), and a faint paper grain over all. It needs no art, so every user gets it,
- * and it reads at city scale, where battle-map textures repeat into noise. Numbers are in squares.
- *
- * paint(ctx) takes the same ctx as the other styles; art is never asked for.
+ * The "illustrated" style: a map drawn, not textured. One light palette, ink lines along every edge, a settlement's
+ * built-up ground as one pale mass, two-tone roofs, clumped trees, inked water, and a faint paper grain. It needs no
+ * art and reads at city scale. Squares throughout. paint(ctx) takes the same ctx as the other styles; art is never
+ * asked for.
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets, outlineOf } from "../roofs.mjs";
@@ -14,7 +12,6 @@ import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
 /** The widest blur, in squares (a town's built-up ground fades at its edge), so tiles get a margin for it. */
 export const MAX_BLUR = 1.5;
 
-/** It needs no art. */
 export const rolesFor = () => [];
 
 /** The palette. Summer, with what spring, autumn and winter change. */
@@ -708,7 +705,7 @@ function dress(ctx, P) {
 
   // The scale bar: about a fifth of the map across, in a round number of feet, five parts
   { const c = corners[1];
-    // (the biggest round length no longer than a fifth of the map, and short enough to sit in its corner)
+    // (the biggest round length up to a fifth of the map that fits its corner)
     const want = Math.min((mw * ft) / 5, (cw - unit * 5) * ft), mag = 10 ** Math.floor(Math.log10(want)), nice = [10, 5, 2.5, 2, 1].map((m) => m * mag).find((v) => v <= want) ?? mag;
     const len = nice / ft, h = unit * 0.9;
     const x = Math.min(Math.max(spot(c).x, len / 2 + unit * 4.5), mw - len / 2 - unit * 4.5), y = spot(c).y, left = x - len / 2;

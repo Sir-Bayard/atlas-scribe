@@ -1,14 +1,10 @@
 /**
- * A district's anchor: the landmark its character is known by, placed before its streets, on its own square or
- * forecourt (1 Nov, after the research on fantasy city maps: landmarks first, drawn larger than life, with
- * open ground around them; the square steers the district's streets toward it). A temple quarter's cathedral with
- * its cloister and yard, the nobles' palace with its forecourt and formal garden, the market square and its hall, a
- * merchants' or crafts guildhall, the docks' customs house with cranes, the garrison's keep on its parade ground, the
- * poor quarter's shrine and well. Where it stands depends only on the district's shape, roads and place in the plan
- * (its Centerpiece place, or one picked from the plan's seed and its id), never its own seed, so rerolling the
- * district doesn't move it (that seed picks only its small details). Not every district is built around it (2 Nov:
- * "sometimes it'd be nice if maybe the center feature was on the side of the district"): it stands in the
- * middle, off to one side, or at the district's edge, often on a main road. Everything in squares. Pure.
+ * A district's anchor: the landmark its character is known by, placed before its streets on its own square or
+ * forecourt, drawn larger than life with open ground around it; the square steers the district's streets toward it. A
+ * temple quarter's cathedral, the nobles' palace, the market square and hall, a guildhall, the docks' customs house,
+ * the garrison's keep, the poor quarter's shrine and well. Where it stands depends only on the district's shape,
+ * roads and its Centerpiece place (or one picked from the plan's seed and its id), never its own seed, so a reroll
+ * doesn't move it: in the middle, off to one side or at the district's edge, often on a main road. Squares; pure.
  */
 import { marketStalls } from "./market.mjs";
 import { PAVINGS } from "../squares.mjs";
@@ -46,14 +42,11 @@ const rectAt = ([x, y], w, h, rot) => {
 };
 
 /**
- * Where a district's anchor stands: the block (w by h squares, turned to the district's main road) that fits inside
- * it, clear of its roads, water and anything placed, nearest the spot its place aims at (a market's and the docks'
- * nearest a road too). The place: the district's anchorAt, else picked from the plan's seed and the district's id
- * (in the middle a third of the time, off to one side or at its edge otherwise), toward the nearest main road more
- * often than not, else a way of its own. district: the plan feature; poly: its polygon; roads: [{ path, width }] in
- * or beside it; water: [{ path, clear }]; blocked: polygons it must keep off; ftPerSquare; seed: the plan's; margin:
- * how far off the district's edge one off to the side keeps, where it can, so its ring street fits. Returns
- * { at, rot, w, h, kind, place } or null (no character with an anchor, a hamlet, or no room).
+ * Where a district's anchor stands: the block (w by h squares, turned to its main road) that fits inside it, clear of
+ * its roads, water and anything placed, nearest the spot its place aims at. The place: the district's anchorAt, else
+ * picked from the plan's seed and the district's id (the middle a third of the time), more often toward the nearest
+ * main road. roads: [{ path, width }]; water: [{ path, clear }]; blocked: polygons to keep off; margin: how far off
+ * the district's edge one at the side keeps so its ring street fits. Returns { at, rot, w, h, kind, place } or null.
  */
 export function anchorFor({ district, poly, roads = [], water = [], blocked = [], ftPerSquare, seed = 1, margin = 0 }) {
   const kind = characterOf(district);
@@ -178,13 +171,10 @@ function segHits(box, path) {
 }
 
 /**
- * The anchor laid out: { block (its outline, kept clear of plots), radial: { at, radius } (steers the district's
- * streets), buildings: [{ key, spec }] (addBuilding specs; the first is the landmark), surfaces: [{ class, poly,
- * surface }], props: [{ class, x, y, rot, size }] (size across in feet), trees: [{ x, y, s, species, size }],
- * walls: [path], hedges: [path] (clipped box), approach: [point, direction] (a
- * street runs out from there to the town) }. a: from anchorFor; r: the
- * district's stream for its details; ftPerSquare. apart: the least gap, in squares, between its buildings that
- * stand apart (a battle map's square, so there's room to walk between; 0 elsewhere).
+ * The anchor laid out: { block (kept clear of plots), radial: { at, radius } (steers the streets), buildings: [{ key,
+ * spec }] (the first the landmark), surfaces, props (size in feet), trees, walls, hedges, approach: [point,
+ * direction] (where a street runs out to the town) }. a: from anchorFor; r: the district's stream; apart: the least
+ * gap between its separate buildings, in squares (a square on a battle map).
  */
 export function layAnchor(a, r, ftPerSquare, { apart = 0 } = {}) {
   const sq = (ft) => (ft * a.scale) / ftPerSquare; // feet in the anchor's own (grand) scale
@@ -290,8 +280,7 @@ export function layAnchor(a, r, ftPerSquare, { apart = 0 } = {}) {
       fountain(-W * 0.3, -H * 0.2, 28);
       { const [x, y] = P(W * 0.3, -H * 0.2); out.props.push({ class: "statue", x, y, rot: a.rot, size: 10 * a.scale }); }
       { const [x, y] = P(-W * 0.3, H * 0.3); out.props.push({ class: "well", x, y, rot: a.rot, size: 8 * a.scale }); }
-      // Stalls in rows across the square, clear of the hall, the fountain, the statue and the well (at true size,
-      // from their own stream, so the rest of the district draws as before)
+      // Stalls in rows across the square, clear of the hall, fountain, statue and well (their own stream)
       {
         const local = (p) => { const dx = p[0] - a.at[0], dy = p[1] - a.at[1]; return [dx * ux + dy * uy, dx * nx + dy * ny]; };
         const marks = out.props.map((p) => [p.x, p.y, (p.size ?? 10) / ftPerSquare / 2 + 0.45]);

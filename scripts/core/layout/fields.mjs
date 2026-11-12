@@ -1,21 +1,15 @@
 /**
- * Field systems: an area of class "fields" filled with fields, from a Voronoi diagram of points scattered over it
- * (d3-delaunay, bundled in vendor/). Two systems:
+ * Field systems: an area of class "fields" filled with fields from a Voronoi diagram of points scattered over it
+ * (d3-delaunay, in vendor/). Two systems:
  *
- * - patchwork: enclosed fields, each a Voronoi cell (a few merged with a neighbor into one bigger field), hedged or
- *   walled along the roads, around the system's edge and on about a quarter of the sides between them (the rest a faint
- *   grass edge), with a tree in the hedgerow here and there. The cells are stretched along the
- *   system's grain (the area's long axis), so fields run long and their sides fall roughly parallel, as old enclosures do.
- * - strips: open fields. The cells are furlongs, each plowed in long narrow strips running one way or the other
- *   across the grain, with grass balks between the strips and headlands between the furlongs. No hedges inside.
+ * - patchwork: enclosed fields, each a cell (a few merged into bigger ones), hedged or walled along the roads, around
+ *   the edge and on about a quarter of the sides between, the cells stretched along the area's long axis so fields
+ *   run long as old enclosures do.
+ * - strips: open furlongs plowed in long narrow strips, with grass balks between strips and headlands between
+ *   furlongs; no hedges inside.
  *
- * Every field takes a crop for the season (plowed, growing, ripe, stubble, hay, pasture, fallow) and the way its
- * rows run; about a third of the fields (or furlongs) are left as grass, by the area's coverage, so the land isn't
- * cultivated wall to wall. The cells come from the area's own shape and stream, never from what's around it, so moving
- * a road clips the fields differently but never reshuffles them; the land a system fills is its shape less the roads,
- * water, districts and a ragged margin of grass around each, squares, yards, other areas, buildings and the fields
- * systems listed before it. Pure: runs anywhere.
- * Numbers are in squares.
+ * Every field takes a crop for the season and a row direction; about a third are left as grass. The cells come from
+ * the area's own shape and stream, so moving a road clips the fields but never reshuffles them. Pure; squares.
  */
 import { cliffOf } from "../cliffs.mjs";
 import { Delaunay } from "../../../vendor/d3-delaunay.mjs";
@@ -57,13 +51,13 @@ const COVERAGE = 0.65;
 const HEDGED = 0.25;
 
 /**
- * What a field system keeps out of: polygons, from the plan alone (roads, water and docks at their widths, walls and hedges,
- * districts with a ragged margin of grass around them (marginRound), squares, plan buildings, other areas, and the fields systems listed before this one). plan: normalized, its paths
- * smoothed (as the layout has it).
+ * What a field system keeps out of, as polygons from the plan alone: roads, water and docks at their widths, walls
+ * and hedges, districts with a ragged margin (marginRound), squares, plan buildings, other areas and earlier field
+ * systems. plan: normalized, its paths smoothed.
  */
 export function fieldKeepOut(plan, self, memo = null) {
-  // Only earlier field systems depend on which system asks, so with a memo (one per layout, for one plan) the rest is
-  // worked out once: the same polygons, in the same order, as working it all out again
+  // Only earlier field systems depend on which system asks, so with a memo (one per layout) the rest is worked out
+  // once
   if (memo) {
     if (!memo.parts) memo.parts = keepOutParts(plan);
     const { bandsOut, each } = memo.parts;
@@ -148,9 +142,8 @@ function keepOutParts(plan, self = undefined) {
 }
 
 /**
- * A district and the grass around it, where fields don't come: the outline pushed out by 75 to 200 feet, the distance
- * wandering around it by a noise from the plan's seed and the district's id (not its own seed, so rerolling a district
- * never moves the fields). The district's box is lost in plain grass instead of standing out against the crops.
+ * A district and the grass around it where fields don't come: its outline pushed out 75 to 200 feet, wandering by
+ * noise from the plan's seed and the district's id (not its own seed, so a reroll never moves the fields).
  */
 export function marginRound(plan, district, feet = MARGIN_FT) {
   const sq = plan.size.ftPerSquare;
@@ -184,16 +177,11 @@ function crosses(a, b, c, d) {
 }
 
 /**
- * Lanes out to the roads: a straight track from each farmstead, and from each yard, park or square that stands
- * outside every district with no road along or through it (and isn't beside a farm, whose lane serves it), to the
- * nearest place on a plan road within LANE_REACH (a farm's from the middle of its yard; a park's from the middle of
- * one of its sides, where its paths begin). A lane doesn't run through water (across it or along its banks), a
- * district, another yard, park, farm or square, a plan building or a pond (what stands in or beside the feature
- * itself doesn't count), end off the map or at the water's edge, or go the long way around: when the nearest road can
- * only be reached by a detour of more than a third again (and 3 squares), there's no lane. Woods and fields it may
- * cross (hedges crossed lose their bushes there). From the plan alone, so the fields can keep off them and rerolling
- * never moves them; worked out once per plan. Returns [{ id, from, path, width }] (path from the feature's edge to the
- * road; width in squares). The ids end in /lane (a farm's) or /access.
+ * Lanes to the roads: a straight track from each farmstead, and from each yard, park or square outside every district
+ * with no road along it, to the nearest point on a plan road within LANE_REACH. None through water, a district,
+ * another yard, park, farm or square, a plan building or a pond, off the map, or by a detour of more than a third
+ * again (and 3 squares); woods and fields it may cross. From the plan alone, worked out once per plan. Returns [{ id,
+ * from, path, width }]; ids end in /lane (a farm's) or /access.
  */
 const laneCache = new WeakMap();
 export function accessLanes(plan) {
@@ -320,7 +308,6 @@ export function sideAlong(poly, path) {
   return false;
 }
 
-/** The farm lanes alone. */
 export const farmLanes = (plan) => accessLanes(plan).filter((l) => l.id.endsWith("/lane"));
 
 /** The plan's roads as fields see them: { path, half }, half being how far the fields keep from the road's middle. */
@@ -339,14 +326,12 @@ export function earlierFields(plan, self) {
 }
 
 /**
- * Fills one field system. area: the plan's area; r: its stream; keepOut: from fieldKeepOut; earlier: from earlierFields
- * (no border is drawn along their edges, which have their own); along: the roads ([{ path, half }], fieldRoads), whose
- * sides are always hedged; W, H: the map, in squares; ftPerSquare; season. Returns { system, fields, hedges, walls, balks, trees,
- * notes }: fields [{ poly, holes, crop, angle, shade, variant, rows }] (angle: the way its rows run, in degrees; rows: their
- * spacing in squares, 0 for none; shade: -1 to 1, a little darker or lighter than its crop), hedges and walls
- * (paths: the border, by its class), balks (paths: grass lines between strips, between furlongs, and the
- * faint edges between enclosed fields that carry no hedge), trees (hedgerow
- * trees for the caller to place where there's room: [{ x, y, s, rot, variant }]).
+ * Fills one field system. area: the plan's area; r: its stream; keepOut: fieldKeepOut's; earlier: earlierFields' (no
+ * border along their edges); along: the roads ([{ path, half }]), always hedged; W, H: the map in squares;
+ * ftPerSquare; season. Returns { system, fields, hedges, walls, balks, trees, notes }: fields [{ poly, holes, crop,
+ * angle, shade, variant, rows }] (angle: their rows' direction in degrees; rows: spacing in squares, 0 for none;
+ * shade: -1 to 1), hedges and walls (paths), balks (grass lines), trees (hedgerow trees to place: [{ x, y, s, rot,
+ * variant }]).
  */
 export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, ftPerSquare, season = "summer" }) {
   const notes = [];
@@ -478,9 +463,8 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
     // along the map's edge and along an earlier field system (whose own border runs there). Grass meets grass unbounded
     const bordered = (s) => { const [i, j] = s.cells.map(find); return i !== j && !(open.has(i) && open.has(j)); };
     const openAt = (p) => { const i = cells.findIndex((c) => pointInPolygon(p, c)); return i >= 0 && open.has(find(i)); };
-    // Not every border is a hedge or wall, or every field is ringed by one: those along a road and around the system's
-    // own edge are, and about a quarter of the sides between fields (each side's own draw); the rest are a faint grass
-    // edge, as are the edges facing a village, water or a wood
+    // Not every border is a hedge or wall: those along a road and around the system's edge are, and about a quarter
+    // of the sides between fields; the rest are a faint grass edge, as are edges facing a village, water or a wood
     const walled = (s) => border !== "none" && r.fork("side", s.id).chance(HEDGED);
     const shapeRing = [...shape, shape[0]];
     const onRoad = (m) => along.some((w) => distanceToPath(m, w.path) < w.half + 0.3);
@@ -510,9 +494,8 @@ export function fillFields({ area, r, keepOut, earlier = [], along = [], W, H, f
       }
     }
   } else {
-    // Open fields: each cell a furlong of strips running with the grain or across it. The strips are laid across the
-    // whole cell, each drawing its choices whether or not any of it is left, and only then trimmed to the land, so a
-    // road taking a corner of a furlong never moves the strips in the rest of it
+    // Open fields: each cell a furlong of strips with the grain or across it, laid across the whole cell (each
+    // drawing its choices) before trimming to the land, so a road taking a corner never moves the rest
     const stripW = STRIP_FT / ftPerSquare;
     const openF = new Set();
     cells.forEach((cell, i) => {

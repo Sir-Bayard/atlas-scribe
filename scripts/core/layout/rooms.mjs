@@ -1,14 +1,11 @@
 /**
- * A battle map's interiors (M6 chunk 4): each building's rooms, laid out by a program from its use (7 Nov:
- * rooms by use, an inn's common room with its bar and stage, a kitchen, a storeroom), the walls between them with
- * doors on private rooms and open doorways between public ones, and furniture by recipe, each piece a tile the GM can
- * move (7 Nov).
+ * A battle map's interiors: each building's rooms laid out by a program from its use, the walls between them (doors
+ * to private rooms, open doorways between public ones), and furniture by recipe, each piece a tile the GM can move.
  *
- * Rooms: the building's inside (its walls' inner face) is cut, as a guillotine cuts paper, square to its own frame,
- * into rooms of the program's shares, each at least ROOM.min squares across; the rooms that must meet the front door
- * stay on its side. Furniture: each room's recipe (a bed against a wall away from the door, a hearth on an outside wall,
- * the ground before every door kept clear and a way left between the doors), to about a third of its floor. Pure: no
- * Foundry.
+ * Rooms: the building's inside is cut, guillotine fashion and square to its frame, into rooms of the program's
+ * shares, each at least ROOM.min squares across; rooms that must meet the front door stay on its side. Furniture:
+ * each room's recipe (a bed against a wall away from the door, a hearth on an outside wall, the ground before every
+ * door kept clear and a way left between doors), to about a third of its floor. Pure: no Foundry.
  */
 import { intersect, difference, area, offset, signedArea } from "../lots/poly.mjs";
 import { pointInPolygon, polygonsOverlap, solidOverlap, spansAt } from "../geom.mjs";
@@ -137,12 +134,10 @@ export function programFor(use, a) {
 }
 
 /**
- * Furniture, each piece a tile the GM can move (7 Nov: grouped as the art groups it, a bed made up, a table
- * with its chairs and what's on it). size: its art in squares [across, deep] as the art lies (the files are 200 px a
- * square); body: the part that's drawn, as big as it is in any of its files, which the layout sets flush against a wall
- * and keeps clear of doors and other pieces; on: it stands on another piece (its tile over that one's); back: the side
- * of the art that goes against a wall (top unless said; none
- * for a piece that stands free); floor: a rug, under the rest; drawn: painted into the map (a stage).
+ * Furniture, each piece a tile the GM can move, grouped as the art groups it (a bed made up, a table with its
+ * chairs). size: its art in squares [across, deep]; body: the drawn part, set flush against a wall and kept clear of
+ * doors and other pieces; on: it stands on another piece; back: the side against a wall (top unless said; none stands
+ * free); floor: a rug, under the rest; drawn: painted into the map (a stage).
  */
 export const FURNITURE = {
   hearth: { size: [1, 2], body: [0.6, 1.3], back: "left" },
@@ -177,8 +172,8 @@ export const FURNITURE = {
   trough: { size: [2, 1], body: [1.98, 0.58] },
   "weapon.rack": { size: [1, 2], body: [0.32, 1.94], back: "left" },
   "armor.stand": { size: [1, 1], body: [0.64, 0.3] },
-  // (lights' pieces, placed by layout/lights.mjs: candles and a lamp stand on a table or desk, over it; a wall
-  // lantern's bracket at its art's top, against its wall; a lamp post's lamp at its art's top, toward the street)
+  // (lights' pieces, placed by layout/lights.mjs: candles and a lamp on a table or desk, a wall lantern's bracket
+  // against its wall, a lamp post's lamp toward the street)
   candles: { size: [1, 1], body: [0.3, 0.36], back: "none", on: true },
   "lamp.table": { size: [1, 1], body: [0.28, 0.28], back: "none", on: true },
   "lantern.wall": { size: [1, 1], body: [0.28, 0.38] },
@@ -210,15 +205,15 @@ export function artPlacement(p, insets = [0, 0, 0, 0]) {
   return { x: p.x + dx * c - dy * s, y: p.y + dx * s + dy * c, w: aw, h: ah, rot: p.rot ?? 0 };
 }
 
-/**
- * Each room kind's recipe, in order of importance: a piece (`f`), how many (`n`), where (wall: against one; corner;
- * center; near another piece; at a bed's foot; before a desk; behind a bar; or a set: tables, pews in rows, a rug),
- * what wall it wants (outside, inside, away from the door, the far end, a short end wall), `alt` stand-ins when it
- * won't fit, `when` a feature the room must have (a hearth) and `min` the least floor. Then each room is filled out
- * with its kind's `fill` pieces along the walls, to its share of the floor (`cover`), so it looks lived in.
- */
 /** The room to pass around a table, in squares each side (a common room's tables close enough to read as busy). */
 const TABLE_PAD = 0.32;
+/**
+ * Each room kind's recipe, in order of importance: a piece (f), how many (n), where (wall, corner, center, near
+ * another piece, at a bed's foot, before a desk, behind a bar, or a set: tables, pews in rows, a rug), which wall
+ * (outside, inside, away from the door, the far end, a short end), alt stand-ins, when (a feature the room must have)
+ * and min (the least floor). Then each room is filled out with its kind's fill pieces along the walls to its share
+ * (cover).
+ */
 const RECIPES = {
   hall: { cover: 0.32, fill: ["chest", "barrel", "crate", "shelf", "stool"], steps: [
     { f: "hearth.large", at: "wall", want: "end", when: "hearth", min: 36, alt: [{ f: "hearth" }] },
@@ -285,16 +280,14 @@ function roomy(poly) {
   return w >= ROOM.min - 1e-6 && h >= ROOM.min - 1e-6 && area(poly) >= 0.55 * w * h;
 }
 
-/**
- * Cuts a piece (in the frame) into rooms, in the program's order (each cut splits it between the rooms before a point
- * in that order and those after, either side low, where the low side holds its rooms' share of the floor): the ways
- * tried (up to a budget), the best kept, { rooms: [{ poly, room }], cuts: [{ axis, c, poly }], score }, or null when
- * they don't fit. doors: the building's outside doors (in the frame); only the first cut's ways are scored for them
- * (doorScore), the pieces below it by their rooms' shapes alone. memo: the work shared down the tree (and its
- * openings: the outside wall's doors and windows, which no cut meets, clearOf).
- */
-/** How many pieces divide works out for one layout of a building at most (see divide). */
+/** How many pieces divide works out for one layout of a building at most. */
 const DIVIDE_BUDGET = 4000;
+/**
+ * Cuts a piece (in the frame) into rooms in the program's order, each cut splitting the rooms
+ * before a point in that order from those after: the ways tried (up to the budget), the best kept as { rooms: [{
+ * poly, room }], cuts: [{ axis, c, poly }], score }, or null when they don't fit. doors: the outside doors, scored at
+ * the first cut only. memo: work shared down the tree, and the outside wall's openings, which no cut meets (clearOf).
+ */
 function divide(poly, rooms, doors = null, memo = new Map()) {
   if (rooms.length === 1) return roomy(poly) || rooms[0].fits ? { rooms: [{ poly, room: rooms[0] }], cuts: [], score: shapeScore(poly) } : null;
   // (the same piece with the same rooms comes up again and again down the tree: worked out once)
@@ -316,8 +309,8 @@ function divide(poly, rooms, doors = null, memo = new Map()) {
     for (const k of ks) for (const firstLow of [true, false]) {
       const lowRooms = firstLow ? rooms.slice(0, k) : rooms.slice(k), highRooms = firstLow ? rooms.slice(k) : rooms.slice(0, k);
       const share = lowRooms.reduce((s, r) => s + r.share, 0) / sum;
-      // (where the low side holds that share: straight off a rectangle, else by halving; no nearer a side than a room's
-      // least width; then moved off the building's doors and windows, so no inner wall meets one)
+      // (where the low side holds that share, no nearer a side than a room's least width, moved off the doors and
+      // windows)
       let a = lo, b = hi;
       if (boxy) a = b = lo + share * (hi - lo);
       else for (let i = 0; i < 14; i++) { const c = (a + b) / 2; const la = sideOf(poly, axis, c, true).reduce((s, p) => s + area(p), 0); if (la / total < share) a = c; else b = c; }
@@ -396,25 +389,23 @@ function layRooms(poly, program, doors, openings = []) {
   return { rooms: [], cuts: [] };
 }
 
-/**
- * Floors (M6 chunk 8, 8 Nov: Foundry 14's levels on one scene; by use, plus when the plan asks; stairs as art
- * with a Change Level region; an inn's guest floor a corridor with rooms off it; the stairs against a wall of the main
- * room; a cellar of stone and earth). height: a floor's height in feet; most: the most upper floors; corridor: an upper
- * floor's corridor across, in squares (the stairs and a way past them); stairs: their art's size [across, along]; a
- * floor needs an inside of least by least squares.
- */
 /** A building's use as a note names it ("The inn"), for a building with no name of its own. */
 const USE_WORDS = { watch: "watchtower", trade: "shop" };
 const theUse = (use) => `The ${USE_WORDS[use] ?? use ?? "building"}`;
 
+/**
+ * Floors, each a level of the scene. height: a floor's height in feet; most: the most upper floors; corridor: an upper
+ * floor's corridor across, in squares; stairs: their art's size [across, along]; least: the least inside a floor
+ * needs; sideMin: the least depth of the rooms either side of a corridor.
+ */
 export const FLOORS = { height: 10, most: 3, corridor: 2.2, stairs: [1, 3], least: [4, 5], sideMin: 2.6 };
 const KEEP_FLOORS = new Set(["keep"]), TOWER_USES = new Set(["watch", "tower"]);
 
 /**
- * How many floors a building has above its ground floor, and whether it has a cellar, by its use and the floor of
- * its inside (a square squares; r its own random stream): an inn of some size a guest floor and a cellar; a mansion or
- * palace a floor of bedrooms and a cellar; a keep two floors and a cellar; a tower two floors; a big shop, workshop or
- * house now and then a floor of rooms above (a big house now and then a cellar).
+ * How many floors a building has above its ground floor, and whether it has a cellar, by its use and inside floor (a
+ * square squares; r its own random stream): an inn of some size a guest floor and a cellar; a mansion or palace a
+ * floor of bedrooms and a cellar; a keep two floors and a cellar; a tower two floors; now and then a floor above a
+ * big shop, workshop or house (and a cellar under a big house).
  */
 export function floorsFor(use, a, r) {
   const u = use ?? "house";
@@ -494,15 +485,12 @@ function wallsOf(laid, ringF, front, r, { hub = null, noDoor = null } = {}) {
         else { if (cur?.key) stretches.push(cur); cur = { key, A, B, t0: t - 0.05, t1: t + 0.05, P2, swap }; }
       }
       if (cur?.key) stretches.push(cur);
-      // (each stretch's wall runs on past its ends: at the outer wall to its middle line, where that wall's own line
-      // runs; at an inner wall across it to that wall's far face; so walls meet and leave no gap to see or slip through)
-      // (the inner walls across this one that reach it: a cut of the other way whose line, within its own piece, runs
-      // to this line or over it)
+      // (each stretch's wall runs on past its ends, to the outer wall's middle line or across an inner wall's far
+      // face, so walls meet with no gap to see or slip through; across: the inner walls of the other way that reach
+      // this line)
       const across = laid.cuts.filter((k) => k.axis !== cut.axis && spansOf(k).some(([a, b]) => cut.c >= a - 0.15 && cut.c <= b + 0.15)).map((k) => k.c);
-      // (a stretch ends where the rooms either side change, the samples a tenth apart putting that within a twentieth
-      // of its end: at an inner wall that runs across there, on past every one that close to its far face; else at
-      // the span's end, on to the outer wall's own line, found where this line meets the ring (a wing's or a sloped
-      // wall's too), a hair past it)
+      // (a stretch ends where the rooms either side change: at an inner wall across there, past every one that close,
+      // else at the span's end, on to the outer wall's own line, a hair past it)
       const meet = (t0s, dir, end) => {
         const t = end ?? t0s;
         const near = across.filter((x) => Math.abs(x - t) < 0.07);
@@ -610,9 +598,8 @@ function stairsOf(framePoly, w, openings, long, mainKind) {
   const [sw, sl] = [FLOORS.stairs[0], Math.min(FLOORS.stairs[1], long)];
   const u = along === 0 ? [1, 0] : [0, 1], n = [-u[1], u[0]];
   let best = null;
-  // (against an end wall of a room the corridor's band reaches: the building's own end walls, or a wall between rooms
-  // across the band, its far end 0.08 off the wall's face; anywhere across the band, so it stands in the upper floor's
-  // corridor; slid along the room away from that wall only when it must be, to clear a door)
+  // (against an end wall of a room the corridor's band reaches, so it stands in the upper floor's corridor; slid
+  // along the room only to clear a door)
   const bLo = mid - FLOORS.corridor / 2, bHi = mid + FLOORS.corridor / 2;
   const lane = FLOORS.corridor / 2 - sw / 2 - 0.05; // (best to one side of the corridor, a way past it on the other)
   const tries = [];
@@ -698,17 +685,12 @@ function corridorFloor(framePoly, kinds, last) {
 }
 
 /**
- * Every building's interior on a battle map, from its shell (buildingShells): items `interior` with rooms (kind,
- * poly, floor, private), walls between them (wall, door, opening; each runs on to the outer wall's middle line and over
- * an inner wall it meets) and furniture ({ f, x, y, rot, variant, against }: x, y its body's middle, against when it's
- * flush to a wall). seed: the plan's. Groups wholly round get no shell, so none; a group with a round part gets one,
- * its rooms cut from the whole outline. Courtyard pieces and buildings the map's edge cuts (closed) get none.
- * A building with floors above (floors on the plan's building, else by its use, floorsFor) or a cellar gets an
- * interior for each, with floor (1 and up, -1 for the cellar) and its own outer walls (outer: a floor above has
- * windows where the ground floor has doors and windows, a cellar none), and a `stairs` item where its stairs go on
- * every floor ({ at, rot, len, width, floors: [lowest, highest], material }); its parts get `floorsAbove` (its floors
- * above). Only on ground at the map's own level (a building on a rise keeps one floor, with a note). notes: the
- * layout's notes.
+ * Every building's interior on a battle map, from its shell (buildingShells): items interior with rooms (kind, poly,
+ * floor, private), walls between them (wall, door, opening) and furniture ({ f, x, y, rot, variant, against }: x, y
+ * its body's middle). seed: the plan's. Courtyard pieces and buildings the map's edge cuts (closed) get none. A
+ * building with floors above or a cellar (as its plan says, else floorsFor) gets an interior for each floor (1 and
+ * up, -1 the cellar) with its own outer walls, and a stairs item on every floor; its parts get floorsAbove. Only on
+ * ground at the map's own level (a building on a rise keeps one floor, with a note). notes: the layout's notes.
  */
 export function buildingInteriors(items, seed, notes = []) {
   const buildings = items.filter((i) => i.kind === "building");
@@ -866,9 +848,9 @@ function segDist([px, py], [ax, ay], [bx, by]) {
 }
 
 /**
- * A room's furniture by its recipe (in the frame). q: the room (kind, features); room: its floor (inside its walls). openings: [{ at, w, u,
- * outside }] its doors and doorways: the ground before each is kept clear, and a way left between them. Each piece is
- * a { f, x, y, rot, variant, against } (x, y its body's middle; against when it's set flush to a wall) pushed to out.
+ * A room's furniture by its recipe (in the frame). q: the room; room: its floor inside its walls; openings: [{ at, w,
+ * u, outside }] its doors, the ground before each kept clear and a way left between them. Pushes { f, x, y, rot,
+ * variant, against } to out.
  */
 function furnish(q, room, openings, buildingPoly, r, out, blocked = []) {
   const [x0, y0, x1, y1] = bbOf(room), roomArea = area(room);
@@ -901,8 +883,8 @@ function furnish(q, room, openings, buildingPoly, r, out, blocked = []) {
     while (queue.length) { const c = queue.pop(), i = c % NX, j = (c - i) / NX; for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= NX || b >= NY) continue; const k = b * NX + a; if (!seen[k] && free[k]) { seen[k] = 1; queue.push(k); } } }
     return openings.every((o) => { const k = start(o.at); return k >= 0 && seen[k]; });
   };
-  // (a piece fits inside the room, clear of the others and of the doors' ground, and leaves a way between the doors)
-  // (a piece's box grown by a lane's half width on every side: each corner out along both its sides)
+  // (a piece fits inside the room, clear of the others and the doors' ground, leaving a way between doors; widen: its
+  // box grown by a lane's half width)
   const widen = (poly) => poly.map((p, i) => {
     const a = poly[(i + poly.length - 1) % poly.length], b = poly[(i + 1) % poly.length];
     const ua = [p[0] - a[0], p[1] - a[1]], ub = [p[0] - b[0], p[1] - b[1]], la = Math.hypot(...ua) || 1, lb = Math.hypot(...ub) || 1;

@@ -7,7 +7,10 @@
 import { rng } from "./rng.mjs";
 import { isObj } from "./plan.mjs";
 
-/** The features a reroll can redraw: districts, areas (woods, farmsteads, parks, and the rest) and bodies of water (their shore). */
+/**
+ * The features a reroll can redraw: districts, areas (woods, farmsteads, parks, and the rest), heights, and bodies of
+ * water drawn as a shape (their shore; not rivers).
+ */
 export const rerollable = (f) => isObj(f) && (f.type === "district" || f.type === "area" || f.type === "height" || (f.type === "water" && !Array.isArray(f.path) && f.shape != null)) && typeof f.id === "string";
 
 /** A feature's seed as the layout reads it. */

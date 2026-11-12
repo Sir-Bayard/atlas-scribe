@@ -70,22 +70,16 @@ const fitsTight = (pts, poly) => {
 };
 
 /**
- * lots: from lotsFor. district: the plan feature. ways: [{ id, path, width }]. blocked: polygons to keep clear of
- * (squares, yards, named buildings). ftPerSquare. r: a stream for the
- * district's plots (each plot forks its own). usesFor(tryForm): planUses for this district, handed the way to try a
- * building of its own on some plots (what it gives: buildings of their own, plots put to a use, plots kept free of
- * thatch); or null for plain houses. The uses it settled on are returned as .uses. Returns { houses, outbuildings, gardens, crofts, bounds, trees, props,
- * surfaces, pits, kilns }: houses and outbuildings are { id, lot, building: { shape, rot, roof, height, chimney,
- * use }, r, smoke? }; gardens { cx, cy, w, d, rot }; crofts polygons; bounds [{ path, class }]; trees { x, y, s, rot,
- * variant, species? }; props { class, x, y, rot, variant }; surfaces { class, poly, surface }; pits { x, y, size, rot,
- * liquid }; kilns { x, y, rad }; walls: [path] stone walls around a temple's yard or a mansion's grounds.
+ * lots: from lotsFor. district: the plan feature. ways: [{ id, path, width }]. blocked: polygons to keep clear of. r:
+ * the district's plots' stream (each plot forks its own). usesFor(tryForm): planUses for this district, or null for
+ * plain houses; the uses it settled on come back as .uses. Returns { houses, outbuildings, gardens, crofts, bounds,
+ * trees, props, surfaces, pits, kilns, walls } (houses and outbuildings { id, lot, building, r, smoke? }; walls:
+ * stone walls around a temple's yard or a mansion's grounds).
  */
 export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r, usesFor = null }) {
-  // In the plot, and clear of anything the plot was cut around (a named building inside a block is a hole in it)
-  // and clear of every street: the plot already stops at the street, but fitsIn's small tolerance could let a
-  // corner over the line. Points along each side are tested too, since a street may bend at a house
-  // The ways' segments in a grid, so each test looks only at the streets near it (the answers are the same as
-  // testing every street; a way with a broken point or width is tested the slow way)
+  // In the plot, clear of anything it was cut around and of every street (points along each side too, since a street
+  // may bend at a house). The ways' segments sit in a grid so each test looks only at nearby streets (a way with a
+  // broken point or width is tested the slow way)
   const exact = finitePaths(ways.map((w) => w.path)) && ways.every((w) => Number.isFinite(w.width));
   const grid = exact ? new SegGrid(ways.map((w) => w.path)) : null;
   const maxHalf = ways.reduce((m, w) => Math.max(m, w.width / 2), 0);
@@ -100,9 +94,8 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
   const onWayEdge = grid
     ? (mid) => { let hit = false; grid.eachNear(mid[0], mid[1], maxHalf + 0.1, (p, d) => { if (Math.abs(d - ways[p].width / 2) < 0.1) hit = true; }); return hit; }
     : (mid) => ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1);
-  // Battle maps: buildings a square apart, so there's always room to walk between two (6 Nov). Each keeps
-  // half a square off its plot's sides and back (its front still meets the street: roomOf), and a shed or stable a
-  // whole square off what else stands on its plot (clearHere)
+  // Battle maps: buildings a square apart, so there's always room to walk between two; each keeps half a square off
+  // its plot's sides and back (roomOf), and a shed or stable a square off what else is on its plot (clearHere)
   const apart = district.battleScale ? 1 : 0;
   // (and a square off a named building, square or yard kept clear inside a block, where the plot runs around it)
   const keepOff = apart ? blocked.filter((b) => b.length >= 3).map((b) => grown(b, apart)) : blocked;
@@ -241,17 +234,15 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     out.surfaces.push(...made.surfaces);
     out.gardens.push(...made.gardens);
     out.trees.push(...made.trees.filter((t) => pointInPolygon([t.x, t.y], lot.poly) && !made.parts.some((p) => pointInPolygon([t.x, t.y], partCorners(p.building)))));
-    // A temple's yard and a mansion's grounds are walled (not along the street, but a mansion's has its own there;
-    // nor along a square or yard kept clear beside it, or a district's gate, where the street comes in)
-    // (and no stub where a curving side is broken into short pieces)
+    // A temple's yard and a mansion's grounds are walled (not along the street, a kept square or yard beside it, or a
+    // district's gate; no stub where a curving side breaks into short pieces)
     if (site.form === "temple" || made.grounds) out.walls.push(...edgesOff(lot.poly, (mid) => onWayEdge(mid) || byBlocked(mid)).filter((w) => w.reduce((s, q, i) => s + (i ? Math.hypot(q[0] - w[i - 1][0], q[1] - w[i - 1][1]) : 0), 0) >= 0.15));
     out.walls.push(...made.walls);
     while (out.wallSite.length < out.walls.length) out.wallSite.push(base);
     if (made.yard) yards.push({ i: site.lots[0], poly: lot.poly, use: site.use, ...made.yard, rot: Math.atan2(lot.along[1], lot.along[0]) / (Math.PI / 180), parts: made.parts.map((p) => partCorners(p.building)) });
   }
-  // Plot lines: off unless the district's plotLines is true (24 Oct, from a side-by-side render: plots show by
-  // what's in them). When on, types that fence yards (hamlets, villages) draw yards and crofts; the others draw faint
-  // lines between long plots behind the yards
+  // Plot lines, off unless the district's plotLines is true: types that fence yards draw yards and crofts, the others
+  // faint lines between long plots behind the yards
   const linesOn = district.plotLines === true;
   const yardLines = linesOn && !!T.bounds, stripLines = linesOn && !T.bounds;
   const row = { key: null, roof: null, style: null, left: 0 };
@@ -277,7 +268,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     const variant = lr.int(8); // a house and its wings share one roof
     let style = pickWeighted(lr.next(), styles);
     const oSquare = lr.next() < 0.35; // a square shed, under a pyramid roof
-    // Details on the house (24 Oct: the roof forms in Tom Cartos's and others' town maps)
+    // Details on the house
     const X = T.extras ?? {};
     const wantBay = lr.next() < (X.bay ?? 0), wantDormers = lr.next() < (X.dormers ?? 0), wantTurret = lr.next() < (X.turret ?? 0);
     const wantSteps = lr.next() < (X.steps ?? 0), oRound = lr.next() < (X.roundShed ?? 0);
@@ -297,16 +288,13 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
     // The house, at the front, as wide as its share of the frontage; narrowed if the plot's sides close in
     // How deep a plain house goes: most of a terrace plot, a little over half of a village one
     const plainDepth = Math.min(hd, lot.depth * (T.cover[1] >= 1 ? 0.85 : 0.6));
-    // Whether a spot behind the house is clear of what's already on this plot (a corner row's other wing), and wholly
-    // in the plot whatever its shape (its corners in it aren't enough on a plot with a notch, where a row next door
-    // is built right up to the edge)
-    // (gap: how far it keeps off them, for a building of its own: a shed a square off the house on a battle map)
+    // Whether a spot behind the house is clear of what's on this plot already and wholly in the plot whatever its
+    // shape. gap: how far it keeps off them (a shed a square off the house on a battle map)
     const clearHere = (pts, gap = 0) => ![...out.houses.slice(firstHouse), ...out.outbuildings.slice(firstOut)].some((h) => polygonsOverlap(gap ? grown(partCorners(h.building), gap) : partCorners(h.building), pts)) && intersect([pts], [lot.poly]).reduce((s, q) => s + area(q), 0) > area(pts) * 0.995;
     const room = roomOf(lot); // where its buildings may stand (the plot, kept off its neighbors on a battle map)
     let house = null;
-    // A city row: the house takes the plot's whole front, fitted to it, under a roof whose ridge runs along the
-    // street; where the plot also meets a street at its side or back (a corner plot, a plot through the block) the
-    // row turns and carries on along that one too, so a block's every street front is built up
+    // A city row: the house takes the plot's whole front under a roof along the street, and turns to carry on along a
+    // street at its side or back too, so a block's every street front is built up
     const rowRoll = lr.fork("row").next(); // (its own stream: the plot's other dice stay as they were)
     // (its roof a gable, or flat where the house's form is flat: a row's ends are party walls, so it takes no hips;
     // a change of roof forms never moves it)
@@ -317,9 +305,8 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       if (rows.length) {
         const base = `l${lot.block}-${i}`;
         rows.forEach((q, k) => out.houses.push({ id: k ? `${base}w${k}` : base, lot: i, ...(k ? { wing: true } : {}), r: lr.fork(k ? `row${k}` : "house"), ...(k ? {} : { shape: "row" }), building: { shape: unturn(q.poly, q.rot), rot: q.rot, roof, variant, roofStyle: rowStyle, height: 20, use, ...(k ? { chimney: false } : {}) } }));
-        // A wide row is often built in two sections, each under its own roof, the second shallower and a little taller
-        // or lower (24 Oct: stepped roofs)
-        // (not on a corner plot: the second section, shallower, would leave a notch beside the row turning the corner)
+        // A wide row often in two sections under their own roofs, the second shallower and a little taller or lower
+        // (not on a corner plot, where it would leave a notch)
         if (wantSteps && lot.frontage > sq(36) && rows.length === 1) {
           const cutAt = (0.4 + dr.next() * 0.2) * lot.frontage, d2 = d * (0.72 + dr.next() * 0.2), h2 = 16 + Math.round(dr.next() * 10);
           const [ax, ay] = lot.front.a, px = ax + ux * cutAt, py = ay + uy * cutAt;
@@ -377,12 +364,13 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       const [bx, by] = -dy * nx + dx * ny >= 0 ? [-dy, dx] : [dy, -dx];
       const at = (along, back) => [cx + dx * along + bx * back, cy + dy * along + by * back];
       const S = T.shapes ?? {};
-      // Only a house wide enough gets wings, and a wing is never a thin stick: at least 10 ft wide, longer than wide
       // A double plot's house leans to the bigger forms: a courtyard or two wings far more often
       const roll = lot.merged ? shapeRoll * 0.35 + (S.L ?? 0) * 0.8 : shapeRoll;
       const cut = [S.L ?? 0, S.T ?? 0, S.U ?? 0, S.court ?? 0].reduce((a, v) => [...a, (a.at(-1) ?? 0) + v], []);
       const kindWanted = roll < cut[0] ? "L" : roll < cut[1] ? "T" : roll < cut[2] ? "U" : roll < cut[3] ? "court" : null;
-      // A wing no wider than the house is deep, so its roof never reaches past the house's ridge
+      // Only a house wide enough gets wings (too narrow for its form, it takes an L or none); a wing is never a thin
+      // stick (at least 10 ft wide, longer than wide) and no wider than the house is deep, so its roof never reaches
+      // past the house's ridge
       const kind = !kindWanted || w < sq(22) || depth * 0.95 < sq(10) ? null : kindWanted === "T" && w < sq(26) ? "L" : kindWanted === "U" && w < sq(30) ? "L" : kindWanted === "court" && w < sq(32) ? "U" : kindWanted;
       const parts = [];
       const ww = Math.max(sq(10), Math.min(wingW, w * (kind === "L" ? 0.5 : 0.4), depth * 0.95));
@@ -413,14 +401,14 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       // A winged house's roof runs into its wings': a mansard or pyramid becomes a hip there; flat stays flat
       if (shape && (style === "mansard" || style === "pyramid")) style = "hip";
       const pitched = style !== "flat" && style !== "mansard";
-      // On a hipped house a wing flush with one end has its outer slope in the plane of the house's hip end: no
-      // valley on that side, and the hip at that corner starts where the wing's roof ends (Tom Cartos's L roofs)
+      // On a hipped house, a wing flush with one end has its outer slope in the plane of the hip end: no valley on
+      // that side
       const flushWings = shape && style === "hip" ? parts.filter((q) => q.wing && q.pos) : [];
       const backSign = Math.sign(bx * -dy + by * dx) || 1; // the back, in the house's own frame (y across it)
       const cuts = (ySign) => flushWings.map((q) => [q.pos, ySign, ww / 2]);
 
-      // A long plain house is often built in sections, each with its own roof and ridge: flush at the street, its
-      // back and height stepping (24 Oct: stepped roofs)
+      // A long plain house often in sections, each with its own roof: flush at the street, its back and height
+      // stepping
       const sections = [];
       if (!shape && wantSteps && w > Math.max(depth * 2.2, sq(40))) {
         const n = w > depth * 3.4 ? 3 : 2;
@@ -467,9 +455,8 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
           placed.push(rectOf(q));
         }
       }
-      // Gables on the front slope of a long roof, the house's roof carrying on around them in valleys: either wall
-      // dormers (a short gabled roof running back from the eave) or cross-gables (a gable rising straight from the
-      // eave, its two slopes meeting the roof in a pair of valleys), half and half
+      // Gables on the front slope of a long roof, half wall dormers (a short gabled roof running back from the eave),
+      // half cross-gables (a gable rising from the eave)
       if (!sections.length && !bay && pitched && style !== "pyramid" && wantDormers && w >= sq(28)) {
         const n = w >= sq(45) ? 2 : 1;
         const dw = Math.min(sq(8 + dr.next() * 3), w / (n * 2.5));
@@ -560,8 +547,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       const piece = intersect([lot.poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
       if (piece && area(piece) > 0.5) { out.crofts.push(piece); croftOf = i; }
     }
-    // The rest of the plot, behind the yard (24 Oct: fill the open ground; the burgage plots of real towns
-    // held gardens, orchards and trees): a strip garden, an orchard in rows, a few trees, or open ground, by type
+    // The rest of the plot behind the yard, by type: a strip garden, an orchard in rows, a few trees, or open ground
     if (house && croftOf !== i) {
       const fr = lr.fork("fill");
       const fill = working ? "open" : pickWeighted(fr.next(), T.fill ?? { open: 1 });
@@ -626,7 +612,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
           tree(x, y, crown);
         }
       }
-      // Faint lines between long town plots, behind the yard only, where neighbors' backs meet (decision 24)
+      // Faint lines between long town plots, behind the yard only, where neighbors' backs meet
       if (stripLines && span > sq(20)) {
         const behindYard = difference([lot.poly], [clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack) ?? []]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
         const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
@@ -634,8 +620,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         if (behindYard) addBounds(behindYard, wayById.get(lot.way), "wall", (a, b) => Math.abs(depthOf(a) - reachBack) < 0.05 && Math.abs(depthOf(b) - reachBack) < 0.05);
       }
     }
-    // Boundaries near the house only (24 Oct): the yard around the house and outbuilding, fenced on its
-    // sides and back but not along the street, and the fence around a croft. The long back lines aren't drawn.
+    // Boundaries near the house only: the yard fenced on its sides and back (not the street), and a croft's fence
     const way = wayById.get(lot.way);
     if (yardLines && house) {
       const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);

@@ -1,35 +1,30 @@
 /**
- * Height on a battle map: where the ground stands higher or lower, and the edges between.
- *
- * The plan draws a rise or a hollow as a `height` feature (a shape with the elevation its ground stands at, in feet,
- * and how its edge comes down: a cliff, a bank or a walkable slope), and a stream or river runs in a bed below its
- * banks by its `depth`. Each becomes a level: polygons at one elevation, later ones over earlier (a bed cuts through a
- * rise). The edges are worked out from the levels: wherever the ground on either side of a level's outline stands at
- * different heights, an edge runs, drawn with its high side on its left (as FA's cliff and bank art is drawn, its top
- * toward the high ground), carrying the drop, the style of the level whose outline it is, and its rock.
- *
- * Pure: runs in the worker and under node. Positions in squares, heights in feet.
+ * Height on a battle map: where the ground stands higher or lower, and the edges between. A height feature (a shape
+ * at an elevation in feet, its edge a cliff, bank or slope) and each stream's bed (by its depth) become levels, later
+ * ones over earlier (a bed cuts through a rise). Wherever the ground either side of a level's outline differs an edge
+ * runs, its high side on its left (as FA's cliff and bank art is drawn), with the drop, style and rock. Pure; squares
+ * and feet.
  */
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../geom.mjs";
 import { bands, difference } from "../lots/poly.mjs";
 import { makeNoise } from "../noise.mjs";
 
 /**
- * Sizes, in squares and feet. tier: the feet of drop each tier of a cliff or bank stands for (one strip of art a
- * tier); step: how far each tier lies past the one above it, toward the low side; shelf: the ground between a
- * stream's water and the foot of its banks; sample: how finely an outline is walked to find its edges; slope: how
- * far a walkable slope runs for each tier of drop; bankMost: the deepest a stream's bank is drawn as a bank (deeper, a
- * cliff); bankTier, bankStep, bankBand: a bank's tier stands for 5 ft (FA's woodland cliff art, a face of earth and
- * roots under a grassy top, as a GM draws a stream's banks), each tier set out past the one above it toward the
- * water, its art's band this deep.
+ * Sizes in squares and feet. tier: feet of drop per tier of art; step: how far each tier lies past the one above;
+ * shelf: ground between a stream's water and its banks' foot; sample: how finely an outline is walked; slope: a
+ * slope's run per tier; bankMost: the deepest a stream's bank stays a bank (deeper, a cliff); bankTier, bankStep,
+ * bankBand: a bank's tier (FA's woodland cliff art), its step toward the water and its art's band.
  */
 export const TERRAIN = { tier: 5, step: 0.38, shelf: 0.2, sample: 0.25, slope: 1.2, bankMost: 10, bankTier: 5, bankStep: 0.45, bankBand: 0.62 };
 export const EDGE_STYLES = ["cliff", "bank", "slope"];
 export const ROCKS = ["earthy", "slate", "mossy"];
 
-/** How many tiers of art an edge with this drop (feet) is drawn in: a cliff's one for every five feet, a bank's ten. */
-/** The shelf of stones between a bed's water and its banks: a bank's earth comes down to the water itself. */
+/** The shelf of stones between a bed's water and its banks (none for a bank: its earth comes down to the water). */
 export const shelfOf = (style) => (style === "bank" ? 0 : TERRAIN.shelf);
+/**
+ * How many tiers of art an edge with this drop (feet) is drawn in, one for every TERRAIN.tier feet (a bank's every
+ * TERRAIN.bankTier), at least one.
+ */
 export const tiersOf = (drop, style = "cliff") => Math.max(1, Math.round(Math.abs(drop) / (style === "bank" ? TERRAIN.bankTier : TERRAIN.tier)));
 /** How far an edge reaches from its line toward its low side, in squares (its art and the ground it takes). */
 export function edgeSpan(e) {
@@ -40,8 +35,8 @@ export function edgeSpan(e) {
 }
 
 /**
- * The ground a running water's band covers (share of its width), add squares past its edge each side: its own width at each point where it
- * varies (a battle map's wandering stream, a river widening), else its one width. A water item: { path, width, widths }.
+ * The ground a running water's band covers (share of its width), add squares past each edge, by its width at each
+ * point where it varies. w: { path, width, widths }.
  */
 export function waterBand(w, add = 0, share = 1) {
   const ws = Array.isArray(w?.widths) && w.widths.length === w.path?.length ? w.widths : null;
@@ -50,12 +45,10 @@ export function waterBand(w, add = 0, share = 1) {
 }
 
 /**
- * Ice along a stream in winter (9 Nov, from his hand-built winter map: shelves along both banks, a narrower channel open
- * between them, "irregularity" along their edges). The open channel is channel of the water's width, swelling and
- * narrowing by up to ragged of itself over a wave of wave squares, its middle swinging up to sway of the width either
- * side, never narrower than least; a finer wobble (fine, over fineWave) makes its edges ragged, and now and then a
- * bite (up to bite squares, over biteWave) is broken out of a shelf's edge, each side on its own. The shelves reach
- * reach squares past the water's edge, onto the foot of its banks, so no strip of bed shows between. All seeded.
+ * Ice along a stream in winter: shelves along both banks with a narrower open channel between. The channel is channel
+ * of the water's width, swelling by up to ragged over wave squares, its middle swinging up to sway, never under
+ * least; a finer wobble (fine, fineWave) roughens its edges and now and then a bite (up to bite squares, over
+ * biteWave) is broken out of a shelf. The shelves reach reach squares past the water's edge. All seeded.
  */
 export const ICE = { channel: 0.42, ragged: 0.4, wave: 2.6, sway: 0.18, least: 0.6, fine: 0.16, fineWave: 0.45, bite: 0.9, biteWave: 1.7, reach: 0.45 };
 
@@ -109,12 +102,9 @@ function inLevel(L, p) {
 }
 
 /**
- * The levels and edges of a battle plan's ground.
- * plan: the smoothed plan (height features, running water with their widths in items); items: the layout's items so far
- * (water as laid); sq: feet a square; pick(id): a random stream for a feature (for its rock when the plan leaves it out).
- * Returns { levels: [{ id, from, name, rings, elevation, style, rock, bed, water, waterClass, within }], edges: [...], elevAt(p),
- * notes } (within: the hollow a stream's water fills, a pool below the rest of its bed; shore: how far the pool lies
- * below the ground around its hollow, which its edges' tiers are laid by, so a fall's line up with the shore's).
+ * The levels and edges of a battle plan's ground. plan: smoothed; items: the layout's so far (water as laid); sq:
+ * feet a square; pick(id): a feature's random stream. Returns { levels: [{ id, from, name, rings, elevation, style,
+ * rock, bed, water, waterClass, within }], edges, elevAt(p), notes } (within: the hollow a stream's pool fills).
  */
 export function terrainOf({ plan, items, sq, pick }) {
   const levels = [], notes = [];
@@ -139,9 +129,8 @@ export function terrainOf({ plan, items, sq, pick }) {
     // (a pond, lake or sea drawn along a path, and a moat, lie at the ground's level: no bed)
     const depth = Number.isFinite(f.depth) ? f.depth : ({ stream: 5, river: 10, canal: 5 }[w.class] ?? 0);
     if (!(depth > 0)) continue;
-    // (its bed below the lowest ground it runs over, so it never stands above the ground beside it; through a rise
-    // it cuts a gorge, its banks there as deep as the rise is high. A hollow it passes through takes the bed down with
-    // it, below; a stream wholly in a hollow lies below the hollow)
+    // (its bed below the lowest ground it runs over: through a rise a gorge; a hollow it passes takes the bed down
+    // below it)
     const along = resample(w.path, 0.5), ks = along.map((p) => top(p, before));
     const under = ks.map((k) => (k < 0 ? 0 : levels[k].elevation));
     const level = under.filter((e) => e >= 0);
@@ -152,10 +141,8 @@ export function terrainOf({ plan, items, sq, pick }) {
     if (!rings.length) continue;
     const rock = ROCKS.includes(f.rock) ? f.rock : pick(w.from ?? w.id).fork("rock").pick(ROCKS);
     levels.push({ id: `${w.id}/bed`, from: w.from ?? w.id, name: null, rings, elevation: base - depth, style, rock, bed: true, water: w.id, waterClass: w.class, ...(f.climbDC != null ? { climbDC: f.climbDC } : {}) });
-    // (each hollow it runs through fills with its water, a pool its depth below the hollow's floor, the hollow's own
-    // edge its shore: a level of its own over the hollow and the bed, so the stream falls into it and out again)
-    // (in the order the hollows lie, so one inside another is filled over it; each only where it's the ground seen, not
-    // under a rise or hollow laid over it)
+    // (each hollow it runs through fills as a pool its depth below the hollow's floor, the hollow's edge its shore;
+    // inner hollows over outer ones, and only where it's the ground seen)
     for (const k of [...new Set(ks.filter((k) => k >= 0 && levels[k].elevation < base))].sort((a, b) => a - b)) {
       const H = levels[k], over = levels.slice(k + 1, before).flatMap((x) => x.rings);
       const seen = over.length ? difference(H.rings, over) : H.rings.map((r) => r.map((p) => [...p]));
@@ -248,7 +235,6 @@ export function halfway(path) {
   return [...path[path.length - 1]];
 }
 
-/** A path's length. */
 const pathLength = (p) => { let s = 0; for (let i = 1; i < p.length; i++) s += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); return s; };
 
 /** A path with its points spaced about `step` apart (its own points kept). */
