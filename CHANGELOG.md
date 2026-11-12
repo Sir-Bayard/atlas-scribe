@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+Battle maps. A plan at 5 feet a square is painted from Forgotten Adventures art and made a scene to fight on: buildings with walls, doors, windows, rooms and furniture under roofs that fade as a token walks in, floors above and cellars as levels, castles with a wall walk and gatehouses, height with cliffs, banks and stream beds that set a token's elevation, woods, water and winter, lights and the time of day, and the Pathfinder Second Edition rules. Make one from Quick Start's Battle map tab (or describe it in words), from an area of a town map with the Battle map tool, or by hand.
 
 **Battle maps**
 - A plan with `kind: "battle"` (5 feet a square) is now drawn as a battle map, painted from Forgotten Adventures art at its own scale: bright grass with a second grass and clover in broad patches, ground worn around the buildings, paved streets inside crisp stone curbs (square setts on streets, flagstones on a main road; cobbles and herringbone read as noise at this scale), dirt lanes, flagstone squares, wooden floors inside the buildings (stone in a temple or a smithy), stone bridges, gardens in tilled rows and one low sun casting every shadow to the northwest. A plan whose Ground is a paving or dirt rather than grass is painted in that all over.

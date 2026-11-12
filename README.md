@@ -8,7 +8,7 @@ It's system agnostic and GM only. On battle maps it also follows the rules of Pa
 
 ## Status
 
-**Early development.** Villages, towns and walled cities work (0.6.0): make one with Quick Start, change anything on the map in the AtlasScribe window, and make it a scene, drawn in the illustrated style with no art needed. Next is battle maps; the first full release, 1.0.0, comes when settlements, cities and battle maps all work.
+**Early development.** Villages, towns and walled cities work: make one with Quick Start, change anything on the map in the AtlasScribe window, and make it a scene, drawn in the illustrated style with no art needed. Battle maps work too (0.7.0), painted from Forgotten Adventures art through FA Nexus. Next is art for everyone; the first full release, 1.0.0, comes with it.
 
 What's done and what's planned, in order:
 
@@ -17,8 +17,8 @@ What's done and what's planned, in order:
 3. Done: editing on the map. Reroll, lock and reshape districts, areas, roads, rivers and walls, change anything's settings, draw new features, place, move and turn labels, pin generated houses and streets, and trace over an image, all in the window.
 4. Done: cities. Faster layout on big maps; town walls with towers and gates, ditches, moats and palisades; ponds, lakes and the sea, rivers that widen, quays and piers; district character, what each building is used for, and trades; Quick Start cities and metropolises cut into wards; market places, cemeteries, mills and harbors; squares in many pavings, cliffs, and city outlines (lobed, on a promontory, along a shore or river, against a cliff).
 5. Done: the illustrated style, settlements and cities drawn as a map (ink lines, one light palette, streets by their paving, fields by their crop, a frame, compass rose and scale bar on a city), needing no art; and denser cities, their busy quarters built up in continuous rows of houses along the streets.
-6. Next: battle maps built as Foundry content: tiles, walls, doors, lights and regions, painted from map art.
-7. Art for everyone: use any folder of map art, not only FA Nexus (1.0.0).
+6. Done: battle maps built as Foundry content, painted from map art: buildings with walls, doors, windows, rooms and furniture under roofs that fade as a token walks in, floors above and cellars, castles, height with cliffs, banks and stream beds, woods, water and winter, lights and time of day, and the game system's rules.
+7. Next: art for everyone, using any folder of map art, not only FA Nexus (1.0.0).
 
 ## Making a map
 
@@ -45,6 +45,24 @@ As the GM, open the Scenes tab and click **AtlasScribe**.
    - **Limits for now:** an ellipse building is drawn as its bounding box (a polygon one is drawn under a gable, its ridge the way it's turned). A turned area can't be reshaped, and a circle or ellipse only changes size. Squares, buildings, bridges and props can't be dragged once drawn: delete one and draw it again. A pinned house's buildings change together, not one by one. Changes you haven't saved last only until Foundry reloads.
 3. **Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and exported.
 4. **Make scene** saves the plan, draws the map in its style (painting it with your art, for the textured style) and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise) and a small hidden label on each notable building naming its use ("Inn", "Temple", "Smithy", "Market hall"), or the name you gave it when you pinned it. Where two would overlap, the more telling one stays (a district's centerpiece first, then buildings of their own, then trades, then street-corner shrines and watch posts). Cancel stops the painting. Through the API, `publish` given only an image path lays the plan out again for these labels, which takes a moment for a big city; if that fails, the scene is made without them and a warning says so. If some art couldn't be had, it says so and paints those parts in plain colors. After changes, **Update scene** repaints that scene (it's backed up first). The art FA Nexus found is remembered until Foundry reloads, so later scenes and updates don't wait for it again.
+
+## Battle maps
+
+A battle map is a plan at 5 feet a square, made to fight on. It's painted from Forgotten Adventures art through FA Nexus (in plain colors where there's no art) and made a scene with its walls, doors, regions, lights and roof tiles. There are three ways to make one:
+
+- **Quick Start's Battle map tab:** pick a site (a wilderness, a building by a road, a village or town street, a camp or a castle), its size, the season, time of day, weather and ground, its features (a road, a stream, a pond, a cliff, a rise, a hollow) and how much is scattered over it. Or type what you want in the Describe box ("a roadside inn at night in spring with a stage and a kitchen"): what it understood is set in the form, where you can change it, and words it doesn't know are listed and left out.
+- **From a town map:** on a village, town or city, the Battle map tool takes a box you drag (or a 30, 45 or 60 square one you click to place) and makes that area a battle map, twice true size by default so there's room to fight. It keeps the town map's streets, water, squares and notable buildings where they are and builds the rest again at battle size.
+- **By hand:** set a plan's kind to battle and draw it with the same tools as any map, plus Rise and Hollow for height, and Campfire, Brazier, Torch, Lamp post and the story props (cairns, standing stones, sledges and more).
+
+What you get:
+
+- **Buildings to fight in:** walls, doors and windows as Foundry walls, rooms divided by what the building is for and furnished, and a roof tile over each that fades when a token walks in. An inn, a mansion, a keep or a tower can have floors above and a cellar, each a level of the scene, joined by stairs.
+- **Castles:** a stone town wall is built as a castle's, with a wall walk at 20 feet, towers with a room on every floor, and gatehouses with a portcullis.
+- **Height:** rises, hollows, cliffs, banks and stream beds, each a region at its elevation. With the Battle map heights setting a token's elevation follows the ground, and a walker can't go up or down a cliff.
+- **The land:** woods at battle size, streams and rivers that wander in their beds, ponds and loose rock; in winter, snow, drifts and ice along the streams.
+- **Light:** a fire at each hearth, lamps and torches, and the plan's Time of day (day, dawn, dusk or night).
+
+The battle map's own changes are in [CHANGELOG.md](CHANGELOG.md). Limits for now: battle maps paint only from Forgotten Adventures art, and a big battle map is slow to paint, so the Battle map tool's box turns amber past 60 squares a side.
 
 ## Battle map rules
 
@@ -92,7 +110,7 @@ The output folder is a setting (by default `worlds/<your world>/atlas-scribe`).
 
 ## Art
 
-AtlasScribe ships no art. The illustrated style needs none: everything on it is drawn. The textured style paints with art you already have, through FA Nexus when it's installed, or in plain colors when there's none (other art folders are planned). A map painted from someone's art is for your own table under that art's license.
+AtlasScribe ships no art. The illustrated style needs none: everything on it is drawn. The textured style and battle maps paint with art you already have, through FA Nexus when it's installed, or in plain colors when there's none (other art folders are planned). A map painted from someone's art is for your own table under that art's license.
 
 AtlasScribe isn't affiliated with Forgotten Adventures; FA Nexus is named only to say what AtlasScribe works with.
 
