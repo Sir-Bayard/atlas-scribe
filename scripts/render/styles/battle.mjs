@@ -57,6 +57,11 @@ const ART_PX = 200;
  *     (one at most every step squares, at chance; floes, chunks and foam each this many squares across)
  *   rise: a rise's or hollow's bank lit as a slope is (dark: the face turned from the sun; light: turned toward it),
  *     over its face and reach squares past its foot
+ *   quarter: an unpaved quarter's own ground (a town's worn earth, a crafts quarter's dirt) in ragged patches
+ *   deadEnd: a paved street that stops short of anything, cut square at its end and carried on by a worn path of bare
+ *     earth tapering to a point reach squares on (or perHalf times its half width, if longer; tip its width there):
+ *     trodden ground the street's width, bare earth bare of it down the middle, ragged by noise rag squares across
+ *     (cut its threshold)
  *   props: what stands on the ground: its drop shadow (alpha, blur and offset in squares, a boulder's longer) and a
  *     soft contact shadow under it (ao: its alpha; aoSize: its share of the prop across), so nothing floats
  */
@@ -66,7 +71,23 @@ export const BLEND = {
   way: { snow: 0.9, edge: 0.18, trail: 0.85, wheel: 0.9, tracks: { alpha: 0.8, step: 1.7, size: 0.62 } },
   props: { alpha: 0.42, blur: 0.08, offset: 0.12, boulder: 0.22, ao: 0.28, aoSize: 0.7 },
   rise: { dark: 0.5, light: 0.45, reach: 0.4 },
+  quarter: { alpha: 0.6, scale: 4, cut: 0.05, soft: 0.3, lift: 0.8, gain: 1.5 },
+  deadEnd: { reach: 2.6, perHalf: 2.2, tip: 0.35, blur: 0.35, alpha: 0.85, bare: 0.75, rag: 0.7, cut: -0.45 },
   ice: { shadow: { width: 0.4, blur: 0.14, alpha: 0.5 }, cracked: 0.55, snow: 0.6, edge: 0.95, edgeWidth: 0.5, drift: { step: 1.3, chance: 0.5, floe: 0.85, icechunk: 0.55, foam: 0.75, foamAlpha: 0.85 } },
+};
+
+/** A grave's length, in squares, laid across its row (FA's grave art is a plot with its headstone, longer than it is wide). */
+const GRAVE_SQUARES = 1.4;
+/**
+ * What's drawn in a grave's curb (sizes as shares of the art's width across and its length along, centers along it
+ * from its middle, the head end negative). curb: the curb's half size, across and along, as shares of the art (which
+ * has a margin around it), kept clear of streets and buildings. mound: the earth heaped inside, its corners rounded round squares, laid at
+ * alpha. stone: the headstone at its head, deep squares thick, lightened by light, its shadow cast shadow times a prop's.
+ */
+const GRAVE = {
+  curb: [0.3, 0.37],
+  mound: { at: 0.07, across: 0.17, along: 0.22, round: 0.18, alpha: 0.8 },
+  stone: { at: -0.235, across: 0.27, deep: 0.17, round: 0.05, shadow: 2.5, light: 0.18 },
 };
 
 /** A wild prop's least size across, in squares, whatever its art: FA's arctic stump is a square where its other stumps are four. */
@@ -224,7 +245,7 @@ export function floorsOf(layout) {
 export function rolesFor(layout) {
   const s = layout.season;
   const g = layout.items.find((i) => i.kind === "ground")?.base ?? "grass";
-  const roles = new Set([...groundRoles(g, s), `surface.trodden.${s}`, "stone.curb", "floor.wood", "floor.stone", "wood.fence", `stone.rough.${s}`]);
+  const roles = new Set([...groundRoles(g, s), `surface.trodden.${s}`, `surface.dirt.${s}`, "stone.curb", "floor.wood", "floor.stone", "wood.fence", `stone.rough.${s}`]);
   for (const i of layout.items) {
     if (i.kind === "way" && !i.faint) roles.add(wayRole(i, s));
     if (isPlaza(i)) roles.add(PAVING[i.surface] ?? "surface.flagstone");
@@ -266,7 +287,7 @@ export function rolesFor(layout) {
     if (i.kind === "prop" && i.class === "fountain") roles.add(s === "winter" ? "water.ice" : "water.pond");
     if (i.kind === "reed") roles.add("prop.reeds");
     if (i.kind === "lily") roles.add("prop.lily");
-    if (i.kind === "prop" && i.class !== "grave" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : propRole(i.class, s));
+    if (i.kind === "prop" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : propRole(i.class, s));
     if (i.kind === "way" && !i.faint && s === "winter" && !wayPaving(i)) { roles.add("ground.snow.disturbed"); roles.add("strip.snow.trail"); roles.add(i.width >= 1.6 ? "strip.track.wheel" : "prop.tracks.winter"); }
   }
   if (s === "winter") { roles.add("ground.snow.rocky"); roles.add("overlay.frost"); }
@@ -609,7 +630,12 @@ export function paint(ctx) {
   for (const q of L.items.filter(isQuarter)) {
     const bb = bboxOf(q.poly);
     if (!meets(bb, 1)) continue;
-    soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), { blur: 0.5, alpha: q.alpha ?? 0.7, noise: noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
+    // (paving laid all over, as before; worn ground in ragged patches, the grass between them, its edges height-blended:
+    // laid over nearly all of it, a town's homes read as one flat olive brown (Patrick, 9 Nov))
+    const Q = PAVING[q.surface] ? null : BLEND.quarter;
+    soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), Q
+      ? { blur: 0.5, alpha: Math.min(q.alpha ?? 0.7, Q.alpha), noise: noiseMask(`battle-q-${q.id}`, Q.scale, Q.cut, Q.soft), box: bb, lift: Q.lift, gain: Q.gain }
+      : { blur: 0.5, alpha: q.alpha ?? 0.7, noise: noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
   }
 
   // 1c. Height: the lower a level lies the darker its ground (light comes down into a cut less), a stream's bed of
@@ -891,13 +917,37 @@ export function paint(ctx) {
   // (no way is painted down in a stream's bed: a bridge carries it over, and the road showing under the deck, curving
   // where the deck runs straight, read wrong; a ford's crossing is left open so its track runs through)
   const cutBeds = items("level").filter((Lv) => Lv.bed && meets(bboxOf(Lv.rings.flat()), 1));
+  // (a paved street that stops short of anything, another way, a square, a building, a bridge or the map's edge, as
+  // a street taken from a town map can: cut square at its end, not left with a round paved cap on the grass, and a worn
+  // path carried on from it, tapering out (Patrick, 9 Nov))
+  const deadEnds = [];
+  {
+    const [mw, mh] = L.size?.squares ?? [Infinity, Infinity];
+    const allWays = items("way").filter((o) => !o.faint && Array.isArray(o.path) && o.path.length >= 2);
+    const plazas = L.items.filter(isPlaza), allFeet = items("building").map(footprint), spans = items("crossing").filter((c) => Array.isArray(c.at)).map(deckOf);
+    for (const w of ways.filter(wayPaving)) [0, 1].forEach((k) => {
+      if (w.wallEnds?.[k]) return;
+      const p = k ? w.path.at(-1) : w.path[0], q = k ? w.path.at(-2) : w.path[1], hw = (w.width ?? 1) / 2;
+      const Ln = Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, dir = [(p[0] - q[0]) / Ln, (p[1] - q[1]) / Ln];
+      if (p[0] < 0.5 || p[1] < 0.5 || p[0] > mw - 0.5 || p[1] > mh - 0.5) return;
+      // (a worn footpath meeting it, to a house's door, doesn't make it a junction: the path runs on from the taper)
+      if (allWays.some((o) => o !== w && o.class !== "path" && !o.approach && distanceToPath(p, o.path) < (o.width ?? 1) / 2 + hw + 0.3)) return;
+      if (plazas.some((sq) => pointInPolygon(p, sq.poly) || distanceToPath(p, [...sq.poly, sq.poly[0]]) < hw + 0.5)) return;
+      // (a building it runs up to, its end at the wall; one merely beside its end doesn't count)
+      if ([...allFeet, ...spans].some((f) => pointInPolygon(p, f) || pointInPolygon([p[0] + dir[0] * 0.6, p[1] + dir[1] * 0.6], f) || distanceToPath(p, [...f, f[0]]) < 0.4)) return;
+      if (meets([p[0], p[1], p[0], p[1]], hw + BLEND.deadEnd.reach + 1)) deadEnds.push({ w, p, dir, hw });
+    });
+  }
+  // (the box past a dead end that its round cap would fill, cut out of the ways below)
+  const capBox = ({ p, dir, hw }) => { const n = [-dir[1], dir[0]], a = hw + 0.6, f = hw + 0.8; return [[p[0] + n[0] * a, p[1] + n[1] * a], [p[0] + n[0] * a + dir[0] * f, p[1] + n[1] * a + dir[1] * f], [p[0] - n[0] * a + dir[0] * f, p[1] - n[1] * a + dir[1] * f], [p[0] - n[0] * a, p[1] - n[1] * a]]; };
   g.save();
-  if (cutBeds.length) {
+  if (cutBeds.length || deadEnds.length) {
     g.beginPath();
     g.rect(0, 0, W, H);
     // (one outline for all of them: a pool's rings overlap its stream's bed, which even-odd would leave uncut)
-    for (const ring of union(cutBeds.flatMap((Lv) => Lv.rings))) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
-    for (const c of items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at))) { deckOf(c).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    if (cutBeds.length) for (const ring of union(cutBeds.flatMap((Lv) => Lv.rings))) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    if (cutBeds.length) for (const c of items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at))) { deckOf(c).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    for (const d of deadEnds) { capBox(d).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("evenodd");
   }
   // (an unpaved way narrows onto a footbridge's planks over its last squares, rather than running on under the deck
@@ -957,6 +1007,17 @@ export function paint(ctx) {
     for (const w of [...paved].sort((a, b) => a.width - b.width)) fill((k) => stroke(k, w.path, w.width), tex(wayRole(w, s), wayRole(w, s) === "surface.flagstone" ? 1 : 0));
   }
   g.restore();
+  // (each dead end's worn path, tapering from the street's width to a point, ragged, under nothing but the street)
+  if (deadEnds.length) {
+    const E = BLEND.deadEnd;
+    const taper = ({ p, dir, hw }) => { const n = [-dir[1], dir[0]], b = hw * 0.85, t = E.tip / 2, reach = Math.max(E.reach, hw * E.perHalf), back = [p[0] - dir[0] * 0.3, p[1] - dir[1] * 0.3], tip = [p[0] + dir[0] * reach, p[1] + dir[1] * reach]; return [[back[0] + n[0] * b, back[1] + n[1] * b], [tip[0] + n[0] * t, tip[1] + n[1] * t], [tip[0] - n[0] * t, tip[1] - n[1] * t], [back[0] - n[0] * b, back[1] - n[1] * b]]; };
+    const box = boxAround(deadEnds.map((d) => bboxOf(taper(d))), 0.5);
+    soft((k) => { for (const d of deadEnds) { poly(k, taper(d)); k.fill(); } }, s === "winter" ? tex("ground.snow.disturbed") : trodden, { blur: E.blur, alpha: E.alpha, box });
+    // (bare earth worn down its middle, ragged, so it reads against the grass)
+    if (s !== "winter") soft((k) => { for (const d of deadEnds) { poly(k, taper({ ...d, hw: d.hw * E.bare })); k.fill(); } }, tex(`surface.dirt.${s}`), { blur: E.blur, alpha: E.alpha, noise: noiseMask("battle-dead-end", E.rag, E.cut, 0.35), box });
+    // (the curb's end across the cut, so the paving stops at a curb rather than a raw edge)
+    fill((k) => { for (const { p, dir, hw } of deadEnds) { const n = [-dir[1], dir[0]]; stroke(k, [[p[0] + n[0] * (hw + 0.25), p[1] + n[1] * (hw + 0.25)], [p[0] - n[0] * (hw + 0.25), p[1] - n[1] * (hw + 0.25)]], 0.25, "butt"); } }, tex("stone.curb"));
+  }
 
   // 5. Squares: flagstones inside a curb
   for (const sq of L.items.filter(isPlaza)) {
@@ -981,10 +1042,43 @@ export function paint(ctx) {
       }
     }, "rgba(60,96,40,0.85)");
   }
-  const graves = items("prop", "grave").filter((gv) => meets([gv.x, gv.y, gv.x, gv.y], 1));
+  // (a grave drawn at a battle map's size, bigger than a town map's, that would lie over a street or under a building,
+  // left out)
+  const graveWays = items("way").filter((o) => !o.faint && Array.isArray(o.path) && o.path.length >= 2), graveFeet = items("building").map(footprint);
+  const graveClear = (gv) => {
+    const a = (((gv.rot ?? 0) + 90) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), hx = GRAVE_SQUARES * GRAVE.curb[0], hy = GRAVE_SQUARES * 1.5 * GRAVE.curb[1];
+    const pts = [[0, 0], [-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]].map(([u, v]) => [gv.x + u * c - v * sn, gv.y + u * sn + v * c]);
+    return !pts.some((q) => graveWays.some((o) => distanceToPath(q, o.path) < (o.width ?? 1) / 2) || graveFeet.some((f) => pointInPolygon(q, f)));
+  };
+  const graves = items("prop", "grave").filter((gv) => meets([gv.x, gv.y, gv.x, gv.y], 1.5) && graveClear(gv));
   if (graves.length) {
-    fill((k) => { for (const gv of graves) { poly(k, rectAt(gv.x - 0.1, gv.y - 0.1, 0.7, 0.36, gv.rot ?? 0)); k.fill(); } }, "rgba(20,24,34,0.35)");
-    fill((k) => { for (const gv of graves) { poly(k, rectAt(gv.x, gv.y, 0.7, 0.36, gv.rot ?? 0)); k.fill(); } }, tex("stone.curb"));
+    // (FA's grave art, headstone and plot; a plain stone where there's none)
+    const drawn = graves.filter((gv) => art(propRole("grave", s), gv.variant ?? 0));
+    for (const gv of drawn) {
+      const im = art(propRole("grave", s), gv.variant ?? 0), w = GRAVE_SQUARES, h = (w * im.height) / im.width;
+      // (its long side across the row, so a row of graves reads as plots side by side)
+      g.save(); g.translate(X(gv.x), Y(gv.y)); g.rotate((((gv.rot ?? 0) + 90) * Math.PI) / 180);
+      g.shadowColor = `rgba(16,24,40,${BLEND.props.alpha})`; g.shadowBlur = pp * BLEND.props.blur; g.shadowOffsetX = SHADOW[0] * pp * BLEND.props.offset; g.shadowOffsetY = SHADOW[1] * pp * BLEND.props.offset;
+      g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
+      // (FA's art is the plot's stone curb alone: a mound of earth inside it and a headstone at its head make it a grave)
+      g.shadowColor = "transparent";
+      const M = GRAVE.mound, T = GRAVE.stone, rr = (cx, cy, hw, hh, r) => { g.beginPath(); g.roundRect((cx - hw) * pp, (cy - hh) * pp, hw * 2 * pp, hh * 2 * pp, r * pp); };
+      g.globalAlpha = M.alpha; g.fillStyle = tex(`surface.dirt.${s}`); rr(0, M.at * h, M.across * w, M.along * h, M.round); g.fill();
+      const lit = g.createRadialGradient(0, M.at * h * pp, 0, 0, M.at * h * pp, M.along * h * pp);
+      lit.addColorStop(0, "rgba(255,240,210,0.22)"); lit.addColorStop(1, "rgba(30,20,10,0.25)");
+      g.fillStyle = lit; rr(0, M.at * h, M.across * w, M.along * h, M.round); g.fill();
+      g.globalAlpha = 1;
+      g.shadowColor = `rgba(16,24,40,${BLEND.props.alpha})`; g.shadowBlur = pp * BLEND.props.blur; g.shadowOffsetX = SHADOW[0] * pp * BLEND.props.offset * T.shadow; g.shadowOffsetY = SHADOW[1] * pp * BLEND.props.offset * T.shadow;
+      g.fillStyle = tex("stone.curb"); rr(0, T.at * h, T.across * w, T.deep / 2, T.round); g.fill();
+      g.shadowColor = "transparent"; g.fillStyle = `rgba(255,255,255,${T.light})`; g.fill();
+      g.lineWidth = Math.max(1, pp * 0.02); g.strokeStyle = "rgba(20,20,24,0.85)"; g.stroke();
+      g.restore();
+    }
+    const plain = graves.filter((gv) => !drawn.includes(gv));
+    if (plain.length) {
+      fill((k) => { for (const gv of plain) { poly(k, rectAt(gv.x - 0.1, gv.y - 0.1, 0.7, 0.36, gv.rot ?? 0)); k.fill(); } }, "rgba(20,24,34,0.35)");
+      fill((k) => { for (const gv of plain) { poly(k, rectAt(gv.x, gv.y, 0.7, 0.36, gv.rot ?? 0)); k.fill(); } }, tex("stone.curb"));
+    }
   }
   const levelItemsAll = items("level");
   for (const c of items("crossing").filter((c) => c.class !== "ford" && Array.isArray(c.at))) {
