@@ -6,7 +6,7 @@
  * a kitchen" into "common room with a stage, kitchen"); cellars and upper floors are noted as coming with levels.
  * Pure: runs anywhere.
  */
-import { BRIEF_LABELS } from "./brief.mjs";
+import { BRIEF_LABELS, SITE_LACKS } from "./brief.mjs";
 
 /** Words for each choice (single words or phrases, lowercase; a word's plural and -y forms are matched too). */
 const WORDS = {
@@ -186,7 +186,10 @@ export function readDescription(text = "") {
   const features = all(WORDS.features).filter((f) => WORDS.features[f].some((w) => find(w).some((m) => !negated(m)))).filter((f) => (f !== "road" || brief.site !== "street") && !(f === "rise" && brief.ground === "hills" && !/\b(?:rise|knoll|mound|hillock|ridge)s?\b/.test(lower)));
   const noRoad = WORDS.features.road.some((w) => find(w).some((m) => negated(m)));
   if (brief.site === "roadside" && !features.includes("road") && !noRoad) features.unshift("road");
-  if (features.length) { brief.features = features; features.forEach((f) => chip("features", f, BRIEF_LABELS.features[f])); }
+  // (one its site never has room for is read but left out, and said so)
+  for (const f of features.filter((f) => SITE_LACKS[brief.site]?.[f])) skipped.push({ label: BRIEF_LABELS.features[f].toLowerCase(), why: SITE_LACKS[brief.site][f] });
+  const kept = features.filter((f) => !SITE_LACKS[brief.site]?.[f]);
+  if (kept.length) { brief.features = kept; kept.forEach((f) => chip("features", f, BRIEF_LABELS.features[f])); }
 
   // Scattered things: each with the nearest amount word before it in its own part of the sentence (back to a comma,
   // semicolon or period), carried back over a list of scattered things: "littered with trees, stumps and logs" makes

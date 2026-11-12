@@ -347,6 +347,10 @@
   grid-template-columns: 1fr 1fr;
   column-gap: 0.8rem;
 }
+.atlas-scribe.as-quick .as-qs-features label.as-off {
+  opacity: 0.45;
+  cursor: help;
+}
 .atlas-scribe.as-quick .as-qs-features {
   display: flex;
   flex-wrap: wrap;

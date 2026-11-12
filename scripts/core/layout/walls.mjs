@@ -336,7 +336,7 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
   for (const g of gaps) {
     const gr = r.fork("gate", keyOf(g.at));
     const blockRoll = gr.next(), lookRoll2 = gr.next();
-    // (on a battle map, a gatehouse wherever one can stand: Patrick's full gatehouse)
+    // (on a battle map, a gatehouse wherever one can stand: the full gatehouse asked for)
     // (a battle map's, whose passage lies square to the wall, only over a road crossing it all but squarely, within
     // about 25 degrees, so the road runs down its passage, not through its guard rooms: else a tower each side)
     const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= (works ? GATE_SQUARE : 0.6) && !g.roads[0].corner && (works || blockRoll < 0.5);

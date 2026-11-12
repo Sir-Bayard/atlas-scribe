@@ -1,11 +1,11 @@
 /**
- * Quick Start's Battle map tab (M6 chunk 7, Patrick's choices of 8 Nov): a Describe box over the brief's form. What
+ * Quick Start's Battle map tab (M6 chunk 7, the choices of 8 Nov): a Describe box over the brief's form. What
  * the box reads (describe.mjs) is shown as chips and set in the form below it; a chip's × takes its choice out (back
  * to the site's default) until the description changes; things it reads but can't build yet (a cellar, an upper
  * floor) and words it doesn't know are listed too. The form is the brief (brief.mjs): the site, size, season, time,
  * weather, ground, features and scatter, then the site's own settings.
  */
-import { BRIEF, BRIEF_LABELS, normalizeBrief } from "../core/brief.mjs";
+import { BRIEF, BRIEF_LABELS, SITE_LACKS, normalizeBrief } from "../core/brief.mjs";
 import { readDescription } from "../core/describe.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -63,7 +63,7 @@ export function briefFromForm(form, seed) {
   const v = (n) => form.elements[n === "name" ? n : `b-${n}`]?.value ?? "";
   return normalizeBrief({
     site: v("site"), size: v("size"), season: v("season"), time: v("time"), weather: v("weather"), ground: v("ground"),
-    features: BRIEF.features.filter((f) => form.elements[`b-f-${f}`]?.checked),
+    features: BRIEF.features.filter((f) => form.elements[`b-f-${f}`]?.checked && !form.elements[`b-f-${f}`]?.disabled),
     trees: v("trees"), litter: v("litter"), rocks: v("rocks"), brush: v("brush"),
     building: { use: v("use"), size: v("bsize"), rooms: v("rooms"), name: v("bname"), floors: v("floors"), cellar: v("cellar"), upstairs: v("upstairs"), cellarRooms: v("crooms") },
     street: { place: v("place"), quarter: v("quarter") },
@@ -92,6 +92,15 @@ function showSite(root) {
   for (const el of root.querySelectorAll("[data-site]")) el.hidden = el.dataset.site !== site;
   // (a castle's size is the castle's own: a fort, a castle, a great castle, each with its map's size)
   for (const o of root.querySelectorAll('[name="b-size"] option')) o.textContent = (site === "castle" ? BRIEF_LABELS.castleSize : BRIEF_LABELS.size)[o.value] ?? o.textContent;
+  // (a feature the site never has room for, grayed out with why)
+  for (const f of BRIEF.features) {
+    const box = root.querySelector(`[name="b-f-${f}"]`), why = SITE_LACKS[site]?.[f];
+    if (!box) continue;
+    box.disabled = !!why;
+    if (why) box.checked = false;
+    const label = box.closest("label");
+    if (label) { if (why) label.dataset.tooltip = why; else delete label.dataset.tooltip; label.classList.toggle("as-off", !!why); }
+  }
 }
 
 /** A form field's brief key ("b-bsize" is "building.size", a feature's box "feature.pond"), or null for one that isn't. */

@@ -1,5 +1,5 @@
 /**
- * A battle map's castle works (M6 chunk 8, Patrick's choices of 8 Nov): what a stone town wall becomes up close. Its
+ * A battle map's castle works (M6 chunk 8, the choices of 8 Nov): what a stone town wall becomes up close. Its
  * curtain is solid masonry with a wall walk along its top, a level of its own at 20 ft behind a parapet, reached by
  * open flights of stairs up its inner face and through its towers. Its towers (round at the corners, square along the
  * walls) and its gatehouse are buildings of thick masonry with floors: a tower a room on each floor, curling stairs

@@ -1,6 +1,6 @@
 /**
- * Zooming into an overview: a battle map of a rectangle picked on a town or city, made as a plan of its own (Patrick,
- * 7 Nov, M6 chunk 3). Its streets, roads, water, squares, bridges, woods, parks
+ * Zooming into an overview: a battle map of a rectangle picked on a town or city, made as a plan of its own (7 Nov,
+ * M6 chunk 3). Its streets, roads, water, squares, bridges, woods, parks
  * and a centerpiece's walls and fountains carry over where the overview has
  * them, at the zoom (twice true size by default, so there's room to fight); its districts keep their kind, character
  * and roofs and are filled again at battle size, so their houses are re-made; its notable buildings (a temple, an inn,

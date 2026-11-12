@@ -38,7 +38,7 @@ const CLIFF_FOOT_ROW = 0.33;
  * How heavy the drawn lines are: a road's dark middle line (its ruts when it has them), its worn middle, its trodden
  * verge, the outline around roofs, and the dark edge along water. 1 is full strength.
  */
-const LINES = { center: 0, worn: 0.6, verge: 0.6, eave: 0.75, waterEdge: 0.5 }; // Patrick chose these (31 Oct) over heavier lines
+const LINES = { center: 0, worn: 0.6, verge: 0.6, eave: 0.75, waterEdge: 0.5 }; // chosen (31 Oct) over heavier lines
 
 const hasFlat = (b) => (!b.round || b.tower) && (b.roofStyle === "flat" || b.roofStyle === "mansard");
 /** The flat roof's role: stone paving, or planks on a palisade's open tower. */

@@ -1,6 +1,6 @@
 /**
  * A battle map's brief: what Quick Start's Battle map tab asks, and what the Describe box reads from words (plan
- * decision 44, Patrick's choices of 8 Nov: one brief, two ways in). A brief in, an ordinary battle plan out (roads,
+ * decision 44, the choices of 8 Nov: one brief, two ways in). A brief in, an ordinary battle plan out (roads,
  * water, heights, woods, buildings, props), so everything after it (the window, rerolls, render, publish) works on
  * it as on any plan. Every choice left out has a default, and the same brief and seed always give the same plan.
  * Pure: runs anywhere. Numbers are in battle squares (5 ft).
@@ -63,6 +63,14 @@ export const BRIEF_LABELS = {
 };
 
 /** The map in squares, by size. */
+/**
+ * The features a site never has room for (its castle's walls, a street's houses fill the map), offered grayed out for
+ * it, with why.
+ */
+export const SITE_LACKS = {
+  castle: { pond: "A castle's walls and yard leave no room for a pond", cliff: "A castle's walls and yard leave no room for a cliff" },
+  street: { rise: "A street's houses leave no room for a rise", hollow: "A street's houses leave no room for a hollow" },
+};
 export const BRIEF_SIZES = { small: [30, 24], medium: [45, 34], large: [60, 45] };
 
 /**

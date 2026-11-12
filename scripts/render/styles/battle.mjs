@@ -1,6 +1,6 @@
 /**
  * The battle map style: a Layout at 5 ft a square painted from Forgotten Adventures art at its own scale (200 px of
- * art to a square), as the battle mockup Patrick approved on 3 Nov: bright grass, crisp stone curbs along the paved
+ * art to a square), as the battle mockup approved on 3 Nov: bright grass, crisp stone curbs along the paved
  * streets, flat paving (setts and flagstones; cobbles and herringbone read as noise at this scale), floors inside the
  * buildings, fenced yards, and one sun casting every shadow to the northwest.
  *
@@ -37,7 +37,7 @@ const MASONRY_SHADE = 0.4;
 const ART_PX = 200;
 
 /**
- * How the battle style blends one thing into the next (M6 chunk 10, from a winter bridge map Patrick built by hand with FA
+ * How the battle style blends one thing into the next (M6 chunk 10, from a winter bridge map built by hand with FA
  * Nexus): one table to tune, never a setting. Each layer is laid at its alpha through a soft mask (blur, in squares)
  * cut ragged by noise (scale: its patches across, in squares; cut: the noise level its edge lies at, higher for less of
  * it; soft: how gradually it fades), and where lift is given, height-blended: along a soft edge the brighter parts of
@@ -94,7 +94,7 @@ const GRAVE = {
 const WILD_LEAST = { stump: 1.5 };
 
 /**
- * The paving a way's or square's surface is laid in at battle size: flat stones (Patrick, 3 Nov: cobbles "don't
+ * The paving a way's or square's surface is laid in at battle size: flat stones (3 Nov: cobbles "don't
  * translate" at this scale, and herringbone fought the grass around it). A road's flagstones are the second variant,
  * a square's the first, so the two read apart where they meet.
  */
@@ -137,7 +137,7 @@ const propRole = (cls, s) => `prop.${cls}.${s}`;
 /** The wild props laid flat on the ground (drawn first, no shadow), and those standing up (shadowed). */
 /**
  * Whether a bank's art is laid flipped. FA's bank art has its grassy top along the top of the image, as its cliff art
- * has, so it isn't: the top lies on the high side, the grass (Patrick, 8 Nov: "your cliff top is on the water not the
+ * has, so it isn't: the top lies on the high side, the grass (8 Nov: "your cliff top is on the water not the
  * grass" when it was flipped).
  */
 const BANK_FLIP = false;
@@ -200,7 +200,7 @@ const GROUND_SURFACE = { dirt: "surface.dirt", mud: "surface.dirt", slush: "surf
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
 
 /**
- * A battle map's furniture, each piece a tile over the map (Patrick, 7 Nov: so a GM can move it): [{ role, variant,
+ * A battle map's furniture, each piece a tile over the map (7 Nov: so a GM can move it): [{ role, variant,
  * piece }], rugs first (they lie under the rest).
  */
 export function furniture(layout) {
@@ -464,7 +464,7 @@ export function paint(ctx) {
   /**
    * A path art strip laid along a path, a piece for each stretch, each piece cut at its ends along the line halfway
    * between its stretch and the next (a miter), so on a bend the pieces meet without the square corners of one sticking
-   * out past the next (Patrick, 9 Nov: the "square something" along a rise's edge).
+   * out past the next (9 Nov: the "square something" along a rise's edge).
    */
   const stripPath = (im, path, phase = 0, flip = false, { width = null } = {}) => {
     const n = path.length;
@@ -645,7 +645,7 @@ export function paint(ctx) {
     const bb = bboxOf(q.poly);
     if (!meets(bb, 1)) continue;
     // (paving laid all over, as before; worn ground in ragged patches, the grass between them, its edges height-blended:
-    // laid over nearly all of it, a town's homes read as one flat olive brown (Patrick, 9 Nov))
+    // laid over nearly all of it, a town's homes read as one flat olive brown (9 Nov))
     const Q = PAVING[q.surface] ? null : BLEND.quarter;
     soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), Q
       ? { blur: 0.5, alpha: Math.min(q.alpha ?? 0.7, Q.alpha), noise: noiseMask(`battle-q-${q.id}`, Q.scale, Q.cut, Q.soft), box: bb, lift: Q.lift, gain: Q.gain }
@@ -707,8 +707,8 @@ export function paint(ctx) {
     }
   }
   /**
-   * Ice along a stream's banks (layout's shelves either side of its open channel), laid as Patrick laid the Old
-   * Bridge's: the shelf's edge throwing a shadow on the open water, ice over the shelves with cracked ice and a dusting
+   * Ice along a stream's banks (layout's shelves either side of its open channel), laid as a hand-made
+   * winter map lays it: the shelf's edge throwing a shadow on the open water, ice over the shelves with cracked ice and a dusting
    * of snow on it in ragged patches, a strip of broken ice along each edge, and in the channel floes, chunks of ice and
    * foam drifting with the flow.
    */
@@ -782,7 +782,7 @@ export function paint(ctx) {
   /**
    * A drop's face lit by the sun: each stretch of it shaded as its downhill side turns from the sun, low in the
    * southeast, and lightened as it turns toward it, over span squares down from its line. A slope's whole face; a rise's
-   * or hollow's bank too, so which way the ground falls reads at a glance (Patrick, 9 Nov: the rise read as a hollow).
+   * or hollow's bank too, so which way the ground falls reads at a glance (9 Nov: the rise read as a hollow).
    */
   const lightFace = (e, span, dark, light) => {
     const pts = resample(e.path, 0.5), far = shiftRight(pts, span);
@@ -933,7 +933,7 @@ export function paint(ctx) {
   const cutBeds = items("level").filter((Lv) => Lv.bed && meets(bboxOf(Lv.rings.flat()), 1));
   // (a paved street that stops short of anything, another way, a square, a building, a bridge or the map's edge, as
   // a street taken from a town map can: cut square at its end, not left with a round paved cap on the grass, and a worn
-  // path carried on from it, tapering out (Patrick, 9 Nov))
+  // path carried on from it, tapering out (9 Nov))
   const deadEnds = [];
   {
     const [mw, mh] = L.size?.squares ?? [Infinity, Infinity];
@@ -1314,7 +1314,8 @@ export function paint(ctx) {
     return [(im.width / ART_PX) * k, (im.height / ART_PX) * k];
   };
   const placed = [];
-  for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain")) {
+  // (a windmill's sails are on its roof's tile, over its cap: paintOverhead)
+  for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain" && p.class !== "sails")) {
     const bush = p.class === "bush", wildOne = isWild(p) && !bush;
     const im = art(bush ? bushRole(s) : propRole(p.class, s), p.variant);
     if (!im) continue;
@@ -1408,6 +1409,8 @@ export function overheads(layout) {
   let n = 0;
   for (const parts of groups.values()) {
     const pts = parts.flatMap((b) => footprint(b));
+    // (a windmill's roof tile reaches as far as its sails turn)
+    for (const sl of millSails(layout, parts)) { const r = sailsSpan(sl) / 2; pts.push([sl.x - r, sl.y - r], [sl.x + r, sl.y + r]); }
     const box = clip([Math.min(...pts.map((p) => p[0])) - 0.5, Math.min(...pts.map((p) => p[1])) - 0.5, Math.max(...pts.map((p) => p[0])) + 0.5, Math.max(...pts.map((p) => p[1])) + 0.5]);
     // (a roof at its height above the ground its building stands on)
     if (ok(box)) out.push({ name: `roof-${String(++n).padStart(3, "0")}`, kind: "roof", box, ids: parts.map((b) => b.id), elevation: roofHeight(parts) + groundOf(layout, parts) });
@@ -1476,6 +1479,10 @@ function battlements(g, b, X, Y, pp, art, [x0, y0]) {
   g.restore();
 }
 
+/** A building group's windmill sails (props `<building id>/sails`), and how far across they turn, in squares. */
+const millSails = (layout, parts) => { const ids = new Set(parts.map((b) => `${b.id}/sails`)); return layout.items.filter((i) => i.kind === "prop" && i.class === "sails" && ids.has(i.id)); };
+const sailsSpan = (sl) => (PROP_SQUARES.sails ?? 2.4) * (sl.scale ?? 1);
+
 export function paintOverhead(ctx, piece) {
   const { g, pp, layout: L, art } = ctx;
   const [x0, y0] = piece.box;
@@ -1496,6 +1503,16 @@ export function paintOverhead(ctx, piece) {
       paintRoof(g, b, { x: X(b.cx), y: Y(b.cy), pp, art, season: s, texPx: ((im?.width ?? ART_PX) * pp) / ART_PX, chimney: 0.6 });
     }
     g.restore();
+    // (a windmill's sails over its cap, past its walls, with a shadow on the roof and the ground below)
+    for (const sl of millSails(L, parts)) {
+      const im = art(propRole("sails", s), sl.variant ?? 0);
+      if (!im) continue;
+      const w = sailsSpan(sl), h = (w * im.height) / im.width;
+      g.save(); g.translate(X(sl.x), Y(sl.y)); g.rotate(((sl.rot ?? 0) * Math.PI) / 180);
+      g.shadowColor = `rgba(16,24,40,${BLEND.props.alpha})`; g.shadowBlur = pp * BLEND.props.blur; g.shadowOffsetX = SHADOW[0] * pp * BLEND.props.offset * 3; g.shadowOffsetY = SHADOW[1] * pp * BLEND.props.offset * 3;
+      g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
+      g.restore();
+    }
     return;
   }
   for (const t of L.items.filter((i) => i.kind === "tree" && ids.has(i.id)).sort((a, b) => a.y - b.y)) {

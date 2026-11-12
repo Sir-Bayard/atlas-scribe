@@ -1,13 +1,13 @@
 /**
  * A district's anchor: the landmark its character is known by, placed before its streets, on its own square or
- * forecourt (Patrick, 1 Nov, after the research on fantasy city maps: landmarks first, drawn larger than life, with
+ * forecourt (1 Nov, after the research on fantasy city maps: landmarks first, drawn larger than life, with
  * open ground around them; the square steers the district's streets toward it). A temple quarter's cathedral with
  * its cloister and yard, the nobles' palace with its forecourt and formal garden, the market square and its hall, a
  * merchants' or crafts guildhall, the docks' customs house with cranes, the garrison's keep on its parade ground, the
  * poor quarter's shrine and well. Where it stands depends only on the district's shape, roads and place in the plan
  * (its Centerpiece place, or one picked from the plan's seed and its id), never its own seed, so rerolling the
- * district doesn't move it (that seed picks only its small details). Not every district is built around it (Patrick,
- * 2 Nov: "sometimes it'd be nice if maybe the center feature was on the side of the district"): it stands in the
+ * district doesn't move it (that seed picks only its small details). Not every district is built around it (2 Nov:
+ * "sometimes it'd be nice if maybe the center feature was on the side of the district"): it stands in the
  * middle, off to one side, or at the district's edge, often on a main road. Everything in squares. Pure.
  */
 import { marketStalls } from "./market.mjs";

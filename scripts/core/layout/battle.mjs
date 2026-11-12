@@ -1,7 +1,7 @@
 /**
  * A battle map's yards and walls, laid over what the districts built. At 5 ft a square the plot lines a town map
  * draws (every lot's edge a fence) read as fences running at odd angles beside houses and into the street, and a
- * walled yard's wall follows its plot's odd outline. So on a battle map (Patrick, 3 Nov):
+ * walled yard's wall follows its plot's odd outline. So on a battle map (3 Nov):
  *  - each house gets a fenced yard behind it, square to it, as a map maker would draw one, with a gate in its back
  *    fence; its depth is cut short, or it's left out, to keep clear of streets, other buildings, water and other yards;
  *  - a walled yard (a churchyard, a manor's grounds) is walled around its outline made convex, with a gate on the side
@@ -19,7 +19,7 @@ export const YARD = { depths: [5, 4, 3, 2.5], offStreet: 0.7, offBuilding: 0.4, 
 /** A plan's own building gets a yard too, unless it's one of these (a temple, a keep, a stable or shed of a yard's own). */
 const NO_YARD = new Set(["temple", "chapel", "shrine", "keep", "palace", "barracks", "watch", "tower", "tomb", "stable", "shed", "store", "warehouse", "market-hall", "guildhall", "customs", "windmill", "watermill", "armory"]);
 /**
- * A path to a front door that stands off the road (Patrick, 8 Nov: a lone inn had none): from how far off the nearest
+ * A path to a front door that stands off the road (8 Nov: a lone inn had none): from how far off the nearest
  * way's edge a door gets one, its width, how far out from the door it starts straight, its longest run, in squares.
  */
 export const APPROACH = { from: 1.2, width: 1, out: 1, longest: 30 };
@@ -280,7 +280,7 @@ export function approachPaths(items, W = Infinity, H = Infinity) {
 }
 
 /**
- * What fills the middle of a block on a battle map, behind its street fronts (Patrick, 7 Nov: back houses, yards,
+ * What fills the middle of a block on a battle map, behind its street fronts (7 Nov: back houses, yards,
  * gardens and sheds, so a town zoomed to battle size reads as full as its overview): a quarter's own back numbers
  * (LOOK.back: a market's stores, a crafts quarter's workshops) with sheds and yard clutter added, else back houses.
  * Sizes in feet; gap: between buildings; shed: a shed's size, and how many are tried beside the houses (a share of
@@ -295,7 +295,7 @@ export const battleBack = (B) => (B ? { shed: BATTLE_BACK.shed, clutter: BATTLE_
 
 /**
  * How high a roof sits, in feet: an ordinary building's at 10, a tower's or a tall building's (a temple, a keep) at 20
- * (Patrick, 6 Nov). A roof is seen from the street as Foundry reveals a raised surface, more of it the lower it is.
+ * (6 Nov). A roof is seen from the street as Foundry reveals a raised surface, more of it the lower it is.
  */
 export const ROOF_HEIGHT = { low: 10, tall: 20 };
 /**
@@ -345,7 +345,7 @@ export function battleGroups(items) {
  * covers them: a front door on the side nearest a street, a back door into its yard (or, around a courtyard, one into
  * the courtyard), windows along the walls clear of corners, doors and neighbors. Items `shell` are added, one for each
  * piece a group's walls make (its id the group's, then /shell, /shell2...); returns how many. W, H: the map's size in
- * squares, when known: a building the map's edge cuts is closed (Patrick, 7 Nov: houses that run off the map aren't
+ * squares, when known: a building the map's edge cuts is closed (7 Nov: houses that run off the map aren't
  * part of the fight), its doors made walls, and it gets no interior (closed: true).
  */
 export function buildingShells(items, W = Infinity, H = Infinity) {

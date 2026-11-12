@@ -18,7 +18,7 @@ import { SegGrid, finitePaths } from "../spatial.mjs";
  * Plot numbers per district type, in feet. frontage and depth: ranges; cover: the share of the frontage the
  * house takes; houseDepth; setback: from the street; outbuilding: the chance of one behind the house; croft: the
  * chance the back of the plot is a small fenced field, croftDepth how far back it runs (a share of the plot behind
- * the yard) and croftFence how it's fenced (Patrick, 24 Oct: a quarter of village plots, half depth, open at the
+ * the yard) and croftFence how it's fenced (24 Oct: a quarter of village plots, half depth, open at the
  * back); bounds: the plot-line style when a district turns plotLines on (yards and crofts; else faint strips);
  * shapes: the chance a house has one rear wing (L), two (U) or wings and a back range around a yard (court), the forms medieval town houses took on their plots (Pantin 1955);
  * merge: the chance a plot is joined to the one before it (a double plot); roofs: roof materials and their weights,
@@ -30,7 +30,7 @@ import { SegGrid, finitePaths } from "../spatial.mjs";
  * orchard in rows, a few trees, open ground) by share;
  * wild: the spacing, in squares, of trees scattered over ground no plot takes (beyond the back lanes, inside blocks);
  * rows: the chance a plot's house is a row house, the plot's whole street front under one roof, turning along a
- * second street at a corner (Patrick, 2 Nov: city quarters built up as continuous frontages, yards behind).
+ * second street at a corner (2 Nov: city quarters built up as continuous frontages, yards behind).
  */
 export const LOT_TYPES = {
   hamlet: { frontage: [60, 120], depth: [140, 170], cover: [0.35, 0.55], houseDepth: [20, 30], setback: [10, 25], outbuilding: 0.5, croft: 0.4, croftDepth: 0.6, croftFence: "sides", bounds: true, shapes: { L: 0.25, T: 0.1, U: 0, court: 0 }, extras: { bay: 0.1, dormers: 0.05, turret: 0, steps: 0.2, roundShed: 0.25 },
@@ -45,7 +45,7 @@ export const LOT_TYPES = {
 
 /**
  * Plot numbers on a battle map (5 ft squares), in feet, over a profile's own: a house big enough to fight in, so a few
- * to a street front rather than the true dozen (Patrick, 3 Nov: "some artistic fantasy map combat license"). Its roofs,
+ * to a street front rather than the true dozen (3 Nov: "some artistic fantasy map combat license"). Its roofs,
  * roof forms and what the back of a plot holds stay the profile's, so a corner zoomed from a map keeps that map's look.
  * No rows (a row's whole street front under one roof is a hall at this scale), no double plots, crofts or extras.
  */

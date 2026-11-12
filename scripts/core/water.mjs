@@ -315,7 +315,7 @@ export function pastEdge([x, y], w) {
 export const bankOf = (w) => (w.body ? w.reach ?? BANK : BANK);
 
 /**
- * How a stream or river on a battle map wanders (Patrick, 9 Nov: running water there was too even): its middle line
+ * How a stream or river on a battle map wanders (9 Nov: running water there was too even): its middle line
  * swings a little either side of the plan's path, sway squares at most (a share of its width), over a long wave; and
  * its width swells and narrows by up to swell of itself over a shorter one. Both fade out near a crossing, so a
  * bridge's abutments stand on straight banks, and both come from the plan's seed and the water's id.

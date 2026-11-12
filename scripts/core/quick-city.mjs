@@ -734,7 +734,7 @@ function compass(a) {
 const cap = (w) => w[0].toUpperCase() + w.slice(1);
 
 /**
- * Gives each ward a character by rule (Patrick, 1 Nov: by the city's geography, varied by seed): the market on the
+ * Gives each ward a character by rule (1 Nov: by the city's geography, varied by seed): the market on the
  * central square, a temple beside it, docks on the water, the garrison against the wall by a gate (sometimes walled
  * in as a citadel), the nobles on the quiet side away from the main roads and upstream, crafts by the water downstream
  * and near the gates, the poor by the wall away from the nobles, merchants along the main roads; the rest are homes.

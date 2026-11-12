@@ -51,7 +51,7 @@ const GEN = "@gen:";
 /**
  * The Battle map tool: a box dragged (or clicked into place) over an area of a town map, made a battle map of its own
  * (zoom.mjs). Not one of the drawing tools: it adds nothing to the plan. PRESETS: a clicked box's side, in battle
- * squares; BIG: past this many squares a side the size shows amber (Patrick, 7 Nov: warn, still allow).
+ * squares; BIG: past this many squares a side the size shows amber (7 Nov: warn, still allow).
  */
 const BATTLE_TOOL = { id: "battle", label: "Battle map", geometry: "box", how: "battle" };
 const toolFor = (id) => (id === "battle" ? BATTLE_TOOL : toolOf(id));

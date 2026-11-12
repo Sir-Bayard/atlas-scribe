@@ -153,7 +153,7 @@ function boxOf(v) {
  * Streets cut where they'd run into a building (their edge inside it): each street is split there, pieces shorter
  * than a square are dropped, and so are pieces cut at both ends shorter than STUB feet that no other street meets (a
  * scrap of lane between two buildings, crossing a road). A piece's cut ends are marked (wallEnds: [start, end]), so a battle map draws it on to
- * the wall, its rounded end under the building (Patrick, 7 Nov: lanes ended in a round cap short of a wall). A street
+ * the wall, its rounded end under the building (7 Nov: lanes ended in a round cap short of a wall). A street
  * that only passes a building, its edge at most touching the wall (a house on the street line), is left whole.
  */
 const STUB = 40;
@@ -588,7 +588,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     const us = piece.map(([x, y]) => (x - cx0) * ux + (y - cy0) * uy), vs = piece.map(([x, y]) => (x - cx0) * nxv + (y - cy0) * nyv);
     const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
     const ext = (range) => (range[0] + r.next() * (range[1] - range[0])) / sq;
-    // (a battle map's sheds a square apart at least, and a square off any other building: Patrick, 6 Nov)
+    // (a battle map's sheds a square apart at least, and a square off any other building, 6 Nov)
     const gap = battle ? Math.max(B.gap / sq, 1) : B.gap / sq;
     const placed = [];
     const roomy = (pts) => {
@@ -1598,7 +1598,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
 
   if (battle) {
     // A bridge's parapets: a low stone wall along each side of its deck (a footbridge's wooden rails), which stop
-    // movement as any low wall or fence does. Each stands just outside the deck (Patrick, 9 Nov: inside it, a two-square
+    // movement as any low wall or fence does. Each stands just outside the deck (9 Nov: inside it, a two-square
     // bridge had one square to walk on), so the whole width the plan gives is walked on
     for (const c of items.filter((i) => i.kind === "crossing" && i.class !== "ford" && Array.isArray(i.at))) {
       const a = ((c.angle ?? 0) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), hl = (c.length ?? 2) / 2, hw = (c.width ?? 4) / 2 + (c.class === "bridge" ? PARAPET.out : PARAPET.rail);

@@ -117,7 +117,7 @@ export const CHARACTER = {
 };
 
 /**
- * How each character shows from above, beyond its plots (Patrick, 1 Nov: the quarters must read apart at a glance,
+ * How each character shows from above, beyond its plots (1 Nov: the quarters must read apart at a glance,
  * as on good fantasy city maps). ground: what covers the district under its houses (a surface's art at alpha, or
  * lush grass); street: its streets' surface when the district doesn't say; streetTrees: trees along its streets;
  * roofs: its own roof materials, all of them used (not a random few from its profile's); back: the empty middles of
@@ -175,7 +175,7 @@ export const LOOK = {
 
 /**
  * How ordinary housing looks in a city district: trodden ground, its block middles built up with houses and yards (a
- * city's homes are packed, not houses on grass), and a few wells (Patrick, 1 Nov).
+ * city's homes are packed, not houses on grass), and a few wells (1 Nov).
  */
 const CITY_HOMES = {
   ground: { surface: "trodden", alpha: 0.6 }, street: "cobble",

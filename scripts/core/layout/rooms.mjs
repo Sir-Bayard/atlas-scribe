@@ -1,8 +1,8 @@
 /**
- * A battle map's interiors (M6 chunk 4): each building's rooms, laid out by a program from its use (Patrick, 7 Nov:
+ * A battle map's interiors (M6 chunk 4): each building's rooms, laid out by a program from its use (7 Nov:
  * rooms by use, an inn's common room with its bar and stage, a kitchen, a storeroom), the walls between them with
  * doors on private rooms and open doorways between public ones, and furniture by recipe, each piece a tile the GM can
- * move (Patrick, 7 Nov).
+ * move (7 Nov).
  *
  * Rooms: the building's inside (its walls' inner face) is cut, as a guillotine cuts paper, square to its own frame,
  * into rooms of the program's shares, each at least ROOM.min squares across; the rooms that must meet the front door
@@ -137,7 +137,7 @@ export function programFor(use, a) {
 }
 
 /**
- * Furniture, each piece a tile the GM can move (Patrick, 7 Nov: grouped as the art groups it, a bed made up, a table
+ * Furniture, each piece a tile the GM can move (7 Nov: grouped as the art groups it, a bed made up, a table
  * with its chairs and what's on it). size: its art in squares [across, deep] as the art lies (the files are 200 px a
  * square); body: the part that's drawn, as big as it is in any of its files, which the layout sets flush against a wall
  * and keeps clear of doors and other pieces; on: it stands on another piece (its tile over that one's); back: the side
@@ -397,7 +397,7 @@ function layRooms(poly, program, doors, openings = []) {
 }
 
 /**
- * Floors (M6 chunk 8, Patrick, 8 Nov: Foundry 14's levels on one scene; by use, plus when the plan asks; stairs as art
+ * Floors (M6 chunk 8, 8 Nov: Foundry 14's levels on one scene; by use, plus when the plan asks; stairs as art
  * with a Change Level region; an inn's guest floor a corridor with rooms off it; the stairs against a wall of the main
  * room; a cellar of stone and earth). height: a floor's height in feet; most: the most upper floors; corridor: an upper
  * floor's corridor across, in squares (the stairs and a way past them); stairs: their art's size [across, along]; a

@@ -1,5 +1,5 @@
 /**
- * A battle map's lights and atmosphere (M6 chunk 6, Patrick's choices of 8 Nov): where its fires, candles, lanterns,
+ * A battle map's lights and atmosphere (M6 chunk 6, the choices of 8 Nov): where its fires, candles, lanterns,
  * torches and lamp posts stand, each a Foundry light, most also a piece of FA art laid as a tile beside the furniture;
  * and the mist lying in its low places.
  *
@@ -68,7 +68,7 @@ const HOUSE_LANTERN = 0.3;
  * that get them; around a square's edge, how far apart and how far in. Each way's posts are evenly spaced along it
  * and keep their rhythm: one whose place is taken slides a little along the street (up to SLIDE), else is left out.
  * Paired: a highway's posts, or any way's PAIRED wide (squares) or wider, face each other across it (main roads:
- * Patrick's choice, 8 Nov); the rest have theirs all down one side.
+ * chosen 8 Nov); the rest have theirs all down one side.
  */
 const LAMPS = { step: 7, laneStep: 12, curb: 0.35, classes: new Set(["highway", "street"]), lanes: new Set(["lane"]), squareStep: 6, squareIn: 0.7, apart: 3 };
 const SLIDE = [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8];

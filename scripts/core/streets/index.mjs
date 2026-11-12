@@ -13,7 +13,7 @@ export { districtGates } from "./borders.mjs";
  * District types. Spacings and widths in feet. streets: the main streets (spacing range: each district picks a
  * value in it from its seed); lanes: the closer pass between them (only: keep them to the field's minor direction,
  * across the main streets); back: back lanes a plot's depth behind the main streets (depth: a range, picked per
- * district from its seed; the burgage pattern: long plots from the street back to the lane, Patrick 24 Oct);
+ * district from its seed; the burgage pattern: long plots from the street back to the lane, 24 Oct);
  * bridge: what each pass builds where it crosses water (none: it stops at the bank); bend: the wobble in degrees;
  * trim: drop short dead ends.
  */

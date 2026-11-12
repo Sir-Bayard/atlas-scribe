@@ -50,7 +50,7 @@ export function waterBand(w, add = 0, share = 1) {
 }
 
 /**
- * Ice along a stream in winter (Patrick, 9 Nov, from his hand-built winter map: shelves along both banks, a narrower channel open
+ * Ice along a stream in winter (9 Nov, from his hand-built winter map: shelves along both banks, a narrower channel open
  * between them, "irregularity" along their edges). The open channel is channel of the water's width, swelling and
  * narrowing by up to ragged of itself over a wave of wave squares, its middle swinging up to sway of the width either
  * side, never narrower than least; a finer wobble (fine, over fineWave) makes its edges ragged, and now and then a
