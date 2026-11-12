@@ -14,7 +14,7 @@ import { labelsOf, useLabelsOf } from "../core/labels.mjs";
 import { titleBox, paintTitle } from "../render/styles/illustrated.mjs";
 import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
 import { union, shapes } from "../core/lots/poly.mjs";
-import { FURNITURE } from "../core/layout/rooms.mjs";
+import { FURNITURE, FLOORS } from "../core/layout/rooms.mjs";
 import { heightRegions, groundOf, WALKING } from "../core/height.mjs";
 import { LIGHTS, LIT_FROM } from "../core/layout/lights.mjs";
 import { CASTLE } from "../core/layout/castle.mjs";
@@ -61,7 +61,9 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   const thumb = await upload(`${folder}/thumbs`, `${id}.webp`, thumbBlob);
 
   // (a battle map left without weather snows in winter; "none" for none)
-  let weather = opts.weather ?? (layout?.kind === "battle" && (layout.season ?? plan.season) === "winter" ? "snow" : "");
+  // (a battle map is one by its layout, or by its plan when it couldn't be laid out again for a publish by path)
+  const battle = (layout?.kind ?? plan.kind) === "battle";
+  let weather = opts.weather ?? (battle && (layout?.season ?? plan.season) === "winter" ? "snow" : "");
   if (weather === "none") weather = "";
   if (weather && !(weather in (CONFIG.weatherEffects ?? {}))) {
     warnings.push(`The weather "${weather}" isn't one this world offers, so the scene has none.`);
@@ -91,7 +93,6 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // A battle map's level reaches up to its roofs: Foundry draws a door's art at the top of the level, under a roof
   // there. AtlasScribe sets that top only on a level with none, or the one it set before (kept as the scene's flag
   // levelTop), and takes it off again when the scene becomes a settlement map; a top the GM set is left alone
-  const battle = layout?.kind === "battle";
   const reach = battle ? { elevation: { bottom: 0, top: ROOF_HEIGHT.low } } : {};
   let scene, created = false;
   if (sceneId) {
@@ -123,12 +124,17 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // A battle map's floors above and below its ground (Foundry 14's levels): a level for each, its image over (or under)
   // the ground's; every document AtlasScribe places below then goes on its own floor's level
   let levelOf = null;
-  if (battle) {
+  if (!battle) {
+    // (a settlement map over what was a battle map with floors: its floors' levels come out)
+    try { await syncLevels(sceneId, [], image.path); } catch (e) { warnings.push(`The old floors' levels couldn't be taken out (${e.message}).`); }
+  } else {
     try {
       onProgress(0.8, "Placing the floors");
       // (a castle's 20 ft level is its wall walk as well as its buildings' floors at that height)
       const walk = layout?.items?.some((i) => i.kind === "wall" && i.curtain);
       levelOf = await syncLevels(sceneId, image.levels, image.path, walk ? { 2: "Wall walk" } : {});
+      // (a map given by its path brings no floor images: a scene without its floors' levels gets only the ground's)
+      if (!levelOf && !Array.isArray(image.levels) && layout?.items?.some((i) => i.kind === "stairs")) warnings.push("This battle map's floors above and below the ground weren't made: they come only with a map rendered for the scene, so only the ground's walls, furniture and lights were placed.");
     } catch (e) {
       warnings.push(`The floors above and below the ground couldn't all be made levels (${e.message}).`);
     }
@@ -137,7 +143,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // set before and no adapter sets now (the rules turned to Foundry's own, or a settlement map) come off again, unless
   // the GM changed them
   try {
-    const change = battle && typeof R.sceneData === "function" ? R.sceneData({ plan, layout, scene: sceneById(sceneId) }) : unsetScene(sceneById(sceneId));
+    // (a battle map with no layout, published by its path and not laid out again, keeps what it had)
+    const change = battle && !layout ? null : battle && typeof R.sceneData === "function" ? R.sceneData({ plan, layout, scene: sceneById(sceneId) }) : unsetScene(sceneById(sceneId));
     if (change && Object.keys(change).length) await sceneById(sceneId).update(change);
   } catch (e) {
     warnings.push(`The scene's ${R.label ?? R.id} settings couldn't be made (${e.message}).`);
@@ -509,10 +516,10 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
     if (f3 && f4) out.push({ ...fenceOnly, c: c(f3.path.at(-1), f4.path[0]), door: D.DOOR, doorSound: "woodBasic",
       animation: swing(CORE_GATE), flags: flags("gate", doorGrid(FENCE_THICK)) });
   }
-  // (none wholly off the map, where a building at its edge runs past it)
+  // (none wholly off the map, where a building at its edge runs past it, and none whose ends round to one pixel)
   const [MW, MH] = layout.size?.squares ?? [Infinity, Infinity];
   const x1 = sceneX + MW * pps, y1 = sceneY + MH * pps;
-  return out.filter(({ c: [ax, ay, bx, by] }) => Math.max(ax, bx) >= sceneX && Math.min(ax, bx) <= x1 && Math.max(ay, by) >= sceneY && Math.min(ay, by) <= y1);
+  return out.filter(({ c: [ax, ay, bx, by] }) => (ax !== bx || ay !== by) && Math.max(ax, bx) >= sceneX && Math.min(ax, bx) <= x1 && Math.max(ay, by) >= sceneY && Math.min(ay, by) <= y1);
 }
 
 /**
@@ -579,8 +586,8 @@ export function battleRoofs(layout, sceneX, sceneY, pps, plan) {
 
 /** How much darker a cellar is (an Adjust Darkness Level region's darken, on top of indoors). */
 const CELLAR_DARK = 0.55;
-/** A floor's height in feet (rooms.mjs FLOORS.height): a floor's level, its furniture's and its lights' elevation. */
-const FLOOR_FT = 10;
+/** A floor's height in feet: a floor's level, its furniture's and its lights' elevation. */
+const FLOOR_FT = FLOORS.height;
 /** A floor's level's name. */
 // (counted as American floors are: the ground floor is the first)
 const FLOOR_NAMES = { "-1": "Cellar", 1: "Second floor", 2: "Third floor", 3: "Fourth floor" };
@@ -632,7 +639,7 @@ async function syncLevels(sceneId, wanted, groundPath, names = {}) {
   for (const w of floors) {
     const data = {
       name: names[w.floor] ?? FLOOR_NAMES[w.floor] ?? `Floor ${w.floor}`,
-      elevation: w.floor < 0 ? { bottom: w.floor * FLOOR_FT, top: (w.floor + 1) * FLOOR_FT } : { bottom: w.floor * FLOOR_FT, top: (w.floor + 1) * FLOOR_FT },
+      elevation: { bottom: w.floor * FLOOR_FT, top: (w.floor + 1) * FLOOR_FT },
       background: { src: w.path },
       sort: w.floor,
       flags: { [MOD]: { floor: w.floor } },

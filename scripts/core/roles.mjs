@@ -111,6 +111,16 @@ const COLORS = {
   "field.stubble.winter": "#d8d6cf",
   "field.pasture.winter": "#e4e8ed",
   "field.fallow.winter": "#dde2e2",
+  // (a battle map's floors, walls, fences and banks)
+  floor: "#9c7a56",
+  "floor.stone": "#8f8a82",
+  "floor.wood": "#9c7a56",
+  window: "#8fa9b8",
+  fence: "#6f5a44",
+  "fence.stone": "#8a857e",
+  edge: "#7d7466",
+  "edge.bank": "#7a6a50",
+  furn: "#7a5e44",
 };
 
 /** The color that stands in for a role. */

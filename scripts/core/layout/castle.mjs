@@ -13,7 +13,7 @@
  * each curtain run its Foundry walls (`curtain` on the wall item); and the wall stairs are stairs items of their own.
  * Pure: runs anywhere.
  */
-import { pointInPolygon, distanceToPath, polygonsOverlap, shapeToPolygon } from "../geom.mjs";
+import { pointInPolygon, distanceToPath, polygonsOverlap, solidOverlap, shapeToPolygon } from "../geom.mjs";
 import { offset } from "../lots/poly.mjs";
 import { rng } from "../rng.mjs";
 import { FURNITURE } from "./rooms.mjs";
@@ -166,7 +166,7 @@ function alongWalls(room, want, { keep = [], doors = [], r }) {
       if (!body.every((q) => pointInPolygon(q, room) && distanceToPath(q, [...room, room[0]]) > 0.02 - 1e-9)) continue;
       if (doors.some((d) => body.some((q) => Math.hypot(q[0] - d[0], q[1] - d[1]) < 1.1) || Math.hypot(c[0] - d[0], c[1] - d[1]) < 1.3)) continue;
       if (keep.some((poly) => polygonsOverlap(body, poly))) continue;
-      if (placed.some((p) => polygonsOverlap(body, p.body))) continue;
+      if (placed.some((p) => solidOverlap(body, p.body))) continue;
       placed.push({ f, x: r3(c[0]), y: r3(c[1]), rot: r3(rot), variant: r.int(8), body });
       break;
     }

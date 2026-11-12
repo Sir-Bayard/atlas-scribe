@@ -10,7 +10,7 @@
  */
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs";
-import { normalize, LABEL_SIZES } from "../core/plan.mjs";
+import { normalize, LABEL_SIZES, OUTPUT_LIMITS } from "../core/plan.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle, cleanFont } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
@@ -55,7 +55,7 @@ const GEN = "@gen:";
  */
 const BATTLE_TOOL = { id: "battle", label: "Battle map", geometry: "box", how: "battle" };
 const toolFor = (id) => (id === "battle" ? BATTLE_TOOL : toolOf(id));
-const BATTLE = { PRESETS: [30, 45, 60], preset: 45, BIG: 60 };
+const BATTLE = { PRESETS: [30, 45, 60], preset: 45, BIG: 60, MOST: Math.floor(OUTPUT_LIMITS.maxSide / OUTPUT_LIMITS.minPxPerSquare) };
 const genCache = new WeakMap();
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -1326,7 +1326,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       // Delete and Esc are Foundry's
       if (target !== document.body ? !this.element?.contains(target) : !this.#pressedHere) return;
       if (ev.key === "Enter") { if (this.#tool.id === "battle" && this.#zoomBox && !this.#tool.box) this.#makeBattle(); else this.#finish(); }
-      else if (ev.key === "Escape") { this.#endTool(); this.render(); }
+      // (Esc while a battle map is being made leaves the tool and its Stop button as they are: Stop stops it)
+      else if (ev.key === "Escape") { if (!this.#zooming) { this.#endTool(); this.render(); } }
       else if (ev.key === "Backspace" || ev.key === "Delete") { this.#tool.points.pop(); this.render(); }
       else return;
       ev.preventDefault();
@@ -1384,7 +1385,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const raw = t?.box ?? this.#zoomBox;
     const box = raw ? [Math.min(raw[0], raw[2]), Math.min(raw[1], raw[3]), Math.max(raw[0], raw[2]), Math.max(raw[1], raw[3])] : null;
     const size = box ? zoomSize(this.#plan, box, zoom).squares : null;
-    return { zoom, zooms: ZOOMS, preset: this.#preset, presets: BATTLE.PRESETS, box, size, big: !!size && Math.max(...size) > BATTLE.BIG, limit: BATTLE.BIG, placed: !!this.#zoomBox && !t?.box, working: this.#working, zooming: this.#zooming };
+    return { zoom, zooms: ZOOMS, preset: this.#preset, presets: BATTLE.PRESETS, box, size, big: !!size && Math.max(...size) > BATTLE.BIG, limit: BATTLE.BIG, tooBig: !!size && Math.max(...size) > BATTLE.MOST, most: BATTLE.MOST, placed: !!this.#zoomBox && !t?.box, working: this.#working, zooming: this.#zooming };
   }
 
   /** The box let go (or a click: a box of the preset size around it), kept on the map within its edges. */
@@ -1405,6 +1406,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     }
     t.box = null;
     t.points = [];
+    // (a box dragged while the battle map of the last one is being made isn't placed)
+    if (box && this.#zooming) box = null;
     if (box) {
       box = [Math.max(0, box[0]), Math.max(0, box[1]), Math.min(MW, box[2]), Math.min(MH, box[3])].map((v) => Math.round(v * 100) / 100);
       // (a box too small to fight in is dropped: under five battle squares a side)
@@ -1487,6 +1490,8 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   async #makeBattle() {
     const before = this.#plan;
     if (!this.#zoomBox || this.#working || !before) return;
+    // (one past the most squares an image can hold at its fewest pixels a square can't be made)
+    if (Math.max(...zoomSize(before, this.#zoomBox, this.#battleZoom()).squares) > BATTLE.MOST) return;
     if (!(await this.#mayDiscard())) return;
     // (while the dialog was up: a job started, the plan changed (asked about again), or the box went)
     if (this.#working || !this.#zoomBox || !(await this.#mayReplace(before)) || this.#working) return;
@@ -1502,6 +1507,9 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       this.#error = e.cancelled ? "Stopped making the battle map." : `The battle map couldn't be made: ${e.message ?? e}`;
     }
     this.#zooming = false;
+    // (the window closed meanwhile, asking the job to stop, which it does only between its steps: what it made is let go,
+    // and nothing is opened)
+    if (!this.rendered) return;
     if (!res?.plan || this.#plan !== from) {
       // (changes made in the panel meanwhile are applied now, as after a draw)
       if (this.#queue.length) setTimeout(() => this.#flush(), 0);

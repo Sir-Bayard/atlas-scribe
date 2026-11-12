@@ -14,7 +14,7 @@ import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
 import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY } from "./core/quick.mjs";
-import { briefPlan, BRIEF } from "./core/brief.mjs";
+import { briefPlan, BRIEF, BRIEF_LABELS } from "./core/brief.mjs";
 import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
 import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
@@ -245,12 +245,15 @@ const api = {
     return briefPlan(brief);
   },
 
-  /** The brief's choices: { site: [...], size, season, time, weather, ground, features, trees, litter, rocks, brush, use, buildingSize, place, quarter, camp }. */
+  /**
+   * The brief's choices: each one's values ({ site: [...], size, season, time, weather, ground, features, trees, litter,
+   * rocks, brush, use, buildingSize, place, quarter, camp, ... }), and labels, the words the window shows for them.
+   */
   get briefChoices() {
-    return structuredClone(BRIEF);
+    return { ...structuredClone(BRIEF), labels: structuredClone(BRIEF_LABELS) };
   },
 
-  /** Reads a description in words, as the Describe box does: { brief, chips, later, unknown } (see core/describe.mjs). */
+  /** Reads a description in words, as the Describe box does: { brief, chips, later, skipped, unknown } (see core/describe.mjs). */
   readDescription(text = "") {
     return readDescription(text);
   },

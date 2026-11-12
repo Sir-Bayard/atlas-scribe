@@ -14,7 +14,7 @@
  *   - castle: a curtain wall with its towers and gatehouse (layout/castle.mjs builds their floors and the wall walk), a
  *     keep and buildings around its yard, its road in through the gate; a fort, a castle or a great castle by size.
  */
-import { rng } from "./rng.mjs";
+import { rng, hash128 } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
 import { CHARACTERS } from "./character.mjs";
 
@@ -160,6 +160,12 @@ export function briefPlan(input = {}) {
   const taken = []; // (places kept clear of scatter, woods and each other: { at, r } circles, or { path, half } bands)
   const free = (p, pad = 0) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1 && !taken.some((t) => (t.path ? nearPath(p, t.path) < t.half + pad : Math.hypot(p[0] - t.at[0], p[1] - t.at[1]) < t.r + pad));
   const has = (f) => b.features.includes(f);
+  // (what's said of a feature left out for want of room: beside what, on which map, and whether a bigger one may have it)
+  const SITE_WORD = { roadside: "the building", camp: "the camp", castle: "the castle", street: "the streets" };
+  // (a castle's walls and a street's houses fill the map whatever its size: no bigger one is offered as having room)
+  const biggest = b.size === "large" || b.site === "castle" || b.site === "street";
+  const mapWord = b.site === "castle" ? `on a ${BRIEF_LABELS.castleSize[b.size].replace(/ \(.*$/, "").toLowerCase()}'s map` : `on a ${b.size} map`;
+  const noRoom = (what) => notes.push(`There's no room for ${what}${SITE_WORD[b.site] ? ` clear of ${SITE_WORD[b.site]}` : " clear of the rest"} ${mapWord}, so it's left out${biggest ? "" : ": a bigger one may have room"}.`);
 
   // 1. The road: across the map's long way, a little below its middle, wandering gently (a roadside's and a camp's by
   // it; a street's is the district's main street, below)
@@ -205,7 +211,7 @@ export function briefPlan(input = {}) {
   if (has("cliff")) {
     const want = H * r.range(0.24, 0.34), top = roomTop >= roomBottom || roomTop >= want + 3.5, room = top ? roomTop : roomBottom;
     const depth = Math.min(want, room - 4.5);
-    if (depth < 3.5) notes.push(`There's no room for a cliff beside the ${b.site === "camp" ? "camp" : "building"} on a ${b.size} map, so it's left out${b.size === "large" ? "" : ": a larger map has room"}.`);
+    if (depth < 3.5) noRoom("a cliff");
     else {
       const edge = wander(r, top ? depth : H - depth, W, Math.max(0.5, Math.min(2.2, (room - 3.5 - depth) / 2)));
       cliffEdge = edge;
@@ -233,7 +239,7 @@ export function briefPlan(input = {}) {
     const order = down ? [...downs.map((t) => [t, true]), ...alongs.map((t) => [t, false])] : [...alongs.map((t) => [t, false]), ...downs.map((t) => [t, true])];
     let path = null;
     for (const [t, isDown] of order) { const q = t(); if (ok(q, isDown)) { path = q; break; } }
-    if (!path) notes.push(`There's no room for a stream clear of the rest on a ${b.size} map, so it's left out${b.size === "large" ? "" : ": a larger map has room"}.`);
+    if (!path) noRoom("a stream");
     else {
       features.push({ id: "stream", type: "water", class: "stream", path: path.map(pt) });
       taken.push({ path, half: 2.4 });
@@ -257,14 +263,16 @@ export function briefPlan(input = {}) {
   };
   // (a smaller pond where a full one won't go)
   const pondR = r.range(3, 4.5);
-  if (has("pond") && ![1, 0.8, 0.65].some((k) => blob("pond", "water", pondR * k, { class: "pond" }))) notes.push(`There's no room for a pond clear of the rest on a ${b.size} map, so it's left out${b.size === "large" ? "" : ": a larger map has room"}.`);
+  if (has("pond") && ![1, 0.8, 0.65].some((k) => blob("pond", "water", pondR * k, { class: "pond" }))) noRoom("a pond");
 
   // (a street's main street, cross street and district)
   if (b.site === "street") street(b, r, W, H, features, taken, has);
 
   // 5. Rises and hollows (hills bring a few low rises of their own), kept off what's placed
-  if (has("rise")) blob("rise", "height", r.range(5, 7.5), { height: 10, edge: "slope" });
-  if (has("hollow")) blob("hollow", "height", r.range(4, 6), { height: -10, edge: "bank" });
+  // (smaller where a full one won't go, and said when none will)
+  const riseR = r.range(5, 7.5), hollowR = r.range(4, 6);
+  if (has("rise") && ![1, 0.8, 0.6].some((k) => blob("rise", "height", riseR * k, { height: 10, edge: "slope" }))) noRoom("a rise");
+  if (has("hollow") && ![1, 0.8, 0.6].some((k) => blob("hollow", "height", hollowR * k, { height: -10, edge: "bank" }))) noRoom("a hollow");
   if (b.ground === "hills") for (let k = 0; k < 3; k++) blob(`hill-${k + 1}`, "height", r.range(4, 7), { height: 5 * r.int(2) + 5, edge: "slope" });
 
   // 6. Woods by the ground: a forest all over (cleared around a site), a clearing's ring around an open middle, a few
@@ -305,7 +313,9 @@ export function briefPlan(input = {}) {
   const name = b.name || defaultName(b, site);
   const plan = {
     atlasScribe: PLAN_VERSION,
-    id: `battle-${b.site}-${b.seed}`,
+    // (its name, and a short mark of all its choices, so two battle maps of the same site and seed but other choices
+    // don't share a file or a scene)
+    id: `battle-${b.site}-${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "map"}-${b.seed}-${hash128(JSON.stringify(b))[0].toString(36).slice(0, 4)}`,
     name,
     kind: "battle",
     seed: b.seed,

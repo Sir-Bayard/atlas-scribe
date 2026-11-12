@@ -329,6 +329,7 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
     return true;
   };
 
+  const GATE_SQUARE = 0.9;
   // Gatehouses: a block on the wall over one road crossing it squarely enough, else a tower each side; an opening
   // for water, or for several roads together, gets a tower each side
   const gates = [];
@@ -336,7 +337,9 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
     const gr = r.fork("gate", keyOf(g.at));
     const blockRoll = gr.next(), lookRoll2 = gr.next();
     // (on a battle map, a gatehouse wherever one can stand: Patrick's full gatehouse)
-    const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= 0.6 && !g.roads[0].corner && (works || blockRoll < 0.5);
+    // (a battle map's, whose passage lies square to the wall, only over a road crossing it all but squarely, within
+    // about 25 degrees, so the road runs down its passage, not through its guard rooms: else a tower each side)
+    const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= (works ? GATE_SQUARE : 0.6) && !g.roads[0].corner && (works || blockRoll < 0.5);
     if (block) {
       const n = outward(g.u);
       // (a works gatehouse: its passage the road's width or more, a guard room each side, its walls)

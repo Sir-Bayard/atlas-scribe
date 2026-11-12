@@ -52,19 +52,20 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
       progress(0.01 + 0.09 * (++done / (unique.length || 1)), "Loading art");
     }
   }));
-  const bitmaps = {};
+  const bitmaps = {}, urlsOf = new Map(urls);
   const failedArt = [], brokenArt = [];
   for (const [role, list] of urls) {
     bitmaps[role] = list.map((u) => loaded.get(u)).filter(Boolean);
     if (list.length && !bitmaps[role].length) failedArt.push(role);
     if (bitmaps[role].length < list.length) brokenArt.push(role);
   }
+  // (a variant picks from all of a role's files, so one that failed to load changes only the pieces that wanted it,
+  // which take the role's first that loaded, not which file every other piece gets)
+  const pickOf = (all, ok, variant) => (all?.length ? (ok(all[Math.abs(variant | 0) % all.length]) ? all[Math.abs(variant | 0) % all.length] : all.find(ok)) ?? null : null);
   const getArt = (role, variant = 0) => {
-    const list = bitmaps[role];
-    return list?.length ? list[Math.abs(variant | 0) % list.length] : null;
+    const u = pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
+    return u ? loaded.get(u) : null;
   };
-  // (each role's files that loaded, with their addresses, for pieces that become tiles)
-  const loadedUrls = Object.fromEntries(urls.map(([role, list]) => [role, list.filter((u) => loaded.get(u))]));
 
   // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur, a single
   // one too, so soft edges don't fade toward the map's border. The margin is capped, so a map at hundreds of pixels a
@@ -103,20 +104,21 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   };
   const floors = style.floorsOf?.(layout) ?? [];
   const n = cols * rows;
-  const out = paintAll(0, 0.1, floors.length ? 0.7 : 0.9);
+  const out = paintAll(0, 0.1, floors.length ? 0.6 : 0.9);
+  // (the ground saved, and its thumbnail made, and let go before any other floor is painted, so only one map-sized
+  // canvas is held at a time)
+  progress(floors.length ? 0.6 : 0.9, "Saving the image");
+  const blob = await out.convertToBlob({ type: "image/webp", quality });
+  progress(floors.length ? 0.62 : 0.94, "Making the thumbnail");
+  const th = thumbCanvas(out, THUMB);
+  out.width = out.height = 1;
   // (each other floor saved as soon as it's painted, and let go)
   const levels = [];
   for (const [k, floor] of floors.entries()) {
-    const c = paintAll(floor, 0.7 + (0.2 * k) / floors.length, 0.7 + (0.2 * (k + 1)) / floors.length);
+    const c = paintAll(floor, 0.62 + (0.3 * k) / floors.length, 0.62 + (0.3 * (k + 1)) / floors.length);
     levels.push({ floor, blob: await c.convertToBlob({ type: "image/webp", quality }) });
     c.width = c.height = 1;
   }
-
-  progress(0.9, "Saving the image");
-  const blob = await out.convertToBlob({ type: "image/webp", quality });
-  progress(0.94, "Making the thumbnail");
-  const th = thumbCanvas(out, THUMB);
-  out.width = out.height = 1;
 
   // Overhead pieces: each painted on a canvas of its own, as big as its box, laid onto the thumbnail, saved and let go
   // before the next, so only one is held at a time
@@ -136,18 +138,17 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
   // Furniture (a battle map's): each piece a tile, its art placed by the part of its file that's drawn
   const furniture = [];
   for (const { role, variant, piece } of style.furniture?.(layout) ?? []) {
-    const list = loadedUrls[role];
-    if (!list?.length) continue;
-    const url = list[Math.abs(variant | 0) % list.length], bmp = loaded.get(url);
+    const url = pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
+    if (!url) continue;
+    const bmp = loaded.get(url);
     const at = artPlacement(piece, insetsOf(bmp));
     furniture.push({ src: url, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
   }
   // Mist (a battle map's): each overlay a tile over the low place it lies in
   const mist = [];
   for (const m of style.mist?.(layout) ?? []) {
-    const list = loadedUrls[m.role];
-    if (!list?.length) continue;
-    const url = list[Math.abs(m.variant | 0) % list.length];
+    const url = pickOf(urlsOf.get(m.role), (x) => !!loaded.get(x), m.variant);
+    if (!url) continue;
     mist.push({ src: url, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
   }
   for (const bmp of loaded.values()) bmp?.close();

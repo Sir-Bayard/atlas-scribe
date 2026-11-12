@@ -36,7 +36,7 @@ import { marketStalls } from "./market.mjs";
 import { fillCemetery } from "./cemetery.mjs";
 import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
 import { cliffOf, offsetLine } from "../cliffs.mjs";
-import { battleYards, battleBack } from "./battle.mjs";
+import { battleYards, battleBack, footprint } from "./battle.mjs";
 import { castleWorks } from "./castle.mjs";
 import { terrainOf, edgeSpan, shiftRight, resample, iceShelves } from "./terrain.mjs";
 import { battleWoods, rockfall, openRocks, WILD_PROPS, WILD_SCALE } from "./wild.mjs";
@@ -1618,8 +1618,25 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       });
     }
     castleWorks(items, W, H, plan.seed);
+    // (a plan's own scattered rocks, logs and brush that the houses built since have come down on, Quick Start's on a
+    // street say, left out: they'd lie on a house's floor)
+    {
+      const feet = items.filter((i) => i.kind === "building").map(footprint);
+      const SCATTERED = new Set(["stump", "log", "branch", "rock", "boulder", "bush", "fern"]);
+      let dropped = 0;
+      for (let k = items.length - 1; k >= 0; k--) {
+        const i = items[k];
+        if (i.kind === "prop" && SCATTERED.has(i.class) && i.from === i.id && feet.some((f) => pointInPolygon([i.x, i.y], f))) { items.splice(k, 1); dropped++; }
+      }
+      if (dropped) notes.push({ level: "info", id: null, message: `${dropped === 1 ? "A rock, log or bush" : `${dropped} rocks, logs and bushes`} of the plan's lay inside buildings and ${dropped === 1 ? "was" : "were"} left out.` });
+    }
     battleYards(items, W, H);
     buildingInteriors(items, plan.seed, notes);
+    // (the words it doesn't know in a building's Upstairs rooms and Cellar rooms too)
+    for (const b of items.filter((i) => i.kind === "building" && (i.upstairs || i.cellarRooms) && (i.main || i.id === i.from))) for (const [field, what] of [["upstairs", "upstairs rooms"], ["cellarRooms", "cellar rooms"]]) {
+      const unknown = b[field] ? parseRooms(b[field]).unknown : [];
+      if (unknown.length) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: ${what} not known (${unknown.join(", ")}); they're left out.` });
+    }
     for (const b of items.filter((i) => i.kind === "building" && i.rooms)) {
       const { rooms, unknown } = parseRooms(b.rooms);
       if (unknown.length) notes.push({ level: "warning", id: b.from ?? b.id, message: `${b.name ?? "A building"}: rooms not known (${unknown.join(", ")}); they're left out.` });

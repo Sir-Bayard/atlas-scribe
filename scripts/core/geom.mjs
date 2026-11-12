@@ -166,6 +166,17 @@ export function polygonsOverlap(a, b) {
   return pointInPolygon(a[0], b) || pointInPolygon(b[0], a);
 }
 
+/**
+ * True when two polygons share some area: polygonsOverlap with b shrunk a hair toward its middle, so two flush pieces
+ * that share a corner point are told apart from two that only touch, and either's middle inside the other counting.
+ */
+export function solidOverlap(a, b, eps = 0.01) {
+  const mid = (p) => p.reduce((s, q) => [s[0] + q[0] / p.length, s[1] + q[1] / p.length], [0, 0]);
+  const ca = mid(a), cb = mid(b);
+  const shrunk = b.map(([x, y]) => { const dx = cb[0] - x, dy = cb[1] - y, l = Math.hypot(dx, dy) || 1; return [x + (dx / l) * eps, y + (dy / l) * eps]; });
+  return polygonsOverlap(a, shrunk) || pointInPolygon(cb, a) || pointInPolygon(ca, b);
+}
+
 /** Length of a path. */
 export function pathLength(path) {
   let n = 0;

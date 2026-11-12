@@ -11,7 +11,7 @@
  * Foundry.
  */
 import { intersect, difference, area, offset, signedArea } from "../lots/poly.mjs";
-import { pointInPolygon, polygonsOverlap, spansAt } from "../geom.mjs";
+import { pointInPolygon, polygonsOverlap, solidOverlap, spansAt } from "../geom.mjs";
 import { levelAt } from "../height.mjs";
 import { rng } from "../rng.mjs";
 
@@ -909,7 +909,7 @@ function furnish(q, room, openings, buildingPoly, r, out, blocked = []) {
     return [p[0] + ROOM.lane * (ua[0] / la + ub[0] / lb), p[1] + ROOM.lane * (ua[1] / la + ub[1] / lb)];
   });
   const inside = (poly) => poly.every((p) => pointInPolygon(p, room));
-  const fits = (poly) => inside(poly) && !placed.some((p) => !FURNITURE[p.f].floor && polygonsOverlap(p.poly, poly)) && !keep.some((k) => polygonsOverlap(k, poly)) && throughOK(widen(poly));
+  const fits = (poly) => inside(poly) && !placed.some((p) => !FURNITURE[p.f].floor && solidOverlap(p.poly, poly)) && !keep.some((k) => polygonsOverlap(k, poly)) && throughOK(widen(poly));
   const covered = () => placed.reduce((s, p) => s + (FURNITURE[p.f].floor ? 0 : FURNITURE[p.f].body[0] * FURNITURE[p.f].body[1]), 0) / roomArea;
   // (against: set flush to a wall)
   const put = (f, w, extra = {}) => { const item = { f, x: w.x, y: w.y, rot: w.rot, variant: r.int(12), poly: w.poly, wide: widen(w.poly), ...extra }; placed.push(item); out.push({ f, x: w.x, y: w.y, rot: w.rot, variant: item.variant, ...(extra.wall && !extra.wall.gap ? { against: true } : {}) }); return item; };

@@ -24,6 +24,7 @@ import { rng } from "../rng.mjs";
 import { pointInPolygon, distanceToPath } from "../geom.mjs";
 import { levelAt } from "../height.mjs";
 import { footprint } from "./battle.mjs";
+import { FLOORS } from "./rooms.mjs";
 
 /** The props a plan can place that are lights (each lit where it stands). */
 export const LIGHT_PROPS = ["campfire", "firepit", "brazier", "torch", "lamp-post"];
@@ -82,8 +83,8 @@ const SQUARES = new Set(["square", "plaza", "market"]);
  * [width, height] in squares (street lamps stay on it). Light props the plan placed are taken out of items (they're
  * drawn as lights, not painted).
  */
-/** A floor's height in feet (rooms.mjs FLOORS.height). */
-const FLOOR_FT = 10;
+/** A floor's height in feet. */
+const FLOOR_FT = FLOORS.height;
 
 /** How far apart an upstairs corridor's lanterns are, in squares. */
 const CORRIDOR_LANTERN = 7;

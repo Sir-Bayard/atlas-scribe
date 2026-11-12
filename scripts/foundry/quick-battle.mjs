@@ -10,13 +10,13 @@ import { readDescription } from "../core/describe.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // (every field's name begins b-: the Settlement tab shares the form)
-const select = (name, title, key, value) => `<div class="form-group"><label>${title}</label><select name="b-${name}">${BRIEF[key].map((v) => `<option value="${v}" ${v === value ? "selected" : ""}>${esc(BRIEF_LABELS[key][v])}</option>`).join("")}</select></div>`;
+const select = (name, title, key, value) => `<div class="form-group"><label for="as-qb-${name}">${title}</label><select id="as-qb-${name}" name="b-${name}">${BRIEF[key].map((v) => `<option value="${v}" ${v === value ? "selected" : ""}>${esc(BRIEF_LABELS[key][v])}</option>`).join("")}</select></div>`;
 
 /** The tab's HTML, its form at the defaults. */
 export function battleTabHTML() {
   const b = normalizeBrief({});
   return `<section class="as-qs-battle" data-tab="battle" hidden>
-    <div class="form-group stacked"><label>Describe it (optional)</label><textarea name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk; a fort with roofed towers in winter..."></textarea></div>
+    <div class="form-group stacked"><label for="as-qb-describe">Describe it (optional)</label><textarea id="as-qb-describe" name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk; a fort with roofed towers in winter..."></textarea></div>
     <div class="as-qs-chips" aria-live="polite"></div>
     <h4>Site</h4>
     <div class="as-qs-two">
@@ -24,7 +24,7 @@ export function battleTabHTML() {
       ${select("season", "Season", "season", b.season)}${select("time", "Time of day", "time", b.time)}
       ${select("weather", "Weather", "weather", b.weather)}${select("ground", "Ground", "ground", b.ground)}
     </div>
-    <div class="form-group"><label>Features</label><div class="as-qs-features">${BRIEF.features.map((f) => `<label><input type="checkbox" name="b-f-${f}" ${b.features.includes(f) ? "checked" : ""}> ${esc(BRIEF_LABELS.features[f])}</label>`).join("")}</div></div>
+    <div class="form-group"><label id="as-qb-features">Features</label><div class="as-qs-features" role="group" aria-labelledby="as-qb-features">${BRIEF.features.map((f) => `<label><input type="checkbox" name="b-f-${f}" ${b.features.includes(f) ? "checked" : ""}> ${esc(BRIEF_LABELS.features[f])}</label>`).join("")}</div></div>
     <h4>Scatter</h4>
     <div class="as-qs-two">
       ${select("trees", "Trees", "trees", b.trees)}${select("litter", "Stumps and logs", "litter", b.litter)}
@@ -33,14 +33,14 @@ export function battleTabHTML() {
     <div data-site="roadside" hidden>
       <h4>Building</h4>
       <div class="as-qs-two">${select("use", "Use", "use", b.building.use)}${select("bsize", "Size", "buildingSize", b.building.size)}</div>
-      <div class="form-group stacked"><label>Rooms</label><input type="text" name="b-rooms" placeholder="From its use if empty (common room with a stage, kitchen, two bedrooms)"></div>
-      <div class="form-group"><label>Name</label><input type="text" name="b-bname" placeholder="Made up for an inn if empty"></div>
+      <div class="form-group stacked"><label for="as-qb-rooms">Rooms</label><input type="text" id="as-qb-rooms" name="b-rooms" placeholder="From its use if empty (common room with a stage, kitchen, two bedrooms)"></div>
+      <div class="form-group"><label for="as-qb-bname">Name</label><input type="text" id="as-qb-bname" name="b-bname" placeholder="Made up for an inn if empty"></div>
       <div class="as-qs-two">
-        <div class="form-group"><label>Floors above</label><select name="b-floors"><option value="">By its use</option><option value="0">None</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></div>
-        <div class="form-group"><label>Cellar</label><select name="b-cellar"><option value="">By its use</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+        <div class="form-group"><label for="as-qb-floors">Floors above</label><select id="as-qb-floors" name="b-floors"><option value="">By its use</option><option value="0">None</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></div>
+        <div class="form-group"><label for="as-qb-cellar">Cellar</label><select id="as-qb-cellar" name="b-cellar"><option value="">By its use</option><option value="yes">Yes</option><option value="no">No</option></select></div>
       </div>
-      <div class="form-group stacked"><label>Upstairs rooms</label><input type="text" name="b-upstairs" placeholder="By its use if empty (an inn's guest rooms off a corridor: 7 bedrooms)"></div>
-      <div class="form-group stacked"><label>Cellar rooms</label><input type="text" name="b-crooms" placeholder="By its use if empty (cellar, storeroom)"></div>
+      <div class="form-group stacked"><label for="as-qb-upstairs">Upstairs rooms</label><input type="text" id="as-qb-upstairs" name="b-upstairs" placeholder="By its use if empty (an inn's guest rooms off a corridor: 7 bedrooms)"></div>
+      <div class="form-group stacked"><label for="as-qb-crooms">Cellar rooms</label><input type="text" id="as-qb-crooms" name="b-crooms" placeholder="By its use if empty (cellar, storeroom)"></div>
     </div>
     <div data-site="street" hidden>
       <h4>Street</h4>
@@ -48,7 +48,7 @@ export function battleTabHTML() {
     </div>
     <div data-site="camp" hidden>
       <h4>Camp</h4>
-      <div class="as-qs-two">${select("camp", "Kind", "camp", b.camp.kind)}<div class="form-group"><label>Tents</label><input type="number" name="b-tents" min="1" max="16" step="1" placeholder="By its kind"></div></div>
+      <div class="as-qs-two">${select("camp", "Kind", "camp", b.camp.kind)}<div class="form-group"><label for="as-qb-tents">Tents</label><input type="number" id="as-qb-tents" name="b-tents" min="1" max="16" step="1" placeholder="By its kind"></div></div>
     </div>
     <div data-site="castle" hidden>
       <h4>Castle</h4>
@@ -118,15 +118,19 @@ export function wireBattleTab(root) {
   const box = root.querySelector('[name="b-describe"]'), chips = root.querySelector(".as-qs-chips");
   const removed = new Set();
   const hand = {}; // (brief key: value, as set by hand)
-  let timer = null, lastText = "";
+  let timer = null, lastText = "", lastChips = new Set();
   const apply = () => {
     clearTimeout(timer); timer = null;
     const text = box.value.trim();
     const read = text ? readDescription(text) : { chips: [], later: [], skipped: [], unknown: [] };
     if (text !== lastText) {
-      lastText = text; removed.clear();
-      // (the description, newer, wins over what the hand set for the same choices: a feature it names, each)
-      for (const c of read.chips) delete hand[c.key === "features" ? `feature.${c.value}` : c.key];
+      // (what the description newly says, a chip new or changed since it was last read, wins over what the hand set for
+      // the same choice: a feature it names, each; a chip it said before keeps losing to the hand, and one taken out
+      // stays out while the description still says it)
+      const now = new Set(read.chips.map((c) => `${c.key}=${c.value}`));
+      for (const c of read.chips) if (!lastChips.has(`${c.key}=${c.value}`)) delete hand[c.key === "features" ? `feature.${c.value}` : c.key];
+      for (const k of [...removed]) if (!now.has(k)) removed.delete(k);
+      lastText = text; lastChips = now;
     }
     // (the chips taken out are left out: each back to the hand's choice, else its site's default)
     const kept = read.chips.filter((c) => !removed.has(`${c.key}=${c.value}`));

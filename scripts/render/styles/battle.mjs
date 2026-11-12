@@ -19,7 +19,7 @@ import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, waterBand, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
-import { bands, union, offset } from "../../core/lots/poly.mjs";
+import { bands, union, offset, difference } from "../../core/lots/poly.mjs";
 import { distanceToPath, pointInPolygon } from "../../core/geom.mjs";
 import { offsetPath } from "../../core/layout/walls.mjs";
 import { CASTLE } from "../../core/layout/castle.mjs";
@@ -188,7 +188,15 @@ const quarterRole = (q, s) => PAVING[q.surface] ?? (q.surface === "trodden" ? `s
  * The ground's art: its own, a lighter second and a third, each in broad patches. In winter a grass ground lies under
  * snow: snow, a lighter snow, and grass showing through the snow in places.
  */
-export const groundRoles = (base, s) => (s === "winter" && base === "grass" ? ["ground.snow", "ground.snow.light", "ground.snow.grassy"] : [`ground.${base}`, `ground.${base}.light`, `ground.${base}.clover`]);
+export const groundRoles = (base, s) => {
+  if (base === "snow" || (s === "winter" && base === "grass")) return ["ground.snow", "ground.snow.light", "ground.snow.grassy"];
+  if (base === "grass" || !GROUND_SURFACE[base]) return ["ground.grass", "ground.grass.light", "ground.grass.clover"];
+  // (any other ground a plan may name, a town's cobbles or bare dirt, is that surface's art all over, its winter's in winter)
+  const r = s === "winter" ? `${GROUND_SURFACE[base]}.winter` : GROUND_SURFACE[base];
+  return [r, r, r];
+};
+/** The surface art for a ground other than grass or snow (mud is dirt). */
+const GROUND_SURFACE = { dirt: "surface.dirt", mud: "surface.dirt", slush: "surface.slush", trodden: "surface.trodden", cobble: "surface.cobble", gravel: "surface.gravel", flagstone: "surface.flagstone", setts: "surface.setts", herringbone: "surface.herringbone", brick: "surface.brick", tiles: "surface.tiles" };
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
 
 /**
@@ -288,6 +296,8 @@ export function rolesFor(layout) {
     if (i.kind === "reed") roles.add("prop.reeds");
     if (i.kind === "lily") roles.add("prop.lily");
     if (i.kind === "prop" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : propRole(i.class, s));
+    // (a paved street's worn path past a dead end, in winter trodden snow)
+    if (i.kind === "way" && !i.faint && s === "winter" && wayPaving(i)) roles.add("ground.snow.disturbed");
     if (i.kind === "way" && !i.faint && s === "winter" && !wayPaving(i)) { roles.add("ground.snow.disturbed"); roles.add("strip.snow.trail"); roles.add(i.width >= 1.6 ? "strip.track.wheel" : "prop.tracks.winter"); }
   }
   if (s === "winter") { roles.add("ground.snow.rocky"); roles.add("overlay.frost"); }
@@ -308,7 +318,11 @@ export function paint(ctx) {
   const s = L.season;
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
   /** A number from 0 to 1 for a place on the map (and a key), the same in every tile. */
-  const hashAt = (a, b, k = 0) => Math.abs(Math.sin(a * 12.9898 + b * 78.233 + k * 37.719 + (L.seed ?? 1) * 0.618) * 43758.5453) % 1;
+  // (a seed in words, which a plan may have, as a number)
+  const seedN = Number.isFinite(Number(L.seed ?? 1)) ? Number(L.seed ?? 1) : [...String(L.seed)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 2147483647, 7);
+  const hashAt = (a, b, k = 0) => Math.abs(Math.sin(a * 12.9898 + b * 78.233 + k * 37.719 + seedN * 0.618) * 43758.5453) % 1;
+  /** A clip around a piece drawn turned about its middle (w by h squares), so its shadow is worked out only near it. */
+  const clipNear = (w, h) => { const r = (Math.hypot(w, h) / 2 + 0.6) * pp; g.beginPath(); g.rect(-r, -r, 2 * r, 2 * r); g.clip(); };
   const items = (kind, cls) => L.items.filter((i) => i.kind === kind && (cls === undefined || i.class === cls));
 
   /** A fill for a role: its art at true scale as a map-anchored pattern (turned rot degrees), else its plain color. */
@@ -721,7 +735,7 @@ export function paint(ctx) {
       const im = art(`prop.${kind}`, Math.floor(hashAt(p[0], p[1], 24) * 12));
       if (!im) continue;
       const size = I.drift[kind], ww = size * (kind === "foam" ? 2 : 1), hh = (ww * im.height) / im.width;
-      g.save(); g.globalAlpha = kind === "foam" ? I.drift.foamAlpha : 1; g.translate(X(q[0]), Y(q[1])); g.rotate(kind === "foam" ? a : hashAt(p[0], p[1], 25) * 2 * Math.PI);
+      g.save(); g.globalAlpha = kind === "foam" ? I.drift.foamAlpha : 1; g.translate(X(q[0]), Y(q[1])); g.rotate(kind === "foam" ? a : hashAt(p[0], p[1], 25) * 2 * Math.PI); clipNear(ww, hh);
       if (kind !== "foam") { g.shadowColor = "rgba(6,14,22,0.35)"; g.shadowBlur = pp * 0.08; g.shadowOffsetX = SHADOW[0] * pp * 0.06; g.shadowOffsetY = SHADOW[1] * pp * 0.06; }
       g.drawImage(im, (-ww / 2) * pp, (-hh / 2) * pp, ww * pp, hh * pp); g.restore();
     }
@@ -944,10 +958,12 @@ export function paint(ctx) {
   if (cutBeds.length || deadEnds.length) {
     g.beginPath();
     g.rect(0, 0, W, H);
-    // (one outline for all of them: a pool's rings overlap its stream's bed, which even-odd would leave uncut)
-    if (cutBeds.length) for (const ring of union(cutBeds.flatMap((Lv) => Lv.rings))) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
-    if (cutBeds.length) for (const c of items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at))) { deckOf(c).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
-    for (const d of deadEnds) { capBox(d).forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
+    // (one outline for all of them, the beds and the dead ends' boxes together less each ford's deck, so where they
+    // overlap nothing is cut twice, which even-odd would leave uncut: a pool's rings over its stream's bed, a ford's deck
+    // reaching past the bed onto dry ground)
+    const fords = items("crossing").filter((c) => c.class === "ford" && Array.isArray(c.at)).map(deckOf);
+    const cut = union([...cutBeds.flatMap((Lv) => Lv.rings), ...deadEnds.map(capBox)]);
+    for (const ring of fords.length ? difference(cut, fords) : cut) { ring.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); }
     g.clip("evenodd");
   }
   // (an unpaved way narrows onto a footbridge's planks over its last squares, rather than running on under the deck
@@ -1057,19 +1073,23 @@ export function paint(ctx) {
     for (const gv of drawn) {
       const im = art(propRole("grave", s), gv.variant ?? 0), w = GRAVE_SQUARES, h = (w * im.height) / im.width;
       // (its long side across the row, so a row of graves reads as plots side by side)
-      g.save(); g.translate(X(gv.x), Y(gv.y)); g.rotate((((gv.rot ?? 0) + 90) * Math.PI) / 180);
+      // (its art turned with it, but its earth and stone filled with the map's own patterns, anchored to the map, not the
+      // grave: a path keeps the turn it was drawn in, a fill takes the one it's filled in)
+      const base = g.getTransform();
+      g.save(); g.translate(X(gv.x), Y(gv.y)); g.rotate((((gv.rot ?? 0) + 90) * Math.PI) / 180); clipNear(w, h);
+      const fillFlat = () => { const t = g.getTransform(); g.setTransform(base); g.fill(); g.setTransform(t); };
       g.shadowColor = `rgba(16,24,40,${BLEND.props.alpha})`; g.shadowBlur = pp * BLEND.props.blur; g.shadowOffsetX = SHADOW[0] * pp * BLEND.props.offset; g.shadowOffsetY = SHADOW[1] * pp * BLEND.props.offset;
       g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
       // (FA's art is the plot's stone curb alone: a mound of earth inside it and a headstone at its head make it a grave)
       g.shadowColor = "transparent";
       const M = GRAVE.mound, T = GRAVE.stone, rr = (cx, cy, hw, hh, r) => { g.beginPath(); g.roundRect((cx - hw) * pp, (cy - hh) * pp, hw * 2 * pp, hh * 2 * pp, r * pp); };
-      g.globalAlpha = M.alpha; g.fillStyle = tex(`surface.dirt.${s}`); rr(0, M.at * h, M.across * w, M.along * h, M.round); g.fill();
+      g.globalAlpha = M.alpha; g.fillStyle = tex(`surface.dirt.${s}`); rr(0, M.at * h, M.across * w, M.along * h, M.round); fillFlat();
       const lit = g.createRadialGradient(0, M.at * h * pp, 0, 0, M.at * h * pp, M.along * h * pp);
       lit.addColorStop(0, "rgba(255,240,210,0.22)"); lit.addColorStop(1, "rgba(30,20,10,0.25)");
       g.fillStyle = lit; rr(0, M.at * h, M.across * w, M.along * h, M.round); g.fill();
       g.globalAlpha = 1;
       g.shadowColor = `rgba(16,24,40,${BLEND.props.alpha})`; g.shadowBlur = pp * BLEND.props.blur; g.shadowOffsetX = SHADOW[0] * pp * BLEND.props.offset * T.shadow; g.shadowOffsetY = SHADOW[1] * pp * BLEND.props.offset * T.shadow;
-      g.fillStyle = tex("stone.curb"); rr(0, T.at * h, T.across * w, T.deep / 2, T.round); g.fill();
+      g.fillStyle = tex("stone.curb"); rr(0, T.at * h, T.across * w, T.deep / 2, T.round); fillFlat();
       g.shadowColor = "transparent"; g.fillStyle = `rgba(255,255,255,${T.light})`; g.fill();
       g.lineWidth = Math.max(1, pp * 0.02); g.strokeStyle = "rgba(20,20,24,0.85)"; g.stroke();
       g.restore();
@@ -1313,7 +1333,7 @@ export function paint(ctx) {
   const order = (x) => (x.flat ? 0 : x.wildOne ? 1 : 2);
   for (const { p, im, w, h, flat } of placed.sort((a, b) => order(a) - order(b))) {
     g.save(); g.translate(X(p.x), Y(p.y)); g.rotate(((p.rot ?? 0) * Math.PI) / 180);
-    if (!flat && p.class !== "tracks") { const o = (p.class === "boulder" ? P.boulder : P.offset) * pp; g.shadowColor = `rgba(16,24,40,${P.alpha})`; g.shadowBlur = pp * P.blur; g.shadowOffsetX = SHADOW[0] * o; g.shadowOffsetY = SHADOW[1] * o; }
+    if (!flat && p.class !== "tracks") { clipNear(w, h); const o = (p.class === "boulder" ? P.boulder : P.offset) * pp; g.shadowColor = `rgba(16,24,40,${P.alpha})`; g.shadowBlur = pp * P.blur; g.shadowOffsetX = SHADOW[0] * o; g.shadowOffsetY = SHADOW[1] * o; }
     g.drawImage(im, (-w / 2) * pp, (-h / 2) * pp, w * pp, h * pp);
     g.restore();
   }

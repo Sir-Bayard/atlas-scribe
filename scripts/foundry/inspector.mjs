@@ -119,7 +119,7 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
   const parts = f.type === "landmark" && Array.isArray(f.buildings) ? `<p class="as-pv-hint">${f.buildings.length} building${f.buildings.length === 1 ? "" : "s"}; their own settings can't be changed here yet.</p>` : "";
   return `<section class="as-pv-insp" data-id="${esc(id)}">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>${esc(f.name ?? f.text ?? id)}</strong><em>${esc(kindOf(f))}${f.name || f.text ? ` · ${esc(id)}` : ""}</em></span>
         ${roll}
       </header>
@@ -161,7 +161,7 @@ export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}
     : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";
   return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>${esc(kind === "house" ? called : item.class === "street" ? "Street" : "Lane")}</strong><em>generated · ${esc(item.id)}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -184,7 +184,7 @@ export function underlayHTML(u, { working = false } = {}) {
   const box = (key, label, on, help) => `<div class="as-pv-field as-k-boolean"><label data-tooltip="${esc(help)}">${esc(label)}</label><div class="as-pv-input"><input type="checkbox" data-under="${key}" ${on ? "checked" : ""}></div></div>`;
   return `<section class="as-pv-insp" data-id="@underlay">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Underlay</strong><em>${esc(u.path.split("/").pop())}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -210,7 +210,7 @@ export function planHTML(plan, { working = false, fonts = [] } = {}) {
   const scene = fields.filter((f) => f.group === "scene");
   return `<section class="as-pv-insp" data-id="@plan">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Plan settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -259,7 +259,7 @@ export function paletteHTML(tool, { points = 0, working = false } = {}) {
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Draw</strong><em>${esc(active ? `a new ${active.label.toLowerCase()}` : "pick what to add")}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -277,9 +277,9 @@ export function paletteHTML(tool, { points = 0, working = false } = {}) {
 }
 
 /** What the Battle map tool's box makes: its size in battle squares and feet, with a word when it's big. */
-export function battleSizeText({ box, size, big, limit }) {
+export function battleSizeText({ box, size, big, limit, tooBig, most }) {
   if (!box || !size) return "No box yet.";
-  return `${size[0]} x ${size[1]} squares (${size[0] * 5} x ${size[1] * 5} ft).${big ? ` Over ${limit} squares a side: slow to make and heavy to play, but it can be made.` : ""}`;
+  return `${size[0]} x ${size[1]} squares (${size[0] * 5} x ${size[1] * 5} ft).${tooBig ? ` Over ${most} squares a side: too big for one image, so it can't be made. Drag a smaller box.` : big ? ` Over ${limit} squares a side: slow to make and heavy to play, but it can be made.` : ""}`;
 }
 
 /**
@@ -290,19 +290,19 @@ export function battleHTML(st) {
   const zoomLabel = (z) => (z === 1 ? "True size" : z === 1.5 ? "1.5 times true size" : `${z} times true size`);
   return `<section class="as-pv-insp as-pv-palette as-pv-battle">
       <header>
-        <button type="button" data-action="asBattle" data-tooltip="Back to the list" ${st.working ? "disabled" : ""}><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBattle" data-tooltip="Back to the list" aria-label="Back to the list" ${st.working ? "disabled" : ""}><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Battle map</strong><em>an area of this map, at battle size</em></span>
       </header>
       <div class="as-pv-fields">
         <p class="as-pv-hint as-pv-how">${esc(HOW.battle)} Its streets, water, squares and notable buildings stay where they are here; its houses are built again at battle size.</p>
-        <div class="as-pv-field"><label>Zoom</label><select data-battle-zoom ${st.working ? "disabled" : ""}>${st.zooms.map((z) => `<option value="${z}" ${z === st.zoom ? "selected" : ""}>${esc(zoomLabel(z))}</option>`).join("")}</select></div>
+        <div class="as-pv-field"><label for="as-pv-battle-zoom">Zoom</label><select id="as-pv-battle-zoom" data-battle-zoom ${st.working ? "disabled" : ""}>${st.zooms.map((z) => `<option value="${z}" ${z === st.zoom ? "selected" : ""}>${esc(zoomLabel(z))}</option>`).join("")}</select></div>
         <p class="as-pv-group">A click places</p>
-        <div class="as-pv-tools-grid">${st.presets.map((n) => `<button type="button" data-action="asBattlePreset" data-size="${n}" class="${n === st.preset ? "as-on" : ""}" ${st.working ? "disabled" : ""}>${n} x ${n}</button>`).join("")}</div>
+        <div class="as-pv-tools-grid">${st.presets.map((n) => `<button type="button" data-action="asBattlePreset" data-size="${n}" class="${n === st.preset ? "as-on" : ""}" aria-pressed="${n === st.preset}" ${st.working ? "disabled" : ""}>${n} x ${n}</button>`).join("")}</div>
         <p class="as-pv-group">The box</p>
         <p class="as-pv-hint as-pv-battle-size ${st.big ? "as-warn" : ""}">${esc(battleSizeText(st))}</p>
       </div>
       <div class="as-pv-tools">
-        <button type="button" data-action="asBattleMake" ${st.placed && !st.working ? "" : "disabled"} data-tooltip="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making it" : "Make battle map"}</button>
+        <button type="button" data-action="asBattleMake" ${st.placed && !st.working && !st.tooBig ? "" : "disabled"} data-tooltip="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making it" : "Make battle map"}</button>
         ${st.zooming ? `<button type="button" data-action="asBattleStop"><i class="fa-solid fa-stop"></i> Stop</button>` : `<button type="button" data-action="asBattle" ${st.working ? "disabled" : ""}><i class="fa-solid fa-xmark"></i> Cancel</button>`}
       </div>
     </section>`;

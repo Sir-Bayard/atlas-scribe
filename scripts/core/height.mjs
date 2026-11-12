@@ -174,6 +174,21 @@ export function groundAt(zones, p, current = Infinity) {
   return best ? best.elevation : 0;
 }
 
+/** How often, in a move's step (a tenth of a square), the ground is read along a walk between waypoints. */
+const GROUND_STEP = 2;
+
+/**
+ * The ground's elevation where a walk from a to b ends, the way read every `step` along it, so a deck counts only for
+ * a token at about its height when it comes to it (walking down off a bank and on under a bridge stays in the bed; up
+ * out of the bed and onto the bridge stands on it). current: the elevation it sets off at.
+ */
+export function groundAlong(zones, a, b, current, step) {
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.min(400, Math.max(1, Math.ceil(L / Math.max(step, 1e-6))));
+  let e = current;
+  for (let k = 1; k <= n; k++) e = groundAt(zones, [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n], e);
+  return e;
+}
+
 /** The distance from point p to segment c-d. */
 function toSeg(p, c, d) {
   const dx = d[0] - c[0], dy = d[1] - c[1], l2 = dx * dx + dy * dy;
@@ -296,6 +311,7 @@ function evenOdd(rings) {
  * waypoint the move keeps (all of them, or up to the jump), or null when nothing changes.
  */
 export function groundWay(zones, start, steps, { step, falls = () => false } = {}) {
+  // (the ground under the way is read every GROUND_STEP steps between waypoints, for a deck on the way)
   if (!start || !Array.isArray(steps) || !steps.length) return null;
   if (start.elevation > groundAt(zones, start.p, start.elevation) + 0.01) return null;
   const out = [];
@@ -306,7 +322,7 @@ export function groundWay(zones, start, steps, { step, falls = () => false } = {
     if (shift !== null) e = s.elevation + shift;
     else if (s.elevation !== prevOrig || OFF_GROUND.includes(s.action)) { shift = cur - prevOrig; e = s.elevation + shift; }
     else {
-      const g = groundAt(zones, s.p, cur);
+      const g = step > 0 ? groundAlong(zones, prevP, s.p, cur, step * GROUND_STEP) : groundAt(zones, s.p, cur);
       const over = s.action === "jump" && g < cur && blockedBy(zones, prevP, s.p, step, { current: cur })?.why === "cliff";
       if (over && falls(i, cur)) { e = cur; shift = cur - s.elevation; cut = i + 1; }
       else e = g;

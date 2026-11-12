@@ -19,7 +19,7 @@ const WORDS = {
   place: { hamlet: ["hamlet"], village: ["village"], town: ["town"], city: ["city"] },
   quarter: { market: ["market", "marketplace", "bazaar"], merchants: ["merchants", "merchant"], crafts: ["crafts", "craftsmen", "artisans", "workshops"], docks: ["docks", "harbor", "wharf", "waterfront", "port"], nobles: ["nobles", "noble", "rich", "wealthy", "estates"], temple: ["temple", "temples", "cathedral"], poor: ["poor", "slum", "slums", "squalid"], garrison: ["garrison", "barracks"] },
   camp: { caravan: ["caravan", "wagons", "wagon"], soldiers: ["soldiers", "army", "military", "troops", "mercenaries", "warband", "legion"], campsite: ["campsite", "campfire"] },
-  size: { small: ["small", "tiny", "little", "cramped"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand"] },
+  size: { small: ["small", "tiny", "little", "cramped"], medium: ["medium", "medium-sized", "mid-sized", "modest"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand"] },
   towers: { roofed: ["roofed towers", "roofed tower", "tower roofs", "conical roofs", "cone roofs", "pointed roofs", "spires", "spire"], open: ["battlements", "crenellated", "crenelated", "crenellations", "open towers", "open tower"] },
 };
 /** Words that say a map is a wilderness, a camp, a street or a castle: "wilderness", "camp", "street", "castle". */
@@ -53,8 +53,8 @@ const pattern = (p) => new RegExp(`\\b${esc(p).replace(/ /g, "\\s+")}(?:s|es)?\\
 
 /**
  * Reads a description. Returns { brief, chips, later, skipped, unknown }: brief holds only the choices it found (site, size,
- * season, time, weather, ground, features, trees, litter, rocks, brush, building { use, size, rooms, name }, street
- * { place, quarter }, camp { kind, tents }); chips, what it understood, each { key, value, label } (key the brief's
+ * season, time, weather, ground, features, trees, litter, rocks, brush, building { use, size, rooms, name, floors,
+ * cellar, upstairs, cellarRooms }, street { place, quarter }, camp { kind, tents }, castle { towers }, name); chips, what it understood, each { key, value, label } (key the brief's
  * field, "building.use" and so on); later, kept for the window and always empty now (a cellar and floors above are
  * read into the building's own);
  * skipped, what it read but left out for the site it chose ({ label, why }: the village of "a village inn"); unknown,
@@ -68,10 +68,12 @@ export function readDescription(text = "") {
   const chip = (key, value, label) => { if (!chips.some((c) => c.key === key && c.value === value)) chips.push({ key, value, label }); };
   /** Every place a phrase occurs: [{ at, end }]. */
   const find = (p) => [...lower.matchAll(pattern(p))].map((m) => ({ at: m.index, end: m.index + m[0].length }));
+  // (a size said of a road or water, "a wide road", "a big river", isn't the map's or the building's)
+  const ofWay = (m) => /^\s+(?:dirt\s+|stone\s+|old\s+)?(?:road|roads|street|streets|lane|track|path|highway|river|stream|creek|brook|pond|lake)\b/.test(lower.slice(m.end, m.end + 24));
   /** The first value of a group whose words occur, marking them read; null if none. */
   const first = (group) => {
     let best = null;
-    for (const [value, words] of Object.entries(group)) for (const w of words) for (const m of find(w)) if (!best || m.at < best.m.at) best = { value, m, w };
+    for (const [value, words] of Object.entries(group)) for (const w of words) for (const m of find(w)) if ((!best || m.at < best.m.at) && !(group === WORDS.size && ofWay(m))) best = { value, m, w };
     if (!best) return null;
     for (const words of Object.values(group)) for (const w of words) for (const m of find(w)) used.push([m.at, m.end]);
     return best.value;
@@ -81,7 +83,9 @@ export function readDescription(text = "") {
   const mark = (words) => words.forEach((w) => find(w).forEach((m) => used.push([m.at, m.end])));
 
   // A name in quotes after "called" or "named": the building's (or the map's)
-  const named = raw.match(/\b(?:called|named)\s+["“]([^"”]{1,60})["”]/i);
+  // (in double quotes, or single ones: "Edric's Holding", 'The Gray Gull')
+  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w))/i);
+  if (named && named[1] === undefined) named[1] = named[2];
   if (named) used.push([named.index, named.index + named[0].length]);
 
   // A cellar and floors above, and the rooms said to be there ("a cellar filled with casks", "an upstairs with 7 rooms
@@ -96,9 +100,11 @@ export function readDescription(text = "") {
     laterSpans.push([s, e]);
     used.push([s, e]);
     // (every clause of a kind read together: "upstairs rooms, three floors" says both how many floors and what's there)
+    // ("no cellar", "without an upstairs", "a single-story inn": none, said so)
+    const no = /\b(?:no|without|not|never|nor)\s+(?:a\s+|an\s+|any\s+|the\s+)?$/.test(before.slice(-20)) || (what === "upstairs" && /\b(?:single|one)[\s-]+stor(?:y|ey)\b/.test(lower.slice(Math.max(0, m.at - 8), m.end)));
     const had = floorsSaid.find((l) => l.what === what), text = lower.slice(s, e);
-    if (!had) floorsSaid.push({ what, word: w, text, label: clause });
-    else if (!had.text.includes(text)) had.text += ` ; ${text}`;
+    if (!had) floorsSaid.push({ what, word: w, text, label: clause, no });
+    else { if (!had.text.includes(text)) had.text += ` ; ${text}`; had.no = had.no && no; }
   }
   const inLater = (m) => laterSpans.some(([s, e]) => m.at >= s && m.end <= e);
 
@@ -216,6 +222,17 @@ export function readDescription(text = "") {
     const label = { trees: "Trees", litter: "Stumps and logs", rocks: "Rocks", brush: "Bushes and ferns" }[key];
     chip(key, brief[key], `${label}: ${BRIEF_LABELS[key === "trees" ? "trees" : key][brief[key]].toLowerCase()}`);
   }
+  // (a forest said with how thick it is, "a dense forest", "sparse woods", its trees so, when no trees were said)
+  if (!("trees" in brief) && brief.ground === "forest") {
+    for (const w of WORDS.ground.forest) for (const m of find(w)) {
+      const said = lower.slice(Math.max(0, m.at - 14), m.at).match(/\b(\w+)\s+$/)?.[1];
+      const amount = said && Object.keys(AMOUNTS).find((a) => a !== "none" && AMOUNTS[a].includes(said) && said !== "with");
+      if (amount && !("trees" in brief)) {
+        brief.trees = said === "dense" ? "dense" : LEVEL.trees[amount];
+        chip("trees", brief.trees, `Trees: ${BRIEF_LABELS.trees[brief.trees].toLowerCase()}`);
+      }
+    }
+  }
   for (const aw of Object.values(AMOUNTS)) mark(aw.filter((w) => w !== "with"));
 
   // Rooms, for a building that has them (an inn, a farmstead): its common room with a stage and a bar, a kitchen, a
@@ -244,7 +261,11 @@ export function readDescription(text = "") {
     if (brief.site !== "roadside") { skipped.push({ label: f.label, why: brief.site === "castle" ? "A castle's keep, towers and gatehouse have their floors and the keep its cellar already" : "A cellar or floors above go with a building: pick a building by a road" }); continue; }
     const t = f.text;
     const count = (re) => { const m = t.match(re); return m ? (/^\d+$/.test(m[1]) ? Number(m[1]) : NUMBERS[m[1]] ?? null) : null; };
-    if (f.what === "cellar") {
+    if (f.no) {
+      brief.building = { ...brief.building, ...(f.what === "cellar" ? { cellar: false } : { floors: 0 }) };
+      if (f.what === "cellar") chip("building.cellar", false, "No cellar");
+      else chip("building.floors", 0, "No floor above");
+    } else if (f.what === "cellar") {
       brief.building = { ...brief.building, cellar: true };
       chip("building.cellar", true, "A cellar");
       const rooms = [/\b(cask|casks|barrel|barrels|wine|ale|beer|kegs?)\b/.test(t) ? "cellar" : null, /\b(store ?rooms?|storage|pantry|stores)\b/.test(t) ? "storeroom" : null].filter(Boolean);

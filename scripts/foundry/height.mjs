@@ -14,7 +14,7 @@
  * in the game system's own words (rules.mjs). Where the system has falling of its own (an adapter's falls), a token that leaves a
  * cliff top in the air (a jump, say) is left at its height for the system to drop it.
  */
-import { groundAt, blockedBy, groundWay, WALKING, OFF_GROUND } from "../core/height.mjs";
+import { groundAt, groundAlong, blockedBy, groundWay, WALKING, OFF_GROUND } from "../core/height.mjs";
 import { rules } from "./rules.mjs";
 
 const MOD = "atlas-scribe";
@@ -103,7 +103,8 @@ function onPreMove(doc, movement, operation) {
   // (a move made on the map; a script's move is grounded after it, onMove, so the script sees its move made)
   const R = rules(), falls = fallsIn(R) && STOPPED.includes(movement.method);
   const all = [...(movement.passed?.waypoints ?? []), ...(falls ? movement.pending?.waypoints ?? [] : [])];
-  if (STOPPED.includes(movement.method)) {
+  // (a move that ignores walls, a GM's, isn't stopped by a cliff or deep water either: they stop walkers as walls do)
+  if (STOPPED.includes(movement.method) && !movement.constrainOptions?.ignoreWalls) {
     // (a move made again isn't checked again, so all of it is checked here)
     const ways = [movement.origin, ...all];
     for (let i = 1; i < ways.length; i++) {
@@ -179,7 +180,10 @@ async function onMove(doc, movement, operation, user) {
   if (!from || !to || from.elevation !== to.elevation || OFF_GROUND.includes(last?.action)) return;
   // (one above the ground it left was flying or raised by hand, and stays where it is)
   if (from.elevation > groundAt(zs, middle(doc, from), from.elevation) + 0.01) return;
-  const e = groundAt(zs, middle(doc, to), to.elevation);
+  // (read along the way it walked, waypoint to waypoint, so a bridge's deck it came onto, or passed under, counts as it did)
+  const step = (doc.parent?.grid?.size ?? 100) * 0.2, ways = [from, ...(movement.passed?.waypoints?.length ? movement.passed.waypoints : [to])];
+  let e = from.elevation;
+  for (let i = 1; i < ways.length; i++) e = groundAlong(zs, middle(doc, ways[i - 1]), middle(doc, ways[i]), e, step);
   if (e === to.elevation) return;
   try {
     await doc.object?.movementAnimationPromise;

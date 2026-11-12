@@ -13,7 +13,7 @@ import { shapeToPolygon, polygonsOverlap, unturn, pointInPolygon } from "./geom.
 import { USE_INFO } from "./uses.mjs";
 import { houseOf } from "./pin.mjs";
 import { hash128 } from "./rng.mjs";
-import { PROP_SQUARES } from "./plan.mjs";
+import { PROP_SQUARES, OUTPUT_LIMITS } from "./plan.mjs";
 
 /** The zooms offered: battle squares for each overview square's worth of ground, as a share of true size. */
 export const ZOOMS = [1, 1.5, 2];
@@ -93,7 +93,16 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     taken.add(out);
     return out;
   };
-  const cut = (poly) => shapes(intersect([poly], [boxPoly])).filter((s) => area(s.outer) > 1e-4);
+  // (a piece cut to the rectangle less than a battle square across or in area, a sliver its edge clips off, is left out)
+  const worth = (ring) => {
+    const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
+    return area(ring) * E * E >= 1 && (Math.max(...xs) - Math.min(...xs)) * E >= 1 && (Math.max(...ys) - Math.min(...ys)) * E >= 1;
+  };
+  // (and one lying only in the reach past it, never coming onto the map)
+  const inner = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  // (whether a cut piece of a line comes onto the map: its middle within half its width of the rectangle)
+  const reaches = (piece, half) => clipPath(piece, [x0 - half, y0 - half, x1 + half, y1 + half]).length > 0;
+  const cut = (poly) => shapes(intersect([poly], [boxPoly])).filter((s) => worth(s.outer) && shapes(intersect([s.outer], [inner])).some((q) => area(q.outer) * E * E >= 0.01));
   const planFeature = new Map((plan?.features ?? []).map((f) => [f.id, f]));
 
   // Streets, roads and lanes, the overview's own and its districts' (faint field tracks left out), at their widths in feet
@@ -101,6 +110,9 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     const cls = ["street", "highway", "lane", "track", "path"].includes(w.class) ? w.class : w.class === "back" ? "lane" : w.class === "quay" ? null : "lane";
     if (!cls) continue;
     for (const piece of clipPath(w.path, box)) {
+      // (a piece lying only in the reach past the rectangle, a road's corner clipped off, never comes onto the map: one
+      // whose middle runs just past its edge but is wide enough to show on it comes)
+      if (!reaches(piece, (w.width ?? 1) / 2)) continue;
       const road = { id: idFor(w.id), type: "road", class: cls, path: piece.map(P), straight: true };
       if (Number.isFinite(w.width) && w.width > 0) road.width = Math.round(w.width * ft);
       if (typeof w.surface === "string") road.surface = w.surface;
@@ -112,7 +124,7 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
   for (const w of items.filter((i) => i.kind === "water")) {
     if (Array.isArray(w.path) && w.path.length >= 2) {
       if (w.class === "moat") continue;
-      for (const piece of clipPath(w.path, box)) features.push({ id: idFor(w.id), type: "water", class: ["stream", "river", "canal"].includes(w.class) ? w.class : "river", path: piece.map(P), width: Math.round((w.width ?? 1) * ft * zoom), straight: true, ...(w.frozen ? { frozen: true } : {}) });
+      for (const piece of clipPath(w.path, box).filter((q) => reaches(q, (w.width ?? 1) / 2))) features.push({ id: idFor(w.id), type: "water", class: ["stream", "river", "canal"].includes(w.class) ? w.class : "river", path: piece.map(P), width: Math.round((w.width ?? 1) * ft * zoom), straight: true, ...(w.frozen ? { frozen: true } : {}) });
     } else if (Array.isArray(w.poly) && w.poly.length >= 3) {
       for (const s of cut(w.poly)) features.push({ id: idFor(w.id), type: "water", class: ["pond", "lake", "sea"].includes(w.class) ? w.class : "lake", shape: s.outer.map(P), ...(w.frozen ? { frozen: true } : {}) });
     }
@@ -137,7 +149,7 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     if (i.kind === "surface" && OPEN_GROUND.has(i.class) && Array.isArray(i.poly)) {
       for (const piece of cut(i.poly)) features.push({ id: idFor(i.id.replace(/^.*\//, "")), type: "area", class: "yard", shape: piece.outer.map(P), surface: "grass" });
     } else if (i.kind === "wall" && Array.isArray(i.path)) {
-      for (const piece of clipPath(i.path, box)) features.push({ id: idFor(i.id.replace(/^.*\//, "")), type: "wall", class: "stone", path: piece.map(P), height: Math.round((i.height ?? 6 / ft) * ft), straight: true });
+      for (const piece of clipPath(i.path, box).filter((q) => reaches(q, (i.thickness ?? 0.1) / 2))) features.push({ id: idFor(i.id.replace(/^.*\//, "")), type: "wall", class: "stone", path: piece.map(P), height: Math.round((i.height ?? 6 / ft) * ft), straight: true });
     } else if (i.kind === "prop" && PROP_CLASSES.has(i.class) && inRect(i.x, i.y)) {
       features.push({ id: idFor(i.id.replace(/^.*\//, "")), type: "prop", class: i.class, at: P([i.x, i.y]), rot: r3(i.rot ?? 0), size: Math.round((i.scale ?? 1) * (PROP_SQUARES[i.class] ?? 0.45) * E * 5) });
     } else if (i.kind === "tree" && inRect(i.x, i.y)) {
@@ -168,7 +180,9 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
   const notYet = new Set();
   for (const f of plan?.features ?? []) {
     if (f.type !== "wall" || !Array.isArray(f.path)) continue;
-    const pieces = clipPath(f.path, box);
+    // (a low wall's piece lying only in the reach past the rectangle is left out; a town wall's is kept, as thick
+    // walls and towers reach in from it)
+    const pieces = clipPath(f.path, box).filter((piece) => f.class === "town" || reaches(piece, (Number.isFinite(f.thickness) ? f.thickness / ft : 0.1) / 2));
     if (!pieces.length) continue;
     if (f.class === "town") {
       const closed = f.path.length >= 4 && same(f.path[0], f.path[f.path.length - 1]);
@@ -247,7 +261,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     size: { squares: [W, H], ftPerSquare: 5 },
     features,
     source: { plan: plan?.id ?? null, name: plan?.name ?? null, rect: [x0, y0, x1, y1].map(r3), zoom },
-    output: { pxPerSquare: 100, scene: { name: name ?? `${plan?.name ?? "Map"} (battle map)` } },
+    // (100 px a square, fewer for a box so big its image would pass the 16383 px a side Foundry's images can have)
+    output: { pxPerSquare: Math.max(20, Math.min(100, Math.floor(OUTPUT_LIMITS.maxSide / Math.max(W, H, 1)))), scene: { name: name ?? `${plan?.name ?? "Map"} (battle map)` } },
   };
   return { plan: out, notes };
 }

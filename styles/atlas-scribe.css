@@ -328,6 +328,10 @@
   background: rgba(200, 120, 80, 0.18);
   padding-right: 8px;
 }
+.atlas-scribe.as-quick .as-qs-x:focus-visible {
+  outline: 2px solid var(--color-border-highlight, #ff6400);
+  outline-offset: 1px;
+}
 .atlas-scribe.as-quick .as-qs-x {
   all: unset;
   cursor: pointer;
