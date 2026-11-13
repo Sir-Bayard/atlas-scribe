@@ -1,22 +1,20 @@
 /**
- * The FA Nexus art provider: finds each role's Forgotten Adventures files in the user's own FA Nexus catalog and
+ * The FA Nexus art provider: finds Forgotten Adventures files by name in the user's own FA Nexus catalog and
  * downloads them through FA Nexus (premium files need FA Nexus connected to Patreon). Uses FA Nexus's internal
- * methods, not a published API, so an FA Nexus update can break it; everything here fails soft (a role with no
- * art falls back to a plain color).
+ * methods, not a published API, so an FA Nexus update can break it; everything here fails soft (a file it can't
+ * give is left out).
  *
  * Always pass the Patreon login state when asking for a download link: asking without it makes FA Nexus treat
  * the login as expired and disconnect Patreon.
  */
-import { roleChain } from "../../core/roles.mjs";
-
 const MOD = "atlas-scribe";
 let catalog = null;
 let roleMap = null;
-// What each role came to earlier this session ({ paths, premium }: premium when the Patreon login was there), so the
-// next render needn't open FA Nexus. Roles whose files failed to come are asked again; forget() clears it all.
+// What each file name came to earlier this session ({ path, premium }: premium when the Patreon login was there), so
+// the next render needn't open FA Nexus. Names that failed to come are asked again; forget() clears it all.
 const found = new Map();
 
-/** Forgets the roles found earlier, so the next render asks FA Nexus again (when an image failed to load, say). */
+/** Forgets the files found earlier, so the next render asks FA Nexus again (when an image failed to load, say). */
 export function forget() {
   found.clear();
   catalog = null; // read again too, in case the files changed in FA Nexus
@@ -50,7 +48,8 @@ async function nexusApp() {
   return { app: app ?? null, opened: !!app };
 }
 
-async function loadRoleMap() {
+/** The FA role map: { role: [Forgotten Adventures file name, ...] }, the names being variants. */
+export async function faRoleMap() {
   if (roleMap) return roleMap;
   const res = await fetch(`modules/${MOD}/data/roles/fa-nexus.json`);
   roleMap = res.ok ? (await res.json()).roles ?? {} : {};
@@ -58,37 +57,33 @@ async function loadRoleMap() {
 }
 
 /**
- * Resolves roles to local file paths. Returns { art: { role: [path, ...] }, missing: [role, ...], downloaded }.
- * progress(pct, label) while downloading.
+ * Fetches Forgotten Adventures files by name through FA Nexus. Returns { paths: Map name -> local path (names FA
+ * Nexus can't give are left out), downloaded, why }. progress(pct, label) while downloading.
  */
-export async function resolve(roles, progress = () => {}) {
-  if (!available()) return { art: {}, missing: [...roles], downloaded: 0, why: "FA Nexus isn't active, so the map is painted in plain colors" };
+export async function fetchNames(names, progress = () => {}) {
+  const paths = new Map();
+  if (!available()) return { paths, downloaded: 0, why: "FA Nexus isn't active" };
   const state = patreonState();
   const premium = !!state;
-  // Roles found earlier with the same login, and roles FA Nexus has no files for, need no FA Nexus window
-  const art = {}, missing = [], ask = [];
-  const map = await loadRoleMap();
-  for (const role of roles) {
-    const f = found.get(role);
-    if (f && f.premium === premium) {
-      if (f.paths.length) art[role] = [...f.paths];
-      else missing.push(role);
-    } else if (!roleChain(role).some((r) => map[r])) missing.push(role);
-    else ask.push(role);
+  // Names found earlier with the same login need no FA Nexus window
+  const ask = [];
+  for (const name of names) {
+    const f = found.get(name);
+    if (f && f.premium === premium) { if (f.path) paths.set(name, f.path); }
+    else ask.push(name);
   }
-  if (!ask.length) return { art, missing, downloaded: 0 };
+  if (!ask.length) return { paths, downloaded: 0 };
   let nexus = { app: null, opened: false };
   try {
     nexus = await nexusApp();
-    const res = await resolveWith(nexus.app, ask, progress, state);
-    if (!res.why) {
-      for (const role of ask) if (!res.unsure.has(role)) found.set(role, { paths: [...(res.art[role] ?? [])], premium });
-    }
-    return { ...res, art: { ...art, ...res.art }, missing: [...missing, ...res.missing] };
+    const res = await fetchWith(nexus.app, ask, progress, state);
+    if (!res.why) for (const name of ask) if (!res.unsure.has(name)) found.set(name, { path: res.paths.get(name) ?? null, premium });
+    for (const [k, v] of res.paths) paths.set(k, v);
+    return { paths, downloaded: res.downloaded, why: res.why };
   } catch (e) {
-    // FA Nexus changed, or failed: the roles not found earlier fall back to a plain color, and the render goes on
+    // FA Nexus changed, or failed: the names not found earlier go without, and the render goes on
     console.warn(`${MOD} | FA Nexus couldn't be used: ${safeMessage(e)}`);
-    return { art, missing: [...missing, ...ask], downloaded: 0, why: `FA Nexus couldn't be used (${safeMessage(e)}), so the map is painted in plain colors` };
+    return { paths, downloaded: 0, why: `FA Nexus couldn't be used (${safeMessage(e)})` };
   } finally {
     if (nexus.opened) {
       try {
@@ -112,16 +107,14 @@ export function fileNameOf(a) {
   return a.id.split("/").pop() + ext;
 }
 
-async function resolveWith(app, roles, progress, state) {
-  const art = {};
-  const missing = [];
-  const map = await loadRoleMap();
-  if (!app?._contentService || !app?._downloadManager) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus didn't open, so the map is painted in plain colors" };
+async function fetchWith(app, names, progress, state) {
+  const paths = new Map();
+  if (!app?._contentService || !app?._downloadManager) return { paths, downloaded: 0, unsure: new Set(), why: "FA Nexus didn't open" };
   if (!catalog?.length) {
     const listed = await app._contentService.list("assets");
     const list = Array.isArray(listed) ? listed : Object.values(listed ?? {}).find(Array.isArray);
     catalog = Array.isArray(list) ? list : [];
-    if (!catalog.length) return { art, missing: [...roles], downloaded: 0, why: "FA Nexus's catalog came back empty, so the map is painted in plain colors" };
+    if (!catalog.length) return { paths, downloaded: 0, unsure: new Set(), why: "FA Nexus's catalog came back empty" };
   }
   const byName = new Map();
   for (const a of catalog) {
@@ -131,42 +124,30 @@ async function resolveWith(app, roles, progress, state) {
     const b = k.replace(/\.\w+$/, "");
     if (!byName.has(`~${b}`)) byName.set(`~${b}`, a);
   }
-
-  const wanted = [];
-  for (const role of roles) {
-    const key = roleChain(role).find((r) => map[r]);
-    if (!key) { missing.push(role); continue; }
-    wanted.push({ role, files: map[key] });
-  }
-  const total = wanted.reduce((n, w) => n + w.files.length, 0) || 1;
+  const total = names.length || 1;
   let done = 0, downloaded = 0;
-  const unsure = new Set(); // roles a file failed for: asked again next time
-  for (const { role, files } of wanted) {
-    const paths = [];
-    for (const name of files) {
-      const lower = name.toLowerCase();
-      const item = byName.get(lower) ?? byName.get(`~${lower.replace(/\.\w+$/, "")}`);
-      progress(++done / total, `Fetching art: ${name}`);
-      if (!item) continue;
-      if (item.tier !== "free" && !state) continue; // premium needs the Patreon login; never ask without it
-      try {
-        let local = await app._downloadManager.getLocalPath?.("assets", item);
-        if (!local) {
-          const url = await app._contentService.getFullURL("assets", item, state);
-          // forceDownload: with FA Nexus's "direct cloud URLs" setting on, free files would otherwise come back as
-          // links to another site, which the worker may not be allowed to load
-          local = await app._downloadManager.ensureLocal("assets", item, url, { forceDownload: true });
-          downloaded++;
-        }
-        if (local) paths.push(local);
-        else unsure.add(role); // came back with nothing: asked again next time
-      } catch (e) {
-        console.warn(`${MOD} | couldn't get ${name} through FA Nexus: ${safeMessage(e)}`);
-        unsure.add(role);
+  const unsure = new Set(); // names that failed: asked again next time
+  for (const name of names) {
+    const lower = name.toLowerCase();
+    const item = byName.get(lower) ?? byName.get(`~${lower.replace(/\.\w+$/, "")}`);
+    progress(++done / total, `Fetching art: ${name}`);
+    if (!item) continue;
+    if (item.tier !== "free" && !state) continue; // premium needs the Patreon login; never ask without it
+    try {
+      let local = await app._downloadManager.getLocalPath?.("assets", item);
+      if (!local) {
+        const url = await app._contentService.getFullURL("assets", item, state);
+        // forceDownload: with FA Nexus's "direct cloud URLs" setting on, free files would otherwise come back as
+        // links to another site, which the worker may not be allowed to load
+        local = await app._downloadManager.ensureLocal("assets", item, url, { forceDownload: true });
+        downloaded++;
       }
+      if (local) paths.set(name, local);
+      else unsure.add(name);
+    } catch (e) {
+      console.warn(`${MOD} | couldn't get ${name} through FA Nexus: ${safeMessage(e)}`);
+      unsure.add(name);
     }
-    if (paths.length) art[role] = paths;
-    else missing.push(role);
   }
-  return { art, missing, downloaded, unsure };
+  return { paths, downloaded, unsure };
 }

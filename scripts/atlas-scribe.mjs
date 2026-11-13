@@ -10,6 +10,8 @@ import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt, forgetArt } from "./foundry/art/index.mjs";
+import { folderIndex, forget as forgetFolders } from "./foundry/art/folders.mjs";
+import { ArtFoldersMenu } from "./foundry/art-folders.mjs";
 import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
@@ -148,6 +150,16 @@ const api = {
   },
 
   /**
+   * Reads the art folders again and returns what each holds: [{ folder: { source, path }, files, dirs, manifests,
+   * roles, cut, error, errors }].
+   */
+  async rescanArt() {
+    requireGM();
+    forgetFolders();
+    return (await folderIndex()).folders;
+  },
+
+  /**
    * Reads a plan (an object, JSON text, or text with a ```mapplan block) and checks it.
    * Returns { plan, problems, ok }: plan has every default filled in (null if it couldn't be read), problems is the
    * checker's list ({ level, id, field, message }), and ok is true when there are no errors.
@@ -257,8 +269,8 @@ const api = {
 
   /**
    * Renders a plan into an image in the worker and saves it to <output>/maps (never over an existing file): check the
-   * plan (errors stop it), lay it out, fetch its art (FA Nexus; roles with none are painted plain and listed in
-   * missingArt), paint, save. With publish: true the map is then published (scene and force as there); if that fails,
+   * plan (errors stop it), lay it out, fetch its art (the art folders, then FA Nexus; roles with none are painted
+   * plain and listed in missingArt), paint, save. With publish: true the map is then published (scene and force as there); if that fails,
    * the error carries the saved map's result as error.result. A battle map also saves its roofs and crowns
    * (overheads: [{ path, kind, x, y, width, height, elevation }]), its floors (levels: [{ floor, path }]) and lists
    * its furniture and mist tiles. Returns { path, width, height, tiles, ms, layout, overheads, furniture, mist,
@@ -278,10 +290,10 @@ const api = {
       try {
         const { layout, roles } = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
         check();
-        const { art, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
+        const { art, scale, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
         check();
-        const img = await worker.run("paint", { layout, art, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
-        if (img.brokenArt?.length) forgetArt(); // a file that failed may have gone: ask FA Nexus again next time
+        const img = await worker.run("paint", { layout, art, scale, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        if (img.brokenArt?.length) forgetArt(); // a file that failed may have gone: look for it again next time
         check();
         let path = null, overheads = [], levels = [];
         if (save) {
@@ -329,7 +341,7 @@ const api = {
           path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           notes: [...layout.notes.map((n) => n.message), ...notes],
-          artNotes: notes, // why art is missing (FA Nexus not active, say)
+          artNotes: notes, // why art is missing (a folder that couldn't be read, say)
           warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
         };
         Object.defineProperty(result, "thumb", { value: img.thumb ?? null, enumerable: false }); // for publish
@@ -447,6 +459,16 @@ Hooks.once("init", () => {
     default: "",
   });
   game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
+  // (JSON: [{ source, path, bucket }]; empty until the GM sets a list, meaning FA Nexus's folder when it exists)
+  game.settings.register(MOD, "artFolders", { scope: "world", config: false, type: String, default: "", onChange: () => forgetFolders() });
+  game.settings.registerMenu(MOD, "artFoldersMenu", {
+    name: "Art folders",
+    label: "Art folders",
+    hint: "Folders on the server AtlasScribe paints with art from, before FA Nexus.",
+    icon: "fa-solid fa-folder-tree",
+    type: ArtFoldersMenu,
+    restricted: true,
+  });
   game.settings.register(MOD, "battleZoom", {
     name: "Battle map zoom",
     hint: "How big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight. The Battle map tool in the AtlasScribe window changes it too.",

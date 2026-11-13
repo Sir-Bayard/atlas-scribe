@@ -19,14 +19,14 @@ export function styleOf(layout) {
 }
 
 /**
- * art: { role: [url, ...] } (variants). Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt,
+ * art: { role: [url, ...] } (variants); scale: { url: factor } resizes art not drawn at 200 px a square. Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt,
  * overheads, furniture, mist, levels }: thumb a 300 px WebP; failedArt the roles whose files all failed (painted
  * plain); brokenArt the roles any file failed for; overheads the pieces painted apart to lie over the map as tiles
  * ([{ name, kind, x, y, width, height (px from the map's corner), elevation, blob }]); furniture [{ src, f, x, y
  * (middle), width, height, rotation, floor, lock }]; mist the fog tiles; levels a battle map's other floors ([{
  * floor, blob }]). progress(pct, label) runs from 0 to 1.
  */
-export async function paintLayout({ layout, art = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
+export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
   const t0 = performance.now();
   const style = styleOf(layout);
   const pp = layout.pxPerSquare;
@@ -43,7 +43,15 @@ export async function paintLayout({ layout, art = {}, tileSize = 2560, quality =
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      loaded.set(url, await createImageBitmap(await res.blob()));
+      const bmp = await createImageBitmap(await res.blob());
+      // (art drawn at another scale than 200 px a square is resized once, so every style can treat it as FA's)
+      const k = scale[url];
+      if (k && k !== 1) {
+        // (never past 8192 px a side, so a small file at a tiny scale can't run the worker out of memory)
+        const kk = Math.min(k, 8192 / Math.max(bmp.width, bmp.height, 1));
+        loaded.set(url, await createImageBitmap(bmp, { resizeWidth: Math.max(1, Math.round(bmp.width * kk)), resizeHeight: Math.max(1, Math.round(bmp.height * kk)), resizeQuality: "high" }));
+        bmp.close();
+      } else loaded.set(url, bmp);
     } catch {
       loaded.set(url, null);
     } finally {

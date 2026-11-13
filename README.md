@@ -44,11 +44,11 @@ As the GM, open the Scenes tab and click **AtlasScribe**.
    - **Plan settings** (the gear): the name, style, map dressing, season, ground, the map's size, feet and pixels a square, the seed, the labels' color and font, and the scene's settings (its name, weather, darkness, light, fog, token vision, padding and grid).
    - **Limits for now:** an ellipse building is drawn as its bounding box (a polygon one is drawn under a gable, its ridge the way it's turned). A turned area can't be reshaped, and a circle or ellipse only changes size. Squares, buildings, bridges and props can't be dragged once drawn: delete one and draw it again. A pinned house's buildings change together, not one by one. Changes you haven't saved last only until Foundry reloads.
 3. **Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and exported.
-4. **Make scene** saves the plan, draws the map in its style (painting it with your art, for the textured style) and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise) and a small hidden label on each notable building naming its use ("Inn", "Temple", "Smithy", "Market hall"), or the name you gave it when you pinned it. Where two would overlap, the more telling one stays (a district's centerpiece first, then buildings of their own, then trades, then street-corner shrines and watch posts). Cancel stops the painting. Through the API, `publish` given only an image path lays the plan out again for these labels, which takes a moment for a big city; if that fails, the scene is made without them and a warning says so. If some art couldn't be had, it says so and paints those parts in plain colors. After changes, **Update scene** repaints that scene (it's backed up first). The art FA Nexus found is remembered until Foundry reloads, so later scenes and updates don't wait for it again.
+4. **Make scene** saves the plan, draws the map in its style (painting it with your art, for the textured style) and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise) and a small hidden label on each notable building naming its use ("Inn", "Temple", "Smithy", "Market hall"), or the name you gave it when you pinned it. Where two would overlap, the more telling one stays (a district's centerpiece first, then buildings of their own, then trades, then street-corner shrines and watch posts). Cancel stops the painting. Through the API, `publish` given only an image path lays the plan out again for these labels, which takes a moment for a big city; if that fails, the scene is made without them and a warning says so. If some art couldn't be had, it says so and paints those parts in plain colors. After changes, **Update scene** repaints that scene (it's backed up first). The art folders read and the art FA Nexus found are remembered until Foundry reloads (or the art folders are saved again), so later scenes and updates don't wait for them again.
 
 ## Battle maps
 
-A battle map is a plan at 5 feet a square, made to fight on. It's painted from Forgotten Adventures art through FA Nexus (in plain colors where there's no art) and made a scene with its walls, doors, regions, lights and roof tiles. There are three ways to make one:
+A battle map is a plan at 5 feet a square, made to fight on. It's painted from Forgotten Adventures art, from your art folders or through FA Nexus (in plain colors where there's no art; see Art) and made a scene with its walls, doors, regions, lights and roof tiles. There are three ways to make one:
 
 - **Quick Start's Battle map tab:** pick a site (a wilderness, a building by a road, a village or town street, a camp or a castle), its size, the season, time of day, weather and ground, its features (a road, a stream, a pond, a cliff, a rise, a hollow) and how much is scattered over it. Or type what you want in the Describe box ("a roadside inn at night in spring with a stage and a kitchen"): what it understood is set in the form, where you can change it, and words it doesn't know are listed and left out.
 - **From a town map:** on a village, town or city, the Battle map tool takes a box you drag (or a 30, 45 or 60 square one you click to place) and makes that area a battle map, twice true size by default so there's room to fight. It keeps the town map's streets, water, squares and notable buildings where they are and builds the rest again at battle size.
@@ -62,7 +62,7 @@ What you get:
 - **The land:** woods at battle size, streams and rivers that wander in their beds, ponds and loose rock; in winter, snow, drifts and ice along the streams.
 - **Light:** a fire at each hearth, lamps and torches, and the plan's Time of day (day, dawn, dusk or night).
 
-The battle map's own changes are in [CHANGELOG.md](CHANGELOG.md). Limits for now: battle maps paint only from Forgotten Adventures art, and a big battle map is slow to paint, so the Battle map tool's box turns amber past 60 squares a side.
+The battle map's own changes are in [CHANGELOG.md](CHANGELOG.md). Limits for now: a big battle map is slow to paint, so the Battle map tool's box turns amber past 60 squares a side.
 
 ## Battle map rules
 
@@ -99,6 +99,7 @@ await as.render(plan, { publish: true }); // paints it, saves it, and makes a ne
 - To update a scene instead of making a new one, give its id: `publish(plan, { image, scene: "<scene id>" })` (or the same options to `render`). AtlasScribe only changes scenes it made; for any other scene add `force: true`. Before anything changes, the whole scene is saved to the output folder's `backups` folder. The scene keeps its name, your own drawings, tokens, walls and lights stay, and the labels AtlasScribe added before (from any plan) are replaced. If the map's size or padding changes, things you placed by hand may no longer line up with it.
 - `reroll(plan, ids)`: gives `{ plan, rerolled, skipped }`, the plan a copy with new seeds for those districts or areas (one id or a list), so they're drawn again and nothing else moves. Leave out `ids` to reroll every district and area that isn't locked. `const { plan: next } = as.reroll(plan, "town"); await as.render(next);`
 - `lock(plan, ids)` and `unlock(plan, ids)`: a copy of the plan with those features locked or unlocked; a reroll leaves locked ones alone. Seeds and locks are kept in the plan (`seeds`, `locked`), so a plan always draws the same map.
+- `rescanArt()`: reads the art folders again and gives what each holds: `[{ folder, files, dirs, manifests, roles, cut, error }]`.
 - `preview(plan)`: lays the plan out and draws it in plain colors, with no art, in a window, in a second or two (a few seconds for a city), its districts and areas outlined and named. Each district and area has a button to reroll it and one to lock it, Reroll all rerolls everything that isn't locked, and Undo steps back. Click a district, area, road, river, wall, pond, lake, sea or dock to show its handles, or Shapes to show them all: drag a corner or point to reshape (corners two districts share move together, and bridges follow a moved road or river), drag a side's middle dot to add a corner, alt-click or right-click a corner to remove it; a circle's or ellipse's edge handle sets its size. Scroll to zoom, drag to move, double-click to fit. Click anything to change its settings in the side panel, or the gear for the plan's own (see Making a map). Copy plan puts the plan, with its new seeds and locks, on the clipboard, and the window's `plan` holds it too: `const app = await as.preview(plan); /* reroll until you like it */ await as.render(app.plan, { publish: true });`
 - If the window holds a plan you haven't saved, `preview` shows it and asks before replacing it, and throws if you keep it.
 - `registerRules(systemId, adapter)`: adds the battle map rules for a game system; what an adapter can give (region behaviors, more regions, the scene's own settings, walls, the climb check, falling) is described at the top of `scripts/foundry/rules.mjs`. A module can also add its adapter on the `atlas-scribe.rules` hook, fired at setup with this function. `rules` names the rules battle maps follow now.
@@ -110,7 +111,25 @@ The output folder is a setting (by default `worlds/<your world>/atlas-scribe`).
 
 ## Art
 
-AtlasScribe ships no art. The illustrated style needs none: everything on it is drawn. The textured style and battle maps paint with art you already have, through FA Nexus when it's installed, or in plain colors when there's none (other art folders are planned). A map painted from someone's art is for your own table under that art's license.
+AtlasScribe ships no art. The illustrated style needs none: everything on it is drawn. The textured style and battle maps paint with art you already have: from art folders on your server first, then through FA Nexus when it's installed, and in plain colors where there's none. A map painted from someone's art is for your own table under that art's license.
+
+**Art folders** (Configure Settings, AtlasScribe, Art folders): the folders AtlasScribe looks in, from any file source Foundry can browse. Until you set your own, it's FA Nexus's download folder (`fa-nexus-assets`) when that exists, so art FA Nexus has downloaded works with FA Nexus turned off. Forgotten Adventures files are found by their file names anywhere in a folder, so a folder of FA's downloaded packs works as it is; FA Nexus fetches only what the folders lack. A folder listed first wins when two have the same file.
+
+For other art, put an `atlas-scribe.json` manifest in its folder saying which images fill which of AtlasScribe's art roles (the roles are listed in `data/roles/fa-nexus.json`), and how many pixels a square the art is drawn at:
+
+```json
+{
+  "atlasScribe": 1,
+  "gridPx": 140,
+  "roles": {
+    "roof.slate": ["roofs/slate-*.webp"],
+    "tree.deciduous": ["trees/oaks/"],
+    "ground.grass": "ground/grass.jpg"
+  }
+}
+```
+
+Each entry is a path from the manifest's folder: a file, a file name with `*` in it, or a folder ending in `/` (every image under it). Several images for one role are variants. A role can name a season (`roof.slate.winter`); a season's own art is used before the plain role's when there is any, and at the same name a manifest's art is used before Forgotten Adventures files. Where two manifests name the same role, the first folder in the list wins, and within a folder the manifest nearer its top.
 
 AtlasScribe isn't affiliated with Forgotten Adventures; FA Nexus is named only to say what AtlasScribe works with.
 

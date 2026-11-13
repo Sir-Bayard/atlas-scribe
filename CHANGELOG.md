@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+**Art for everyone**
+- Art folders: a new setting (Configure Settings, AtlasScribe, Art folders) lists folders on the server, from any file source Foundry can browse, that battle maps and the textured style paint from before FA Nexus. Until you set your own it's FA Nexus's download folder when that exists, so art FA Nexus downloaded works with FA Nexus off. Forgotten Adventures files are found by their names anywhere in a folder, and FA Nexus fetches only what the folders lack, so a map whose art is all in a folder no longer opens FA Nexus at all (and starts painting in a moment instead of several seconds). The settings window shows what each folder holds.
+- A folder of other art can carry an `atlas-scribe.json` manifest naming which images fill which roles (files, `*` patterns or whole folders) and the art's pixels a square; art at another scale is resized to match. See the README's Art section.
+- Where a season's art (snowy slate roofs, say) can't be had, a battle map now paints the role's plain art instead of a plain color.
+- New API call `rescanArt()`.
+
 ## 0.7.0
 
 Battle maps. A plan at 5 feet a square is painted from Forgotten Adventures art and made a scene to fight on: buildings with walls, doors, windows, rooms and furniture under roofs that fade as a token walks in, floors above and cellars as levels, castles with a wall walk and gatehouses, height with cliffs, banks and stream beds that set a token's elevation, woods, water and winter, lights and the time of day, and the Pathfinder Second Edition rules. Make one from Quick Start's Battle map tab (or describe it in words), from an area of a town map with the Battle map tool, or by hand.

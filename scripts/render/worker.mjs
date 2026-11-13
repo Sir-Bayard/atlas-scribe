@@ -21,11 +21,11 @@ const jobs = {
   },
 
   /**
-   * Layout to image. art: { role: [url, ...] }. Returns paintLayout's result: { blob, thumb, width, height, tiles,
+   * Layout to image. art: { role: [url, ...] }; scale: { url: factor } for art not drawn at 200 px a square. Returns paintLayout's result: { blob, thumb, width, height, tiles,
    * failedArt, brokenArt, overheads, furniture, mist, levels, ms }.
    */
-  async paint({ layout, art, tileSize, quality }, progress) {
-    return paintLayout({ layout, art, tileSize, quality }, progress);
+  async paint({ layout, art, scale, tileSize, quality }, progress) {
+    return paintLayout({ layout, art, scale, tileSize, quality }, progress);
   },
 
   /**
