@@ -3,10 +3,11 @@
 ## Unreleased
 
 **Art for everyone**
-- Art folders: a new setting (Configure Settings, AtlasScribe, Art folders) lists folders on the server, from any file source Foundry can browse, that battle maps and the textured style paint from before FA Nexus. Until you set your own it's FA Nexus's download folder when that exists, so art FA Nexus downloaded works with FA Nexus off. Forgotten Adventures files are found by their names anywhere in a folder, and FA Nexus fetches only what the folders lack, so a map whose art is all in a folder no longer opens FA Nexus at all (and starts painting in a moment instead of several seconds). The settings window shows what each folder holds.
+- Art folders: a new setting (Configure Settings, AtlasScribe, Art, on its Folders tab) lists folders on the server, from any file source Foundry can browse, that battle maps and the textured style paint from before FA Nexus. Until you set your own it's FA Nexus's download folder when that exists, so art FA Nexus downloaded works with FA Nexus off. Forgotten Adventures files are found by their names anywhere in a folder, and FA Nexus fetches only what the folders lack, so a map whose art is all in a folder no longer opens FA Nexus at all (and starts painting in a moment instead of several seconds). The Folders tab shows what each folder holds.
 - A folder of other art can carry an `atlas-scribe.json` manifest naming which images fill which roles (files, `*` patterns or whole folders) and the art's pixels a square; art at another scale is resized to match. See the README's Art section.
 - Where a season's art (snowy slate roofs, say) can't be had, a battle map now paints the role's plain art instead of a plain color.
-- New API call `rescanArt()`.
+- The Art window (Configure Settings, AtlasScribe, Art, or the new pictures button in the AtlasScribe window): its Art tab lists every kind of art AtlasScribe paints, grouped, with a picture of what it's painted with now and where that comes from, and lets you choose an image or a folder of images for any of them instead, with the art's pixels a square, for its seasons and sizes too if you like; its Rules tab holds filename rules that give a role every image whose name matches a pattern (`*slate*roof*`). A role takes at most 32 variants.
+- New API calls `rescanArt()` and `openArt()`.
 
 ## 0.7.0
 

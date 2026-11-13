@@ -9,9 +9,9 @@ import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
-import { resolveArt, forgetArt } from "./foundry/art/index.mjs";
-import { folderIndex, forget as forgetFolders } from "./foundry/art/folders.mjs";
-import { ArtFoldersMenu } from "./foundry/art-folders.mjs";
+import { resolveArt, forgetBroken } from "./foundry/art/index.mjs";
+import { folderIndex, forget as forgetFolders, forgetChoices } from "./foundry/art/folders.mjs";
+import { ArtBrowser, ArtMenu } from "./foundry/art-browser.mjs";
 import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
@@ -147,6 +147,12 @@ const api = {
     job.cancelled = true;
     worker.cancel();
     return true;
+  },
+
+  /** Opens the Art Browser. */
+  async openArt() {
+    requireGM();
+    return (foundry.applications.instances.get("atlas-scribe-art") ?? new ArtBrowser()).render(true);
   },
 
   /**
@@ -293,7 +299,7 @@ const api = {
         const { art, scale, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
         check();
         const img = await worker.run("paint", { layout, art, scale, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
-        if (img.brokenArt?.length) forgetArt(); // a file that failed may have gone: look for it again next time
+        if (img.brokenArt?.length) forgetBroken(img.brokenUrls ?? []); // a file that failed may have gone: look again next time
         check();
         let path = null, overheads = [], levels = [];
         if (save) {
@@ -426,6 +432,7 @@ const host = {
     set: (v) => game.settings.set(MOD, "battleZoom", v),
   },
   cancel: () => api.cancel(),
+  openArt: () => api.openArt(),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
     try {
@@ -461,12 +468,15 @@ Hooks.once("init", () => {
   game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
   // (JSON: [{ source, path, bucket }]; empty until the GM sets a list, meaning FA Nexus's folder when it exists)
   game.settings.register(MOD, "artFolders", { scope: "world", config: false, type: String, default: "", onChange: () => forgetFolders() });
-  game.settings.registerMenu(MOD, "artFoldersMenu", {
-    name: "Art folders",
-    label: "Art folders",
-    hint: "Folders on the server AtlasScribe paints with art from, before FA Nexus.",
-    icon: "fa-solid fa-folder-tree",
-    type: ArtFoldersMenu,
+  // (JSON: art chosen by hand, { role: { files, folders, px, all } }, and filename rules, [{ pattern, role, px }])
+  game.settings.register(MOD, "artRoles", { scope: "world", config: false, type: String, default: "", onChange: () => forgetChoices() });
+  game.settings.register(MOD, "artRules", { scope: "world", config: false, type: String, default: "", onChange: () => forgetChoices() });
+  game.settings.registerMenu(MOD, "artMenu", {
+    name: "Art",
+    label: "Art",
+    hint: "Where battle maps and the textured style get their art: folders on the server, art you choose, filename rules.",
+    icon: "fa-solid fa-images",
+    type: ArtMenu,
     restricted: true,
   });
   game.settings.register(MOD, "battleZoom", {

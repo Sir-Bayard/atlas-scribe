@@ -21,7 +21,7 @@ export function styleOf(layout) {
 /**
  * art: { role: [url, ...] } (variants); scale: { url: factor } resizes art not drawn at 200 px a square. Returns { blob, thumb, width, height, ms, tiles, failedArt, brokenArt,
  * overheads, furniture, mist, levels }: thumb a 300 px WebP; failedArt the roles whose files all failed (painted
- * plain); brokenArt the roles any file failed for; overheads the pieces painted apart to lie over the map as tiles
+ * plain); brokenArt the roles any file failed for, brokenUrls those files; overheads the pieces painted apart to lie over the map as tiles
  * ([{ name, kind, x, y, width, height (px from the map's corner), elevation, blob }]); furniture [{ src, f, x, y
  * (middle), width, height, rotation, floor, lock }]; mist the fog tiles; levels a battle map's other floors ([{
  * floor, blob }]). progress(pct, label) runs from 0 to 1.
@@ -39,7 +39,7 @@ export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 256
   const unique = [...new Set(urls.flatMap(([, list]) => list))];
   const loaded = new Map();
   let done = 0;
-  await Promise.all(unique.map(async (url) => {
+  const load = async (url) => {
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -57,9 +57,12 @@ export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 256
     } finally {
       progress(0.01 + 0.09 * (++done / (unique.length || 1)), "Loading art");
     }
-  }));
+  };
+  // (a few at a time, so a role with many variants doesn't fetch and decode them all at once)
+  for (let i = 0; i < unique.length; i += 8) await Promise.all(unique.slice(i, i + 8).map(load));
   const bitmaps = {}, urlsOf = new Map(urls);
   const failedArt = [], brokenArt = [];
+  const brokenUrls = unique.filter((u) => !loaded.get(u));
   for (const [role, list] of urls) {
     bitmaps[role] = list.map((u) => loaded.get(u)).filter(Boolean);
     if (list.length && !bitmaps[role].length) failedArt.push(role);
@@ -158,7 +161,7 @@ export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 256
   }
   for (const bmp of loaded.values()) bmp?.close();
   const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, overheads, furniture, mist, levels, ms: Math.round(performance.now() - t0) };
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overheads, furniture, mist, levels, ms: Math.round(performance.now() - t0) };
 }
 
 /**

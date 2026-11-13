@@ -77,6 +77,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     position: { width: 1160, height: 780 },
     actions: {
       asQuick: AtlasScribeApp.#onQuick,
+      asArt: AtlasScribeApp.#onArt,
       asOpen: AtlasScribeApp.#onOpen,
       asImport: AtlasScribeApp.#onImport,
       asSave: AtlasScribeApp.#onSave,
@@ -465,6 +466,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <button type="button" data-action="asExport" data-tooltip="Download the plan as a file"><i class="fa-solid fa-file-export"></i></button>
           <button type="button" data-action="asCopy" data-tooltip="Copy the plan as JSON"><i class="fa-solid fa-copy"></i></button>
           <button type="button" data-action="asPlan" data-tooltip="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
+          <button type="button" data-action="asArt" data-tooltip="Art: folders, art you choose, filename rules"><i class="fa-solid fa-images"></i></button>
         </div>
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
@@ -1784,6 +1786,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       this.#history = this.#history.map((p) => (p && !p.id ? { ...p, id } : p));
     }
     return this.#plan;
+  }
+
+  /** Opens the Art Browser. */
+  static #onArt() {
+    this.#host.openArt?.().catch?.((e) => ui.notifications.error(e.message));
   }
 
   /** Downloads the plan as a JSON file. */
