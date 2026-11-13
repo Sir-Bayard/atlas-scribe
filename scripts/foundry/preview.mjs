@@ -15,6 +15,8 @@ import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaled
 import { addFeature, snapCorner, snapEnd, toolOf, wallIn } from "../core/draw.mjs";
 import { battleTabHTML, wireBattleTab, briefFromForm } from "./quick-battle.mjs";
 import { settlementTabHTML, wireSettlementTab } from "./quick-settlement.mjs";
+import { roleLabel } from "./art-browser.mjs";
+import { NO_ART } from "./art/index.mjs";
 import { briefPlan } from "../core/brief.mjs";
 import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
@@ -375,7 +377,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       el.innerHTML = `<div class="as-pv-welcome">
           <i class="fa-solid fa-map-location-dot"></i>
           <h2>Make a map</h2>
-          <p>Quick Start makes a hamlet, village or town from a few choices. Then change anything on the map here (reroll, reshape, change settings, draw new things) and make it into a scene.</p>
+          <p>Quick Start makes a hamlet, village, town or city, or a battle map, from a few choices or a few words. Then change anything on the map here (reroll, reshape, change settings, draw new things) and make it into a scene.</p>
           <div class="as-pv-tools">
             <button type="button" data-action="asQuick"><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Start</button>
             <button type="button" data-action="asOpen"><i class="fa-solid fa-folder-open"></i> Open a saved plan</button>
@@ -460,14 +462,14 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
           <p class="as-pv-hint">${esc(status)}</p>
         </header>
         <div class="as-pv-tools as-pv-file">
-          <button type="button" data-action="asQuick" data-tooltip="Quick Start: a new plan from a few choices" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i></button>
-          <button type="button" data-action="asOpen" data-tooltip="Open a saved plan" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i></button>
-          <button type="button" data-action="asImport" data-tooltip="Import a plan (JSON, or a mapplan block)" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-file-import"></i></button>
-          <button type="button" data-action="asSave" data-tooltip="Save the plan in this world" class="${this.dirty ? "as-on" : ""}"><i class="fa-solid fa-floppy-disk"></i></button>
-          <button type="button" data-action="asExport" data-tooltip="Download the plan as a file"><i class="fa-solid fa-file-export"></i></button>
-          <button type="button" data-action="asCopy" data-tooltip="Copy the plan as JSON"><i class="fa-solid fa-copy"></i></button>
-          <button type="button" data-action="asPlan" data-tooltip="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
-          <button type="button" data-action="asArt" data-tooltip="Art: folders, art you choose, filename rules"><i class="fa-solid fa-images"></i></button>
+          <button type="button" data-action="asQuick" aria-label="Quick Start" data-tooltip="Quick Start: a new plan from a few choices" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+          <button type="button" data-action="asOpen" aria-label="Open a saved plan" data-tooltip="Open a saved plan" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i></button>
+          <button type="button" data-action="asImport" aria-label="Import a plan" data-tooltip="Import a plan (JSON, or a mapplan block)" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-file-import"></i></button>
+          <button type="button" data-action="asSave" aria-label="Save the plan" data-tooltip="Save the plan in this world" class="${this.dirty ? "as-on" : ""}"><i class="fa-solid fa-floppy-disk"></i></button>
+          <button type="button" data-action="asExport" aria-label="Download the plan" data-tooltip="Download the plan as a file"><i class="fa-solid fa-file-export"></i></button>
+          <button type="button" data-action="asCopy" aria-label="Copy the plan" data-tooltip="Copy the plan as JSON"><i class="fa-solid fa-copy"></i></button>
+          <button type="button" data-action="asPlan" aria-label="Plan settings" data-tooltip="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
+          <button type="button" data-action="asArt" data-tooltip="Art: folders, art you choose, filename rules" aria-label="Art"><i class="fa-solid fa-images"></i></button>
         </div>
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
@@ -1659,7 +1661,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
     const NAMES = { cemetery: "a cemetery", watermill: "a watermill", windmill: "a windmill", walled: "a wall", citadel: "a citadel" };
     const got = choices?.has ?? choices?.outside ?? {};
     const missed = Object.entries({ ...opts.has, ...opts.outside }).filter(([k, v]) => v === true && got[k] === false && NAMES[k]).map(([k]) => NAMES[k]);
-    if (missed.length) ui.notifications.info(`No room was found for ${missed.join(" or ")} here, so the plan is made without. A new seed may fit it.`);
+    if (missed.length) ui.notifications.info(`No room was found for ${missed.length > 1 ? `${missed.slice(0, -1).join(", ")} and ${missed.at(-1)}` : missed[0]} here, so the plan is made without ${missed.length > 1 ? "them" : "it"}. A new seed may fit ${missed.length > 1 ? "them" : "it"}.`);
     try {
       await this.show(plan);
     } catch (e) {
@@ -1820,13 +1822,15 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       // Why the map looks as it does, when it isn't as asked: art that couldn't be had, settings the scene didn't take
       // (when no art could be had at all, the note says so, and listing every kind would add nothing)
       const n = res?.missingArt?.length ?? 0;
-      const none = (res?.artNotes ?? []).some((t) => /plain colors\.?$/.test(t));
+      const none = (res?.artNotes ?? []).includes(NO_ART);
       const sentence = (t) => (/[.!?)]$/.test(t) ? t : `${t}.`);
       const kinds = `${n} ${n === 1 ? "kind of art wasn't" : "kinds of art weren't"} found and ${n === 1 ? "is" : "are"} ${res?.drawn ? "drawn instead" : "painted in plain colors"} (${res?.missingArt?.slice(0, 6).join(", ")}${n > 6 ? ", ..." : ""}).`;
       // (on a battle map what has no art is drawn, which is no fault: said in passing, not as a warning)
       const why = [...(res?.artNotes ?? []).map(sentence), ...(n && !none && !res?.drawn ? [kinds] : []), ...(res?.warnings ?? []).map(sentence)];
       if (why.length) ui.notifications.warn(`AtlasScribe: ${why.join(" ")}`, { permanent: true });
-      if (n && res?.drawn) ui.notifications.info(`AtlasScribe: ${kinds}`);
+      // (and not at all when nothing came from any art: the whole map is drawn, as it should be)
+      const had = (res?.artFrom?.folders ?? 0) + (res?.artFrom?.nexus ?? 0);
+      if (n && res?.drawn && had) ui.notifications.info(`AtlasScribe: ${n} ${n === 1 ? "kind of art had" : "kinds of art had"} none of yours and ${n === 1 ? "is" : "are"} drawn (${res.missingArt.slice(0, 6).map(roleLabel).join(", ")}${n > 6 ? ", ..." : ""}).`);
     } catch (e) {
       if (!e.cancelled) ui.notifications.error(e.message, { permanent: true });
       // Canceled once the map was saved: Foundry can't delete a file, so say where it is

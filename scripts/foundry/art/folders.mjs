@@ -3,7 +3,8 @@
  * manifest (atlas-scribe.json) names which of its images fill which roles; any image is also found by its file name,
  * so Forgotten Adventures files in a folder fill the FA role map with no FA Nexus.
  */
-import { safeMessage } from "./fa-nexus.mjs";
+import { safeMessage, faRoleMap } from "./fa-nexus.mjs";
+import { roleChain } from "../../core/roles.mjs";
 
 const MOD = "atlas-scribe";
 export const MANIFEST = "atlas-scribe.json";
@@ -94,6 +95,17 @@ export function storedFolders() {
 export function storedRoles() {
   const o = storedJSON("artRoles");
   return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+}
+
+/** A role name as matched: trimmed and lowercased. */
+export const roleOf = (r) => String(r ?? "").trim().toLowerCase();
+
+/** A test of whether AtlasScribe paints a role (one in the FA role map, a kind of one, or one with kinds there). */
+async function rolesKnown() {
+  const keys = Object.keys(await faRoleMap());
+  if (!keys.length) return () => true; // (no role map to check against)
+  const set = new Set(keys);
+  return (r) => set.has(r) || roleChain(r).some((x) => set.has(x)) || keys.some((k) => k.startsWith(`${r}.`));
 }
 
 /** The GM's filename rules (the world setting artRules): [{ pattern, role, px }]. */
@@ -221,7 +233,9 @@ export function readManifest(json, dir, files) {
   const px = gridPxOf(json?.gridPx);
   const rel = files.map((x) => (typeof x === "string" ? { f: x, k: keyOf(x) } : x)).filter(({ k }) => !base || k.startsWith(`${base}/`)).map(({ f, k }) => ({ f, r: base ? k.slice(base.length + 1) : k }));
   const out = {};
-  for (const [role, entries] of Object.entries(json?.roles ?? {})) {
+  for (const [name, entries] of Object.entries(json?.roles ?? {})) {
+    const role = roleOf(name);
+    if (!role) continue;
     const list = Array.isArray(entries) ? entries : [entries];
     const paths = [];
     for (const e of list) {
@@ -231,8 +245,9 @@ export function readManifest(json, dir, files) {
       if (!want) hit = rel;
       else if (want.endsWith("/")) hit = rel.filter(({ r }) => r.startsWith(want));
       else if (want.includes("*")) {
-        const re = new RegExp(`^${want.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*")}$`);
-        hit = rel.filter(({ r }) => re.test(r));
+        // (each piece of the path matched on its own, with no regular expression to blow up on many stars)
+        const parts = want.split("/");
+        hit = rel.filter(({ r }) => { const rp = r.split("/"); return rp.length === parts.length && parts.every((q, i) => globMatch(q, rp[i])); });
       } else {
         hit = rel.filter(({ r }) => r === want);
         // (the same file under another image type: Foundry can save an upload as WebP)
@@ -240,7 +255,7 @@ export function readManifest(json, dir, files) {
       }
       for (const { f } of [...hit].sort((a, b) => a.r.localeCompare(b.r))) if (!paths.includes(f)) paths.push(f);
     }
-    if (paths.length) out[role] = { paths, px };
+    if (paths.length && !out[role]) out[role] = { paths, px };
   }
   return out;
 }
@@ -295,7 +310,7 @@ function capped(paths, what, notes) {
 
 async function readAll(progress) {
   const byName = new Map(), byStem = new Map(), roles = new Map(), report = [], all = [];
-  const budget = { dirs: MOST_DIRS, files: MOST_FILES };
+  const budget = { dirs: MOST_DIRS, files: MOST_FILES }, seen = new Set();
   for (const folder of await foldersToUse()) {
     const row = { folder, files: 0, dirs: 0, manifests: 0, roles: 0, cut: false, error: null, errors: [] };
     report.push(row);
@@ -303,13 +318,16 @@ async function readAll(progress) {
     try {
       const { files, manifests, dirs, cut, errors } = await walk(folder, budget, progress);
       Object.assign(row, { files: files.length, dirs, cut, errors });
-      for (const { f, k } of files) {
+      // (a file in two folders on the list, one inside the other, counted once)
+      const fresh = files.filter((x) => !seen.has(x.k));
+      for (const x of fresh) seen.add(x.k);
+      for (const { f, k } of fresh) {
         const n = k.split("/").pop();
         if (!byName.has(n)) byName.set(n, f);
         const s = stemOf(n);
         if (!byStem.has(s)) byStem.set(s, f);
       }
-      all.push(...files);
+      all.push(...fresh);
       const depth = (x) => x.k.split("/").length;
       for (const { f: file, k } of [...manifests].sort((a, b) => depth(a) - depth(b) || (a.k < b.k ? -1 : 1))) {
         const slash = String(file).lastIndexOf("/");
@@ -319,6 +337,8 @@ async function readAll(progress) {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const found = readManifest(await res.json(), dir, files);
           row.manifests++;
+          const known = await rolesKnown();
+          for (const role of Object.keys(found)) if (!known(role)) row.errors.push(`${k}: AtlasScribe paints no role called ${role}`);
           for (const [role, v] of Object.entries(found)) {
             if (!roles.has(role)) { roles.set(role, { ...v, paths: capped(v.paths, `${k}, ${role}`, row.errors) }); row.roles++; }
           }
@@ -339,7 +359,31 @@ export function holds(url) {
   let k = keyOf(String(url).replace(/[?#].*$/, ""));
   if (base.keys.has(k)) return true;
   k = k.replace(/^\w+:\/\/[^/]+\//, "");
-  return base.keys.has(k);
+  if (base.keys.has(k)) return true;
+  // (Foundry served under a route prefix: /foundry/packs/x.png is packs/x.png)
+  const route = keyOf(globalThis.foundry?.utils?.getRoute?.("/") ?? "/").replace(/^\/+/, "");
+  return !!route && k.startsWith(route) && base.keys.has(k.slice(route.length));
+}
+
+/** Forgets the folders chosen by hand that hold a file (by its web address), so they're read again. */
+export function forgetHandFolder(url) {
+  const k = keyOf(String(url).replace(/[?#].*$/, ""));
+  for (const key of [...handWalks.keys()]) {
+    // (a key is source:path or source:bucket:path; a folder at the top holds everything)
+    const path = keyOf(key.slice(key.lastIndexOf(":") + 1));
+    if (!path || k.includes(`/${path}/`) || k.startsWith(`${path}/`)) handWalks.delete(key);
+  }
+  forgetChoices();
+}
+
+/** Whether a file is gone from the server: true only when the server says so. */
+export async function isGone(url, ms = 5000) {
+  try {
+    const res = await fetch(url, { method: "HEAD", cache: "no-cache", signal: AbortSignal.timeout(ms) });
+    return [403, 404, 410].includes(res.status);
+  } catch {
+    return false; // (a network or cross-site error says nothing about the file)
+  }
 }
 
 /** A folder chosen by hand, read once a session (until forget()). */
@@ -371,11 +415,13 @@ async function buildChoices(b, progress) {
   const notes = [];
   // Filename rules over every image in the folders, in the rules' order (an earlier rule wins a role)
   const rules = new Map(), ruleMatches = [];
+  const known = await rolesKnown();
   for (const rule of storedRules()) {
     const test = ruleTest(rule.pattern);
     const paths = b.all.filter((x) => test(x)).map(({ f }) => f);
     ruleMatches.push(paths.length);
-    const role = rule.role.trim();
+    const role = roleOf(rule.role);
+    if (!known(role)) notes.push(`Rule ${rule.pattern.trim()}: AtlasScribe paints no role called ${rule.role.trim()}`);
     if (paths.length && !rules.has(role)) rules.set(role, { paths: capped(paths, `Rule ${rule.pattern.trim()}`, notes), px: gridPxOf(rule.px) });
   }
 

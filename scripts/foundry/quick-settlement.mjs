@@ -162,14 +162,15 @@ export function wireSettlementTab(root) {
     // old as the text, so it doesn't win over choices made since)
     if (t !== lastText) { lastText = t; textAt = ++clock; }
     const note = (r, at) => { for (const c of r.chips) { const id = `${c.key}=${c.value}`; if (!seen.has(id)) seen.set(id, at); } };
-    const own = t ? readPlace(t) : { chips: [], skipped: [], unknown: [], choices: {} };
+    const formWater = { water: el("s-water").value };
+    const own = t ? readPlace(t, formWater) : { chips: [], skipped: [], unknown: [], choices: {} };
     note(own, textAt);
     kept = own.chips.filter((c) => !removed.has(`${c.key}=${c.value}`));
     // (read again for the size the form shows when that's not the size it says, so its chips fit the form; Any by
     // hand reads as a village's, as the form shows)
     const size = handWins("size") ? hand.size.v || "village" : chipFor("size")?.value;
     let read = own;
-    if (t && size && size !== own.choices.size) { read = readPlace(t, { size }); note(read, textAt); }
+    if (t && size && size !== own.choices.size) { read = readPlace(t, { size, ...formWater }); note(read, textAt); }
     // (forgotten only when neither read has it: a size changed and back brings nothing back over the hand's choices)
     const now = new Set([...own.chips, ...read.chips].map((c) => `${c.key}=${c.value}`));
     for (const id of [...seen.keys()]) if (!now.has(id)) seen.delete(id);
@@ -194,8 +195,12 @@ export function wireSettlementTab(root) {
     const x = event.target.closest(".as-qs-x");
     if (!x) return;
     event.preventDefault();
+    const at = [...chips.querySelectorAll(".as-qs-x")].indexOf(x);
     removed.add(x.closest("[data-chip]").dataset.chip);
     apply();
+    // (focus to the next chip's ×, else the text, so the keyboard isn't left nowhere)
+    const xs = chips.querySelectorAll(".as-qs-x");
+    (xs[Math.min(at, xs.length - 1)] ?? text).focus();
   });
   // A village's or town's buildings and places back to its size's: what's set by hand forgotten, what's said taken out
   root.querySelector(".as-qs-reset").addEventListener("click", (event) => {

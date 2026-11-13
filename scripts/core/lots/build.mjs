@@ -163,7 +163,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
       if (!best) break;
       const { piece, a, b, L } = best;
       const e = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
-      // Its inward side: towards the middle of the piece it's on
+      // Its inward side: toward the middle of the piece it's on
       const [gx, gy] = piece.reduce((s, p) => [s[0] + p[0] / piece.length, s[1] + p[1] / piece.length], [0, 0]);
       let q = [-e[1], e[0]];
       if ((gx - a[0]) * q[0] + (gy - a[1]) * q[1] < 0) q = [-q[0], -q[1]];
@@ -464,7 +464,7 @@ export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r
         const dl = crossGable ? Math.min(0.04, depth / 2 - dw / 2 - 0.02) : Math.min(depth / 2 - dw / 2 - 0.02, depth * 0.3);
         if (crossGable ? dl > 0.02 : dl >= sq(4)) for (let k = 0; k < n; k++) {
           const along = n === 1 ? (dr.next() - 0.5) * w * 0.3 : (k ? 1 : -1) * w * 0.22;
-          // On a hipped roof the front slope narrows towards the ridge: the dormer must sit inside it, clear of the hips
+          // On a hipped roof the front slope narrows toward the ridge: the dormer must sit inside it, clear of the hips
           if (style !== "gable" && Math.abs(along) + dw / 2 + dl > w / 2 - 0.02) continue;
           const [ox, oy] = at(along, -(depth / 2 - dl / 2));
           const q = { cx: ox, cy: oy, len: dl, dep: dw, rot: rot + 90 };

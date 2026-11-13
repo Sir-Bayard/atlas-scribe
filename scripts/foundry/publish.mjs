@@ -228,7 +228,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   const oldFurn = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "furniture" in t.flags[MOD]).map((t) => t.id);
   const pieces = (layout?.items ?? []).filter((i) => i.kind === "interior").flatMap((i) => i.furniture ?? []).filter((f) => FURNITURE[f.f] && !FURNITURE[f.f].drawn).length
     + (layout?.items ?? []).filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f]).length;
-  if (Array.isArray(image.furniture) && pieces && !image.furniture.length) warnings.push(`None of the furniture's art was found, so no furniture was placed${oldFurn.length ? " and the last map's was kept" : ""} (is FA Nexus active?).`);
+  if (Array.isArray(image.furniture) && pieces && !image.furniture.length) warnings.push(`None of the furniture's art was found, so no furniture was placed${oldFurn.length ? " and the last map's was kept" : ""}.`);
   else if (Array.isArray(image.furniture)) {
     if (image.furniture.length < pieces) warnings.push(`${pieces - image.furniture.length} of the ${pieces} pieces of furniture had no art and were left out.`);
     let placed = false;
@@ -417,11 +417,14 @@ export function battleLights(layout, sceneX, sceneY, pps, plan) {
 function localPath(src) {
   try {
     const url = new URL(src, window.location.href);
-    if (url.origin !== window.location.origin) return src;
+    // (AtlasScribe's own mark of the scale art is drawn at goes)
+    url.searchParams.delete("as-px");
+    if (url.origin !== window.location.origin) return url.href;
     const base = new URL(foundry.utils.getRoute("/"), window.location.href).pathname;
-    return decodeURIComponent(url.pathname.startsWith(base) ? url.pathname.slice(base.length) : url.pathname.replace(/^\//, ""));
+    // (decoded as Foundry keeps paths, but a %, # or ? in a file's name kept escaped, or it would end the path)
+    return decodeURIComponent(url.pathname.startsWith(base) ? url.pathname.slice(base.length) : url.pathname.replace(/^\//, "")).replace(/%/g, "%25").replace(/#/g, "%23").replace(/\?/g, "%3F");
   } catch {
-    return src;
+    return String(src).replace(/[?&]as-px=[^&#]*/, "");
   }
 }
 

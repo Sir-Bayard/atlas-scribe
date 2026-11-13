@@ -287,7 +287,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
         // Never through a blocked shape (a landmark's walled block, a plan building) to a street beyond it
         if (best && best.t > wall) best = null;
         const pt = best && [ex + (fx - ex) * best.t, ey + (fy - ey) * best.t];
-        // Towards a neighboring district with no street to meet: it turns back to its own street instead, a short
+        // Toward a neighboring district with no street to meet: it turns back to its own street instead, a short
         // cross lane closing the loop (back lanes joined their high street at the ends of the town)
         if (!best || best.sg.line.edge === "edge" && nearBorder(pt, 0.3) || !inside(ex + (fx - ex) * best.t * 0.5, ey + (fy - ey) * best.t * 0.5)) {
           // Unless it has just crossed a street: then it ends there, rather than running on past it and laying a

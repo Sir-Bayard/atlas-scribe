@@ -12,7 +12,7 @@ const WORDS = {
   water: { river: ["river", "riverside", "on a river", "by a river"], stream: ["stream", "creek", "brook"], coast: ["coast", "coastal", "sea", "seaside", "port", "seaport", "harbor", "bay"], lake: ["lake", "lakeside", "lakeshore"], estuary: ["estuary", "river mouth", "delta"] },
   roads: { crossroads: ["crossroads", "crossroad", "junction", "crossing roads"], fork: ["fork", "forked road", "fork in the road"], through: ["road through", "along a road", "along the road", "on a road", "roadside"] },
   surroundings: { farmland: ["farmland", "farms", "fields", "farming", "pasture"], woodland: ["woods", "woodland", "forest", "forested", "wooded"], open: ["open ground", "open country", "moor", "moorland", "heath", "plains", "grassland", "steppe"] },
-  center: { square: ["square", "market square", "marketplace", "plaza"], green: ["green", "village green"], well: ["a well", "the well", "village well", "town well"], cathedral: ["cathedral"], palace: ["palace"] },
+  center: { square: ["square", "market square", "marketplace", "plaza", "market"], green: ["green", "village green"], well: ["a well", "the well", "village well", "town well"], cathedral: ["cathedral"], palace: ["palace"] },
   river: { island: ["island"], loop: ["loop", "looping", "oxbow"], meeting: ["two rivers", "confluence", "rivers meeting", "meeting rivers"], meander: ["winding", "bending", "meandering"] },
   shape: { compact: ["compact", "round", "circular"], lobed: ["lobed", "uneven", "irregular"], promontory: ["promontory", "peninsula", "headland", "cape"], shore: ["along the shore", "along the river", "strung out", "long and thin"], cliff: ["cliff", "cliffs", "escarpment", "clifftop", "bluff"] },
 };
@@ -24,10 +24,11 @@ const QUARTER_WORDS = { docks: ["docks", "dockside", "wharf", "waterfront", "har
 const OUTSIDE_WORDS = { citadel: ["citadel", "castle", "castle keep", "fortress", "stronghold"], oldWall: ["old wall", "inner wall", "two walls", "double walls", "old town"], suburbs: ["suburbs", "suburb", "outskirts", "faubourg"], cemetery: HAS_WORDS.cemetery, mills: ["mill", "mills", "watermill", "windmill", "water mill", "wind mill"] };
 const OUTSIDE_LABELS = { citadel: "A citadel", oldWall: "An old inner wall", suburbs: "Suburbs", cemetery: "A cemetery", mills: "Mills" };
 const HAS_LABELS = { temple: "A temple", inn: "An inn", smithy: "A smithy", cemetery: "A cemetery", watermill: "A watermill", windmill: "A windmill", walled: "Walled" };
+const NO_HAS = { walled: "No wall" };
 const QUARTER_LABELS = { docks: "docks", market: "market", temple: "temple", nobles: "nobles'", crafts: "crafts", poor: "poor", garrison: "garrison", merchants: "merchants'" };
 const CENTER_LABELS = { square: "A market square", green: "A green", well: "A well", cathedral: "A cathedral", palace: "A palace", none: "No center" };
 /** Words not worth reporting as not understood. */
-const STOP = new Set(`sprawling i me my we our you your it its a an the and or but of in on at by to for from with into onto over under near beside along across around between through up down out off is are be been being was were has have had having do does did need needs want wants like would could should can will make made makes give gives map place settlement area some any all this that these those there here where which who what when while then than so very really just also plus please something somewhere lots lot sort kind type bit little more most much one ones side sides middle center centre edge top bottom left right north south east west inside outside near far nearby next close nice good cool big small large tiny huge old new quarter quarters ward wards district districts without not never nor no yes`.split(/\s+/)); // (read in British spelling too)
+const STOP = new Set(`sprawling among amid i me my we our you your it its a an the and or but of in on at by to for from with into onto over under near beside along across around between through up down out off is are be been being was were has have had having do does did need needs want wants like would could should can will make made makes give gives map place settlement area some any all this that these those there here where which who what when while then than so very really just also plus please something somewhere lots lot sort kind type bit little more most much one ones side sides middle center centre edge top bottom left right north south east west inside outside near far nearby next close nice good cool big small large tiny huge old new quarter quarters ward wards district districts without not never nor no yes`.split(/\s+/)); // (read in British spelling too)
 const CITIES = ["city", "metropolis"];
 
 const escRe = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -41,7 +42,8 @@ const MAX_TEXT = 2000;
  * water, roads, surroundings, center, river, shape, name, has: { ... }, quarters: [...] when one is left out,
  * outside: { ... }); chips, what it understood, each { key, value, label }; skipped, what it read but couldn't use
  * for the size ({ label, why }); unknown, the words it didn't know. opts.size, a size chosen elsewhere (in the form),
- * is the size it reads for in place of the one it says.
+ * is the size it reads for in place of the one it says; opts.water, the water chosen there, says what "a mill" is when
+ * the description names no water.
  */
 export function readPlace(text = "", opts = {}) {
   const raw = String(text ?? "").slice(0, MAX_TEXT);
@@ -81,13 +83,13 @@ export function readPlace(text = "", opts = {}) {
   const hits = (group) => Object.entries(group).flatMap(([value, words]) => words.flatMap((w) => find(w).map((m) => ({ value, no: negated(m), at: m.at, end: m.end }))));
   /** The first value of a group said (not with "no"), marking its words read; null if none. */
   const first = (group) => {
-    const h = hits(group).filter((x) => !x.no).sort((a, b) => a.at - b.at)[0];
+    const h = hits(group).filter((x) => !x.no && !inName(x)).sort((a, b) => a.at - b.at)[0];
     mark(Object.values(group).flat());
     return h?.value ?? null;
   };
 
   // A name: in quotes or capitalized after "called" or "named"
-  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w)|((?:[A-Z][\w'-]*)(?:\s+[A-Z][\w'-]*){0,3}))/);
+  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w)|((?:[A-Z][\w'-]*)(?:\s+(?!(?:In|On|At|By|With|And|Near|During|Beside|Along|Among)\b)[A-Z][\w'-]*){0,3}))/);
   if (named) {
     const n = (named[1] ?? named[2] ?? named[3]).trim();
     choices.name = n;
@@ -127,7 +129,7 @@ export function readPlace(text = "", opts = {}) {
   const roads = first(WORDS.roads);
   if (roads) { choices.roads = roads; chip("roads", roads, QUICK_LABELS.roads[roads]); }
   // (fields and woods both said: farms and woods)
-  const sur = hits(WORDS.surroundings).filter((x) => !x.no);
+  const sur = hits(WORDS.surroundings).filter((x) => !x.no && !inName(x));
   mark(Object.values(WORDS.surroundings).flat());
   const kinds = [...new Set(sur.map((x) => x.value))];
   const surroundings = kinds.includes("farmland") && kinds.includes("woodland") ? "mixed" : kinds[0] ?? null;
@@ -135,7 +137,7 @@ export function readPlace(text = "", opts = {}) {
 
   // The center: a square, a green, a well, or (a city's) a cathedral or palace; "no square" says none
   // ("green hills" or "green fields" aren't a green)
-  const ch = hits(WORDS.center).filter((x) => !inName(x) && !(x.value === "green" && /^\s+(?:hills?|fields?|valleys?|meadows?|woods?|forests?|country|land|pastures?)\b/.test(lower.slice(x.end))));
+  const ch = hits(WORDS.center).filter((x) => !inName(x) && !(x.value === "green" && /^\s+(?:hills?|fields?|valleys?|meadows?|woods?|forests?|country|land|pastures?)\b/.test(lower.slice(x.end))) && !(/^markets?$/.test(lower.slice(x.at, x.end)) && (lower.slice(x.at, x.end) === "markets" || /^\s+(?:quarter|ward|town|square|place|hall)s?\b/.test(lower.slice(x.end)))));
   mark(Object.values(WORDS.center).flat());
   const centerSaid = ch.filter((x) => !x.no).sort((a, b) => a.at - b.at)[0]?.value ?? (ch.some((x) => x.no && ["square", "green"].includes(x.value)) ? "none" : null);
   if (centerSaid) {
@@ -191,14 +193,15 @@ export function readPlace(text = "", opts = {}) {
     // ("mill" alone: a watermill by water, else a windmill)
     const mills = find("mill").concat(find("mills")).filter((m) => !inName(m));
     mark(["mill", "mills"]);
-    for (const m of mills) hh.push({ value: water && water !== "none" ? "watermill" : "windmill", no: negated(m), at: m.at, end: m.end });
+    const wet = water ?? (opts.water || null);
+    for (const m of mills) hh.push({ value: wet && wet !== "none" ? "watermill" : "windmill", no: negated(m), at: m.at, end: m.end });
     for (const k of Object.keys(HAS_WORDS)) {
       const said = hh.filter((x) => x.value === k);
       if (!said.length) continue;
       const v = said.some((x) => !x.no);
-      if (k === "watermill" && v && water === "none") { skipped.push({ label: "a watermill", why: "A watermill needs a river or a stream" }); continue; }
+      if (k === "watermill" && v && wet === "none") { skipped.push({ label: "a watermill", why: "A watermill needs a river or a stream" }); continue; }
       (choices.has ??= {})[k] = v;
-      chip(`has.${k}`, v, v ? HAS_LABELS[k] : `No ${HAS_LABELS[k].replace(/^(?:A|An) /, "").toLowerCase()}`);
+      chip(`has.${k}`, v, v ? HAS_LABELS[k] : NO_HAS[k] ?? `No ${HAS_LABELS[k].replace(/^(?:A|An) /, "").toLowerCase()}`);
     }
     // (a city's quarters and citadel said of a village or town)
     const qh = [...hits(QUARTER_WORDS), ...hits({ citadel: OUTSIDE_WORDS.citadel, suburbs: OUTSIDE_WORDS.suburbs, oldWall: OUTSIDE_WORDS.oldWall })].filter((x) => !inName(x)).sort((a, b) => a.at - b.at);

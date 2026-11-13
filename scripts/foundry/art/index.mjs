@@ -9,42 +9,87 @@ import * as faNexus from "./fa-nexus.mjs";
 import * as folders from "./folders.mjs";
 import { roleChain } from "../../core/roles.mjs";
 
+/** The note when a textured map had no art from anywhere. */
+export const NO_ART = "No art folders are set and FA Nexus isn't active, so the map is painted in plain colors";
+
 const EMPTY = { byName: new Map(), byStem: new Map(), roles: new Map(), rules: new Map(), ruleMatches: [], hand: new Map(), notes: [], all: [], folders: [] };
 
+/** A file's name for a note, decoded where it can be. */
+const nameOfUrl = (u) => {
+  const n = String(u).replace(/[?#].*$/, "").split("/").pop();
+  try {
+    return decodeURIComponent(n);
+  } catch {
+    return n;
+  }
+};
+
+/** Art with the files that couldn't be loaded taken out (noted in skipped), or null when none is left. */
+function usable(e, skipped) {
+  if (!e) return null;
+  const paths = e.paths.filter((p) => {
+    const bad = unloadable.has(abs(p));
+    if (bad) skipped?.add(abs(p));
+    return !bad;
+  });
+  return paths.length ? { ...e, paths } : null;
+}
+
 /** The GM's own art for a name (by hand, by a filename rule, or from a manifest), with where it came from. */
-function ownArt(idx, r) {
-  const h = idx.hand.get(r);
+function ownArt(idx, r, skipped) {
+  const h = usable(idx.hand.get(r), skipped);
   if (h) return { ...h, source: "hand" };
-  const rule = idx.rules.get(r);
+  const rule = usable(idx.rules.get(r), skipped);
   if (rule) return { ...rule, source: "rule" };
-  const m = idx.roles.get(r);
+  const m = usable(idx.roles.get(r), skipped);
   return m ? { ...m, source: "manifest" } : null;
 }
 
 /** Art chosen by hand for a role and all its kinds: the most specific such name in the role's chain. */
-function handAll(idx, chain) {
+function handAll(idx, chain, skipped) {
   for (const r of chain) {
-    const h = idx.hand.get(r);
+    const h = usable(idx.hand.get(r), skipped);
     if (h) return h.all ? { ...h, source: "hand", name: r } : null;
   }
   return null;
 }
 
+// Files that failed to load though they're still on the server (a corrupt image, say), left out until Foundry reloads
+// or the art is read again; and the files FA Nexus gave this session
+const unloadable = new Set(), fromNexus = new Set();
+const bare = (u) => String(u).replace(/[?#].*$/, "");
+/** At most this many files checked on the server at once, each given this long (ms) to answer. */
+const CHECKS = 6, CHECK_MS = 5000;
+
 /** Forgets what the sources found earlier, so the next render asks them again. */
 export function forgetArt() {
   faNexus.forget();
   folders.forget();
+  forgetUnloadable();
+}
+
+/** Forgets which files couldn't be loaded, so they're tried again. */
+export function forgetUnloadable() {
+  unloadable.clear();
+  fromNexus.clear();
 }
 
 /**
- * After images failed to load (urls): the folders are read again if they held one, FA Nexus asked again if any came
- * from elsewhere, and art chosen by hand checked again.
+ * After images failed to load (urls): a file still on the server is left out from now on; for one that's gone, the
+ * art folders are read again if they held it, a folder chosen by hand read again, and FA Nexus asked again if it gave
+ * it. Returns the files left out, by name.
  */
-export function forgetBroken(urls = []) {
-  const inFolders = urls.filter((u) => folders.holds(u));
-  if (inFolders.length) folders.forget();
-  else folders.forgetChoices();
-  if (inFolders.length < urls.length) faNexus.forget();
+export async function forgetBroken(urls = []) {
+  const gone = [], kept = [];
+  const queue = [...urls];
+  await Promise.all(Array.from({ length: Math.min(CHECKS, queue.length) }, async () => {
+    for (let u; (u = queue.shift()) !== undefined;) ((await folders.isGone(bare(u), CHECK_MS)) ? gone : kept).push(u);
+  }));
+  for (const u of kept) unloadable.add(bare(u));
+  if (gone.some((u) => folders.holds(u))) folders.forget();
+  else if (gone.length) for (const u of gone) folders.forgetHandFolder(u);
+  if (gone.some((u) => fromNexus.has(bare(u)))) faNexus.forget();
+  return kept.map(nameOfUrl);
 }
 
 /**
@@ -65,6 +110,7 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
   const instead = drawn ? "drawn instead" : "painted in plain colors";
   const notes = [];
   let idx = EMPTY;
+  const skipped = new Set(); // (files left out because they couldn't be loaded earlier)
   try {
     idx = await folders.folderIndex((label) => progress(0, label));
   } catch (e) {
@@ -82,19 +128,19 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
   const art = {}, scale = {}, missing = [];
   const from = { folders: 0, nexus: 0 };
   const got = new Map();
-  let nexusWhy = null;
+  let nexusWhy = null, lockedFiles = 0;
   // Each round settles every role whose name at its step gives art; a role whose FA files all come to nothing goes
   // on to the next name in its chain, so FA Nexus is asked only for the files of names actually reached
   let open = roles.map((role) => {
     const chain = roleChain(role);
-    return { role, chain, at: 0, own: handAll(idx, chain) };
+    return { role, chain, at: 0, own: handAll(idx, chain, skipped) };
   });
   while (open.length) {
     const asking = [];
     for (const o of open) {
       for (; !o.own && o.at < o.chain.length; o.at++) {
         const r = o.chain[o.at];
-        const own = ownArt(idx, r);
+        const own = ownArt(idx, r, skipped);
         if (own) { o.own = own; break; }
         if (map[r]?.length) { o.files = map[r].map((name) => ({ name, path: folders.findFile(idx, name) })); break; }
       }
@@ -104,7 +150,9 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
     if (ask.length) {
       const res = await faNexus.fetchNames(ask, progress);
       for (const name of ask) got.set(name, res.paths.get(name) ?? null);
+      for (const p of res.paths.values()) if (p) fromNexus.add(abs(p));
       if (res.why && faNexus.available()) nexusWhy ??= res.why;
+      lockedFiles += res.locked ?? 0;
     }
     const next = [];
     for (const o of open) {
@@ -116,7 +164,10 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
         if (k !== 1) for (const u of urls) scale[u] = k;
         from.folders++;
       } else if (o.files) {
-        const paths = o.files.map((f) => f.path ?? got.get(f.name)).filter(Boolean);
+        const paths = o.files.map((f) => f.path ?? got.get(f.name)).filter((p) => {
+          if (p && unloadable.has(abs(p))) { skipped.add(abs(p)); return false; }
+          return !!p;
+        });
         if (paths.length) {
           art[o.role] = paths.map(abs);
           if (o.files.some((f) => f.path)) from.folders++;
@@ -131,8 +182,10 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
     open = next;
   }
   if (nexusWhy) notes.push(`${nexusWhy}; art it would have given is ${instead}`);
+  if (lockedFiles) notes.push(`${lockedFiles} Forgotten Adventures ${lockedFiles === 1 ? "file needs" : "files need"} FA Nexus connected to Patreon; ${instead === "drawn instead" ? "what they'd show is drawn instead" : "what they'd show is painted in plain colors"}`);
+  if (skipped.size) notes.push(`${skipped.size === 1 ? "An art file" : `${skipped.size} art files`} couldn't be loaded earlier and ${skipped.size === 1 ? "is" : "are"} left out until the art is read again (Art window, Read again): ${[...skipped].slice(0, 5).map(nameOfUrl).join(", ")}${skipped.size > 5 ? ", ..." : ""}`);
   // (a battle map with no art at all is simply drawn: nothing to warn of)
-  if (missing.length && !idx.folders.length && !faNexus.available() && !drawn) notes.push("No art folders are set and FA Nexus isn't active, so the map is painted in plain colors");
+  if (missing.length && !Object.keys(art).length && !idx.folders.length && !faNexus.available() && !drawn) notes.push(NO_ART);
 
   return {
     art,
@@ -165,7 +218,7 @@ export async function describeArt(roles) {
       const own = ownArt(idx, r);
       if (own) return { role, name: r, source: own.source, paths: own.paths.map(abs), count: own.paths.length };
       if (map[r]?.length) {
-        const found = map[r].map((n) => folders.findFile(idx, n)).filter(Boolean);
+        const found = map[r].map((n) => folders.findFile(idx, n)).filter((p) => p && !unloadable.has(abs(p)));
         if (found.length) return { role, name: r, source: "folder", paths: found.map(abs), count: nexus ? map[r].length : found.length };
         if (nexus) return { role, name: r, source: "nexus", paths: [], count: map[r].length };
       }

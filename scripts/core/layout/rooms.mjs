@@ -192,11 +192,18 @@ export const FURNITURE = {
 /**
  * Where a piece's art goes on the map, given its file's drawn part (insets [left, top, right, bottom] from the art's
  * edges, as shares of its width and height): its art's center, size and turn, so the drawn part's back meets the
- * body's back (flush to its wall) and it's centered across; a free piece's drawn part centered on its body.
+ * body's back (flush to its wall) and it's centered across; a free piece's drawn part centered on its body. own: the
+ * art's own size in squares, when known: art not at the piece's size (another pack's) keeps its shape and its size,
+ * shrunk to fit the piece's.
  */
-export function artPlacement(p, insets = [0, 0, 0, 0]) {
+export function artPlacement(p, insets = [0, 0, 0, 0], own = null) {
   const F = FURNITURE[p.f] ?? { size: [1, 1], body: [1, 1] };
-  const [aw, ah] = F.size, [bw, bh] = F.body;
+  let [aw, ah] = F.size;
+  if (own?.[0] > 0 && own?.[1] > 0 && (Math.abs(own[0] - aw) > 0.05 * aw || Math.abs(own[1] - ah) > 0.05 * ah)) {
+    const k = Math.min(1, aw / own[0], ah / own[1]);
+    [aw, ah] = [own[0] * k, own[1] * k];
+  }
+  const [bw, bh] = [Math.min(F.body[0], aw), Math.min(F.body[1], ah)];
   const [l, t, r, b] = [insets[0] * aw, insets[1] * ah, insets[2] * aw, insets[3] * ah];
   let dx = (r - l) / 2, dy = (b - t) / 2;
   if ((F.back ?? "top") === "top") dy = ah / 2 - t - bh / 2;

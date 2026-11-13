@@ -8,6 +8,11 @@
 - Where a season's art (snowy slate roofs, say) can't be had, a battle map now paints the role's plain art instead of a plain color.
 - The Art window (Configure Settings, AtlasScribe, Art, or the new pictures button in the AtlasScribe window): its Art tab lists every kind of art AtlasScribe paints, grouped, with a picture of what it's painted with now and where that comes from, and lets you choose an image or a folder of images for any of them instead, with the art's pixels a square, for its seasons and sizes too if you like; its Rules tab holds filename rules that give a role every image whose name matches a pattern (`*slate*roof*`). A role takes at most 32 variants.
 - New API calls `rescanArt()` and `openArt()`.
+- Furniture from a pack that isn't Forgotten Adventures keeps its own size and shape (shrunk to fit the piece if it's bigger), instead of being stretched to FA's.
+- An art file that won't load but is still on the server (a damaged image, say) is left out by name until the art is read again, instead of every folder being read again at each render.
+- A rule or manifest naming a role AtlasScribe doesn't paint says so; role names are matched without regard to capitals. A file in two listed folders, one inside the other, counts once.
+- With FA Nexus but no Patreon login, a note says how many Forgotten Adventures files need it.
+- A battle map drawn entirely because there's no art no longer ends with a notice listing what wasn't found.
 
 **Drawn battle art**
 - A battle map needs no art now: whatever has none (grass, paving, floors, roofs, water, trees, props, furniture) is drawn, shaped like the art it stands in for, instead of a plain color. Furniture and mist drawn this way are tiles you can move as usual, their images saved beside the map.
@@ -21,6 +26,7 @@
 - Say which quarters a city has, whether it has a citadel, and leave out its old wall, suburbs, cemeteries or mills. A quarter left out isn't outside the walls either (no poor quarter, no shanties).
 - A cemetery, mill, wall or citadel asked for that finds no room is said.
 - Quick Start's API takes `has`, `quarters` and `outside`. Plans you made before, and new ones left on their defaults, are the same.
+- In the Describe box, "a market" is a market square, "a mill" is a watermill when the form has water, and words inside a name aren't read as choices.
 
 ## 0.7.0
 

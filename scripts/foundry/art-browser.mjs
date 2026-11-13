@@ -66,6 +66,8 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
   #idx = null;
   #rows = [];
   #reading = false;
+  /** A button to give focus back to once it's enabled again (Save and read, Read again, disabled while reading). */
+  #refocus = null;
   #filter = { show: "all", text: "" };
   /** Groups opened in the Art tab, kept across redraws. */
   #open = new Set();
@@ -139,7 +141,12 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
   _replaceHTML(result, content) {
     const scroll = content.querySelector(".as-art-body")?.scrollTop ?? 0;
     const focus = document.activeElement && content.contains(document.activeElement) ? document.activeElement : null;
-    const focusKey = focus?.name || (focus?.classList?.contains("as-art-search") ? ".as-art-search" : null);
+    // (a button by its action and data, so focus comes back to it, or to its row's next one, after the redraw)
+    const button = focus?.dataset?.action ? `[data-action="${focus.dataset.action}"]${Object.entries(focus.dataset).filter(([k]) => k !== "action" && k !== "tooltip").map(([k, v]) => `[data-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${CSS.escape(v)}"]`).join("")}` : null;
+    // (a button waiting to be enabled again wins while focus is where it was left: nowhere, or on the active tab)
+    const lost = !focus && (!document.activeElement || document.activeElement === document.body);
+    const waiting = this.#refocus && (lost || focus?.getAttribute("role") === "tab") ? this.#refocus : null;
+    const focusKey = focus?.name || (focus?.classList?.contains("as-art-search") ? ".as-art-search" : focus?.classList?.contains("as-art-show") ? ".as-art-show" : null);
     const caret = focus?.selectionStart ?? null;
     content.innerHTML = result;
     const body = content.querySelector(".as-art-body");
@@ -148,6 +155,13 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
       const el = focusKey.startsWith(".") ? content.querySelector(focusKey) : content.querySelector(`[name="${focusKey}"]`);
       el?.focus();
       if (caret !== null) try { el?.setSelectionRange(caret, caret); } catch { /* not a text box */ }
+    } else if (waiting || button) {
+      // (a button gone with its row: the active tab, so focus isn't lost; one disabled for now gets it back once it's
+      // enabled)
+      const want = waiting ?? button;
+      const el = content.querySelector(want);
+      this.#refocus = el?.disabled ? want : null;
+      (el && !el.disabled ? el : content.querySelector('[role="tab"][aria-selected="true"]'))?.focus();
     }
     content.querySelector(".as-art-search")?.addEventListener("input", (ev) => {
       this.#filter.text = ev.target.value;
@@ -215,14 +229,15 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
       return `<li>
           <div class="as-af-row">
             <span class="as-af-source">${esc(f.source === "data" ? "Data" : f.source)}</span>
-            <input type="text" name="path-${i}" value="${esc(f.path)}" placeholder="folder">
+            <input type="text" name="path-${i}" value="${esc(f.path)}" placeholder="folder" aria-label="Folder">
             <button type="button" data-action="asBrowse" data-i="${i}" data-tooltip="Browse" aria-label="Browse"><i class="fa-solid fa-folder-open"></i></button>
             <button type="button" data-action="asRemove" data-i="${i}" data-tooltip="Remove" aria-label="Remove"><i class="fa-solid fa-trash"></i></button>
           </div>
           ${info ? `<div class="as-af-info">${info}</div>` : ""}
         </li>`;
     }).join("");
-    return `<ol class="as-af-list">${rows || `<li class="as-af-none">No folders.</li>`}</ol>
+    return `<p class="hint">Folders of map art on the server, looked in for battle maps and the textured style. Forgotten Adventures files are found by name; another pack needs a manifest (atlas-scribe.json) in its folder, or rules (the Rules tab), or art chosen in the Art tab.</p>
+      <ol class="as-af-list">${rows || `<li class="as-af-none">No folders.</li>`}</ol>
       <div class="as-af-buttons">
         <button type="button" data-action="asAdd"><i class="fa-solid fa-plus"></i> Add a folder</button>
         <button type="button" data-action="asDefault">Default</button>
@@ -254,7 +269,7 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
       await FP().browse(nexus.source, nexus.path);
       list = [nexus];
     } catch {
-      /* no FA Nexus folder */
+      ui.notifications.info("AtlasScribe: the default looks in FA Nexus's download folder, which isn't on this server, so it's no folders.");
     }
     this.#folders = list;
     this.#default = JSON.stringify(list.map(folderOf));
@@ -270,7 +285,9 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
       activeSource: f.source,
       callback: (path, fp) => {
         const source = fp?.activeSource ?? "data";
-        this.#folders[i] = folderOf({ source, path, bucket: source === "s3" ? fp?.sources?.s3?.bucket : undefined });
+        const folder = folderOf({ source, path, bucket: source === "s3" ? fp?.sources?.s3?.bucket : undefined });
+        if (!folder.path && folder.source === "data") return ui.notifications.warn("AtlasScribe: the top of the Data folder holds every module and world: choose a folder inside it.");
+        this.#folders[i] = folder;
         this.render();
       },
     }).render(true);
@@ -350,8 +367,8 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
     }).join("");
     const opt = (v, l) => `<option value="${v}" ${show === v ? "selected" : ""}>${l}</option>`;
     return `<div class="as-art-bar">
-        <input type="search" class="as-art-search" placeholder="Search" value="${esc(this.#filter.text)}">
-        <select class="as-art-show">${opt("all", "All")}${opt("none", "None")}${opt("mine", "Your art")}${opt("hand", "By hand")}${opt("folder", "Folders")}${opt("nexus", "FA Nexus")}</select>
+        <input type="search" class="as-art-search" placeholder="Search" aria-label="Search the roles" value="${esc(this.#filter.text)}">
+        <select class="as-art-show" aria-label="Show">${opt("all", "All")}${opt("none", "None")}${opt("mine", "Your art")}${opt("hand", "By hand")}${opt("folder", "Folders")}${game.modules.get("fa-nexus")?.active || show === "nexus" ? opt("nexus", "FA Nexus") : ""}</select>
       </div>
       <p class="hint">${drawAll() ? "Draw whole battle maps is on (Configure Settings), so battle maps draw everything and use none of this art; the textured style still does." : "A role with none is drawn on a battle map and painted a plain color in the textured style."}</p>
       ${(this.#idx.notes ?? []).length ? `<ul class="as-art-notes">${this.#idx.notes.slice(0, 5).map((n) => `<li>${esc(n)}</li>`).join("")}${this.#idx.notes.length > 5 ? `<li>and ${this.#idx.notes.length - 5} more</li>` : ""}</ul>` : ""}
@@ -387,6 +404,7 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
       callback: async (path, fp) => {
         const source = fp?.activeSource ?? "data";
         const folder = folderOf({ source, path, bucket: source === "s3" ? fp?.sources?.s3?.bucket : undefined });
+        if (!folder.path && folder.source === "data") return ui.notifications.warn("AtlasScribe: the top of the Data folder holds every module and world: choose a folder inside it.");
         const e = { files: [], folders: [], px: 200, all: false, ...storedRoles()[role] };
         if (!e.folders.some((f) => folderKey(folderOf(f)) === folderKey(folder))) e.folders = [...e.folders, folder];
         await this.#setRole(role, e);
@@ -424,8 +442,8 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
     const stored = storedRules();
     const same = (r, i) => stored[i] && stored[i].pattern.trim() === r.pattern.trim() && stored[i].role.trim() === r.role.trim();
     const rows = this.#rules.map((r, i) => `<li>
-        <input type="text" name="pattern-${i}" value="${esc(r.pattern)}" placeholder="*slate*roof*">
-        <input type="text" name="role-${i}" value="${esc(r.role)}" placeholder="roof.slate" list="as-art-roles">
+        <input type="text" name="pattern-${i}" value="${esc(r.pattern)}" placeholder="*slate*roof*" aria-label="Pattern">
+        <input type="text" name="role-${i}" value="${esc(r.role)}" placeholder="roof.slate" list="as-art-roles" aria-label="Role">
         <input type="number" name="px-${i}" value="${esc(r.px)}" placeholder="200" min="20" max="2000" data-tooltip="Pixels a square" aria-label="Pixels a square">
         <span class="as-rule-n">${same(r, i) && matches[i] !== undefined ? matches[i].toLocaleString() : ""}</span>
         <button type="button" data-action="asRemoveRule" data-i="${i}" data-tooltip="Remove" aria-label="Remove"><i class="fa-solid fa-trash"></i></button>

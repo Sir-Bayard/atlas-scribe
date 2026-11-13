@@ -1,7 +1,7 @@
 {
   "id": "atlas-scribe",
   "title": "AtlasScribe: Map Generator",
-  "description": "<p>A map plan in, a map out. You decide what matters (the roads, the river, the square, the landmarks, what each district is like) and AtlasScribe fills in the rest procedurally: streets, plots, houses, gardens, trees and clutter, drawn as an illustrated map that needs no art, or painted from the map art you already have. Settlements and cities first, battle maps later. System agnostic. Early development: villages, towns and walled cities work, made with Quick Start and changed on the map.</p>",
+  "description": "<p>A map plan in, a map out. You decide what matters (the roads, the river, the square, the landmarks, what each district is like) and AtlasScribe fills in the rest procedurally: streets, plots, houses, gardens, trees and clutter, drawn as an illustrated map that needs no art, or painted from the map art you already have. Villages, towns, cities and battle maps, made with Quick Start and changed on the map. System agnostic.</p>",
   "version": "0.7.0",
   "authors": [
     {
@@ -28,7 +28,7 @@
       {
         "id": "fa-nexus",
         "type": "module",
-        "reason": "Paints maps with the Forgotten Adventures art you have through FA Nexus. Without it, AtlasScribe paints in plain colors."
+        "reason": "Paints battle maps with the Forgotten Adventures art you have through FA Nexus. Not needed: AtlasScribe also paints from art folders and draws what has no art."
       }
     ]
   }

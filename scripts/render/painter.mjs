@@ -8,6 +8,9 @@ import * as battle from "./styles/battle.mjs";
 import { artPlacement } from "../core/layout/rooms.mjs";
 import { drawnArt, forgetDrawn } from "./drawn-art.mjs";
 
+/** The art scale every style paints at (Forgotten Adventures' 200 px a square); art at another is resized to it. */
+const ART_PX = 200;
+
 export const STYLES = { illustrated, textured };
 
 /**
@@ -175,7 +178,8 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
     const d = url ? null : await drawnSrc(role, variant);
     if (!url && !d) continue;
     const bmp = url ? loaded.get(url) : d.im;
-    const at = artPlacement(piece, insetsOf(bmp));
+    // (its own size in squares: the art is resized to 200 px a square when it's loaded)
+    const at = artPlacement(piece, insetsOf(bmp), bmp ? [bmp.width / ART_PX, bmp.height / ART_PX] : null);
     furniture.push({ src: url ?? d.src, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
   }
   // Mist (a battle map's): each overlay a tile over the low place it lies in

@@ -9,7 +9,7 @@ import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
-import { resolveArt, forgetBroken } from "./foundry/art/index.mjs";
+import { resolveArt, forgetBroken, forgetUnloadable } from "./foundry/art/index.mjs";
 import { folderIndex, forget as forgetFolders, forgetChoices } from "./foundry/art/folders.mjs";
 import { ArtBrowser, ArtMenu } from "./foundry/art-browser.mjs";
 import { publish } from "./foundry/publish.mjs";
@@ -168,6 +168,7 @@ const api = {
   async rescanArt() {
     requireGM();
     forgetFolders();
+    forgetUnloadable();
     return (await folderIndex()).folders;
   },
 
@@ -309,10 +310,17 @@ const api = {
         check();
         // (a battle map draws what has no art, or with the setting everything, asking the art sources for nothing)
         const battle = layout.kind === "battle", drawn = battle ? drawnSetting() : null;
-        const { art, scale, missing, notes } = drawn?.all ? { art: {}, scale: {}, missing: [], notes: [] } : await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l), { drawn: battle });
+        const { art, scale, missing, notes, from } = drawn?.all ? { art: {}, scale: {}, missing: [], notes: [], from: { folders: 0, nexus: 0 } } : await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l), { drawn: battle });
         check();
         const img = await worker.run("paint", { layout, art, scale, quality: plan.output.quality, drawn }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
-        if (img.brokenArt?.length) forgetBroken(img.brokenUrls ?? []); // a file that failed may have gone: look again next time
+        // (a file that failed: left out from now on if it's still there, else looked for again next time)
+        let broken = [];
+        try {
+          if (img.brokenUrls?.length) broken = await forgetBroken(img.brokenUrls);
+        } catch (e) {
+          console.warn(`${MOD} | couldn't check the art that failed to load: ${e.message}`); // (never at the cost of the painted map)
+        }
+        if (broken.length) notes.push(`${broken.length === 1 ? "An art file" : `${broken.length} art files`} couldn't be loaded and ${broken.length === 1 ? "was" : "were"} left out: ${broken.slice(0, 5).join(", ")}${broken.length > 5 ? ", ..." : ""}`);
         check();
         let path = null, overheads = [], levels = [];
         if (save) {
@@ -374,6 +382,7 @@ const api = {
           path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           drawn: drawn ? drawn.look : null, // (a battle map's: what has no art is drawn, in this look)
+          artFrom: from, // (how many roles each source filled: { folders, nexus })
           notes: [...layout.notes.map((n) => n.message), ...notes],
           artNotes: notes, // why art is missing (a folder that couldn't be read, say)
           warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
@@ -495,10 +504,10 @@ Hooks.once("init", () => {
   });
   game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
   // (JSON: [{ source, path, bucket }]; empty until the GM sets a list, meaning FA Nexus's folder when it exists)
-  game.settings.register(MOD, "artFolders", { scope: "world", config: false, type: String, default: "", onChange: () => forgetFolders() });
+  game.settings.register(MOD, "artFolders", { scope: "world", config: false, type: String, default: "", onChange: () => { forgetFolders(); forgetUnloadable(); } });
   // (JSON: art chosen by hand, { role: { files, folders, px, all } }, and filename rules, [{ pattern, role, px }])
-  game.settings.register(MOD, "artRoles", { scope: "world", config: false, type: String, default: "", onChange: () => forgetChoices() });
-  game.settings.register(MOD, "artRules", { scope: "world", config: false, type: String, default: "", onChange: () => forgetChoices() });
+  game.settings.register(MOD, "artRoles", { scope: "world", config: false, type: String, default: "", onChange: () => { forgetChoices(); forgetUnloadable(); } });
+  game.settings.register(MOD, "artRules", { scope: "world", config: false, type: String, default: "", onChange: () => { forgetChoices(); forgetUnloadable(); } });
   game.settings.registerMenu(MOD, "artMenu", {
     name: "Art",
     label: "Art",

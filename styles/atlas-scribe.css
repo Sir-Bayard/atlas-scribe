@@ -709,7 +709,7 @@
 .atlas-scribe.as-art .as-art-name small { opacity: 0.55; font-family: monospace; font-size: 0.8em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .atlas-scribe.as-art .as-art-src { flex: 0 0 auto; font-size: 0.85em; opacity: 0.85; }
 .atlas-scribe.as-art .as-art-src small { opacity: 0.7; }
-.atlas-scribe.as-art .as-src-none { color: var(--color-level-error, #c33); }
+.atlas-scribe.as-art .as-src-none { opacity: 0.6; font-style: italic; }
 .atlas-scribe.as-art .as-src-hand, .atlas-scribe.as-art .as-src-rule, .atlas-scribe.as-art .as-src-manifest { font-weight: bold; }
 .atlas-scribe.as-art .as-art-acts { flex: 0 0 auto; display: flex; gap: 0.2rem; align-items: center; }
 .atlas-scribe.as-art .as-art-acts button { width: 1.9rem; height: 1.9rem; padding: 0; flex: 0 0 auto; }
