@@ -1822,8 +1822,11 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       const n = res?.missingArt?.length ?? 0;
       const none = (res?.artNotes ?? []).some((t) => /plain colors\.?$/.test(t));
       const sentence = (t) => (/[.!?)]$/.test(t) ? t : `${t}.`);
-      const why = [...(res?.artNotes ?? []).map(sentence), ...(n && !none ? [`${n} ${n === 1 ? "kind of art wasn't" : "kinds of art weren't"} found and ${n === 1 ? "is" : "are"} painted in plain colors (${res.missingArt.slice(0, 6).join(", ")}${n > 6 ? ", ..." : ""}).`] : []), ...(res?.warnings ?? []).map(sentence)];
+      const kinds = `${n} ${n === 1 ? "kind of art wasn't" : "kinds of art weren't"} found and ${n === 1 ? "is" : "are"} ${res?.drawn ? "drawn instead" : "painted in plain colors"} (${res?.missingArt?.slice(0, 6).join(", ")}${n > 6 ? ", ..." : ""}).`;
+      // (on a battle map what has no art is drawn, which is no fault: said in passing, not as a warning)
+      const why = [...(res?.artNotes ?? []).map(sentence), ...(n && !none && !res?.drawn ? [kinds] : []), ...(res?.warnings ?? []).map(sentence)];
       if (why.length) ui.notifications.warn(`AtlasScribe: ${why.join(" ")}`, { permanent: true });
+      if (n && res?.drawn) ui.notifications.info(`AtlasScribe: ${kinds}`);
     } catch (e) {
       if (!e.cancelled) ui.notifications.error(e.message, { permanent: true });
       // Canceled once the map was saved: Foundry can't delete a file, so say where it is

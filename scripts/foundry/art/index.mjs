@@ -50,7 +50,7 @@ export function forgetBroken(urls = []) {
 /**
  * Returns { art: { role: [absolute url, ...] }, scale: { url: factor }, missing: [role, ...], notes: [...], from:
  * { folders, nexus } }: scale for art not drawn at 200 px a square (from a manifest's gridPx), from counting the
- * roles each source filled.
+ * roles each source filled. drawn: a battle map's, whose roles with no art are drawn (the notes say so).
  */
 const abs = (p) => new URL(p, window.location.href).href;
 /** A file's address marked with the scale it's drawn at. */
@@ -60,7 +60,9 @@ function scaled(p, px) {
   return u.href;
 }
 
-export async function resolveArt(roles, progress = () => {}) {
+export async function resolveArt(roles, progress = () => {}, { drawn = false } = {}) {
+  // (what a role with no art becomes: drawn on a battle map, a plain color in the textured style)
+  const instead = drawn ? "drawn instead" : "painted in plain colors";
   const notes = [];
   let idx = EMPTY;
   try {
@@ -128,8 +130,9 @@ export async function resolveArt(roles, progress = () => {}) {
     }
     open = next;
   }
-  if (nexusWhy) notes.push(`${nexusWhy}; art it would have given is painted in plain colors`);
-  if (missing.length && !idx.folders.length && !faNexus.available()) notes.push("No art folders are set and FA Nexus isn't active, so the map is painted in plain colors");
+  if (nexusWhy) notes.push(`${nexusWhy}; art it would have given is ${instead}`);
+  // (a battle map with no art at all is simply drawn: nothing to warn of)
+  if (missing.length && !idx.folders.length && !faNexus.available() && !drawn) notes.push("No art folders are set and FA Nexus isn't active, so the map is painted in plain colors");
 
   return {
     art,

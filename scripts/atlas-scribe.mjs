@@ -33,6 +33,12 @@ let theApp = null;
 let previewPx = 1600;
 
 /** The folder AtlasScribe writes into: the setting, or this world's own atlas-scribe folder. */
+/** A battle map's drawn art, from the world settings: { look: "painted" or "inked", all }. */
+function drawnSetting() {
+  const get = (k, d) => { try { return game.settings.get(MOD, k); } catch { return d; } };
+  return { look: get("drawnLook", "painted") === "inked" ? "inked" : "painted", all: !!get("drawnAll", false) };
+}
+
 function outputFolder() {
   const set = String(game.settings.get(MOD, "outputFolder") ?? "").trim().replace(/^\/+|\/+$/g, "");
   return set || `worlds/${game.world.id}/${MOD}`;
@@ -280,12 +286,12 @@ const api = {
 
   /**
    * Renders a plan into an image in the worker and saves it to <output>/maps (never over an existing file): check the
-   * plan (errors stop it), lay it out, fetch its art (the art folders, then FA Nexus; roles with none are painted
-   * plain and listed in missingArt), paint, save. With publish: true the map is then published (scene and force as there); if that fails,
+   * plan (errors stop it), lay it out, fetch its art (the art folders, then FA Nexus; roles with none are listed in
+   * missingArt and painted plain, or on a battle map drawn, in the look drawn names), paint, save. With publish: true the map is then published (scene and force as there); if that fails,
    * the error carries the saved map's result as error.result. A battle map also saves its roofs and crowns
    * (overheads: [{ path, kind, x, y, width, height, elevation }]), its floors (levels: [{ floor, path }]) and lists
    * its furniture and mist tiles. Returns { path, width, height, tiles, ms, layout, overheads, furniture, mist,
-   * levels, missingArt, notes, artNotes, warnings }, and scene when published.
+   * levels, missingArt, drawn, notes, artNotes, warnings }, and scene when published.
    */
   async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
     requireGM();
@@ -301,9 +307,11 @@ const api = {
       try {
         const { layout, roles } = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
         check();
-        const { art, scale, missing, notes } = await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l));
+        // (a battle map draws what has no art, or with the setting everything, asking the art sources for nothing)
+        const battle = layout.kind === "battle", drawn = battle ? drawnSetting() : null;
+        const { art, scale, missing, notes } = drawn?.all ? { art: {}, scale: {}, missing: [], notes: [] } : await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l), { drawn: battle });
         check();
-        const img = await worker.run("paint", { layout, art, scale, quality: plan.output.quality }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        const img = await worker.run("paint", { layout, art, scale, quality: plan.output.quality, drawn }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
         if (img.brokenArt?.length) forgetBroken(img.brokenUrls ?? []); // a file that failed may have gone: look again next time
         check();
         let path = null, overheads = [], levels = [];
@@ -329,6 +337,20 @@ const api = {
               throw e;
             }
           }
+          // The drawn images its furniture and mist use, beside the map in a folder of their own, and the tiles pointed
+          // at them
+          if (img.drawnFiles?.length) {
+            try {
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-drawn`)}`;
+              await ensureDir(sub);
+              const saved = new Map();
+              for (const f of img.drawnFiles) { check(); saved.set(`drawn:${f.name}`, await upload(sub, f.name, f.blob, { ready: true })); }
+              for (const t of [...(img.furniture ?? []), ...(img.mist ?? [])]) if (saved.has(t.src)) t.src = saved.get(t.src);
+            } catch (e) {
+              e.result = { path, width: img.width, height: img.height, layout, overheads, furniture: null, mist: null, levels: null };
+              throw e;
+            }
+          }
           // A battle map's floors above and below the ground, each its own image beside the map (in a folder of its own,
           // as the roofs are), for publish to make the scene's levels of
           if (img.levels?.length) {
@@ -351,6 +373,7 @@ const api = {
         result = {
           path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
+          drawn: drawn ? drawn.look : null, // (a battle map's: what has no art is drawn, in this look)
           notes: [...layout.notes.map((n) => n.message), ...notes],
           artNotes: notes, // why art is missing (a folder that couldn't be read, say)
           warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
@@ -492,6 +515,23 @@ Hooks.once("init", () => {
     type: Number,
     choices: { 1: "True size", 1.5: "1.5 times true size", 2: "2 times true size" },
     default: 2,
+  });
+  game.settings.register(MOD, "drawnLook", {
+    name: "Drawn battle art",
+    hint: "How a battle map draws what has no art: painted (shaded, in natural colors) or inked (pale colors with ink lines, like a town map).",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: { painted: "Painted", inked: "Inked" },
+    default: "painted",
+  });
+  game.settings.register(MOD, "drawnAll", {
+    name: "Draw whole battle maps",
+    hint: "Draw every battle map entirely, even where art folders or FA Nexus have art, so the whole map has one look.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
   });
   registerHeight();
   registerRulesSetting();

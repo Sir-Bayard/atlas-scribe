@@ -21,11 +21,12 @@ const jobs = {
   },
 
   /**
-   * Layout to image. art: { role: [url, ...] }; scale: { url: factor } for art not drawn at 200 px a square. Returns paintLayout's result: { blob, thumb, width, height, tiles,
-   * failedArt, brokenArt, overheads, furniture, mist, levels, ms }.
+   * Layout to image. art: { role: [url, ...] }; scale: { url: factor } for art not drawn at 200 px a square; drawn: {
+   * look, all } for a battle map's drawn art. Returns paintLayout's result: { blob, thumb, width, height, tiles,
+   * failedArt, brokenArt, overheads, furniture, mist, levels, drawnFiles, ms }.
    */
-  async paint({ layout, art, scale, tileSize, quality }, progress) {
-    return paintLayout({ layout, art, scale, tileSize, quality }, progress);
+  async paint({ layout, art, scale, tileSize, quality, drawn }, progress) {
+    return paintLayout({ layout, art, scale, tileSize, quality, drawn }, progress);
   },
 
   /**

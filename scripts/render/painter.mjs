@@ -6,6 +6,7 @@ import * as textured from "./styles/textured.mjs";
 import * as illustrated from "./styles/illustrated.mjs";
 import * as battle from "./styles/battle.mjs";
 import { artPlacement } from "../core/layout/rooms.mjs";
+import { drawnArt, forgetDrawn } from "./drawn-art.mjs";
 
 export const STYLES = { illustrated, textured };
 
@@ -24,9 +25,20 @@ export function styleOf(layout) {
  * plain); brokenArt the roles any file failed for, brokenUrls those files; overheads the pieces painted apart to lie over the map as tiles
  * ([{ name, kind, x, y, width, height (px from the map's corner), elevation, blob }]); furniture [{ src, f, x, y
  * (middle), width, height, rotation, floor, lock }]; mist the fog tiles; levels a battle map's other floors ([{
- * floor, blob }]). progress(pct, label) runs from 0 to 1.
+ * floor, blob }]); drawnFiles the drawn images its furniture and mist tiles use ([{ name, blob }], their src
+ * "drawn:<name>" until saved). progress(pct, label) runs from 0 to 1. drawn: { look, all } for a battle map: roles with
+ * no art drawn in that look ("painted" or "inked"), or with all every role drawn.
  */
-export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86 }, progress = () => {}) {
+export async function paintLayout(input, progress = () => {}) {
+  // (the drawn images let go whether painting finishes or not)
+  try {
+    return await paint(input, progress);
+  } finally {
+    forgetDrawn();
+  }
+}
+
+async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86, drawn = null }, progress) {
   const t0 = performance.now();
   const style = styleOf(layout);
   const pp = layout.pxPerSquare;
@@ -71,9 +83,22 @@ export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 256
   // (a variant picks from all of a role's files, so one that failed to load changes only the pieces that wanted it,
   // which take the role's first that loaded, not which file every other piece gets)
   const pickOf = (all, ok, variant) => (all?.length ? (ok(all[Math.abs(variant | 0) % all.length]) ? all[Math.abs(variant | 0) % all.length] : all.find(ok)) ?? null : null);
-  const getArt = (role, variant = 0) => {
+  const fileArt = (role, variant = 0) => {
     const u = pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
     return u ? loaded.get(u) : null;
+  };
+  // (a battle map draws what has no art: drawn-art.mjs; a settlement's styles paint it plain)
+  const look = layout.kind === "battle" && drawn ? (drawn.look === "inked" ? "inked" : "painted") : null;
+  const drawnOf = (role, variant) => (look ? drawnArt(role, variant, { look }) : null);
+  const getArt = (role, variant = 0) => (look && drawn.all ? null : fileArt(role, variant)) ?? drawnOf(role, variant);
+  // (the drawn images tiles use, saved as files beside the map: one each, named by role, look and variant)
+  const drawnFiles = new Map();
+  const drawnSrc = async (role, variant) => {
+    const im = drawnOf(role, variant);
+    if (!im) return null;
+    const name = `${role}-${look}-${((variant % 3) + 3) % 3}.webp`;
+    if (!drawnFiles.has(name)) drawnFiles.set(name, { im, blob: await im.convertToBlob({ type: "image/webp", quality: 0.92 }) });
+    return { src: `drawn:${name}`, im };
   };
 
   // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur (one
@@ -146,22 +171,24 @@ export async function paintLayout({ layout, art = {}, scale = {}, tileSize = 256
   // Furniture (a battle map's): each piece a tile, its art placed by the part of its file that's drawn
   const furniture = [];
   for (const { role, variant, piece } of style.furniture?.(layout) ?? []) {
-    const url = pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
-    if (!url) continue;
-    const bmp = loaded.get(url);
+    const url = look && drawn.all ? null : pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
+    const d = url ? null : await drawnSrc(role, variant);
+    if (!url && !d) continue;
+    const bmp = url ? loaded.get(url) : d.im;
     const at = artPlacement(piece, insetsOf(bmp));
-    furniture.push({ src: url, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
+    furniture.push({ src: url ?? d.src, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
   }
   // Mist (a battle map's): each overlay a tile over the low place it lies in
   const mist = [];
   for (const m of style.mist?.(layout) ?? []) {
-    const url = pickOf(urlsOf.get(m.role), (x) => !!loaded.get(x), m.variant);
-    if (!url) continue;
-    mist.push({ src: url, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
+    const url = look && drawn.all ? null : pickOf(urlsOf.get(m.role), (x) => !!loaded.get(x), m.variant);
+    const d = url ? null : await drawnSrc(m.role, m.variant);
+    if (!url && !d) continue;
+    mist.push({ src: url ?? d.src, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
   }
   for (const bmp of loaded.values()) bmp?.close();
   const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overheads, furniture, mist, levels, ms: Math.round(performance.now() - t0) };
+  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overheads, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
 }
 
 /**

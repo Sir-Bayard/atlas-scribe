@@ -9,6 +9,11 @@
 - The Art window (Configure Settings, AtlasScribe, Art, or the new pictures button in the AtlasScribe window): its Art tab lists every kind of art AtlasScribe paints, grouped, with a picture of what it's painted with now and where that comes from, and lets you choose an image or a folder of images for any of them instead, with the art's pixels a square, for its seasons and sizes too if you like; its Rules tab holds filename rules that give a role every image whose name matches a pattern (`*slate*roof*`). A role takes at most 32 variants.
 - New API calls `rescanArt()` and `openArt()`.
 
+**Drawn battle art**
+- A battle map needs no art now: whatever has none (grass, paving, floors, roofs, water, trees, props, furniture) is drawn, shaped like the art it stands in for, instead of a plain color. Furniture and mist drawn this way are tiles you can move as usual, their images saved beside the map.
+- Two looks, a world setting (Drawn battle art): Painted, shaded in natural colors (the default), or Inked, pale colors with ink lines like a town map.
+- Draw whole battle maps, a world setting: every battle map drawn entirely, even where art folders or FA Nexus have art, so a map has one look (and no art is fetched).
+
 **Settlement Quick Start**
 - A Describe box, as on the Battle map tab: type what you want ("a walled port city called 'Saltmere' with a cathedral, a citadel and no slums") and what it understood shows as chips and is set in the form below, where you can change it. A chip's × takes it out; words it doesn't know are listed.
 - The choices follow the size. A village's or town's center can be a well; a city's a cathedral or a palace beside its square, its ward taking the square. What a size can't have (a cathedral for a village, the sea for a town, an old wall for a city) is grayed out with why.

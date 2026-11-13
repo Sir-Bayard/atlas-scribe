@@ -26,6 +26,8 @@ export function roleLabel(role) {
   const s = rest.length ? rest.join(", ") : role;
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+/** Whether every battle map is drawn (the world setting), whatever art there is. */
+const drawAll = () => { try { return !!game.settings.get(MOD, "drawnAll"); } catch { return false; } };
 const SOURCES = { hand: "By hand", rule: "Rule", manifest: "Manifest", folder: "Folder", nexus: "FA Nexus", none: "None" };
 
 export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
@@ -351,6 +353,7 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
         <input type="search" class="as-art-search" placeholder="Search" value="${esc(this.#filter.text)}">
         <select class="as-art-show">${opt("all", "All")}${opt("none", "None")}${opt("mine", "Your art")}${opt("hand", "By hand")}${opt("folder", "Folders")}${opt("nexus", "FA Nexus")}</select>
       </div>
+      <p class="hint">${drawAll() ? "Draw whole battle maps is on (Configure Settings), so battle maps draw everything and use none of this art; the textured style still does." : "A role with none is drawn on a battle map and painted a plain color in the textured style."}</p>
       ${(this.#idx.notes ?? []).length ? `<ul class="as-art-notes">${this.#idx.notes.slice(0, 5).map((n) => `<li>${esc(n)}</li>`).join("")}${this.#idx.notes.length > 5 ? `<li>and ${this.#idx.notes.length - 5} more</li>` : ""}</ul>` : ""}
       ${html || `<p class="as-art-wait">Nothing to show.</p>`}`;
   }
