@@ -9,6 +9,14 @@
 - The Art window (Configure Settings, AtlasScribe, Art, or the new pictures button in the AtlasScribe window): its Art tab lists every kind of art AtlasScribe paints, grouped, with a picture of what it's painted with now and where that comes from, and lets you choose an image or a folder of images for any of them instead, with the art's pixels a square, for its seasons and sizes too if you like; its Rules tab holds filename rules that give a role every image whose name matches a pattern (`*slate*roof*`). A role takes at most 32 variants.
 - New API calls `rescanArt()` and `openArt()`.
 
+**Settlement Quick Start**
+- A Describe box, as on the Battle map tab: type what you want ("a walled port city called 'Saltmere' with a cathedral, a citadel and no slums") and what it understood shows as chips and is set in the form below, where you can change it. A chip's × takes it out; words it doesn't know are listed.
+- The choices follow the size. A village's or town's center can be a well; a city's a cathedral or a palace beside its square, its ward taking the square. What a size can't have (a cathedral for a village, the sea for a town, an old wall for a city) is grayed out with why.
+- Say what a village or town has: a temple, an inn, a smithy, a cemetery, a watermill, a windmill, a wall (a palisade around a village, a town wall around a town). A box left alone is as its size has it; Reset puts them all back.
+- Say which quarters a city has, whether it has a citadel, and leave out its old wall, suburbs, cemeteries or mills. A quarter left out isn't outside the walls either (no poor quarter, no shanties).
+- A cemetery, mill, wall or citadel asked for that finds no room is said.
+- Quick Start's API takes `has`, `quarters` and `outside`. Plans you made before, and new ones left on their defaults, are the same.
+
 ## 0.7.0
 
 Battle maps. A plan at 5 feet a square is painted from Forgotten Adventures art and made a scene to fight on: buildings with walls, doors, windows, rooms and furniture under roofs that fade as a token walks in, floors above and cellars as levels, castles with a wall walk and gatehouses, height with cliffs, banks and stream beds that set a token's elevation, woods, water and winter, lights and the time of day, and the Pathfinder Second Edition rules. Make one from Quick Start's Battle map tab (or describe it in words), from an area of a town map with the Battle map tool, or by hand.

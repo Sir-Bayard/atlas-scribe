@@ -415,7 +415,7 @@ export function cityPlan(choices, seed) {
   // A metropolis keeps its old wall: a smaller ring around the old town, the wards cut by its line (half its reach in
   // from it inside, half out from it outside), the main roads passing through it at its own gates
   let oldWall = null, oldPoly = null, oldCut = null;
-  if (choices.size === "metropolis") {
+  if (choices.size === "metropolis" && choices.oldWall !== false) {
     const n = 10 + r.int(4), f = r.range(0.48, 0.56);
     oldPoly = Array.from({ length: n }, (_, k) => {
       const a = (k + r.range(-0.3, 0.3)) * (TAU / n);
@@ -506,6 +506,7 @@ export function cityPlan(choices, seed) {
   const sr = rng(seed, "quick", "city-square");
   const spin = sr.next() * Math.PI, main = roads.find((rd) => rd.angle !== undefined); // (a rectangle lies along a main road)
   const sh = squareShape({ r: sr.fork("shape"), C, angle: main ? main.angle : spin, rad: S.square, kinds: ["circle", "rect", "irregular"] });
+  // (a cathedral or palace at the center stands beside a paved square, as a market square does)
   const square = choices.center === "green"
     ? { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "grass", name: "The green" }
     : { id: "square", type: "square", shape: sh.shape, surface: sr.pick(PAVINGS), market: true, name: "The market square" };
@@ -561,7 +562,10 @@ export function cityPlan(choices, seed) {
     if (best) roads.push({ id: `${d.id}-street`, type: "road", class: "street", surface: "cobble", path: [pt(best.p), pt(mid)] });
     else districts.splice(k, 1);
   }
-  const citadel = assignCharacters({ districts, C, R, S, size: choices.size, sea, lake, rivers, island, ringPoly, oldPoly, gateRoads: roads.filter((rd) => rd.angle !== undefined), allRoads: roads.map((rd) => rd.path), squarePoly: choices.center !== "none" ? shapeToPolygon(square.shape) : null, harbor: !!(sea ?? lake) && (!ringPoly || !!harborRun({ shore: sea ?? lake, ringPoly, river, W, H })), r: rng(seed, "quick", "city-wards") });
+  const lead = choices.center === "cathedral" ? "temple" : choices.center === "palace" ? "nobles" : null;
+  // (a cathedral's or palace's quarter is kept: the landmark is its)
+  const allow = Array.isArray(choices.quarters) ? new Set([...choices.quarters, ...(lead ? [lead] : [])]) : null;
+  const citadel = assignCharacters({ lead, allow, wantCitadel: choices.citadel, districts, C, R, S, size: choices.size, sea, lake, rivers, island, ringPoly, oldPoly, gateRoads: roads.filter((rd) => rd.angle !== undefined), allRoads: roads.map((rd) => rd.path), squarePoly: choices.center !== "none" ? shapeToPolygon(square.shape) : null, harbor: !!(sea ?? lake) && (!ringPoly || !!harborRun({ shore: sea ?? lake, ringPoly, river, W, H })), r: rng(seed, "quick", "city-wards") });
 
   // The town wall, closed, straight between its corners; a moat where it's by a river, else a ditch or none
   // (against a cliff: open, from the cliff around to the cliff)
@@ -731,7 +735,7 @@ const cap = (w) => w[0].toUpperCase() + w.slice(1);
  * upstream, crafts by the water downstream and near the gates, the poor by the wall, merchants along the main roads,
  * the rest homes. Sets each district's character and name. Returns the citadel ({ features }) or null.
  */
-function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island, ringPoly, oldPoly, gateRoads, allRoads, squarePoly = null, harbor = true, r }) {
+function assignCharacters({ lead = null, allow = null, wantCitadel, districts, C, R, S, size, sea, lake, rivers, island, ringPoly, oldPoly, gateRoads, allRoads, squarePoly = null, harbor = true, r }) {
   if (!districts.length) return null;
   const metro = size === "metropolis";
   const shore = sea ?? lake;
@@ -757,15 +761,21 @@ function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island,
   });
   const free = () => info.filter((w) => !w.d.character);
   const take = (n, score, character) => {
+    if (allow && !allow.has(character)) return [];
     const picked = free().map((w) => ({ w, s: score(w) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).slice(0, n);
     for (const { w } of picked) w.d.character = character;
     return picked.map((x) => x.w);
   };
   const count = (lo, hi) => lo + r.int(hi - lo + 1);
+  // A cathedral or palace asked for at the center: its ward takes the square first, its landmark placed toward it
+  const led = lead ? take(1, (x) => x.square * 10 - x.center * 3 + x.j, lead) : [];
+  for (const w of led) { w.d.anchorToward = [r1(C[0]), r1(C[1])]; w.d.anchorAt = "edge"; }
+  // (the lead ward counts as one of its kind's)
+  const less = (kind, n) => (lead === kind ? n - led.length : n);
   // The market and the temple at the heart of the city
   take(metro ? 2 : 1, (w) => w.square * 10 - w.center * 3 + w.j, "market");
   // (on the island, when the river splits around one)
-  take(metro ? 2 : 1, (w) => (w.center < 0.6 ? 5 : 0) + w.square * 2 - w.center * 3 + w.isle * 4 + w.j * 1.5, "temple");
+  take(less("temple", metro ? 2 : 1), (w) => (w.center < 0.6 ? 5 : 0) + w.square * 2 - w.center * 3 + w.isle * 4 + w.j * 1.5, "temple");
   // Docks along the shore or the river
   // (on the river where the shore stays outside the wall: an estuary city whose sea lies off past its island)
   // (on the shore only where it has room for the harbor's quay inside the wall street)
@@ -774,7 +784,7 @@ function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island,
   // The garrison against the wall, by a gate, on the water if it can
   const garrison = take(metro ? count(1, 2) : 1, (w) => w.wall * 4 + w.gates * 2 + (w.shore || w.river ? 2 : 0) + w.center * 2 + w.j * 2, "garrison");
   // The nobles on the quiet side: off the main roads, upstream, away from the garrison and the docks
-  take(metro ? count(2, 3) : count(1, 2), (w) => -w.gates * 2 - w.down * 2 - w.wall + (w.old ? 1.5 : 0) - (w.center > 0.75 ? 2 : 0) + w.j * 2, "nobles");
+  take(less("nobles", metro ? count(2, 3) : count(1, 2)), (w) => -w.gates * 2 - w.down * 2 - w.wall + (w.old ? 1.5 : 0) - (w.center > 0.75 ? 2 : 0) + w.j * 2, "nobles");
   // Crafts by the water downstream and near the gates
   take(metro ? count(3, 4) : count(1, 2), (w) => (w.river ? 2 : 0) + w.down * 2 + w.gates + w.wall + w.j * 2, "crafts");
   // The poor by the wall, away from the nobles
@@ -787,7 +797,8 @@ function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island,
   // Names: the ward's character, or for homes its side of the city
   const NAME = { market: "Market Ward", temple: "Temple Ward", docks: onShore.length ? "Harbor Ward" : "River Ward", garrison: "Garrison Ward", nobles: "High Ward", crafts: "Craft Ward", poor: "Low Ward", merchants: "Merchant Ward" };
   const used = new Map();
-  for (const w of info) {
+  // (the lead ward named first, so it's never its kind's "II")
+  for (const w of [...led, ...info.filter((x) => !led.includes(x))]) {
     const base = w.d.character === "homes" ? (w.isle ? "Isle Ward" : `${cap(compass(Math.atan2(w.c[1] - C[1], w.c[0] - C[0])))} Ward`) : NAME[w.d.character];
     const n = (used.get(base) ?? 0) + 1;
     used.set(base, n);
@@ -797,7 +808,9 @@ function assignCharacters({ districts, C, R, S, size, sea, lake, rivers, island,
 
   // The citadel: often the garrison walled in on its own (a city about half the time, a metropolis mostly)
   const g = garrison[0];
-  if (!g || !r.chance(metro ? 0.75 : 0.5)) return null;
+  if (!g) return null;
+  const roll = r.chance(metro ? 0.75 : 0.5);
+  if (wantCitadel === false || (!roll && wantCitadel !== true)) return null;
   const reach = (12 / 2 + 15) / 25;
   // (in from its edge by the main road's half width, the wall's reach and its towers', so the road runs clear of it)
   // (and kept off the square, wall and towers both, where the ward reaches it)
@@ -843,7 +856,7 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
   const onMap = (p) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1;
   const suburbs = [];
   for (const rd of roads) {
-    if (!r.chance(metro ? 0.85 : 0.6)) continue;
+    if (!r.chance(metro ? 0.85 : 0.6) || choices.suburbs === false) continue;
     // From just past the wall, along the road
     const pts = densify(rd.path, 0.5);
     const startI = pts.findIndex((p) => !inside(p, city));
@@ -863,7 +876,9 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
     poly = tidyRing(simplify(outline(big), 0.15));
     if (poly.length < 3 || polygonCrossesItself(poly) || !pathTouchesPolygon(rd.path, poly)) continue; // (its road must still run into it)
     suburbs.push(poly);
-    const character = r.pick(["poor", "poor", "crafts", "homes"]);
+    // (a quarter left out of the city isn't outside it either)
+    const picked = r.pick(["poor", "poor", "crafts", "homes"]);
+    const character = Array.isArray(choices.quarters) && !choices.quarters.includes(picked) ? "homes" : picked;
     let name = `${cap(compass(rd.angle))} Gate ${character === "poor" ? "Shanties" : character === "crafts" ? "Yards" : "Suburb"}`;
     for (let n = 2; out.some((f) => f.name === name); n++) name = `${name.replace(/ [IVX]+$/, "")} ${["", "", "II", "III", "IV", "V", "VI"][n] ?? n}`;
     out.push({ id: `suburb-${suburbs.length}`, type: "district", profile: "village", ...(character !== "homes" ? { character } : {}), name, shape: poly });
@@ -872,7 +887,7 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
   // unchanged)
   const graves = [];
   {
-    const cr = r.fork("cemeteries"), want = metro ? 2 : cr.chance(0.5) ? 2 : 1;
+    const cr = r.fork("cemeteries"), want = choices.cemetery === false ? 0 : metro ? 2 : cr.chance(0.5) ? 2 : 1;
     const taken = [city, ...suburbs.map((p) => offset([p], 2)[0] ?? p), ...wet];
     for (let t = 0; t < 200 && graves.length < want; t++) {
       // (past the city and the suburbs along the road, somewhere along what's left of it)
@@ -899,7 +914,7 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
   {
     const mr = r.fork("mills"), taken = [city, ...suburbs.map((p) => offset([p], 2)[0] ?? p), ...graves];
     const ok = (p, m) => onMap(p) && p[0] > 2 && p[1] > 2 && p[0] < W - 2 && p[1] < H - 2 && clearOfAll([p], taken) && taken.every((q) => distToRing(p, q) > m) && roads.every((rd) => distToPath(p, rd.path) > 0.6 + m + 3) && mills.every((c) => Math.hypot(c[0] - p[0], c[1] - p[1]) > 6);
-    const wantWater = rivers.length ? (metro ? 2 : 1) : 0;
+    const wantWater = rivers.length && choices.mills !== false ? (metro ? 2 : 1) : 0;
     for (let k = 0, made = 0; k < wantWater * 2 && made < wantWater; k++) {
       const rv = rivers[k % rivers.length];
       const got = watermill({ water: { path: rv.path, width: widestOf(rv) }, ok: (p, m) => ok(p, m) && !inWater(p), want: (c) => distToRing(c, city) < R * 0.5, r: mr.fork("water", k), id: made ? `watermill-${made + 1}` : "watermill" });
@@ -909,7 +924,7 @@ function countryside({ choices, C, R, W, H, wallPoly, wall, roads, wet, inWater,
       const [x0, y0, x1, y1] = got[1].shape.rect;
       mills.push([(x0 + x1) / 2, (y0 + y1) / 2]);
     }
-    if (choices.surroundings === "farmland" || choices.surroundings === "mixed") {
+    if ((choices.surroundings === "farmland" || choices.surroundings === "mixed") && choices.mills !== false) {
       const wr = mr.fork("wind"), want = (metro ? 3 : 2) + wr.int(2);
       for (let k = 0, made = 0; k < want * 3 && made < want; k++) {
         const spot = () => { const rd = wr.pick(roads), pts = densify(rd.path, 0.5), i0 = pts.findIndex((p) => !inside(p, city)); if (i0 < 0) return null; const i = Math.min(pts.length - 2, i0 + 10 + wr.int(50)), a = pts[i], b = pts[i + 1], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1, side = wr.chance(0.5) ? 1 : -1, off = 0.6 + wr.range(4, 9); return [a[0] - (d[1] / l) * side * off, a[1] + (d[0] / l) * side * off]; };

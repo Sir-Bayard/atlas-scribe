@@ -14,6 +14,7 @@ import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
 import { addFeature, snapCorner, snapEnd, toolOf, wallIn } from "../core/draw.mjs";
 import { battleTabHTML, wireBattleTab, briefFromForm } from "./quick-battle.mjs";
+import { settlementTabHTML, wireSettlementTab } from "./quick-settlement.mjs";
 import { briefPlan } from "../core/brief.mjs";
 import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
@@ -1583,26 +1584,18 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
   static async #onQuick() {
     if (this.#working || !(await this.#mayDiscard())) return;
     const before = this.#plan;
-    const { QUICK, LABELS, ANY = [] } = this.#host.quickChoices;
-    // (a choice only some places use shows Any first, so it's left to the seed unless picked)
-    const select = (key, title) => {
-      const any = `<option value="">Any (picked from the seed)</option>`, opts = QUICK[key].map((v) => `<option value="${v}">${esc(LABELS[key]?.[v] ?? v)}</option>`).join("");
-      return `<div class="form-group"><label>${title}</label><select name="${key}">${ANY.includes(key) ? any + opts : opts + any}</select></div>`;
-    };
+    const { LABELS } = this.#host.quickChoices;
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
-    // (two tabs: a settlement from a few choices, or a battle map from its brief, described in words or chosen; the
-    // name and seed below both)
+    // (two tabs: a settlement or a battle map, each described in words or chosen; the name and seed below both)
     const tab = this.#quickTab === "battle" ? "battle" : "settlement";
     const content = `<div class="atlas-scribe as-quick">
         <input type="hidden" name="tab" value="${tab}">
         <div class="as-qs-tabs" role="tablist"><button type="button" role="tab" data-qs-tab="settlement">Settlement</button><button type="button" role="tab" data-qs-tab="battle">Battle map</button></div>
-        <section data-tab="settlement">
-          ${select("size", "Place")}${select("season", "Season")}${select("water", "Water")}${select("roads", "Roads")}${select("center", "Center")}${select("surroundings", "Around it")}${QUICK.river ? select("river", "River (a city)") : ""}${QUICK.shape ? select("shape", "Outline (a city)") : ""}
-        </section>
+        ${settlementTabHTML()}
         ${battleTabHTML()}
         <div class="as-qs-two">
-          <div class="form-group"><label>Name</label><input type="text" name="name" placeholder="Made up if empty"></div>
-          <div class="form-group"><label>Seed</label><input type="number" name="seed" value="${seed}" min="1" step="1"></div>
+          <div class="form-group"><label for="as-qs-name">Name</label><input type="text" id="as-qs-name" name="name" placeholder="Made up if empty"></div>
+          <div class="form-group"><label for="as-qs-seed">Seed</label><input type="number" id="as-qs-seed" name="seed" value="${seed}" min="1" step="1"></div>
         </div>
         <p class="hint">Everything it makes can be changed afterwards.</p>
       </div>`;
@@ -1611,7 +1604,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       for (const el of root.querySelectorAll("section[data-tab]")) el.hidden = el.dataset.tab !== which;
       for (const b of root.querySelectorAll("[data-qs-tab]")) { b.classList.toggle("active", b.dataset.qsTab === which); b.setAttribute("aria-selected", String(b.dataset.qsTab === which)); }
     };
-    let battleTab = null; // (the Battle map tab's wiring: its flush reads a description still waiting to be read)
+    let battleTab = null, settlementTab = null; // (each tab's wiring: its flush reads a description still waiting to be read)
     const chosen = await foundry.applications.api.DialogV2.wait({
       window: { title: "AtlasScribe: Quick Start", icon: "fa-solid fa-wand-magic-sparkles" },
       position: { width: 580 },
@@ -1621,11 +1614,13 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         if (!root) return;
         root.querySelectorAll("[data-qs-tab]").forEach((b) => b.addEventListener("click", () => { showTab(root, b.dataset.qsTab); this.#quickTab = b.dataset.qsTab; }));
         battleTab = wireBattleTab(root.querySelector(".as-qs-battle"));
+        settlementTab = wireSettlementTab(root.querySelector(".as-qs-settlement"));
         showTab(root, tab);
       },
       buttons: [
         { action: "make", label: "Make the plan", icon: "fa-solid fa-wand-magic-sparkles", default: true, callback: (event, button) => {
-          if (button.form.elements.tab.value !== "battle") return Object.fromEntries(new FormData(button.form));
+          const { name, seed: s } = button.form.elements;
+          if (button.form.elements.tab.value !== "battle") { settlementTab?.flush(); return { ...settlementTab?.options(), name: name.value, seed: s.value }; }
           battleTab?.flush();
           return { battle: briefFromForm(button.form, Number(button.form.elements.seed.value) || seed) };
         } },
@@ -1648,7 +1643,7 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
       return;
     }
     const opts = { ...chosen, seed: Number(chosen.seed) || seed };
-    for (const k of Object.keys(QUICK)) if (!opts[k]) delete opts[k];
+    if (!opts.name?.trim()) delete opts.name;
     if (!(await this.#mayReplace(before))) return;
     const { plan, choices } = this.#host.quick(opts);
     // An outline or a river form that couldn't be made (it doesn't go with the water or the other choices, or there's no
@@ -1659,6 +1654,12 @@ export class AtlasScribeApp extends foundry.applications.api.ApplicationV2 {
         ui.notifications.info(`The ${what} "${name(opts[k])}" couldn't be made here (with ${(LABELS.water?.[choices.water] ?? choices.water).toLowerCase()} and your other choices), so ${choices[k] ? `"${name(choices[k])}" was used instead` : "there's none"}.`);
       }
     }
+    // (a building or place asked for that found no room is said too)
+    // (a temple, inn or smithy is placed when the map is laid out, which notes one that doesn't fit)
+    const NAMES = { cemetery: "a cemetery", watermill: "a watermill", windmill: "a windmill", walled: "a wall", citadel: "a citadel" };
+    const got = choices?.has ?? choices?.outside ?? {};
+    const missed = Object.entries({ ...opts.has, ...opts.outside }).filter(([k, v]) => v === true && got[k] === false && NAMES[k]).map(([k]) => NAMES[k]);
+    if (missed.length) ui.notifications.info(`No room was found for ${missed.join(" or ")} here, so the plan is made without. A new seed may fit it.`);
     try {
       await this.show(plan);
     } catch (e) {

@@ -66,7 +66,12 @@ export function anchorFor({ district, poly, roads = [], water = [], blocked = []
   const roll = pr.next(), toRoad = pr.next() < 0.6, turnTo = pr.next() * 2 * Math.PI; // (all drawn, so each stays put)
   const place = ANCHOR_PLACES.includes(district.anchorAt) ? district.anchorAt : roll < 0.34 ? "middle" : roll < 0.67 ? "side" : "edge";
   let dir = [Math.cos(turnTo), Math.sin(turnTo)], roadAt = Infinity;
-  if (toRoad && roads.length) {
+  // (a district's anchorToward: aimed at that point, the city's central square for a cathedral or palace there)
+  const toward = Array.isArray(district.anchorToward) && district.anchorToward.length === 2 && district.anchorToward.every(Number.isFinite) ? district.anchorToward : null;
+  if (toward) {
+    const l = Math.hypot(toward[0] - cx, toward[1] - cy);
+    if (l > 1e-6) dir = [(toward[0] - cx) / l, (toward[1] - cy) / l];
+  } else if (toRoad && roads.length) {
     let near = null;
     for (const w of roads) {
       const d = distanceToPath([cx, cy], w.path);

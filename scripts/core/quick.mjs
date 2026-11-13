@@ -11,6 +11,8 @@ import { meander, bends } from "./meander.mjs";
 import { watermill, windmill } from "./mills.mjs";
 import { PAVINGS, UNPAVED, squareShape } from "./squares.mjs";
 import { crossesCliff } from "./cliffs.mjs";
+import { union, offset, area as polyArea } from "./lots/poly.mjs";
+import { wallReach } from "./layout/walls.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
 export const QUICK = {
@@ -18,7 +20,7 @@ export const QUICK = {
   season: ["summer", "spring", "autumn", "winter"],
   water: ["river", "stream", "coast", "lake", "estuary", "none"],
   roads: ["crossroads", "through", "fork"],
-  center: ["square", "green", "none"],
+  center: ["square", "green", "none", "well", "cathedral", "palace"],
   surroundings: ["mixed", "farmland", "woodland", "open"],
   river: RIVER_FORMS, // a city's river (left out, the seed picks; the dialog shows Any first)
   shape: CITY_SHAPES, // a city's outline (the same)
@@ -31,8 +33,35 @@ export const QUICK_ANY = ["river", "shape"];
  * What a choice left out is picked from: the sizes and water a village or town can have (a city only when asked, so
  * earlier seeds' plans stay the same).
  */
-const PICK = { size: ["village", "hamlet", "town"], water: ["river", "stream", "none"] };
+const PICK = { size: ["village", "hamlet", "town"], water: ["river", "stream", "none"], center: ["square", "green", "none"] };
 const CITIES = ["city", "metropolis"];
+
+/** The centers each size can have (the dialog grays out the rest). */
+export const CENTERS = {
+  hamlet: ["green", "well", "square", "none"],
+  village: ["green", "square", "well", "none"],
+  town: ["square", "green", "well", "none"],
+  city: ["square", "cathedral", "palace", "green", "none"],
+  metropolis: ["square", "cathedral", "palace", "green", "none"],
+};
+
+/** A village's or town's buildings and places that can be asked for or left out (has: { key: true | false }). */
+export const HAS = ["temple", "inn", "smithy", "cemetery", "watermill", "windmill", "walled"];
+
+/** A city's quarters (all of them unless some are left out), and what lies outside its walls. */
+export const QUARTERS = ["docks", "market", "temple", "nobles", "crafts", "poor", "garrison", "merchants"];
+export const OUTSIDE = ["citadel", "oldWall", "suburbs", "cemetery", "mills"];
+
+/** Why a choice can't be had for a size (the dialog's tooltips), by choice and value. */
+export function quickLacks(size) {
+  const city = CITIES.includes(size), lacks = {};
+  for (const c of QUICK.center) if (!CENTERS[size]?.includes(c)) (lacks.center ??= {})[c] = city ? "A city's center is a square, a green or a landmark beside a square" : c === "well" ? "" : "A cathedral or a palace is a city's";
+  if (!city) for (const w of ["coast", "lake", "estuary"]) (lacks.water ??= {})[w] = "A city's (a village or town by the sea or a lake gets a river)";
+  if (city) (lacks.water ??= {}).stream = "A city's water is a river at least";
+  if (size === "city") (lacks.outside ??= {}).oldWall = "A metropolis's (its old town's wall inside the new)";
+  if (!city) { lacks.river = "A city's"; lacks.shape = "A city's"; }
+  return lacks;
+}
 
 /** How each choice reads in the Quick Start dialog. */
 export const QUICK_LABELS = {
@@ -40,7 +69,7 @@ export const QUICK_LABELS = {
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
   water: { river: "A river", stream: "A stream", coast: "A sea coast and harbor (a city)", lake: "A lake shore (a city)", estuary: "A river meeting the sea (a city)", none: "No water" },
   roads: { crossroads: "A crossroads", through: "A road through", fork: "A fork in the road" },
-  center: { square: "A market square", green: "A village green", none: "Neither" },
+  center: { square: "A market square", green: "A village green", none: "Neither", well: "A well", cathedral: "A cathedral by the square", palace: "A palace by the square" },
   surroundings: { mixed: "Farms and woods", farmland: "Farmland", woodland: "Woodland", open: "Open ground" },
   river: { meander: "Bending through", island: "Split around an island", loop: "Looping around the city", meeting: "Two rivers meeting" },
   shape: { compact: "Compact, roughly round", lobed: "Lobed and uneven", promontory: "On a promontory (by the sea or a lake)", shore: "Long, along its shore or river", cliff: "Against a cliff" },
@@ -160,6 +189,8 @@ export function quickPlan(options = {}) {
   const choices = {};
   for (const [k, list] of Object.entries(QUICK)) if (!QUICK_ANY.includes(k)) choices[k] = list.includes(options[k]) ? options[k] : pick.pick(PICK[k] ?? list);
   if (RIVER_FORMS.includes(options.river)) choices.river = options.river;
+  // (a center the size can't have: a well or a landmark's square becomes a square)
+  if (!CENTERS[choices.size].includes(choices.center)) choices.center = "square";
   // A city's water left out is any a city can have, a stream is a river there, and a village or town by the sea or a
   // lake gets a river; its outline the one asked for when it goes with the water, else one that does
   if (CITIES.includes(choices.size)) {
@@ -281,6 +312,21 @@ export function quickPlan(options = {}) {
     }
   }
   const cluster = districts.map((d) => d.poly);
+  // What's asked for or left out (has: { temple, inn, smithy, cemetery, watermill, windmill, walled })
+  const has = Object.fromEntries(HAS.filter((k) => options.has?.[k] === true || options.has?.[k] === false).map((k) => [k, options.has[k]]));
+  const notables = Object.fromEntries(["temple", "inn", "smithy"].filter((k) => k in has).map((k) => [k, has[k]]));
+  // Walled: a palisade (a town's stone wall) around the districts, just outside them, everything after keeping off it
+  let walled = null;
+  if (has.walled) {
+    // (towers wider apart than a city's: a village's palisade has a few, not dozens)
+    const wall = { type: "wall", class: choices.size === "town" ? "town" : "palisade", straight: true, towerSpacing: choices.size === "town" ? 200 : 260 };
+    const ring = offset(union(cluster), wallReach(wall, 25) + 0.4).reduce((a, b) => (!a || polyArea(b) > polyArea(a) ? b : a), null);
+    if (ring && ring.length >= 3) {
+      const path = clipToMap(ring.map(pt), W, H, 1.5);
+      walled = { id: "town-wall", ...wall, path: [...path, [...path[0]]] };
+      cluster.push(path);
+    }
+  }
   const nearCluster = (p, m) => cluster.some((poly) => distToPoly(p, poly) < m);
 
   // The center: a square where the roads meet, or a green beside them (its paving, its roads' and its shape from its
@@ -293,6 +339,8 @@ export function quickPlan(options = {}) {
     const sh = squareShape({ r: sr.fork("shape"), C, angle: (theta * Math.PI) / 180, rad: S.square, fork: choices.roads === "fork", kinds, arms: arms.map((a) => Math.atan2(a[1][1] - a[0][1], a[1][0] - a[0][0])) });
     features.push({ id: "square", type: "square", shape: sh.shape, surface: paved ? paving : bare, radial: choices.size === "town" && sh.radial, market: true, name: sh.kind === "street" ? "The market street" : "The square" });
   }
+  // A well: beside the main road where the roads meet, with no square or green
+  if (choices.center === "well") features.push({ id: "well", type: "prop", class: "well", at: pt(at(0, roadHalf(roads[0]) + 0.9)) });
   let green = null;
   if (choices.center === "green") {
     // In the widest gap between the roads leaving the center, clear of them
@@ -380,7 +428,8 @@ export function quickPlan(options = {}) {
   // town, and a windmill out among the fields
   {
     const mr = r.fork("mills");
-    const wantWater = water && (choices.size !== "hamlet" || mr.chance(0.5));
+    const autoWater = water && (choices.size !== "hamlet" || mr.chance(0.5));
+    const wantWater = water && (has.watermill ?? autoWater);
     if (wantWater) {
       const ok = (p, m) => p[0] > 2 && p[1] > 2 && p[0] < W - 2 && p[1] < H - 2 && !nearCluster(p, m + 0.5) && !(green && distToPoly(p, green) < m)
         && roads.every((rd) => distToPath(p, rd.path) > roadHalf(rd) + m + 3) && distToPath(p, water.path) > water.width / 25 / 2 + 0.9;
@@ -393,7 +442,8 @@ export function quickPlan(options = {}) {
       }
     }
     const fieldy = choices.surroundings === "farmland" || choices.surroundings === "mixed";
-    const wind = !fieldy ? 0 : choices.size === "town" ? 1 + (mr.chance(0.4) ? 1 : 0) : choices.size === "village" ? (mr.chance(0.6) ? 1 : 0) : 0;
+    const autoWind = !fieldy ? 0 : choices.size === "town" ? 1 + (mr.chance(0.4) ? 1 : 0) : choices.size === "village" ? (mr.chance(0.6) ? 1 : 0) : 0;
+    const wind = has.windmill === false ? 0 : has.windmill ? Math.max(1, autoWind) : autoWind;
     const wr = mr.fork("wind");
     for (let k = 0; k < wind; k++) {
       // Out past the houses, near a road (a lane comes to its yard)
@@ -409,20 +459,22 @@ export function quickPlan(options = {}) {
 
   // A town's cemetery beside a road a little beyond its edge, clear of everything (its own stream)
   let cemetery = null;
-  if (choices.size === "town") {
+  if (has.cemetery ?? choices.size === "town") {
     const cr = r.fork("cemetery");
     // (from the stretches of road just past the houses)
     const spots = roads.flatMap((rd) => { const pts = densify(rd.path, 0.5); return pts.slice(1).map((q, j) => ({ rd, a: pts[j], b: q })); })
       .filter(({ a }) => !nearCluster(a, 4) && nearCluster(a, 16));
-    for (let t = 0; t < 250 && !cemetery && spots.length; t++) {
+    // (one asked for and not placed is tried again smaller, nearer the houses)
+    for (let t = 0; t < (has.cemetery ? 500 : 250) && !cemetery && spots.length; t++) {
+      const small = t >= 250;
       const { rd, a, b } = spots[cr.int(spots.length)], side = cr.chance(0.5) ? 1 : -1;
-      const w = cr.range(8, 11), dd = cr.range(6, 8);
+      const w = small ? cr.range(5.5, 7.5) : cr.range(8, 11), dd = small ? cr.range(4.5, 6) : cr.range(6, 8);
       const d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1, u = [d[0] / l, d[1] / l], n = [-u[1] * side, u[0] * side];
       const c = add(a, mul(n, roadHalf(rd) + 1.6 + dd / 2));
       const shape = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => pt(add(add(c, mul(u, (x * w) / 2)), mul(n, (y * dd) / 2))));
       const edge = shape.flatMap((p, j) => { const q = shape[(j + 1) % 4]; return [0, 0.25, 0.5, 0.75].map((f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); });
       if (![c, ...edge].every((p) => clearOf(p, 1.2))) continue;
-      if (cluster.some((poly) => distToPoly(c, poly) < dd / 2 + 4)) continue; // (a little way out, not against the houses)
+      if (cluster.some((poly) => distToPoly(c, poly) < dd / 2 + (small ? 2 : 4))) continue; // (a little way out, not against the houses)
       if (roads.some((rd2) => rd2.path.some((q) => inside(q, shape)))) continue;
       cemetery = shape;
     }
@@ -580,19 +632,35 @@ export function quickPlan(options = {}) {
       ...roads.map((rd) => ({ id: rd.id, type: "road", class: rd.class, ...(paved && rd.class !== "lane" ? { surface: "cobble" } : {}), path: rd.path.map(pt) })),
       ...features.filter((f) => f.type === "water" || f.type === "crossing"),
       ...features.filter((f) => f.type === "square"),
-      ...districts.map((d) => ({ id: d.id, type: "district", profile: d.profile, shape: d.poly })),
+      ...districts.map((d) => ({ id: d.id, type: "district", profile: d.profile, ...(Object.keys(notables).length ? { notables } : {}), shape: d.poly })),
+      ...(walled ? [walled] : []),
       ...features.filter((f) => f.type === "area" || f.type === "wall"),
-      ...features.filter((f) => f.type === "building"),
+      ...features.filter((f) => f.type === "building" || f.type === "prop"),
       { id: "name", type: "label", text: name, at: pt(labelAt), show: "gm", size: "huge" },
     ],
     output: { scene: { name, weather: winter ? "snow" : null } },
   };
-  return { plan, choices: { ...choices, seed, name } };
+  // (what it has, for the dialog: what was asked, else what a place of its size gets)
+  const got = (id) => features.some((f) => f.id === id || f.id?.startsWith?.(`${id}-`));
+  const hasOut = {
+    temple: has.temple ?? choices.size !== "hamlet",
+    inn: has.inn ?? choices.size !== "hamlet",
+    smithy: has.smithy ?? (choices.size !== "hamlet" || null), // (a hamlet: now and then, null for the dialog)
+    cemetery: got("cemetery"),
+    watermill: got("watermill"),
+    windmill: got("windmill"),
+    walled: !!walled,
+  };
+  return { plan, choices: { ...choices, has: hasOut, seed, name } };
 }
 
 /** A Quick Start city or metropolis (quick-city.mjs), as a plan like the others. */
 function cityQuick(choices, seed, options) {
-  const made = cityPlan(choices, seed);
+  // (quarters: the ones it may have, all unless a list is given; outside: { citadel, oldWall, suburbs, cemetery, mills },
+  // each true or false, else as the seed has it)
+  const quarters = Array.isArray(options.quarters) ? QUARTERS.filter((q) => options.quarters.includes(q)) : null;
+  const outside = Object.fromEntries(OUTSIDE.filter((k) => options.outside?.[k] === true || options.outside?.[k] === false).map((k) => [k, options.outside[k]]));
+  const made = cityPlan({ ...choices, ...(quarters ? { quarters } : {}), ...outside }, seed);
   const name = String(options.name ?? "").trim() || placeName(rng(seed, "quick", "name"), choices.water);
   const winter = choices.season === "winter";
   const plan = {
@@ -608,7 +676,10 @@ function cityQuick(choices, seed, options) {
     features: [...made.features, { id: "name", type: "label", text: name, at: made.label.at, show: "gm", size: "huge" }],
     output: { pxPerSquare: made.px, dressing: true, scene: { name, weather: winter ? "snow" : null } }, // (a city's map dressed: frame, compass, scale)
   };
-  const kept = { ...choices, seed, name };
+  const has = (id) => made.features.some((f) => f.id === id || f.id?.startsWith?.(`${id}-`));
+  // (the quarters made, inside the walls)
+  const madeQuarters = QUARTERS.filter((q) => made.features.some((f) => f.type === "district" && f.character === q && !f.id?.startsWith?.("suburb")));
+  const kept = { ...choices, quarters: madeQuarters, outside: { citadel: has("citadel"), oldWall: has("old-wall"), suburbs: has("suburb"), cemetery: has("cemetery"), mills: has("watermill") || has("windmill") }, seed, name };
   kept.shape = made.shape;
   if (made.river) kept.river = made.river;
   else delete kept.river;

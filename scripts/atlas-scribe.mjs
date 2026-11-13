@@ -15,7 +15,7 @@ import { ArtBrowser, ArtMenu } from "./foundry/art-browser.mjs";
 import { publish } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
-import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY } from "./core/quick.mjs";
+import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY, HAS, QUARTERS, OUTSIDE } from "./core/quick.mjs";
 import { briefPlan, BRIEF, BRIEF_LABELS } from "./core/brief.mjs";
 import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
@@ -239,16 +239,21 @@ const api = {
   },
 
   /**
-   * Quick Start without the window: a plan from { size, season, water, roads, center, surroundings, river, shape, name, seed }
-   * (any left out is picked from the seed). Returns { plan, choices }. The choices are listed in api.quickChoices.
+   * Quick Start without the window: a plan from { size, season, water, roads, center, surroundings, river, shape, name,
+   * seed, has, quarters, outside } (any left out is picked from the seed): has, a village's or town's buildings and
+   * places ({ temple: true, inn: false, ... }); quarters, the city's quarters to keep; outside, a city's { citadel,
+   * oldWall, suburbs, cemetery, mills }. Returns { plan, choices }. The choices are listed in api.quickChoices.
    */
   quickPlan(options = {}) {
     return quickPlan(options);
   },
 
-  /** Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings, river and shape (a city's) }. */
+  /**
+   * Quick Start's choices: { size: [...], season: [...], water, roads, center, surroundings, river and shape (a city's),
+   * has, quarters, outside }.
+   */
   get quickChoices() {
-    return structuredClone(QUICK);
+    return { ...structuredClone(QUICK), has: [...HAS], quarters: [...QUARTERS], outside: [...OUTSIDE] };
   },
 
   /**

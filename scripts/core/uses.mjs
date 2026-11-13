@@ -162,6 +162,16 @@ export function notablesFor({ dlist, squares = [], roads = [], gates: wallGates 
       }
       if (!["nobles", "temple", "market"].includes(ch) && (!big || cityShare(d, "smithy") < 0.5 || ch === "crafts")) want.get(d.id).push("smithy");
     }
+    // A district's notables setting: false leaves that building out of the settlement, true gives it one where it
+    // has none (in its first district that takes buildings)
+    for (const use of ["temple", "inn", "smithy"]) {
+      const said = g.map((d) => d.feature.notables?.[use]).find((v) => v === true || v === false);
+      if (said === false) for (const d of g) want.set(d.id, want.get(d.id).filter((u) => u !== use));
+      if (said === true && !g.some((d) => want.get(d.id).includes(use))) {
+        const d = g.find((x) => on(x));
+        if (d) want.get(d.id).push(use);
+      }
+    }
     for (const d of g) out.set(d.id, { want: want.get(d.id), ctx });
   }
   return out;

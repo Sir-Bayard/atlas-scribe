@@ -75,6 +75,8 @@ export const FIELD_TEXT = {
   "building.tower": { label: "Tower", help: "Drawn as a tower: a flat roof inside a parapet (a round one too, if its roof form is flat)", more: true },
   "building.crenels": { label: "Battlements", help: "A tower's parapet notched as battlements", more: true },
   "building.chimneyAt": { hidden: true },
+  "district.notables": { hidden: true }, // (Quick Start's: a temple, inn or smithy asked for or left out)
+  "district.anchorToward": { hidden: true },
   "building.join": { hidden: true },
   "building.cut": { hidden: true },
 
