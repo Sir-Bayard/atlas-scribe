@@ -154,7 +154,7 @@ export const PLAN_FIELDS = [
   { path: "name", label: "Name", kind: "string" },
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)" }, help: "Illustrated draws the map in ink and color, with no art needed; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
-  { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose, a scale bar and the map's name, painted on the map (illustrated style)" },
+  { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },

@@ -66,7 +66,7 @@ export class ArtBrowser extends foundry.applications.api.ApplicationV2 {
   #idx = null;
   #rows = [];
   #reading = false;
-  /** A button to give focus back to once it's enabled again (Save and read, Read again, disabled while reading). */
+  /** A button to give focus back to once it's enabled again (Save and read, Read the folders again: disabled while reading). */
   #refocus = null;
   #filter = { show: "all", text: "" };
   /** Groups opened in the Art tab, kept across redraws. */

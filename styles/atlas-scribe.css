@@ -687,7 +687,7 @@
 .atlas-scribe.as-art [hidden] { display: none !important; }
 .atlas-scribe.as-art .as-art-notes { margin: 0; padding-left: 1.2rem; font-size: 0.85em; color: var(--color-level-warning, #c90); }
 .atlas-scribe.as-art details li { flex-wrap: wrap; }
-.atlas-scribe.as-art .as-art-mine { flex: 1 0 100%; list-style: none; margin: 0 0 0.2rem 2.75rem; padding: 0; font-size: 0.85em; }
+.atlas-scribe.as-art .as-art-mine { flex: 1 0 100%; box-sizing: border-box; list-style: none; margin: 0 0 0.2rem; padding: 0 0 0 2.75rem; font-size: 0.85em; }
 .atlas-scribe.as-art .as-art-mine li { border: none; padding: 0; gap: 0.3rem; flex-wrap: nowrap; }
 .atlas-scribe.as-art .as-art-mine button { width: 1.4rem; height: 1.4rem; padding: 0; flex: 0 0 auto; line-height: 1; }
 .atlas-scribe.as-art .window-content { padding: 0; display: flex; flex-direction: column; overflow: hidden; }

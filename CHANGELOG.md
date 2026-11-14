@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
+
+Art for everyone, and the release candidate for 1.0.0 (there was no 0.8.0). Battle maps no longer need FA Nexus or any art: they paint with Forgotten Adventures files found by name in folders on your server, with any other pack set up through a manifest, filename rules or art you choose in the new Art window, and they draw whatever has no art, in a painted or an inked look. Quick Start's Settlement tab gets a Describe box and choices that follow the size. The README is rewritten for a first-time user, with pictures, and the full reference moves to `docs/guide.md`.
 
 **Art for everyone**
 - Art folders: a new setting (Configure Settings, AtlasScribe, Art, on its Folders tab) lists folders on the server, from any file source Foundry can browse, that battle maps and the textured style paint from before FA Nexus. Until you set your own it's FA Nexus's download folder when that exists, so art FA Nexus downloaded works with FA Nexus off. Forgotten Adventures files are found by their names anywhere in a folder, and FA Nexus fetches only what the folders lack, so a map whose art is all in a folder no longer opens FA Nexus at all (and starts painting in a moment instead of several seconds). The Folders tab shows what each folder holds.
-- A folder of other art can carry an `atlas-scribe.json` manifest naming which images fill which roles (files, `*` patterns or whole folders) and the art's pixels a square; art at another scale is resized to match. See the README's Art section.
+- A folder of other art can carry an `atlas-scribe.json` manifest naming which images fill which roles (files, `*` patterns or whole folders) and the art's pixels a square; art at another scale is resized to match. See the guide's Art section (`docs/guide.md`).
 - Where a season's art (snowy slate roofs, say) can't be had, a battle map now paints the role's plain art instead of a plain color.
 - The Art window (Configure Settings, AtlasScribe, Art, or the new pictures button in the AtlasScribe window): its Art tab lists every kind of art AtlasScribe paints, grouped, with a picture of what it's painted with now and where that comes from, and lets you choose an image or a folder of images for any of them instead, with the art's pixels a square, for its seasons and sizes too if you like; its Rules tab holds filename rules that give a role every image whose name matches a pattern (`*slate*roof*`). A role takes at most 32 variants.
 - New API calls `rescanArt()` and `openArt()`.
@@ -27,6 +29,12 @@
 - A cemetery, mill, wall or citadel asked for that finds no room is said.
 - Quick Start's API takes `has`, `quarters` and `outside`. Plans you made before, and new ones left on their defaults, are the same.
 - In the Describe box, "a market" is a market square, "a mill" is a watermill when the form has water, and words inside a name aren't read as choices.
+
+**Smaller changes**
+- The Campfire, Brazier, Torch, Lamp post, Cairn, Standing stone and Sledge tools are in the Draw palette (missing from it since 0.7.0).
+- The battle map Describe box reads "a cellar of casks" as "In the cellar: casks", and knows "among".
+- The Map dressing setting's help says the map's name goes on a hidden tile.
+- A role's art chosen by hand no longer makes the Art window scroll sideways.
 
 ## 0.7.0
 

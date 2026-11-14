@@ -42,7 +42,7 @@ const ROOM_WORDS = {
 const LATER = { cellar: ["cellar", "cellars", "basement", "undercroft"], upstairs: ["upstairs", "upper floor", "second floor", "first floor", "attic", "loft", "upper floors", "two floors", "three floors", "2 floors", "3 floors", "stories", "storeys", "story", "storey"] }; // (read in British spelling too)
 const NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, a: 1, an: 1, single: 1, pair: 2, dozen: 12 };
 /** Words not worth reporting as not understood. */
-const STOP = new Set(`i me my we our you your it its a an the and or but of in on at by to for from with into onto over under near beside along across around between through up down out off is are be been being was were has have had having do does did need needs want wants like would could should can will make made makes give gives map battlemap battle scene place area spot set setting some any all this that these those there here where which who what when while then than so very really just also plus please something somewhere filled full lots lot sort kind type bit little more most much one ones side sides back front middle center centre edge edges top bottom left right north south east west inside outside around near far nearby next close open nice good cool interesting dark`.split(/\s+/)); // (read in British spelling too)
+const STOP = new Set(`among amid i me my we our you your it its a an the and or but of in on at by to for from with into onto over under near beside along across around between through up down out off is are be been being was were has have had having do does did need needs want wants like would could should can will make made makes give gives map battlemap battle scene place area spot set setting some any all this that these those there here where which who what when while then than so very really just also plus please something somewhere filled full lots lot sort kind type bit little more most much one ones side sides back front middle center centre edge edges top bottom left right north south east west inside outside around near far nearby next close open nice good cool interesting dark`.split(/\s+/)); // (read in British spelling too)
 
 const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A phrase as a pattern over the text's words, its plurals too (inn, inns; pony, ponies). */
@@ -263,7 +263,7 @@ export function readDescription(text = "") {
       brief.building = { ...brief.building, cellar: true };
       chip("building.cellar", true, "A cellar");
       const rooms = [/\b(cask|casks|barrel|barrels|wine|ale|beer|kegs?)\b/.test(t) ? "cellar" : null, /\b(store ?rooms?|storage|pantry|stores)\b/.test(t) ? "storeroom" : null].filter(Boolean);
-      if (rooms.length) { brief.building.cellarRooms = rooms.join(", "); chip("building.cellarRooms", brief.building.cellarRooms, `Cellar rooms: ${brief.building.cellarRooms}`); }
+      if (rooms.length) { brief.building.cellarRooms = rooms.join(", "); chip("building.cellarRooms", brief.building.cellarRooms, `In the cellar: ${rooms.map((r) => (r === "cellar" ? "casks" : "a storeroom")).join(" and ")}`); }
     } else {
       // (floors above: "upstairs" or an attic one; "three floors" or "three stories" the ground floor and two more)
       const total = count(/\b(\d+|two|three|four)[\s-]+(?:floors?|stor(?:ies|eys|ey|y))\b/);
