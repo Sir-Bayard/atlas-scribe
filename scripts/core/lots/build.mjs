@@ -11,9 +11,10 @@ import { SegGrid, finitePaths } from "../spatial.mjs";
 import { gardenShare as gardenShareOf, characterOf, LOOK } from "../character.mjs";
 import { USE_INFO } from "../uses.mjs";
 import { joinLots, layForm, rectCorners } from "./forms.mjs";
+import { lotRules, ownBuildings, plotByPlot, yardsAndFences } from "./build-steps/index.mjs";
 
 /** A key from { key: weight } for a roll in [0, 1). */
-function pickWeighted(roll, weights) {
+export function pickWeighted(roll, weights) {
   const keys = Object.keys(weights);
   const total = keys.reduce((s, k) => s + weights[k], 0);
   let x = roll * total;
@@ -40,27 +41,27 @@ export function roofPalette(district, T, r) {
 }
 
 /** The roof forms a district's houses choose from: the plan's list, or its type's mix. */
-function roofStyles(district, T) {
+export function roofStyles(district, T) {
   const own = (Array.isArray(district.roofStyles) ? district.roofStyles : []).filter((x) => ROOF_STYLES.includes(x));
   return own.length ? Object.fromEntries(own.map((x) => [x, 1])) : T.styles ?? { gable: 1 };
 }
 
 /** The four corners of a rectangle centered at (cx, cy), len along (ux, uy), dep across it. */
-function corners(cx, cy, len, dep, [ux, uy]) {
+export function corners(cx, cy, len, dep, [ux, uy]) {
   const [nx, ny] = [-uy, ux];
   return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [cx + (a * len) / 2 * ux + (b * dep) / 2 * nx, cy + (a * len) / 2 * uy + (b * dep) / 2 * ny]);
 }
 
 /** True when a rectangle (its corners) lies in the plot; tested a hair inside its edges, so a house built right
  * on the street line or against its neighbor still counts as fitting. */
-const fitsIn = (pts, poly) => {
+export const fitsIn = (pts, poly) => {
   const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   return pts.every(([x, y]) => pointInPolygon([cx + (x - cx) * 0.96, cy + (y - cy) * 0.96], poly));
 };
 /** A footprint grown by d all around (square corners), as the room a building keeps about it. */
-const grown = (pts, d) => offset([pts], d).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null) ?? pts;
+export const grown = (pts, d) => offset([pts], d).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null) ?? pts;
 /** As fitsIn, but a fixed hair (0.03 of a square) inside, however big the rectangle: a battle map's spacing holds. */
-const fitsTight = (pts, poly) => {
+export const fitsTight = (pts, poly) => {
   const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   return pts.every(([x, y]) => {
     const d = Math.hypot(x - cx, y - cy);
@@ -77,615 +78,15 @@ const fitsTight = (pts, poly) => {
  * stone walls around a temple's yard or a mansion's grounds).
  */
 export function buildOnLots({ lots, district, ways, blocked = [], ftPerSquare, r, usesFor = null }) {
-  // In the plot, clear of anything it was cut around and of every street (points along each side too, since a street
-  // may bend at a house). The ways' segments sit in a grid so each test looks only at nearby streets (a way with a
-  // broken point or width is tested the slow way)
-  const exact = finitePaths(ways.map((w) => w.path)) && ways.every((w) => Number.isFinite(w.width));
-  const grid = exact ? new SegGrid(ways.map((w) => w.path)) : null;
-  const maxHalf = ways.reduce((m, w) => Math.max(m, w.width / 2), 0);
-  const clearAt = grid
-    ? (x, y) => { for (const k of grid.near(x, y, maxHalf)) if (!(grid.dist(x, y, k) >= ways[grid.segPath[k]].width / 2 - 0.005)) return false; return true; }
-    : (x, y) => ways.every((w) => distToPath([x, y], w.path) >= w.width / 2 - 0.005);
-  const clearOfWays = (pts) => pts.every((p, i) => {
-    const q = pts[(i + 1) % pts.length];
-    return [0, 0.25, 0.5, 0.75].every((t) => clearAt(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t));
-  });
-  /** True when the point is within 0.1 of a way's edge line. */
-  const onWayEdge = grid
-    ? (mid) => { let hit = false; grid.eachNear(mid[0], mid[1], maxHalf + 0.1, (p, d) => { if (Math.abs(d - ways[p].width / 2) < 0.1) hit = true; }); return hit; }
-    : (mid) => ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1);
-  // Battle maps: buildings a square apart, so there's always room to walk between two; each keeps half a square off
-  // its plot's sides and back (roomOf), and a shed or stable a square off what else is on its plot (clearHere)
-  const apart = district.battleScale ? 1 : 0;
-  // (and a square off a named building, square or yard kept clear inside a block, where the plot runs around it)
-  const keepOff = apart ? blocked.filter((b) => b.length >= 3).map((b) => grown(b, apart)) : blocked;
-  const fits = (pts, poly) => !!poly && (apart ? fitsTight : fitsIn)(pts, poly) && clearOfWays(pts) && !keepOff.some((b) => polygonsOverlap(pts, b));
-  /** Where a plot's buildings may stand: the plot, or on a battle map the plot kept half a square in from its sides and back. */
-  const roomOf = (lot) => {
-    if (!apart) return lot.poly;
-    const h = apart / 2 + 0.03; // (and the hair fitsTight allows)
-    const [ax, ay] = lot.front.a, [bx, by] = lot.front.b, [nx, ny] = lot.inward;
-    const L = Math.hypot(bx - ax, by - ay);
-    const keep = offset([lot.poly], -h);
-    // (the front, half a square short of each end, kept right to the street)
-    let pieces = keep;
-    if (L > 2 * h) {
-      const ux = (bx - ax) / L, uy = (by - ay) / L;
-      const p0 = [ax + ux * h, ay + uy * h], p1 = [bx - ux * h, by - uy * h], deep = h + 0.05;
-      const band = [[p0[0] - nx, p0[1] - ny], [p1[0] - nx, p1[1] - ny], [p1[0] + nx * deep, p1[1] + ny * deep], [p0[0] + nx * deep, p0[1] + ny * deep]];
-      pieces = union(keep, intersect([lot.poly], [band]));
-    }
-    return pieces.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-  };
-  /**
-   * A city row's parts on a plot, each { poly, rot, depth }: the plot's front, as deep as d, then (twice at most)
-   * the longest stretch of what's left of it along a street (its side at a corner, its back on a plot through the
-   * block), as deep again. None when the front is a poor fit (a narrow wedge at a sharp corner), so the plot takes
-   * an ordinary house instead.
-   */
-  const rowParts = (lot, d) => {
-    const [ux, uy] = lot.along, [nx, ny] = lot.inward, [mx, my] = lot.front.mid;
-    const big = (ps) => ps.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-    // A band square to a direction (u along it, n across it), from s0 to s1 out from a point
-    const band = ([px, py], [ex, ey], [qx, qy], s0, s1) => [[px + qx * s0 - ex * 99, py + qy * s0 - ey * 99], [px + qx * s0 + ex * 99, py + qy * s0 + ey * 99], [px + qx * s1 + ex * 99, py + qy * s1 + ey * 99], [px + qx * s1 - ex * 99, py + qy * s1 - ey * 99]];
-    const deg = (ex, ey) => (Math.atan2(ey, ex) * 180) / Math.PI;
-    // (thin fingers and sharp wedges, where a plot's cut met its neighbor's at a slant, trimmed off: a footprint no
-    // narrower anywhere than a few feet)
-    const firm = (p) => { const q = big(intersect(offset(offset([p], -sq(3)), sq(3)), [p])); return q && area(q) > area(p) * 0.8 ? tidy(q) : tidy(p); };
-    const cut = band([mx, my], [ux, uy], [nx, ny], -1, d);
-    const front = big(intersect([lot.poly], [cut]));
-    const least = sq(12) * sq(12);
-    if (!front || area(front) < least || area(front) < 0.55 * lot.frontage * d) return [];
-    // (a plot may hold a hole: a named building, square or yard kept clear inside it; a row never covers one)
-    const clear = (p) => !blocked.some((b) => b.length >= 3 && polygonsOverlap(p, b));
-    const parts = [{ poly: firm(front), rot: deg(ux, uy), depth: d }];
-    if (!clear(parts[0].poly)) return [];
-    let rest = difference([lot.poly], [cut]);
-    for (let k = 0; k < 2; k++) {
-      let best = null;
-      for (const piece of rest) {
-        if (area(piece) < least) continue;
-        const n = piece.length;
-        const on = piece.map((p, j) => { const q = piece[(j + 1) % n]; return Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-6 && onWayEdge([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]); });
-        const start = on.findIndex((v, j) => v && !on[(j + n - 1) % n]);
-        if (start < 0) continue;
-        // Runs of edges one after another along a street, each taken by its ends
-        let run = null;
-        for (let t = 0; t < n; t++) {
-          const j = (start + t) % n;
-          if (!on[j]) { run = null; continue; }
-          if (!run) run = { piece, a: piece[j] };
-          run.b = piece[(j + 1) % n];
-          const L = Math.hypot(run.b[0] - run.a[0], run.b[1] - run.a[1]);
-          if (L >= sq(16) && (!best || L > best.L)) best = { ...run, L };
-        }
-      }
-      if (!best) break;
-      const { piece, a, b, L } = best;
-      const e = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
-      // Its inward side: toward the middle of the piece it's on
-      const [gx, gy] = piece.reduce((s, p) => [s[0] + p[0] / piece.length, s[1] + p[1] / piece.length], [0, 0]);
-      let q = [-e[1], e[0]];
-      if ((gx - a[0]) * q[0] + (gy - a[1]) * q[1] < 0) q = [-q[0], -q[1]];
-      const along = band(a, e, q, -1, d);
-      const strip = big(intersect([piece], [along]));
-      if (!strip || area(strip) < least || area(strip) < 0.5 * L * d) break;
-      const part = firm(strip);
-      if (!clear(part)) break;
-      parts.push({ poly: part, rot: deg(e[0], e[1]), depth: d });
-      rest = difference(rest, [along]);
-    }
-    return parts;
-  };
-  /** True when the point is in a blocked shape or within 0.15 of its edge. */
-  const byBlocked = (mid) => blocked.some((b) => b.length >= 3 && (pointInPolygon(mid, b) || b.some((c, k) => distToSeg(mid, c, b[(k + 1) % b.length]) < 0.15)));
-  const T = lotTypeOf(district);
-  const sq = (ft) => ft / ftPerSquare;
-  const spacious = Math.max(0, Math.min(1, district.spacious ?? 0));
-  const density = district.density ?? 1;
-  const gardenShare = gardenShareOf(district);
-  // (wallSite: the site each wall walls in, by its main house's id, one for each of walls)
-  const out = { houses: [], outbuildings: [], gardens: [], crofts: [], bounds: [], trees: [], props: [], surfaces: [], pits: [], kilns: [], walls: [], wallSite: [] };
-
-  const workUse = (u) => u && u !== "house" && u !== "shop" && u !== "magic-shop";
-  const yards = []; // the yards of plots put to a trade: { i, use, at, from, to, width }
-  const wayById = new Map(ways.map((w) => [w.id, w]));
-  const boundClass = (lr) => (district.profile === "hamlet" || district.profile === "roadside" ? (lr.next() < 0.5 ? "hedge" : "wall") : lr.next() < 0.8 ? "fence" : "wall");
-
-  let croftOf = -1;
-  /** A polygon's edges as boundary segments, except those along a street. */
-  const addBounds = (p, way, cls, skip = null) => {
-    for (let k = 0; k < p.length; k++) {
-      const a = p[k], b = p[(k + 1) % p.length];
-      if (skip?.(a, b)) continue;
-      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      // Never along a street: this plot's own, or another one at its back or side
-      if (onWayEdge(mid)) continue;
-      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.02) continue;
-      out.bounds.push({ path: [a, b], class: cls });
-    }
-  };
-
-  const palette = roofPalette(district, T, r), styles = roofStyles(district, T);
-  // A roof that won't catch a forge's sparks: the district's own slate or tile if it has one (a district given only
-  // thatch keeps it: the GM's choice)
-  const safeRoof = Object.keys(palette).find((x) => !/thatch|wood/.test(x)) ?? Object.keys(palette).find((x) => x !== "thatch") ?? Object.keys(palette)[0];
-  // Buildings of their own, laid out as the uses are chosen (a site that doesn't fit is tried on other plots)
-  const character = characterOf(district);
-  const tryForm = (use, form, picks) => {
-    const lot = joinLots(picks.map((k) => lots[k]));
-    const sr = r.fork("site", use, picks[0]);
-    const roofPick = pickWeighted(sr.next(), palette), stylePick = pickWeighted(sr.next(), styles);
-    const room = roomOf(lot);
-    const made = layForm({ form, lot, use, fits: (pts) => fits(pts, room), sq, r: sr, roof: roofPick, safeRoof, style: stylePick, ownStyles: Array.isArray(district.roofStyles) && district.roofStyles.length > 0, profile: district.profile, character, variant: sr.int(8) });
-    return made ? { ...made, lot, sr } : null;
-  };
-  const uses = usesFor ? usesFor(tryForm) : null;
-  out.uses = uses;
-  out.palette = palette; // the roof materials this district's houses use (the layout's block-middle fill takes them too)
-  // Plots given to a building of their own are left to it; others may be put to a use
-  const inSite = new Set((uses?.sites ?? []).flatMap((st) => st.lots));
-  const useOf = uses?.useOf ?? new Map(), noThatch = uses?.noThatch ?? new Set();
-  for (const site of uses?.sites ?? []) {
-    const { lot, sr, ...made } = site.made;
-    // Ids as a house's: the main building, then its parts (w1, w2...), so the window picks and pins it as one
-    const base = `l${lot.block}-${site.lots[0]}`;
-    made.parts.forEach((p, k) => out.houses.push({ id: k ? `${base}w${k}` : base, lot: site.lots[0], ...(k ? { wing: true } : {}), r: sr.fork(p.key), site: site.use, joined: site.lots.length, building: { ...p.building, use: p.use } }));
-    out.surfaces.push(...made.surfaces);
-    out.gardens.push(...made.gardens);
-    out.trees.push(...made.trees.filter((t) => pointInPolygon([t.x, t.y], lot.poly) && !made.parts.some((p) => pointInPolygon([t.x, t.y], partCorners(p.building)))));
-    // A temple's yard and a mansion's grounds are walled (not along the street, a kept square or yard beside it, or a
-    // district's gate; no stub where a curving side breaks into short pieces)
-    if (site.form === "temple" || made.grounds) out.walls.push(...edgesOff(lot.poly, (mid) => onWayEdge(mid) || byBlocked(mid)).filter((w) => w.reduce((s, q, i) => s + (i ? Math.hypot(q[0] - w[i - 1][0], q[1] - w[i - 1][1]) : 0), 0) >= 0.15));
-    out.walls.push(...made.walls);
-    while (out.wallSite.length < out.walls.length) out.wallSite.push(base);
-    if (made.yard) yards.push({ i: site.lots[0], poly: lot.poly, use: site.use, ...made.yard, rot: Math.atan2(lot.along[1], lot.along[0]) / (Math.PI / 180), parts: made.parts.map((p) => partCorners(p.building)) });
-  }
-  // Plot lines, off unless the district's plotLines is true: types that fence yards draw yards and crofts, the others
-  // faint lines between long plots behind the yards
-  const linesOn = district.plotLines === true;
-  const yardLines = linesOn && !!T.bounds, stripLines = linesOn && !T.bounds;
-  const row = { key: null, roof: null, style: null, left: 0 };
-  lots.forEach((lot, i) => {
-    if (inSite.has(i)) return;
-    const lr = r.fork("lot", lot.block, i);
-    const use = useOf.get(i) ?? "house", working = workUse(use);
-    const firstHouse = out.houses.length, firstOut = out.outbuildings.length;
-    // Every choice drawn first, so a plot's dice never depend on what fitted
-    const vacant = lr.next() < (1 - Math.min(1, density)) * 0.6;
-    const cover = (T.cover[0] + lr.next() * (T.cover[1] - T.cover[0])) * (1 - 0.35 * spacious);
-    const hd = sq(T.houseDepth[0] + lr.next() * (T.houseDepth[1] - T.houseDepth[0]));
-    const sb = sq(T.setback[0] + lr.next() * (T.setback[1] - T.setback[0]) + 15 * spacious);
-    let roof = pickWeighted(lr.next(), palette);
-    const turn = (lr.next() - 0.5) * (T.cover[1] < 1 ? 4 : 0); // village houses sit a little askew; terraces don't
-    let wantGarden = lr.next() < gardenShare, wantOut = lr.next() < T.outbuilding, wantCroft = lr.next() < (district.crofts ?? T.croft);
-    if (working) wantGarden = wantCroft = false; // a workplace's yard is its work
-    const gDepth = 0.8 + lr.next() * 0.6, oSize = sq(9 + lr.next() * 9), oSide = lr.next() - 0.5, yard = sq(10 + lr.next() * 15);
-    const bClass = boundClass(lr);
-    // The house's shape: one rear wing (L), two (U), or two and a back range around a yard (court)
-    const shapeRoll = lr.next(), wingLeft = lr.next() < 0.5, wingW = sq(12 + lr.next() * 8), wingL = sq(15 + lr.next() * 20);
-    const rowLen = 2 + lr.int(4); // terraces: houses in a row share one roof material
-    const variant = lr.int(8); // a house and its wings share one roof
-    let style = pickWeighted(lr.next(), styles);
-    const oSquare = lr.next() < 0.35; // a square shed, under a pyramid roof
-    // Details on the house
-    const X = T.extras ?? {};
-    const wantBay = lr.next() < (X.bay ?? 0), wantDormers = lr.next() < (X.dormers ?? 0), wantTurret = lr.next() < (X.turret ?? 0);
-    const wantSteps = lr.next() < (X.steps ?? 0), oRound = lr.next() < (X.roundShed ?? 0);
-    const wantRear = lr.next() < (X.rear ?? 0); // a stable, workshop or warehouse at the far end, by the back lane
-    const dr = lr.fork("details"); // sizes for the details, so their count never moves the plot's other dice
-    const [ux, uy] = lot.along, [nx, ny] = lot.inward;
-    const [mx, my] = lot.front.mid;
-    const ang = (Math.atan2(uy, ux) * 180) / Math.PI;
-
-    // Terraces: a row of houses along one street shares its roof material, so it reads as a row
-    if (T.cover[1] >= 1) {
-      const key = `${lot.block}|${lot.way}`;
-      if (row.key === key && row.left > 0) { roof = row.roof; style = row.style; row.left--; }
-      else Object.assign(row, { key, roof, style, left: rowLen - 1 });
-    }
-    if (roof === "thatch" && noThatch.has(i)) roof = safeRoof;
-    // The house, at the front, as wide as its share of the frontage; narrowed if the plot's sides close in
-    // How deep a plain house goes: most of a terrace plot, a little over half of a village one
-    const plainDepth = Math.min(hd, lot.depth * (T.cover[1] >= 1 ? 0.85 : 0.6));
-    // Whether a spot behind the house is clear of what's on this plot already and wholly in the plot whatever its
-    // shape. gap: how far it keeps off them (a shed a square off the house on a battle map)
-    const clearHere = (pts, gap = 0) => ![...out.houses.slice(firstHouse), ...out.outbuildings.slice(firstOut)].some((h) => polygonsOverlap(gap ? grown(partCorners(h.building), gap) : partCorners(h.building), pts)) && intersect([pts], [lot.poly]).reduce((s, q) => s + area(q), 0) > area(pts) * 0.995;
-    const room = roomOf(lot); // where its buildings may stand (the plot, kept off its neighbors on a battle map)
-    let house = null;
-    // A city row: the house takes the plot's whole front under a roof along the street, and turns to carry on along a
-    // street at its side or back too, so a block's every street front is built up
-    const rowRoll = lr.fork("row").next(); // (its own stream: the plot's other dice stay as they were)
-    // (its roof a gable, or flat where the house's form is flat: a row's ends are party walls, so it takes no hips;
-    // a change of roof forms never moves it)
-    const rowStyle = style === "flat" ? "flat" : "gable";
-    if (!vacant && rowRoll < (T.rows ?? 0) && lot.frontage <= sq(50)) {
-      const d = Math.min(hd, lot.depth * 0.9);
-      const rows = rowParts(lot, d);
-      if (rows.length) {
-        const base = `l${lot.block}-${i}`;
-        rows.forEach((q, k) => out.houses.push({ id: k ? `${base}w${k}` : base, lot: i, ...(k ? { wing: true } : {}), r: lr.fork(k ? `row${k}` : "house"), ...(k ? {} : { shape: "row" }), building: { shape: unturn(q.poly, q.rot), rot: q.rot, roof, variant, roofStyle: rowStyle, height: 20, use, ...(k ? { chimney: false } : {}) } }));
-        // A wide row often in two sections under their own roofs, the second shallower and a little taller or lower
-        // (not on a corner plot, where it would leave a notch)
-        if (wantSteps && lot.frontage > sq(36) && rows.length === 1) {
-          const cutAt = (0.4 + dr.next() * 0.2) * lot.frontage, d2 = d * (0.72 + dr.next() * 0.2), h2 = 16 + Math.round(dr.next() * 10);
-          const [ax, ay] = lot.front.a, px = ax + ux * cutAt, py = ay + uy * cutAt;
-          const left = [[px - ux * 99 - nx * 99, py - uy * 99 - ny * 99], [px - nx * 99, py - ny * 99], [px + nx * 99, py + ny * 99], [px - ux * 99 + nx * 99, py - uy * 99 + ny * 99]];
-          const big = (ps) => ps.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-          const first = big(intersect([rows[0].poly], [left]));
-          const shallow = [[mx - nx - ux * 99, my - ny - uy * 99], [mx - nx + ux * 99, my - ny + uy * 99], [mx + nx * d2 + ux * 99, my + ny * d2 + uy * 99], [mx + nx * d2 - ux * 99, my + ny * d2 - uy * 99]];
-          const second = big(intersect(difference([rows[0].poly], [left]), [shallow]));
-          const least = sq(12) * sq(12);
-          if (first && second && area(first) > least && area(second) > least) {
-            const main = out.houses.find((h) => h.id === base);
-            main.shape = "steps";
-            main.building.shape = unturn(tidy(first), rows[0].rot);
-            out.houses.push({ id: `${base}s2`, lot: i, wing: true, r: lr.fork("section1"), building: { shape: unturn(tidy(second), rows[0].rot), rot: rows[0].rot, roof, variant, roofStyle: rowStyle, height: h2, use, chimney: false } });
-          }
-        }
-        house = { cx: mx + nx * (rows[0].depth / 2), cy: my + ny * (rows[0].depth / 2), w: lot.frontage, depth: rows[0].depth, off: 0, rot: ang, dir: [ux, uy], row: true, parts: rows };
-      }
-    }
-    if (!vacant && !house) {
-      // Narrower, then shallower, then slid along the front, before a plot is left as a yard (odd corner plots)
-      const rot = ang + turn;
-      const a = (rot * Math.PI) / 180;
-      const dir = [Math.cos(a), Math.sin(a)];
-      // A house that will have wings keeps its front range shallower, leaving the plot room behind for them
-      const S0 = T.shapes ?? {};
-      const roll0 = lot.merged ? shapeRoll * 0.35 + (S0.L ?? 0) * 0.8 : shapeRoll; // as the wings are chosen below
-      // (and only on a plot wide enough for wings: a narrow house that couldn't take them keeps its full depth)
-      const winged = roll0 < (S0.L ?? 0) + (S0.T ?? 0) + (S0.U ?? 0) + (S0.court ?? 0) && lot.frontage * cover * 0.98 >= sq(22);
-      const plain = plainDepth;
-      const depths = winged ? [Math.min(hd, lot.depth * 0.45), plain, plain * 0.75] : [plain, plain * 0.75];
-      // (on a battle map no narrower than three squares, room to fight in: a plot too tight is left a yard)
-      const least = apart ? [3, 3] : [sq(12), sq(10)];
-      search: for (const depth of depths) {
-        if (depth < least[0]) continue;
-        for (let w = lot.frontage * cover * 0.98; w > least[1]; w *= 0.92) {
-          for (const slide of [0, 0.15, -0.15, 0.3, -0.3]) {
-            const off = slide * lot.frontage;
-            const cx = mx + nx * (sb + depth / 2) + ux * off, cy = my + ny * (sb + depth / 2) + uy * off;
-            if (!fits(corners(cx, cy, w, depth, dir), room)) continue;
-            house = { cx, cy, w, depth, off, rot, dir };
-            break search;
-          }
-        }
-      }
-    }
-    // Wings behind the house, at right angles to it; details on its front (a row has none: its yard is behind it)
-    let reach = house ? (house.row ? house.depth : sb + house.depth) : sb; // (a row stands on the street)
-    if (house && !house.row) {
-      let { cx, cy, depth } = house;
-      const { w, rot, dir } = house;
-      const [dx, dy] = dir;
-      const base = `l${lot.block}-${i}`;
-      // The house's own "back": square to its front, on the side away from the street
-      const [bx, by] = -dy * nx + dx * ny >= 0 ? [-dy, dx] : [dy, -dx];
-      const at = (along, back) => [cx + dx * along + bx * back, cy + dy * along + by * back];
-      const S = T.shapes ?? {};
-      // A double plot's house leans to the bigger forms: a courtyard or two wings far more often
-      const roll = lot.merged ? shapeRoll * 0.35 + (S.L ?? 0) * 0.8 : shapeRoll;
-      const cut = [S.L ?? 0, S.T ?? 0, S.U ?? 0, S.court ?? 0].reduce((a, v) => [...a, (a.at(-1) ?? 0) + v], []);
-      const kindWanted = roll < cut[0] ? "L" : roll < cut[1] ? "T" : roll < cut[2] ? "U" : roll < cut[3] ? "court" : null;
-      // Only a house wide enough gets wings (too narrow for its form, it takes an L or none); a wing is never a thin
-      // stick (at least 10 ft wide, longer than wide) and no wider than the house is deep, so its roof never reaches
-      // past the house's ridge
-      const kind = !kindWanted || w < sq(22) || depth * 0.95 < sq(10) ? null : kindWanted === "T" && w < sq(26) ? "L" : kindWanted === "U" && w < sq(30) ? "L" : kindWanted === "court" && w < sq(32) ? "U" : kindWanted;
-      const parts = [];
-      const ww = Math.max(sq(10), Math.min(wingW, w * (kind === "L" ? 0.5 : 0.4), depth * 0.95));
-      const wl = Math.max(kind === "court" ? Math.max(wingL, ww * 1.8) : wingL, ww * 1.2);
-      const wing = (pos) => {
-        // A wing running back from the house (pos -1 and 1: flush with one end; 0: from the middle, a T), overlapping it a little
-        const [ox, oy] = at(pos * (w / 2 - ww / 2), depth / 2 + wl / 2 - 0.05);
-        return { cx: ox, cy: oy, len: wl, dep: ww, rot: rot + 90, back: depth + wl, wing: true, pos };
-      };
-      if (kind === "L") parts.push(wing(wingLeft ? -1 : 1));
-      if (kind === "T") parts.push(wing(0));
-      if (kind === "U" || kind === "court") parts.push(wing(-1), wing(1));
-      if (kind === "court") {
-        // The back range takes the wings' far ends 0.05 in, as the house takes their near ends
-        const [ox, oy] = at(0, depth / 2 + wl - 0.1 + ww / 2);
-        parts.push({ cx: ox, cy: oy, len: w, dep: ww, rot, back: depth + wl + ww - 0.1 });
-      }
-      const rectOf = (q) => { const a = (q.rot * Math.PI) / 180; return corners(q.cx, q.cy, q.len, q.dep, [Math.cos(a), Math.sin(a)]); };
-      // Every part must fit the plot, or the house stays a plain block
-      const ok = parts.every((q) => fits(rectOf(q), room));
-      const shape = ok ? kind : null;
-      // A house kept shallow for wings that didn't fit takes its plot's full depth after all, where that fits
-      if (!shape && depth < plainDepth - 1e-6) for (const d2 of [plainDepth, plainDepth * 0.85]) {
-        if (d2 <= depth + 1e-6) break;
-        const x2 = mx + nx * (sb + d2 / 2) + ux * house.off, y2 = my + ny * (sb + d2 / 2) + uy * house.off;
-        if (fits(corners(x2, y2, w, d2, dir), room)) { cx = x2; cy = y2; depth = d2; Object.assign(house, { cx, cy, depth }); reach = sb + depth; break; }
-      }
-      // A winged house's roof runs into its wings': a mansard or pyramid becomes a hip there; flat stays flat
-      if (shape && (style === "mansard" || style === "pyramid")) style = "hip";
-      const pitched = style !== "flat" && style !== "mansard";
-      // On a hipped house, a wing flush with one end has its outer slope in the plane of the hip end: no valley on
-      // that side
-      const flushWings = shape && style === "hip" ? parts.filter((q) => q.wing && q.pos) : [];
-      const backSign = Math.sign(bx * -dy + by * dx) || 1; // the back, in the house's own frame (y across it)
-      const cuts = (ySign) => flushWings.map((q) => [q.pos, ySign, ww / 2]);
-
-      // A long plain house often in sections, each with its own roof: flush at the street, its back and height
-      // stepping
-      const sections = [];
-      if (!shape && wantSteps && w > Math.max(depth * 2.2, sq(40))) {
-        const n = w > depth * 3.4 ? 3 : 2;
-        const cuts = n === 2 ? [0.4 + dr.next() * 0.2] : [0.28 + dr.next() * 0.1, 0.62 + dr.next() * 0.1];
-        const edges = [0, ...cuts, 1].map((t) => -w / 2 + t * w);
-        for (let k = 0; k < n; k++) {
-          const d = depth * (k === 0 ? 1 : 0.8 + dr.next() * 0.2);
-          const sw = edges[k + 1] - edges[k];
-          const [ox, oy] = at((edges[k] + edges[k + 1]) / 2, -(depth - d) / 2);
-          sections.push({ cx: ox, cy: oy, len: sw + (k < n - 1 ? 0.02 : 0), dep: d, height: 18 + Math.round(dr.next() * 8) });
-        }
-      }
-      if (sections.length) {
-        sections.forEach((q, k) => out.houses.push({ id: k ? `${base}s${k + 1}` : base, lot: i, ...(k ? { wing: true } : {}), r: lr.fork(k ? `section${k}` : "house"), shape: k ? null : "steps", building: { shape: { rect: [q.cx - q.len / 2, q.cy - q.dep / 2, q.cx + q.len / 2, q.cy + q.dep / 2] }, rot, roof, variant, roofStyle: style, height: q.height, use, ...(k ? { chimney: false } : {}) } }));
-      } else {
-        // The house first, then its wings: a wing's roof runs on into the house's and must lie over it (the valleys)
-        out.houses.push({ id: base, lot: i, r: lr.fork("house"), shape, building: { shape: { rect: [cx - w / 2, cy - depth / 2, cx + w / 2, cy + depth / 2] }, rot, roof, variant, roofStyle: style, height: 20, use, ...(cuts(backSign).length ? { cut: cuts(backSign) } : {}) } });
-      }
-      // The end of a part that meets the house: its local x runs along its rot; the end nearer the house joins it
-      const joinOf = (q) => {
-        const a = (q.rot * Math.PI) / 180;
-        return Math.cos(a) * (q.cx - cx) + Math.sin(a) * (q.cy - cy) > 0 ? { start: true } : { end: true };
-      };
-      const push = (q, id, extra) => out.houses.push({ id, lot: i, wing: true, r: lr.fork(id), building: { shape: { rect: [q.cx - q.len / 2, q.cy - q.dep / 2, q.cx + q.len / 2, q.cy + q.dep / 2] }, rot: q.rot, roof, variant, height: 20, chimney: false, use, ...extra } });
-      const placed = []; // the house's own parts, which a turret must keep clear of
-      // A courtyard's back range before its side wings, whose far ends run into it
-      if (shape) [...parts].sort((p1, p2) => (p1.wing ? 1 : 0) - (p2.wing ? 1 : 0)).forEach((q, k) => {
-        // Each part is set 0.05 into what it joins (inset), so the valleys start on that roof's real eave
-        const join = !q.wing ? null : { ...(kind === "court" ? { start: true, end: true } : joinOf(q)), inset: 0.05, ...(flushWings.includes(q) ? { flush: -q.pos } : {}) };
-        const cut = !q.wing && cuts(-backSign).length ? { cut: cuts(-backSign) } : {};
-        push(q, `${base}w${k + 1}`, { roofStyle: style, ...(join ? { join } : {}), ...cut });
-        placed.push(rectOf(q));
-        reach = Math.max(reach, sb + q.back);
-      });
-      // A bay out to the street under its own small roof, a cross-gable, where the house is set back far enough
-      let bay = null;
-      if (!sections.length && pitched && wantBay && w >= sq(24)) {
-        const bw = Math.min(w * 0.4, sq(10 + dr.next() * 6), depth * 0.95), bd = Math.min(sb * 0.8, sq(5 + dr.next() * 4));
-        const [ox, oy] = at((dr.next() - 0.5) * (w - bw) * 0.5, -(depth / 2 + bd / 2 - 0.05));
-        const q = { cx: ox, cy: oy, len: bd + 0.05, dep: bw, rot: rot + 90 };
-        if (bd >= sq(4) && fits(rectOf(q), room)) {
-          bay = q;
-          push(q, `${base}b`, { roofStyle: style === "gable" ? "gable" : "hip", join: { ...joinOf(q), inset: 0.075 } });
-          placed.push(rectOf(q));
-        }
-      }
-      // Gables on the front slope of a long roof, half wall dormers (a short gabled roof running back from the eave),
-      // half cross-gables (a gable rising from the eave)
-      if (!sections.length && !bay && pitched && style !== "pyramid" && wantDormers && w >= sq(28)) {
-        const n = w >= sq(45) ? 2 : 1;
-        const dw = Math.min(sq(8 + dr.next() * 3), w / (n * 2.5));
-        const crossGable = dr.next() < 0.5;
-        const dl = crossGable ? Math.min(0.04, depth / 2 - dw / 2 - 0.02) : Math.min(depth / 2 - dw / 2 - 0.02, depth * 0.3);
-        if (crossGable ? dl > 0.02 : dl >= sq(4)) for (let k = 0; k < n; k++) {
-          const along = n === 1 ? (dr.next() - 0.5) * w * 0.3 : (k ? 1 : -1) * w * 0.22;
-          // On a hipped roof the front slope narrows toward the ridge: the dormer must sit inside it, clear of the hips
-          if (style !== "gable" && Math.abs(along) + dw / 2 + dl > w / 2 - 0.02) continue;
-          const [ox, oy] = at(along, -(depth / 2 - dl / 2));
-          const q = { cx: ox, cy: oy, len: dl, dep: dw, rot: rot + 90 };
-          push(q, `${base}d${k + 1}`, { roofStyle: "gable", join: joinOf(q) });
-          placed.push(rectOf(q));
-        }
-      }
-      // A round turret at a corner of a big house, under a cone: at the front where the house stands back from the
-      // street, else at the back, on a corner no wing takes
-      if (!sections.length && pitched && wantTurret && w >= sq(28) && (!kind || kind === "L" || kind === "T" || !shape)) {
-        const tr = sq(5 + dr.next() * 2.5);
-        const front = sb >= tr * 1.1;
-        const first = dr.next() < 0.5 ? -1 : 1;
-        // Either corner on its side, the first that fits the plot and is clear of the house's wings, bay and dormers
-        for (const side of [first, -first]) {
-          const [ox, oy] = at(side * (w / 2 - tr * 0.4), (front ? -1 : 1) * (depth / 2 - tr * 0.4));
-          const sqr = corners(ox, oy, 2 * tr, 2 * tr, dir);
-          if (!fits(sqr, room) || placed.some((p) => polygonsOverlap(sqr, p))) continue;
-          out.houses.push({ id: `${base}t`, lot: i, wing: true, r: lr.fork("turret"), building: { shape: { circle: [ox, oy, tr] }, rot, roof, variant, roofStyle: "cone", height: 30, chimney: false, use } });
-          if (!front) reach = Math.max(reach, sb + depth + tr * 0.6); // a turret at the back pushes the yard back
-          break;
-        }
-      }
-    }
-    let behind = reach + 0.15; // how far back from the street the next thing starts
-    const houseBack = behind;
-
-    // A tended garden right behind the house
-    if (house && wantGarden) {
-      for (const d of [gDepth, gDepth * 0.65]) {
-        const w = Math.min(house.w * 0.95, lot.frontage * 0.85);
-        const cx = mx + nx * (behind + d / 2), cy = my + ny * (behind + d / 2);
-        if (fits(corners(cx, cy, w, d, [ux, uy]), lot.poly) && clearHere(corners(cx, cy, w, d, [ux, uy]))) {
-          out.gardens.push({ cx, cy, w, d, rot: ang });
-          behind += d + 0.1;
-          break;
-        }
-      }
-    }
-    // A shed, barn or workshop across the yard behind, to one side: small, so it never reads as a second house
-    if (house && wantOut) {
-      const ow = Math.min(oSize * (oSquare ? 1 : 1.3), lot.frontage * 0.5, house.w * 0.7), od = oSquare ? ow : oSize;
-      const side = oSide * Math.max(0, lot.frontage - ow) * 0.8;
-      const back = behind + sq(8);
-      const cx = mx + nx * (back + od / 2) + ux * side, cy = my + ny * (back + od / 2) + uy * side;
-      if (behind + od < lot.depth * 0.9 && fits(corners(cx, cy, ow, od, [ux, uy]), room) && clearHere(corners(cx, cy, ow, od, [ux, uy]), apart)) {
-        // A square shed under a pyramid roof, or now and then a round one (a dovecote) under a cone
-        const square = Math.abs(ow / od - 1) < 0.15, round = square && oRound;
-        const shape = round ? { circle: [cx, cy, Math.min(ow, od) / 2] } : { rect: [cx - ow / 2, cy - od / 2, cx + ow / 2, cy + od / 2] };
-        out.outbuildings.push({ id: `l${lot.block}-${i}o`, lot: i, r: lr.fork("out"), building: { shape, rot: ang, roof: roof === "thatch" ? "thatch" : "wood-shingle", roofStyle: round ? "cone" : square ? "pyramid" : "gable", height: round ? 20 : 15, chimney: false, use: working ? "workshop" : uses?.out ?? "shed" } });
-        behind = back + od + 0.1;
-      }
-    }
-    // On a long plot, a range at the far end: the stable, workshop or warehouse that the back lane served
-    let rearAt = null; // how far back the far-end range starts
-    // (behind a row, on a city plot too short for a long yard: the range closes a small court behind the house)
-    if (house && wantRear && lot.depth - behind > sq(house.row ? 22 : 45)) {
-      const rw = Math.min(lot.frontage * 0.85, sq(16 + dr.next() * 12)), rd = sq(14 + dr.next() * 8);
-      const back = lot.depth - rd / 2 - sq(2);
-      const cx = mx + nx * back, cy = my + ny * back;
-      if (fits(corners(cx, cy, rw, rd, [ux, uy]), room) && clearHere(corners(cx, cy, rw, rd, [ux, uy]), apart)) {
-        rearAt = back - rd / 2;
-        out.outbuildings.push({ id: `l${lot.block}-${i}r`, lot: i, r: lr.fork("rear"), building: { shape: { rect: [cx - rw / 2, cy - rd / 2, cx + rw / 2, cy + rd / 2] }, rot: ang, roof, variant, roofStyle: "gable", height: 18, chimney: false, use: working ? "workshop" : uses?.rear ?? "stable" } });
-      }
-    }
-    // The yard behind the house ends here; a croft, if any, starts exactly here, so they share one fence
-    const reachBack = Math.max(houseBack, behind) + yard;
-    // A workplace's yard, for what its trade leaves about (laid out after every plot is built)
-    if (house && working) {
-      const main = out.houses.find((h) => h.lot === i && !h.wing);
-      if (main && USE_INFO[use]?.smoke) main.smoke = USE_INFO[use].smoke;
-      yards.push({ i, use, at: (along, back) => [mx + ux * along + nx * back, my + uy * along + ny * back], from: houseBack + sq(3), to: Math.min(lot.depth * 0.9, houseBack + sq(50)), width: lot.frontage * 0.8, rot: ang, first: firstHouse, firstOut });
-    }
-    // The croft: the back of the plot as a small fenced field
-    if (wantCroft && lot.depth * 0.55 > behind) {
-      const near = house ? reachBack : Math.max(behind, lot.depth * 0.55);
-      const share = Math.max(0.1, Math.min(1, district.croftDepth ?? T.croftDepth ?? 1));
-      const far = share >= 1 ? lot.depth * 1.6 : near + (lot.depth - near) * share;
-      const slab = [[mx + nx * near - ux * 99, my + ny * near - uy * 99], [mx + nx * near + ux * 99, my + ny * near + uy * 99], [mx + nx * far + ux * 99, my + ny * far + uy * 99], [mx + nx * far - ux * 99, my + ny * far - uy * 99]];
-      const piece = intersect([lot.poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-      if (piece && area(piece) > 0.5) { out.crofts.push(piece); croftOf = i; }
-    }
-    // The rest of the plot behind the yard, by type: a strip garden, an orchard in rows, a few trees, or open ground
-    if (house && croftOf !== i) {
-      const fr = lr.fork("fill");
-      const fill = working ? "open" : pickWeighted(fr.next(), T.fill ?? { open: 1 });
-      // (a built-up back keeps only a narrow yard behind the house)
-      // (and runs to the plot's real back, which in an odd-shaped block can lie well past its nominal depth)
-      const farBack = fill === "sheds" ? Math.max(...lot.poly.map(([x, y]) => (x - mx) * nx + (y - my) * ny)) : 0;
-      const start = fill === "sheds" ? Math.max(houseBack, behind) + sq(4) : reachBack, end = (rearAt ?? Math.max(lot.depth, Math.min(farBack, lot.depth * 2.5))) - sq(4);
-      const span = end - start;
-      // What this plot already holds, for trees to keep clear of
-      const rects = [...out.houses.slice(firstHouse), ...out.outbuildings.slice(firstOut)].map((h) => partCorners(h.building));
-      const clearOf = (x, y, rad) => !rects.some((q) => pointInPolygon([x, y], q) || q.some((c, k) => distToSeg([x, y], c, q[(k + 1) % q.length]) < rad));
-      const inPlot = (x, y, rad) => pointInPolygon([x, y], lot.poly) && lot.poly.every((c, k) => distToSeg([x, y], c, lot.poly[(k + 1) % lot.poly.length]) > rad * 0.6);
-      const tree = (x, y, crown) => out.trees.push({ x, y, s: crown / 2.2, rot: fr.next() * 360, variant: fr.int(8) });
-      if (fill === "garden" && span > sq(20)) {
-        // Beds in rows across the plot, as wide as the plot allows
-        const d = Math.min(span * (0.5 + fr.next() * 0.3), sq(70)), w = lot.frontage * 0.8;
-        const cx = mx + nx * (start + d / 2), cy = my + ny * (start + d / 2);
-        if (fits(corners(cx, cy, w, d, [ux, uy]), lot.poly) && clearHere(corners(cx, cy, w, d, [ux, uy]))) out.gardens.push({ cx, cy, w, d, rot: ang, strip: true });
-      } else if (fill === "orchard" && span > sq(25)) {
-        // Fruit trees in rows square to the plot, 16 to 20 ft apart
-        const sp = sq(16 + fr.next() * 4), crown = sp * 0.85;
-        const cols = Math.max(1, Math.floor((lot.frontage * 0.85) / sp));
-        for (let t = start + sp / 2; t <= end - sp / 2 + 1e-9; t += sp)
-          for (let c = 0; c < cols; c++) {
-            const off = (c - (cols - 1) / 2) * sp + (fr.next() - 0.5) * sp * 0.15;
-            const x = mx + nx * t + ux * off, y = my + ny * t + uy * off;
-            if (inPlot(x, y, crown / 2) && clearOf(x, y, crown * 0.4)) tree(x, y, crown);
-          }
-      } else if (fill === "sheds" && span > sq(16)) {
-        // A dense quarter builds over the back of its plots: rows of sheds, stores or shacks across it, as many as fit
-        const B = LOOK[character]?.back ?? { len: [14, 24], dep: [12, 18], gap: 6, use: "shed" };
-        const ext = (range) => sq(range[0] + fr.next() * (range[1] - range[0]));
-        // (a district given its own roof forms keeps them on these too)
-        const ownStyle = Array.isArray(district.roofStyles) && district.roofStyles.some((s) => ROOF_STYLES.includes(s)) ? pickWeighted(fr.next(), styles) : null;
-        let n = 0;
-        for (let t = start + sq(3); t < end - sq(B.dep[0]) && n < 8; ) {
-          const dd = ext(B.dep);
-          for (let a = -lot.frontage * 0.46; n < 8; ) {
-            const w = Math.min(ext(B.len), lot.frontage * 0.9);
-            if (a + w > lot.frontage * 0.46) break;
-            const off = a + w / 2;
-            const cx = mx + nx * (t + dd / 2) + ux * off, cy = my + ny * (t + dd / 2) + uy * off;
-            const pts = corners(cx, cy, w, dd, [ux, uy]);
-            // (wholly in the plot, whatever its shape: a row next door is built right up to its edge)
-            if (t + dd <= end && fits(pts, room) && !rects.some((q) => polygonsOverlap(apart ? grown(q, apart) : q, pts)) && clearHere(pts, apart)) {
-              out.outbuildings.push({ id: `l${lot.block}-${i}k${++n}`, lot: i, r: fr.fork("shed", n), building: { shape: { rect: [cx - w / 2, cy - dd / 2, cx + w / 2, cy + dd / 2] }, rot: ang, roof: pickWeighted(fr.next(), palette), variant: fr.int(8), roofStyle: ownStyle ?? "gable", height: 15, chimney: false, use: B.use } });
-              rects.push(pts);
-            }
-            a += w + sq(B.gap);
-          }
-          t += dd + sq(B.gap + 2);
-        }
-      } else if (fill === "trees" && span > sq(10)) {
-        // A few trees about the yard and the plot behind it
-        const n = 1 + Math.floor(fr.next() * Math.min(3, span / sq(30) + 1));
-        const placed = [];
-        for (let k = 0; k < n * 4 && placed.length < n; k++) {
-          const t = start + fr.next() * span, off = (fr.next() - 0.5) * lot.frontage * 0.8, crown = sq(18 + fr.next() * 14);
-          const x = mx + nx * t + ux * off, y = my + ny * t + uy * off;
-          if (!inPlot(x, y, crown / 2) || !clearOf(x, y, crown * 0.35) || placed.some(([px, py]) => Math.hypot(px - x, py - y) < crown * 0.8)) continue;
-          placed.push([x, y]);
-          tree(x, y, crown);
-        }
-      }
-      // Faint lines between long town plots, behind the yard only, where neighbors' backs meet
-      if (stripLines && span > sq(20)) {
-        const behindYard = difference([lot.poly], [clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack) ?? []]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
-        const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
-        // Not across the plot where the yard ends: only its sides and its far end
-        if (behindYard) addBounds(behindYard, wayById.get(lot.way), "wall", (a, b) => Math.abs(depthOf(a) - reachBack) < 0.05 && Math.abs(depthOf(b) - reachBack) < 0.05);
-      }
-    }
-    // Boundaries near the house only: the yard fenced on its sides and back (not the street), and a croft's fence
-    const way = wayById.get(lot.way);
-    if (yardLines && house) {
-      const toft = clipDepth(lot.poly, [mx, my], [ux, uy], [nx, ny], reachBack);
-      if (toft) addBounds(toft, way, bClass);
-    }
-    // The croft's fence: all around, its sides only (open at the back, fading into the fields), or none
-    const croftFence = district.croftFence ?? T.croftFence ?? "all";
-    if (yardLines && wantCroft && croftOf === i && croftFence !== "none") {
-      const croft = out.crofts[out.crofts.length - 1];
-      const backOf = croftFence === "sides" ? (a, b) => {
-        const depthOf = ([x, y]) => (x - mx) * nx + (y - my) * ny;
-        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-        const across = Math.abs(((b[0] - a[0]) * ux + (b[1] - a[1]) * uy) / l) > 0.7;
-        return across && Math.min(depthOf(a), depthOf(b)) > reachBack + 0.2;
-      } : null;
-      addBounds(croft, way, bClass, backOf);
-    }
-  });
-  // What a trade leaves in its yard: its clutter, tanning or dyeing pits, a kiln
-  for (const y of yards) {
-    const info = USE_INFO[y.use] ?? {};
-    const yr = r.fork("yard", y.i);
-    const span = y.to - y.from;
-    if (span < sq(8)) continue;
-    const rects = y.parts ?? [...out.houses.filter((h) => h.lot === y.i), ...out.outbuildings.filter((h) => h.lot === y.i)].map((h) => partCorners(h.building));
-    const taken = [];
-    const lotPoly = y.poly ?? lots[y.i].poly; // a joined site's whole yard
-    const free = (x, yy, rad) => pointInPolygon([x, yy], lotPoly) && !rects.some((q) => pointInPolygon([x, yy], q) || q.some((c, k) => distToSeg([x, yy], c, q[(k + 1) % q.length]) < rad)) && !taken.some(([px, py, pr]) => Math.hypot(px - x, py - yy) < rad + pr);
-    const spot = (rad) => {
-      for (let k = 0; k < 12; k++) {
-        const [x, yy] = y.at((yr.next() - 0.5) * y.width, y.from + rad + yr.next() * Math.max(0, span - 2 * rad));
-        if (free(x, yy, rad)) { taken.push([x, yy, rad]); return [x, yy]; }
-      }
-      return null;
-    };
-    if (info.kiln) {
-      const rad = sq(7 + yr.next() * 3), p = spot(rad);
-      if (p) out.kilns.push({ x: p[0], y: p[1], rad, use: y.use });
-    }
-    if (info.pits) {
-      // A grid of pits square to the plot, as many as fit
-      const size = sq(6), step = sq(9);
-      const cols = Math.max(1, Math.min(4, Math.floor((y.width * 0.8) / step))), rows = Math.max(1, Math.min(3, Math.floor((span * 0.7) / step)));
-      for (let a = 0; a < cols; a++) for (let b = 0; b < rows; b++) {
-        const [x, yy] = y.at((a - (cols - 1) / 2) * step, y.from + sq(5) + b * step);
-        if (!free(x, yy, size * 0.75)) continue;
-        taken.push([x, yy, size * 0.6]);
-        out.pits.push({ x, y: yy, size, rot: y.rot, liquid: info.pits === "dye" ? ["blue", "red", "yellow", "green"][yr.int(4)] : info.pits });
-      }
-    }
-    const things = [...(info.yard ?? []), ...(y.inn ? ["wagon", "hay", "barrel"] : [])];
-    const extra = yr.int(2), n = things.length ? Math.min(things.length + extra, 5) : 0; // (a use with no yard things leaves none)
-    for (let k = 0; k < n; k++) {
-      const cls = things[k % things.length];
-      const p = spot(sq(cls === "wagon" || cls === "cart" ? 7 : 3));
-      if (p) out.props.push({ class: cls, x: p[0], y: p[1], rot: y.rot + (yr.next() - 0.5) * 40 + (yr.next() < 0.5 ? 90 : 0), variant: yr.int(8) });
-    }
-  }
-  // Neighbors' fences on the same line become one fence (their pieces overlap with staggered ends otherwise)
-  out.bounds = joinBounds(mergeCollinear(out.bounds));
-  return out;
+  const ctx = { lots, district, ways, blocked, ftPerSquare, r, usesFor };
+  lotRules(ctx);
+  ownBuildings(ctx);
+  plotByPlot(ctx);
+  return yardsAndFences(ctx);
 }
 
 /** A polygon's edges, joined end to end, leaving out those along a street (onWayEdge of their middle). */
-function edgesOff(poly, onWayEdge) {
+export function edgesOff(poly, onWayEdge) {
   const runs = [];
   let cur = null;
   for (let k = 0; k < poly.length; k++) {
@@ -700,7 +101,7 @@ function edgesOff(poly, onWayEdge) {
 }
 
 /** A building spec's footprint: its four corners (a round one's square box), or a row house's own outline. */
-function partCorners(b) {
+export function partCorners(b) {
   if (Array.isArray(b.shape)) return shapeToPolygon(b.shape, b.rot ?? 0);
   if (b.shape.circle) { const [x, y, rad] = b.shape.circle; return rectCorners(x, y, rad * 2, rad * 2, b.rot ?? 0); }
   const [x0, y0, x1, y1] = b.shape.rect;
@@ -711,7 +112,7 @@ function partCorners(b) {
  * A footprint cleaned up for drawing: no repeated corners, no corner in a straight edge, and no spike (a corner
  * sharper than 25 degrees, where a plot's cut met its neighbor's at a slant). Unchanged if that leaves too little.
  */
-function tidy(poly) {
+export function tidy(poly) {
   let pts = poly.slice();
   const orient = Math.sign(poly.reduce((s, p, k) => { const q = poly[(k + 1) % poly.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0));
   for (let changed = true; changed && pts.length > 3; ) {
@@ -735,7 +136,7 @@ function tidy(poly) {
 }
 
 /** The part of a plot from its front back to a given depth. */
-function clipDepth(poly, [mx, my], [ux, uy], [nx, ny], depth) {
+export function clipDepth(poly, [mx, my], [ux, uy], [nx, ny], depth) {
   const slab = [[mx - nx * 0.5 - ux * 99, my - ny * 0.5 - uy * 99], [mx - nx * 0.5 + ux * 99, my - ny * 0.5 + uy * 99], [mx + nx * depth + ux * 99, my + ny * depth + uy * 99], [mx + nx * depth - ux * 99, my + ny * depth - uy * 99]];
   return intersect([poly], [slab]).reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
 }
@@ -744,7 +145,7 @@ function clipDepth(poly, [mx, my], [ux, uy], [nx, ny], depth) {
  * Merges fence segments lying on one line: overlapping or touching pieces become one, so two neighbors' fences
  * along their shared side are drawn once, from the front to the deeper of the two.
  */
-function mergeCollinear(segs) {
+export function mergeCollinear(segs) {
   const lines = [];
   for (const sgm of segs) {
     const [[ax, ay], [bx, by]] = sgm.path;
@@ -783,7 +184,7 @@ function mergeCollinear(segs) {
 }
 
 /** Joins boundary segments end to end into longer lines of the same kind, so they draw as fences, not dashes. */
-function joinBounds(segs) {
+export function joinBounds(segs) {
   const out = [];
   const used = new Array(segs.length).fill(false);
   const same = (p, q) => Math.abs(p[0] - q[0]) < 1e-3 && Math.abs(p[1] - q[1]) < 1e-3;
@@ -811,13 +212,13 @@ function joinBounds(segs) {
   return out;
 }
 
-function distToSeg([x, y], [ax, ay], [bx, by]) {
+export function distToSeg([x, y], [ax, ay], [bx, by]) {
   const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
   const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
   return Math.hypot(ax + t * dx - x, ay + t * dy - y);
 }
 
-function distToPath([x, y], path) {
+export function distToPath([x, y], path) {
   let d = Infinity;
   for (let i = 1; i < path.length; i++) {
     const [ax, ay] = path[i - 1], [bx, by] = path[i];
