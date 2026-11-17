@@ -2,7 +2,7 @@
  * Uploading AtlasScribe's output. Foundry's upload fails silently into a folder that doesn't exist, so every
  * folder on the way is created first, and a file is never written over: a taken name gets a number added.
  */
-const FP = () => foundry.applications.apps.FilePicker.implementation;
+import { FP } from "./util.mjs";
 
 /** Creates a folder under the Data folder, and each folder above it, if they're missing. */
 export async function ensureDir(path) {

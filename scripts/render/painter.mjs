@@ -6,7 +6,7 @@ import * as textured from "./styles/textured.mjs";
 import * as illustrated from "./styles/illustrated.mjs";
 import * as battle from "./styles/battle.mjs";
 import { artPlacement } from "../core/layout/rooms.mjs";
-import { drawnArt, forgetDrawn } from "./drawn-art.mjs";
+import { drawnSet } from "./drawn-art.mjs";
 
 /** The art scale every style paints at (Forgotten Adventures' 200 px a square); art at another is resized to it. */
 const ART_PX = 200;
@@ -33,15 +33,82 @@ export function styleOf(layout) {
  * no art drawn in that look ("painted" or "inked"), or with all every role drawn.
  */
 export async function paintLayout(input, progress = () => {}) {
-  // (the drawn images let go whether painting finishes or not)
+  // (the drawn images this paint makes, its own, let go whether painting finishes or not)
+  const drawnImages = drawnSet();
   try {
-    return await paint(input, progress);
+    return await paint(input, progress, drawnImages);
   } finally {
-    forgetDrawn();
+    drawnImages.forget();
   }
 }
 
-async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86, drawn = null }, progress) {
+/** The most pixels all the art of one map may hold once loaded (four bytes each: about 1.5 GB). */
+export const ART_BUDGET = 400e6;
+/** The longest side an image is kept at: any art, and art painted as a repeating pattern (ground, roofs, water...). */
+export const ART_SIDE = { any: 8192, pattern: 4096 };
+const PATTERN = /^(ground|surface|roof|field|water|floor|stone|shore|dock|overlay|wall|wood|edge|strip|cliff)\./;
+
+/**
+ * An image's size from the first bytes of its file (PNG, JPEG, WebP), so a huge one can be decoded straight to the
+ * size it's kept at instead of whole. Null for a file it can't read.
+ */
+export function imageSize(b) {
+  const u = b instanceof Uint8Array ? b : new Uint8Array(b);
+  const at = (i) => u[i] ?? 0;
+  const be16 = (i) => (at(i) << 8) | at(i + 1), be32 = (i) => ((at(i) << 24) >>> 0) + (at(i + 1) << 16) + (at(i + 2) << 8) + at(i + 3);
+  const le16 = (i) => at(i) | (at(i + 1) << 8), le24 = (i) => at(i) | (at(i + 1) << 8) | (at(i + 2) << 16);
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return { w: be32(16), h: be32(20) };
+  if (at(0) === 0xff && at(1) === 0xd8) {
+    for (let i = 2; i + 9 < u.length;) {
+      if (at(i) !== 0xff) { i++; continue; }
+      const m = at(i + 1);
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { w: be16(i + 7), h: be16(i + 5) };
+      i += 2 + be16(i + 2);
+    }
+    return null;
+  }
+  if (at(0) === 0x52 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x46 && at(8) === 0x57 && at(9) === 0x45) {
+    const kind = String.fromCharCode(at(12), at(13), at(14), at(15));
+    if (kind === "VP8X") return { w: le24(24) + 1, h: le24(27) + 1 };
+    if (kind === "VP8 ") return { w: le16(26) & 0x3fff, h: le16(28) & 0x3fff };
+    if (kind === "VP8L") { const b0 = at(21), b1 = at(22), b2 = at(23), b3 = at(24); return { w: 1 + (((b1 & 0x3f) << 8) | b0), h: 1 + (((b3 & 0xf) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)) }; }
+  }
+  return null;
+}
+
+/** Whether a JPEG's first bytes hold an Exif block (APP1, "Exif"). */
+function hasExif(u) {
+  for (let i = 2; i + 10 < u.length && u[i] === 0xff;) {
+    const m = u[i + 1], len = (u[i + 2] << 8) | u[i + 3];
+    if (m === 0xe1 && u[i + 4] === 0x45 && u[i + 5] === 0x78 && u[i + 6] === 0x69 && u[i + 7] === 0x66) return true;
+    if (m === 0xda) return false;
+    i += 2 + len;
+  }
+  return false;
+}
+
+/**
+ * A canvas for painting, or an error that says so in plain words when the browser can't give one that big (it
+ * returns no context, or throws, past its own limit or out of memory).
+ */
+export function canvasOf(w, h, what) {
+  let c = null, g = null;
+  try {
+    c = new OffscreenCanvas(w, h);
+    g = c.getContext("2d");
+  } catch {
+    g = null;
+  }
+  if (!g) {
+    const mb = Math.round((w * h * 4) / 1024 ** 2);
+    throw new Error(`the browser couldn't make a ${w} by ${h} pixel canvas for ${what} (about ${mb.toLocaleString()} MB). Use fewer pixels a square, or a smaller map`);
+  }
+  return c;
+}
+/** Lets a canvas's memory go. */
+const free = (c) => { if (c) { c.width = 1; c.height = 1; } };
+
+async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86, drawn = null }, progress, drawnImages) {
   const t0 = performance.now();
   const style = styleOf(layout);
   const pp = layout.pxPerSquare;
@@ -52,21 +119,45 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
   progress(0.01, "Loading art");
   const urls = Object.entries(art);
   const unique = [...new Set(urls.flatMap(([, list]) => list))];
+  // (the longest side each file is kept at: a pattern's cap when every role using it is painted as one)
+  const sideOf = new Map();
+  for (const [role, list] of urls) for (const u of list) sideOf.set(u, Math.min(sideOf.get(u) ?? ART_SIDE.any, PATTERN.test(role) ? ART_SIDE.pattern : ART_SIDE.any));
   const loaded = new Map();
-  let done = 0;
+  const overBudget = [];
+  let done = 0, held = 0;
   const load = async (url) => {
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const bmp = await createImageBitmap(await res.blob());
-      // (art drawn at another scale than 200 px a square is resized once, so every style can treat it as FA's)
-      const k = scale[url];
-      if (k && k !== 1) {
-        // (never past 8192 px a side, so a small file at a tiny scale can't run the worker out of memory)
-        const kk = Math.min(k, 8192 / Math.max(bmp.width, bmp.height, 1));
-        loaded.set(url, await createImageBitmap(bmp, { resizeWidth: Math.max(1, Math.round(bmp.width * kk)), resizeHeight: Math.max(1, Math.round(bmp.height * kk)), resizeQuality: "high" }));
-        bmp.close();
-      } else loaded.set(url, bmp);
+      const blob = await res.blob();
+      // (art drawn at another scale than 200 px a square is resized as it's decoded, so every style can treat it as
+      // FA's; and no image is kept past its longest side, nor all the art past the budget)
+      const k = scale[url] && scale[url] !== 1 ? scale[url] : 1;
+      const head = new Uint8Array(await blob.slice(0, 65536).arrayBuffer());
+      // (a JPEG with Exif may be turned as it's decoded, so its header's width and height can't size it)
+      const dims = head[0] === 0xff && head[1] === 0xd8 && hasExif(head) ? null : imageSize(head);
+      const fit = (w, h) => Math.min(k, (sideOf.get(url) ?? ART_SIDE.any) / Math.max(w, h, 1));
+      let bmp;
+      if (dims?.w && dims?.h) {
+        const kk = fit(dims.w, dims.h);
+        const w = Math.max(1, Math.round(dims.w * kk)), h = Math.max(1, Math.round(dims.h * kk));
+        if (held + w * h > ART_BUDGET) { overBudget.push(url); loaded.set(url, null); return; }
+        held += w * h;
+        try {
+          bmp = await createImageBitmap(blob, kk === 1 ? {} : { resizeWidth: w, resizeHeight: h, resizeQuality: "high" });
+        } catch (e) {
+          held -= w * h; // (a file that won't decode takes nothing from the budget)
+          throw e;
+        }
+      } else {
+        const whole = await createImageBitmap(blob);
+        const kk = fit(whole.width, whole.height);
+        bmp = kk === 1 ? whole : await createImageBitmap(whole, { resizeWidth: Math.max(1, Math.round(whole.width * kk)), resizeHeight: Math.max(1, Math.round(whole.height * kk)), resizeQuality: "high" });
+        if (bmp !== whole) whole.close();
+        if (held + bmp.width * bmp.height > ART_BUDGET) { bmp.close(); overBudget.push(url); loaded.set(url, null); return; }
+        held += bmp.width * bmp.height;
+      }
+      loaded.set(url, bmp);
     } catch {
       loaded.set(url, null);
     } finally {
@@ -75,124 +166,132 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
   };
   // (a few at a time, so a role with many variants doesn't fetch and decode them all at once)
   for (let i = 0; i < unique.length; i += 8) await Promise.all(unique.slice(i, i + 8).map(load));
-  const bitmaps = {}, urlsOf = new Map(urls);
-  const failedArt = [], brokenArt = [];
-  const brokenUrls = unique.filter((u) => !loaded.get(u));
-  for (const [role, list] of urls) {
-    bitmaps[role] = list.map((u) => loaded.get(u)).filter(Boolean);
-    if (list.length && !bitmaps[role].length) failedArt.push(role);
-    if (bitmaps[role].length < list.length) brokenArt.push(role);
-  }
-  // (a variant picks from all of a role's files, so one that failed to load changes only the pieces that wanted it,
-  // which take the role's first that loaded, not which file every other piece gets)
-  const pickOf = (all, ok, variant) => (all?.length ? (ok(all[Math.abs(variant | 0) % all.length]) ? all[Math.abs(variant | 0) % all.length] : all.find(ok)) ?? null : null);
-  const fileArt = (role, variant = 0) => {
-    const u = pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
-    return u ? loaded.get(u) : null;
-  };
-  // (a battle map draws what has no art: drawn-art.mjs; a settlement's styles paint it plain)
-  const look = layout.kind === "battle" && drawn ? (drawn.look === "inked" ? "inked" : "painted") : null;
-  const drawnOf = (role, variant) => (look ? drawnArt(role, variant, { look }) : null);
-  const getArt = (role, variant = 0) => (look && drawn.all ? null : fileArt(role, variant)) ?? drawnOf(role, variant);
-  // (the drawn images tiles use, saved as files beside the map: one each, named by role, look and variant)
-  const drawnFiles = new Map();
-  const drawnSrc = async (role, variant) => {
-    const im = drawnOf(role, variant);
-    if (!im) return null;
-    const name = `${role}-${look}-${((variant % 3) + 3) % 3}.webp`;
-    if (!drawnFiles.has(name)) drawnFiles.set(name, { im, blob: await im.convertToBlob({ type: "image/webp", quality: 0.92 }) });
-    return { src: `drawn:${name}`, im };
-  };
-
-  // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur (one
-  // tile too, so soft edges don't fade at the map's border), capped so a fine map doesn't need huge tiles
-  const margin = Math.min(1024, Math.ceil(3 * (style.MAX_BLUR ?? 4) * pp));
-  const single = W + 2 * margin <= 4096 && H + 2 * margin <= 4096;
-  const cols = single ? 1 : Math.ceil(W / tileSize), rows = single ? 1 : Math.ceil(H / tileSize);
-  const coreW = single ? W : tileSize, coreH = single ? H : tileSize;
-  // (the ground, or with floor a floor above or below it: a battle map's other levels, each an image of its own, clear
-  // where nothing of that floor is)
-  const paintAll = (floor, p0, p1) => {
-    const out = new OffscreenCanvas(W, H);
-    const og = out.getContext("2d");
-    const n = cols * rows;
-    for (let ty = 0; ty < rows; ty++) {
-      for (let tx = 0; tx < cols; tx++) {
-        const i = ty * cols + tx;
-        const cx0 = tx * coreW, cy0 = ty * coreH;
-        const cw = Math.min(coreW, W - cx0), ch = Math.min(coreH, H - cy0);
-        const tw = cw + 2 * margin, th = ch + 2 * margin;
-        const tile = new OffscreenCanvas(tw, th);
-        const mask = new OffscreenCanvas(tw, th), blur = new OffscreenCanvas(tw, th);
-        style.paint({
-          g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp, floor,
-          x0: (cx0 - margin) / pp, y0: (cy0 - margin) / pp,
-          layout, art: getArt,
-          progress: (p, label) => progress(p0 + ((p1 - p0) * (i + p)) / n, n > 1 ? `${label} (part ${i + 1} of ${n})` : label),
-        });
-        og.drawImage(tile, margin, margin, cw, ch, cx0, cy0, cw, ch);
-        mask.width = mask.height = 1;
-        blur.width = blur.height = 1;
-        tile.width = tile.height = 1;
-      }
+  // (from here every image and canvas is let go whether the paint finishes or fails)
+  const canvases = new Set();
+  const make = (w, h, what) => { const c = canvasOf(w, h, what); canvases.add(c); return c; };
+  try {
+    const bitmaps = {}, urlsOf = new Map(urls);
+    const failedArt = [], brokenArt = [];
+    const skip = new Set(overBudget);
+    const brokenUrls = unique.filter((u) => !loaded.get(u) && !skip.has(u));
+    for (const [role, list] of urls) {
+      bitmaps[role] = list.map((u) => loaded.get(u)).filter(Boolean);
+      if (list.length && !bitmaps[role].length) failedArt.push(role);
+      if (bitmaps[role].length < list.length) brokenArt.push(role);
     }
-    return out;
-  };
-  const floors = style.floorsOf?.(layout) ?? [];
-  const n = cols * rows;
-  const out = paintAll(0, 0.1, floors.length ? 0.6 : 0.9);
-  // (the ground saved, its thumbnail made and let go before any other floor is painted: one map-sized canvas at a
-  // time)
-  progress(floors.length ? 0.6 : 0.9, "Saving the image");
-  const blob = await out.convertToBlob({ type: "image/webp", quality });
-  progress(floors.length ? 0.62 : 0.94, "Making the thumbnail");
-  const th = thumbCanvas(out, THUMB);
-  out.width = out.height = 1;
-  // (each other floor saved as soon as it's painted, and let go)
-  const levels = [];
-  for (const [k, floor] of floors.entries()) {
-    const c = paintAll(floor, 0.62 + (0.3 * k) / floors.length, 0.62 + (0.3 * (k + 1)) / floors.length);
-    levels.push({ floor, blob: await c.convertToBlob({ type: "image/webp", quality }) });
-    c.width = c.height = 1;
-  }
+    // (a variant picks from all of a role's files, so one that failed to load changes only the pieces that wanted it,
+    // which take the role's first that loaded, not which file every other piece gets)
+    const pickOf = (all, ok, variant) => (all?.length ? (ok(all[Math.abs(variant | 0) % all.length]) ? all[Math.abs(variant | 0) % all.length] : all.find(ok)) ?? null : null);
+    const fileArt = (role, variant = 0) => {
+      const u = pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
+      return u ? loaded.get(u) : null;
+    };
+    // (a battle map draws what has no art: drawn-art.mjs; a settlement's styles paint it plain)
+    const look = layout.kind === "battle" && drawn ? (drawn.look === "inked" ? "inked" : "painted") : null;
+    const drawnOf = (role, variant) => (look ? drawnImages.art(role, variant, { look }) : null);
+    const getArt = (role, variant = 0) => (look && drawn.all ? null : fileArt(role, variant)) ?? drawnOf(role, variant);
+    // (the drawn images tiles use, saved as files beside the map: one each, named by role, look and variant)
+    const drawnFiles = new Map();
+    const drawnSrc = async (role, variant) => {
+      const im = drawnOf(role, variant);
+      if (!im) return null;
+      const name = `${role}-${look}-${((variant % 3) + 3) % 3}.webp`;
+      if (!drawnFiles.has(name)) drawnFiles.set(name, { im, blob: await im.convertToBlob({ type: "image/webp", quality: 0.92 }) });
+      return { src: `drawn:${name}`, im };
+    };
 
-  // Overhead pieces: each painted on a canvas of its own, as big as its box, laid onto the thumbnail, saved and let go
-  // before the next, so only one is held at a time
-  const pieces = style.overheads?.(layout) ?? [];
-  const overheads = [];
-  for (const [k, piece] of pieces.entries()) {
-    progress(0.95 + (0.04 * k) / pieces.length, "Roofs and trees");
-    const [bx0, by0, bx1, by1] = piece.box;
-    const x = Math.floor(bx0 * pp), y = Math.floor(by0 * pp);
-    const w = Math.max(1, Math.min(W, Math.ceil(bx1 * pp)) - x), h = Math.max(1, Math.min(H, Math.ceil(by1 * pp)) - y);
-    const c = new OffscreenCanvas(w, h);
-    style.paintOverhead({ g: c.getContext("2d"), W: w, H: h, pp, layout, art: getArt }, { ...piece, box: [x / pp, y / pp, bx1, by1] });
-    th.g.drawImage(c, th.ox + x * th.k, th.oy + y * th.k, w * th.k, h * th.k);
-    overheads.push({ name: piece.name, kind: piece.kind, x, y, width: w, height: h, elevation: piece.elevation, blob: await c.convertToBlob({ type: "image/webp", quality: Math.max(quality, 0.9) }) });
-    c.width = c.height = 1;
+    // Tiles: one when the map and its margin fit in 4096 px, else a grid. Every tile has a margin for the blur (one
+    // tile too, so soft edges don't fade at the map's border), capped so a fine map doesn't need huge tiles
+    const margin = Math.min(1024, Math.ceil(3 * (style.MAX_BLUR ?? 4) * pp));
+    const single = W + 2 * margin <= 4096 && H + 2 * margin <= 4096;
+    const cols = single ? 1 : Math.ceil(W / tileSize), rows = single ? 1 : Math.ceil(H / tileSize);
+    const coreW = single ? W : tileSize, coreH = single ? H : tileSize;
+    // (the ground, or with floor a floor above or below it: a battle map's other levels, each an image of its own, clear
+    // where nothing of that floor is)
+    const paintAll = (floor, p0, p1) => {
+      const out = make(W, H, floor ? "a floor of the map" : "the map");
+      const og = out.getContext("2d");
+      const n = cols * rows;
+      for (let ty = 0; ty < rows; ty++) {
+        for (let tx = 0; tx < cols; tx++) {
+          const i = ty * cols + tx;
+          const cx0 = tx * coreW, cy0 = ty * coreH;
+          const cw = Math.min(coreW, W - cx0), ch = Math.min(coreH, H - cy0);
+          const tw = cw + 2 * margin, th = ch + 2 * margin;
+          const tile = make(tw, th, "a part of the map"), mask = make(tw, th, "a part of the map"), blur = make(tw, th, "a part of the map");
+          try {
+            style.paint({
+              g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp, floor,
+              x0: (cx0 - margin) / pp, y0: (cy0 - margin) / pp,
+              layout, art: getArt,
+              progress: (p, label) => progress(p0 + ((p1 - p0) * (i + p)) / n, n > 1 ? `${label} (part ${i + 1} of ${n})` : label),
+            });
+            og.drawImage(tile, margin, margin, cw, ch, cx0, cy0, cw, ch);
+          } finally {
+            for (const c of [mask, blur, tile]) { free(c); canvases.delete(c); }
+          }
+        }
+      }
+      return out;
+    };
+    const floors = style.floorsOf?.(layout) ?? [];
+    const n = cols * rows;
+    const out = paintAll(0, 0.1, floors.length ? 0.6 : 0.9);
+    // (the ground saved, its thumbnail made and let go before any other floor is painted: one map-sized canvas at a
+    // time)
+    progress(floors.length ? 0.6 : 0.9, "Saving the image");
+    const blob = await out.convertToBlob({ type: "image/webp", quality });
+    progress(floors.length ? 0.62 : 0.94, "Making the thumbnail");
+    const th = thumbCanvas(out, THUMB);
+    free(out);
+    // (each other floor saved as soon as it's painted, and let go)
+    const levels = [];
+    for (const [k, floor] of floors.entries()) {
+      const c = paintAll(floor, 0.62 + (0.3 * k) / floors.length, 0.62 + (0.3 * (k + 1)) / floors.length);
+      levels.push({ floor, blob: await c.convertToBlob({ type: "image/webp", quality }) });
+      free(c);
+    }
+
+    // Overhead pieces: each painted on a canvas of its own, as big as its box, laid onto the thumbnail, saved and let go
+    // before the next, so only one is held at a time
+    const pieces = style.overheads?.(layout) ?? [];
+    const overheads = [];
+    for (const [k, piece] of pieces.entries()) {
+      progress(0.95 + (0.04 * k) / pieces.length, "Roofs and trees");
+      const [bx0, by0, bx1, by1] = piece.box;
+      const x = Math.floor(bx0 * pp), y = Math.floor(by0 * pp);
+      const w = Math.max(1, Math.min(W, Math.ceil(bx1 * pp)) - x), h = Math.max(1, Math.min(H, Math.ceil(by1 * pp)) - y);
+      const c = make(w, h, "a roof or tree crown");
+      style.paintOverhead({ g: c.getContext("2d"), W: w, H: h, pp, layout, art: getArt }, { ...piece, box: [x / pp, y / pp, bx1, by1] });
+      th.g.drawImage(c, th.ox + x * th.k, th.oy + y * th.k, w * th.k, h * th.k);
+      overheads.push({ name: piece.name, kind: piece.kind, x, y, width: w, height: h, elevation: piece.elevation, blob: await c.convertToBlob({ type: "image/webp", quality: Math.max(quality, 0.9) }) });
+      free(c);
+    }
+    // Furniture (a battle map's): each piece a tile, its art placed by the part of its file that's drawn
+    const furniture = [];
+    for (const { role, variant, piece } of style.furniture?.(layout) ?? []) {
+      const url = look && drawn.all ? null : pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
+      const d = url ? null : await drawnSrc(role, variant);
+      if (!url && !d) continue;
+      const bmp = url ? loaded.get(url) : d.im;
+      // (its own size in squares: the art is resized to 200 px a square when it's loaded)
+      const at = artPlacement(piece, insetsOf(bmp), bmp ? [bmp.width / ART_PX, bmp.height / ART_PX] : null);
+      furniture.push({ src: url ?? d.src, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
+    }
+    // Mist (a battle map's): each overlay a tile over the low place it lies in
+    const mist = [];
+    for (const m of style.mist?.(layout) ?? []) {
+      const url = look && drawn.all ? null : pickOf(urlsOf.get(m.role), (x) => !!loaded.get(x), m.variant);
+      const d = url ? null : await drawnSrc(m.role, m.variant);
+      if (!url && !d) continue;
+      mist.push({ src: url ?? d.src, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
+    }
+    const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
+    return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overBudget, overheads, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
+  } finally {
+    for (const bmp of loaded.values()) bmp?.close();
+    for (const c of canvases) free(c);
   }
-  // Furniture (a battle map's): each piece a tile, its art placed by the part of its file that's drawn
-  const furniture = [];
-  for (const { role, variant, piece } of style.furniture?.(layout) ?? []) {
-    const url = look && drawn.all ? null : pickOf(urlsOf.get(role), (x) => !!loaded.get(x), variant);
-    const d = url ? null : await drawnSrc(role, variant);
-    if (!url && !d) continue;
-    const bmp = url ? loaded.get(url) : d.im;
-    // (its own size in squares: the art is resized to 200 px a square when it's loaded)
-    const at = artPlacement(piece, insetsOf(bmp), bmp ? [bmp.width / ART_PX, bmp.height / ART_PX] : null);
-    furniture.push({ src: url ?? d.src, f: piece.f, x: at.x * pp, y: at.y * pp, width: at.w * pp, height: at.h * pp, rotation: at.rot, ...(piece.floor ? { floor: piece.floor } : {}), ...(piece.lock ? { lock: true } : {}) });
-  }
-  // Mist (a battle map's): each overlay a tile over the low place it lies in
-  const mist = [];
-  for (const m of style.mist?.(layout) ?? []) {
-    const url = look && drawn.all ? null : pickOf(urlsOf.get(m.role), (x) => !!loaded.get(x), m.variant);
-    const d = url ? null : await drawnSrc(m.role, m.variant);
-    if (!url && !d) continue;
-    mist.push({ src: url ?? d.src, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
-  }
-  for (const bmp of loaded.values()) bmp?.close();
-  const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-  return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overheads, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
 }
 
 /**

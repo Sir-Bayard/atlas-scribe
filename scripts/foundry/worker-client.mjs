@@ -58,7 +58,8 @@ export class WorkerClient {
   cancel() {
     if (!this.#pending.size) return false;
     const e = new Error("AtlasScribe: canceled");
-    e.cancelled = true;
+    e.canceled = true;
+    e.cancelled = true; // (the older spelling, which scripts may still read)
     this.#fail(e);
     return true;
   }

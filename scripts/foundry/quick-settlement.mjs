@@ -5,10 +5,10 @@
  * grayed out with why. A choice left on Any, and a building or place neither said nor checked or cleared by hand, is
  * picked from the seed.
  */
-import { QUICK, QUICK_LABELS, QUICK_ANY, CENTERS, HAS, QUARTERS, quickLacks } from "../core/quick.mjs";
+import { QUICK, QUICK_LABELS, QUICK_ANY, HAS, QUARTERS, quickLacks } from "../core/quick.mjs";
 import { readPlace } from "../core/describe-place.mjs";
+import { esc } from "./util.mjs";
 
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const CITIES = ["city", "metropolis"];
 const CENTER_LABELS = { square: "A market square", green: "A green", well: "A well", cathedral: "A cathedral", palace: "A palace", none: "None" };
 const HAS_LABELS = { temple: "Temple", inn: "Inn", smithy: "Smithy", cemetery: "Cemetery", watermill: "Watermill", windmill: "Windmill", walled: "Walled" };
@@ -26,7 +26,7 @@ const box = (name, label) => `<label><input type="checkbox" name="${name}"> ${es
 /** The tab's HTML. */
 export function settlementTabHTML() {
   const L = QUICK_LABELS;
-  return `<section class="as-qs-settlement" data-tab="settlement">
+  return `<section class="as-qs-settlement" data-tab="settlement" id="as-qs-panel-settlement" role="tabpanel" aria-labelledby="as-qs-tab-settlement">
     <div class="form-group stacked"><label for="as-qs-describe">Describe it (optional)</label><textarea id="as-qs-describe" name="s-describe" rows="3" placeholder="A walled port city with a cathedral, a citadel and no slums; a village called 'Ashby' with a green, a mill and an inn, in winter; a fortified town on a river among farms and woods..."></textarea></div>
     <div class="as-qs-chips" aria-live="polite"></div>
     <div class="as-qs-two">
@@ -35,7 +35,7 @@ export function settlementTabHTML() {
       ${select("surroundings", "Around it", QUICK.surroundings, L.surroundings, false)}${select("center", "Center", QUICK.center, CENTER_LABELS, false)}
       ${select("river", "River", QUICK.river, L.river, QUICK_ANY.includes("river"))}${select("shape", "Outline", QUICK.shape, L.shape, QUICK_ANY.includes("shape"))}
     </div>
-    <div class="form-group" data-for="town"><label id="as-qs-has">It has</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-has">${HAS.map((k) => box(`s-h-${k}`, HAS_LABELS[k])).join("")}<button type="button" class="as-qs-reset" data-tooltip="Back to what its size has" hidden>Reset</button></div></div>
+    <div class="form-group" data-for="town"><label id="as-qs-has">It has</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-has">${HAS.map((k) => box(`s-h-${k}`, HAS_LABELS[k])).join("")}<button type="button" class="as-qs-reset" data-tooltip-text="Back to what its size has" hidden>Reset</button></div></div>
     <div class="form-group" data-for="city"><label id="as-qs-quarters">Quarters</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-quarters">${QUARTERS.map((k) => box(`s-q-${k}`, QUARTER_LABELS[k])).join("")}</div></div>
     <div class="as-qs-two" data-for="city">${yesNo("citadel", "Citadel")}</div>
     <div class="form-group" data-for="city"><label id="as-qs-outside">Also</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-outside">${box("s-o-oldWall", "Old inner wall")}${box("s-o-suburbs", "Suburbs")}${box("s-o-cemetery", "Cemeteries")}${box("s-o-mills", "Mills")}</div></div>
@@ -104,7 +104,6 @@ export function wireSettlementTab(root) {
         if (!o.value) continue;
         const w = lacks[k]?.[o.value] ?? "", short = !w ? "" : city ? (k === "water" ? "a river in a city" : "a village's or town's") : "a city's";
         o.disabled = !!w;
-        o.title = w;
         o.textContent = `${String(labels[o.value] ?? o.value).replace(/ \(a city\)$/, "")}${short ? ` (${short})` : ""}`;
       }
       if (s.selectedOptions[0]?.disabled) s.value = firstOf(s);
@@ -128,8 +127,8 @@ export function wireSettlementTab(root) {
       b.checked = !off && v === true;
       why(b, off);
       const label = b.closest("label");
-      if (!off && !known(`has.${k}`)) label.dataset.tooltip = v === null ? "Now and then, by the seed, until you check or clear it" : "As its size has it, until you check or clear it";
-      else delete label.dataset.tooltip;
+      if (!off && !known(`has.${k}`)) label.dataset.tooltipText = v === null ? "Now and then, by the seed, until you check or clear it" : "As its size has it, until you check or clear it";
+      else delete label.dataset.tooltipText;
     }
     root.querySelector(".as-qs-reset").hidden = !HAS.some((k) => known(`has.${k}`));
     // A city's quarters (docks need water; a cathedral's or palace's quarter is kept), its citadel (the garrison's)
@@ -181,10 +180,10 @@ export function wireSettlementTab(root) {
       kept.length || read.skipped.length || read.unknown.length ? `<div class="hint">What it understood (each also set in the form below; × takes it out):</div>` : "",
       ...kept.map((c) => {
         const over = handWins(c.key) && hand[c.key].v !== c.value;
-        return `<span class="as-qs-chip${over ? " as-later" : ""}" data-chip="${esc(`${c.key}=${c.value}`)}"${over ? ` data-tooltip="Changed in the form below"` : ""}>${esc(c.label)}${over ? " (changed below)" : ""} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip="Take this out">×</button></span>`;
+        return `<span class="as-qs-chip${over ? " as-later" : ""}" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(c.label)}${over ? " (changed below)" : ""} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip-text="Take this out">×</button></span>`;
       }),
-      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" data-tooltip="${esc(k.why)}">${esc(k.label)}: left out<span class="as-sr"> (${esc(k.why)})</span></span>`),
-      ...read.unknown.map((w) => `<span class="as-qs-chip as-unknown" data-tooltip="Not understood: left out">${esc(w)}</span>`),
+      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" role="note" aria-label="${esc(`${k.label}: left out. ${k.why}`)}" data-tooltip-text="${esc(k.why)}">${esc(k.label)}: left out</span>`),
+      ...read.unknown.map((w) => `<span class="as-qs-chip as-unknown" data-tooltip-text="Not understood: left out">${esc(w)}</span>`),
     ].join("");
     // (only when it changed, so a screen reader doesn't read the list again at every click)
     if (html !== lastHTML) chips.innerHTML = lastHTML = html;

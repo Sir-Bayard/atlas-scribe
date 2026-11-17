@@ -158,11 +158,18 @@ export function normalizeBrief(input = {}) {
  * keeps as `brief` so the window can show what it was made from; notes: what couldn't be made as asked).
  */
 export function briefPlan(input = {}) {
-  const b = normalizeBrief(input ?? {});
+  input ??= {};
+  const b = normalizeBrief(input);
   const [W, H] = b.site === "castle" ? CASTLES[b.size].map : BRIEF_SIZES[b.size];
   const r = rng(b.seed, "brief", b.site);
   const features = [];
   const notes = []; // (what couldn't be made as asked, for the window to say)
+  // (a seed or a choice the brief doesn't know, replaced: said, so a script doesn't get a default with no word)
+  if (input.seed !== undefined && input.seed !== null && input.seed !== "" && Number(input.seed) !== b.seed) notes.push(`The seed ${JSON.stringify(input.seed)} isn't a whole number of 1 or more, so ${b.seed} was used.`);
+  for (const k of ["site", "size", "season", "time", "weather", "ground", "trees", "litter", "rocks", "brush"]) {
+    const v = input[k];
+    if (v !== undefined && v !== null && v !== "" && v !== b[k]) notes.push(`"${v}" isn't a ${k} the brief knows (${BRIEF[k].join(", ")}), so ${b[k]} was used.`);
+  }
   const taken = []; // (places kept clear of scatter, woods and each other: { at, r } circles, or { path, half } bands)
   const free = (p, pad = 0) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1 && !taken.some((t) => (t.path ? nearPath(p, t.path) < t.half + pad : Math.hypot(p[0] - t.at[0], p[1] - t.at[1]) < t.r + pad));
   const has = (f) => b.features.includes(f);

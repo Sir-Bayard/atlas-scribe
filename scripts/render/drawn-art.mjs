@@ -1062,9 +1062,18 @@ export function forgetDrawn() {
  * The drawn image for a role and variant in a look ("painted" or "inked"), or null where nothing is drawn for it.
  * Drawn once and kept.
  */
-export function drawnArt(role, variant = 0, { look = "painted" } = {}) {
+export function drawnArt(role, variant = 0, { look = "painted", kept = cache } = {}) {
   if (typeof role !== "string" || !role) return null;
   const v = ((variant % 3) + 3) % 3, key = `${look}|${role}|${v}`;
-  if (!cache.has(key)) cache.set(key, draw(role, v, look));
-  return cache.get(key);
+  if (!kept.has(key)) kept.set(key, draw(role, v, look));
+  return kept.get(key);
+}
+
+/**
+ * Drawn images kept for one paint: art(role, variant, { look }) as drawnArt, and forget() to let them go. Two paints at
+ * once each keep their own, so one finishing never clears the other's.
+ */
+export function drawnSet() {
+  const kept = new Map();
+  return { art: (role, variant = 0, opts = {}) => drawnArt(role, variant, { ...opts, kept }), forget: () => kept.clear() };
 }

@@ -11,8 +11,8 @@
  */
 import { groundAt, groundAlong, blockedBy, groundWay, WALKING, OFF_GROUND } from "../core/height.mjs";
 import { rules } from "./rules.mjs";
+import { MOD, note } from "./util.mjs";
 
-const MOD = "atlas-scribe";
 const SETTING = "battleHeight";
 /** The moves stopped at a cliff or deep water: those a player or GM makes on the map, as walls stop them. */
 const STOPPED = ["dragging", "keyboard"];
@@ -109,7 +109,7 @@ function onPreMove(doc, movement, operation) {
       if (a[0] === b[0] && a[1] === b[1]) continue;
       const hit = blockedBy(zs, a, b, step, { current: ways[i - 1].elevation ?? doc.elevation });
       if (!hit) continue;
-      ui.notifications.warn(hit.why === "deep" ? `${doc.name} can't walk into deep water: swim instead.` : `${doc.name} can't walk up or down a cliff: climb, leap or fly instead.`);
+      note.warn(hit.why === "deep" ? `${doc.name} can't walk into deep water: swim instead.` : `${doc.name} can't walk up or down a cliff: climb, leap or fly instead.`);
       if (hit.why === "cliff") climbCard(doc, hit.zone).catch((err) => console.warn("AtlasScribe | couldn't show the climb card:", err));
       return false;
     }
@@ -147,6 +147,8 @@ async function climbCard(doc, zone) {
   if (!(dc > 0)) return;
   const key = `${doc.uuid}|${zone.lines?.[0]?.slice(0, 2).join(",") ?? ""}`, now = Date.now();
   if (now - (shown.get(key) ?? 0) < AGAIN) return;
+  // (cards shown long enough ago to be shown again are forgotten, so the list never grows past the walkers of a moment)
+  for (const [k, at] of shown) if (now - at >= AGAIN) shown.delete(k);
   shown.set(key, now);
   const R = rules();
   const check = (typeof R.climbCheck === "function" ? R.climbCheck(dc) : null) ?? `Athletics (climbing), DC ${dc}`;

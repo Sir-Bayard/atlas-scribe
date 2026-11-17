@@ -11,7 +11,9 @@ import { isObj } from "./plan.mjs";
  * The features a reroll can redraw: districts, areas (woods, farmsteads, parks, and the rest), heights, and bodies of
  * water drawn as a shape (their shore; not rivers).
  */
-export const rerollable = (f) => isObj(f) && (f.type === "district" || f.type === "area" || f.type === "height" || (f.type === "water" && !Array.isArray(f.path) && f.shape != null)) && typeof f.id === "string";
+/** Area classes drawn the same with any seed (a plain yard, trodden ground): a reroll would change nothing. */
+const FIXED_AREAS = new Set(["yard", "trodden"]);
+export const rerollable = (f) => isObj(f) && (f.type === "district" || (f.type === "area" && !FIXED_AREAS.has(f.class)) || f.type === "height" || (f.type === "water" && !Array.isArray(f.path) && f.shape != null)) && typeof f.id === "string";
 
 /** A feature's seed as the layout reads it. */
 export function seedOf(plan, id) {
@@ -33,7 +35,7 @@ export function rerollPlan(plan, ids = null) {
   for (const id of wanted) {
     const f = features.find((x) => isObj(x) && x.id === id);
     if (!f) { skipped.push({ id, why: "there's no feature with that id" }); continue; }
-    if (!rerollable(f)) { skipped.push({ id, why: `a ${f.type ?? "feature"} has nothing to reroll (only districts, areas, ponds, lakes and seas do)` }); continue; }
+    if (!rerollable(f)) { skipped.push({ id, why: `a ${f.type === "area" ? `${f.class} area` : f.type ?? "feature"} has nothing to reroll (only districts, areas with something random in them, rises and hollows, ponds, lakes and seas do)` }); continue; }
     if (locked.has(id)) { skipped.push({ id, why: "it's locked" }); continue; }
     if (!isObj(out.seeds)) out.seeds = {};
     out.seeds[id] = 1 + rng(seedOf(out, id), "reroll", id).int(2 ** 31 - 2);

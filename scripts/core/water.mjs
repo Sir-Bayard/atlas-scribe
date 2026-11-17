@@ -183,7 +183,7 @@ function shares(path) {
 }
 
 /** True when list is a width in feet for each of n points. */
-export const okWidths = (list, n) => Array.isArray(list) && list.length === n && list.every((v) => Number.isFinite(v) && v >= 1);
+export const okWidths = (list, n) => Array.isArray(list) && list.length === n && list.every((v) => Number.isFinite(v) && v >= 1 && v <= 2000);
 
 /**
  * The width at each point of a stream's, river's or canal's path (as the layout draws it, perhaps smoothed), in

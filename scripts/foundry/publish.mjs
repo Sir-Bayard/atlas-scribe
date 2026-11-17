@@ -7,7 +7,7 @@
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
 import { labelsOf, useLabelsOf } from "../core/labels.mjs";
-import { titleBox, paintTitle } from "../render/styles/illustrated.mjs";
+import { titleBox, paintTitle } from "../render/styles/title.mjs";
 import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
 import { union, shapes } from "../core/lots/poly.mjs";
 import { FURNITURE, FLOORS } from "../core/layout/rooms.mjs";
@@ -16,8 +16,8 @@ import { LIGHTS, LIT_FROM } from "../core/layout/lights.mjs";
 import { CASTLE } from "../core/layout/castle.mjs";
 import { COVER } from "../core/rules.mjs";
 import { rules as rulesInUse, CORE } from "./rules.mjs";
+import { MOD } from "./util.mjs";
 
-const MOD = "atlas-scribe";
 const THUMB = 300;
 /** Foundry's limits on a drawing's font size. */
 const FONT = { min: 8, max: 256 };
@@ -29,7 +29,10 @@ const FONT = { min: 8, max: 256 };
  * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, mist, walls,
  * roofs, heights, lights, stairs, levels, rules, ruled, warnings }, counts of what was placed.
  */
-export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, check = () => {}, onProgress = () => {} }) {
+/** Scenes backed up this session (for the backup setting's "first update of a session"). */
+const backedUp = new Set();
+
+export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, backups = "every", check = () => {}, onProgress = () => {} }) {
   const warnings = [];
   const opts = plan.output.scene;
   const R = rulesInUse();
@@ -41,10 +44,15 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     if (!scene.flags?.[MOD] && !force)
       throw new Error(`AtlasScribe: "${scene.name}" wasn't made by AtlasScribe, so it isn't changed. Publish with force: true to replace its background and settings anyway (it's backed up first).`);
     check();
-    onProgress(0.1, "Backing up the scene");
-    const json = JSON.stringify(scene.toObject(), null, 1);
-    const dir = `${folder}/backups`;
-    backup = await upload(dir, await freeName(dir, `${scene.name}-${stamp()}`, "json"), new Blob([json], { type: "application/json" }));
+    // (as the backup setting says; a scene AtlasScribe didn't make is always backed up before it's replaced)
+    const wanted = !scene.flags?.[MOD] || backups === "every" || (backups === "session" && !backedUp.has(sceneId));
+    if (wanted) {
+      onProgress(0.1, "Backing up the scene");
+      const json = JSON.stringify(scene.toObject(), null, 1);
+      const dir = `${folder}/backups`;
+      backup = await upload(dir, await freeName(dir, `${scene.name}-${stamp()}`, "json"), new Blob([json], { type: "application/json" }));
+      backedUp.add(sceneId);
+    }
   }
 
   // The thumbnail is named after the scene, so a republish replaces it; it's saved only after the last chance to stop
@@ -53,7 +61,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   const id = sceneId ?? foundry.utils.randomID();
   const thumbBlob = await thumbOf(image);
   check(); // the last chance to stop: from here the scene is written
-  const thumb = await upload(`${folder}/thumbs`, `${id}.webp`, thumbBlob);
+  // (saved over the last one, so the address carries a version: a browser that showed the old picture loads the new)
+  const thumb = fresh(await upload(`${folder}/thumbs`, `${id}.webp`, thumbBlob));
 
   // (a battle map left without weather snows in winter; "none" for none)
   // (a battle map is one by its layout, or by its plan when it couldn't be laid out again for a publish by path)
@@ -291,9 +300,9 @@ export function unsetScene(scene) {
   if (!Array.isArray(ours)) return null;
   const now = scene.flags?.pf2e?.environmentTypes;
   const same = Array.isArray(now) && now.length === ours.length && now.every((x) => ours.includes(x));
-  // (Foundry 14's way to take a flag off; the older "-=" key where there's none, as under node)
+  // (Foundry 14's way to take a flag off; under node, with no Foundry, the flag is cleared to null)
   const FD = globalThis.foundry?.data?.operators?.ForcedDeletion;
-  const off = FD ? { [`flags.${MOD}.environment`]: new FD() } : { [`flags.${MOD}.-=environment`]: null };
+  const off = { [`flags.${MOD}.environment`]: FD ? new FD() : null };
   return { ...off, ...(same ? { "flags.pf2e.environmentTypes": [] } : {}) };
 }
 
@@ -763,7 +772,7 @@ async function titleTile(plan, layout, scene, sceneId, folder) {
   paintTitle(c.getContext("2d"), layout, box, pps);
   const blob = await c.convertToBlob({ type: "image/webp", quality: 0.92 });
   // (named after the scene, as its thumbnail is, so an update replaces it rather than adding another)
-  const path = await upload(`${folder}/titles`, `${sceneId}.webp`, blob);
+  const path = fresh(await upload(`${folder}/titles`, `${sceneId}.webp`, blob));
   const { sceneX, sceneY } = scene.dimensions;
   return {
     texture: { src: path },
@@ -775,7 +784,11 @@ async function titleTile(plan, layout, scene, sceneId, folder) {
   };
 }
 
-function stamp() {
+/** A file's address with a version, for a file saved over an older one under the same name. */
+const fresh = (path) => `${path}?v=${Date.now().toString(36)}`;
+
+/** The date and time as one word, for file names: 20261116-153012. */
+export function stamp() {
   const d = new Date(), p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }

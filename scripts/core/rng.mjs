@@ -28,6 +28,21 @@ export function hash128(text) {
   return [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
 }
 
+/**
+ * A number in [0, 1) from a few numbers (a place, a key), the same on every machine: each is taken to a 1024th and
+ * mixed with integer steps only (a sine-based hash can differ between browsers in its last digits).
+ */
+export function hashAt(...nums) {
+  let h = 0x9e3779b9;
+  for (const n of nums) {
+    h = Math.imul(h ^ (Math.round((Number(n) || 0) * 1024) | 0), 0x85ebca6b);
+    h = (h << 13) | (h >>> 19);
+    h = Math.imul(h, 5) + 0xe6546b64 | 0;
+  }
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 /** sfc32: a small, fast generator with a 128-bit state. Returns a function giving numbers in [0, 1). */
 function sfc32(a, b, c, d) {
   return () => {

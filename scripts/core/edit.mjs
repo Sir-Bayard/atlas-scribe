@@ -222,7 +222,7 @@ export function fieldsOf(plan, id) {
     if (f.type === "label" && name === "text" && f.of) { const o = featureOf(plan, f.of); auto = o ? `the name of ${o.name ?? o.id}` : null; }
     out.push({
       name, label: txt.label ?? name, help: txt.help ?? null, kind, values: values ?? null, names: txt.names ?? null,
-      unit: spec.unit ?? null, min: spec.min ?? null, max: spec.max ?? null,
+      unit: spec.unit ?? null, min: spec.min ?? null, max: spec.max ?? null, whole: !!spec.integer,
       value, auto, more: !!txt.more,
     });
     // A landmark's roof, for all its buildings at once (blank when they differ); then, for a district, area or

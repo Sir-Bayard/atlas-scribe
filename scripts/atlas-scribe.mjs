@@ -11,20 +11,21 @@ import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt, forgetBroken, forgetUnloadable } from "./foundry/art/index.mjs";
 import { folderIndex, forget as forgetFolders, forgetChoices } from "./foundry/art/folders.mjs";
-import { ArtBrowser, ArtMenu } from "./foundry/art-browser.mjs";
-import { publish } from "./foundry/publish.mjs";
+import { ArtMenu, artWindow } from "./foundry/art-browser.mjs";
+import { publish, stamp } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
+import { filesWindow } from "./foundry/files-view.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
 import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY, HAS, QUARTERS, OUTSIDE } from "./core/quick.mjs";
 import { briefPlan, BRIEF, BRIEF_LABELS } from "./core/brief.mjs";
 import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
 import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
+import { MOD, note } from "./foundry/util.mjs";
 
-const MOD = "atlas-scribe";
 const worker = new WorkerClient();
 
-/** The job running now: { cancelled }, or null. */
+/** The job running now: { canceled }, or null. */
 let job = null;
 
 /** The AtlasScribe window: one for the session, kept when closed so its plan and undo history are there next time. */
@@ -32,13 +33,23 @@ let theApp = null;
 /** The longer side of the preview picture, in pixels. */
 let previewPx = 1600;
 
-/** The folder AtlasScribe writes into: the setting, or this world's own atlas-scribe folder. */
 /** A battle map's drawn art, from the world settings: { look: "painted" or "inked", all }. */
 function drawnSetting() {
   const get = (k, d) => { try { return game.settings.get(MOD, k); } catch { return d; } };
   return { look: get("drawnLook", "painted") === "inked" ? "inked" : "painted", all: !!get("drawnAll", false) };
 }
 
+/** When a scene is backed up before an update: "every" update, the first in a "session", or "never". */
+function backupSetting() {
+  try {
+    const v = game.settings.get(MOD, "backups");
+    return ["every", "session", "never"].includes(v) ? v : "every";
+  } catch {
+    return "every";
+  }
+}
+
+/** The folder AtlasScribe writes into: the setting, or this world's own atlas-scribe folder. */
 function outputFolder() {
   const set = String(game.settings.get(MOD, "outputFolder") ?? "").trim().replace(/^\/+|\/+$/g, "");
   return set || `worlds/${game.world.id}/${MOD}`;
@@ -48,8 +59,10 @@ function requireGM() {
   if (!game.user.isGM) throw new Error("AtlasScribe: only a GM can do that");
 }
 
-function cancelledError() {
+/** The error a canceled job throws: canceled is true, and so is e.cancelled (the older spelling, which scripts may still read). */
+function canceledError() {
   const e = new Error("AtlasScribe: canceled");
+  e.canceled = true;
   e.cancelled = true;
   return e;
 }
@@ -57,11 +70,11 @@ function cancelledError() {
 /** Runs fn(check) as the one job; check() throws once the job has been canceled. */
 async function exclusive(fn) {
   if (job) throw new Error("AtlasScribe is already working on a map. Wait for it to finish, or stop it with cancel().");
-  const me = { cancelled: false };
+  const me = { canceled: false };
   job = me;
   try {
     return await fn(() => {
-      if (me.cancelled) throw cancelledError();
+      if (me.canceled) throw canceledError();
     });
   } finally {
     if (job === me) job = null;
@@ -108,17 +121,17 @@ async function publishChecked(plan, image, { scene, force }, check) {
       try {
         layout = (await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(from * p, `Laying out for the labels: ${l ?? ""}`.trim()) })).layout;
       } catch (e) {
-        if (e.cancelled) throw e;
+        if (e.canceled) throw e;
         lost = `The notable buildings' hidden labels were left off: laying the map out again for them failed (${e.message}).`;
       }
     }
     check();
-    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), layout, sceneId: scene, force, check, onProgress: (p, l) => bar.update(from + (1 - from) * p, l) });
+    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), layout, sceneId: scene, force, backups: backupSetting(), check, onProgress: (p, l) => bar.update(from + (1 - from) * p, l) });
     if (lost) res.warnings.push(lost);
     bar.done(`${title}: ${res.created ? "created the scene" : "updated the scene"}${res.backup ? ` (backup: ${res.backup})` : ""}`);
     return res;
   } catch (e) {
-    bar.done(e.cancelled ? `${title}: canceled` : `${title}: failed (${e.message})`);
+    bar.done(e.canceled ? `${title}: canceled` : `${title}: failed (${e.message})`);
     throw e;
   }
 }
@@ -128,7 +141,7 @@ const api = {
     return game.modules.get(MOD)?.version ?? null;
   },
 
-  /** True while a job (render, publish or test) is running. */
+  /** True while a job (render or publish) is running. */
   get busy() {
     return job !== null || worker.busy;
   },
@@ -150,7 +163,7 @@ const api = {
   /** Stops the running job at its next step (a paint stops at once). Returns true if there was one to stop. */
   cancel() {
     if (!job) return worker.cancel();
-    job.cancelled = true;
+    job.canceled = true;
     worker.cancel();
     return true;
   },
@@ -158,7 +171,7 @@ const api = {
   /** Opens the Art Browser. */
   async openArt() {
     requireGM();
-    return (foundry.applications.instances.get("atlas-scribe-art") ?? new ArtBrowser()).render(true);
+    return artWindow.open();
   },
 
   /**
@@ -211,6 +224,40 @@ const api = {
   },
 
   /**
+   * Opens a saved plan in the window (GM only): a scene's (the plan saved under the id it was made from; scene: a
+   * scene or its id), or { path } a plan file's. Asks before dropping the window's unsaved changes. Returns the window.
+   */
+  async openPlan(scene) {
+    requireGM();
+    let path = typeof scene?.path === "string" ? scene.path : null, plan;
+    if (path) plan = await loadPlan(path);
+    else {
+      const sc = typeof scene === "string" ? game.scenes.get(scene) : scene;
+      const id = sc?.getFlag?.(MOD, "plan");
+      if (!id) throw new Error(`AtlasScribe: ${sc ? `"${sc.name}" wasn't made from a saved plan` : "there's no such scene"}`);
+      path = `${plansDir()}/${fileFor(id)}`;
+      plan = await loadPlan(path).catch(() => {
+        throw new Error(`AtlasScribe: the plan ${fileFor(id)} that "${sc.name}" was made from isn't in ${plansDir()}`);
+      });
+    }
+    const app = theWindow();
+    if (app.publishing) throw new Error("AtlasScribe: the window is making a scene; try again when it's done");
+    if (app.minimized) await app.maximize();
+    if (app.rendered) app.bringToFront();
+    else if (app.dirty) await app.render({ force: true });
+    await app.offerDraft();
+    if (!(await app.confirmDiscard())) return app;
+    await app.show(plan, null, { path, saved: true });
+    return app;
+  },
+
+  /** Opens the Files window (GM only): each saved plan's maps and backups, their sizes, and which a scene uses. */
+  async openFiles() {
+    requireGM();
+    return filesWindow.open({ folder: outputFolder(), plansDir: plansDir() });
+  },
+
+  /**
    * A quick look at a plan: laid out and drawn in plain colors in the window in a second or so. Only one window is
    * open at a time; a second call shows the new plan in it. px: the picture's longer side. Returns the window (it
    * says why when the plan can't be drawn).
@@ -227,6 +274,7 @@ const api = {
     if (app.rendered) app.bringToFront();
     // The window may hold unsaved work: show it, and ask before putting another plan in its place
     else if (app.dirty) await app.render({ force: true });
+    await app.offerDraft();
     if (!(await app.confirmDiscard())) throw new Error("AtlasScribe: kept the window's unsaved plan; save it, then preview again");
     await app.show(plan);
     return app;
@@ -306,13 +354,15 @@ const api = {
       const t0 = performance.now();
       let result;
       try {
-        const { layout, roles } = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
+        const { layout, roles, layoutId } = await worker.run("layout", { plan, keep: true }, { onProgress: (p, l) => bar.update(0.05 * p, l) });
         check();
         // (a battle map draws what has no art, or with the setting everything, asking the art sources for nothing)
         const battle = layout.kind === "battle", drawn = battle ? drawnSetting() : null;
-        const { art, scale, missing, notes, from } = drawn?.all ? { art: {}, scale: {}, missing: [], notes: [], from: { folders: 0, nexus: 0 } } : await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l), { drawn: battle });
+        const { art, scale, missing, notes, from } = drawn?.all ? { art: {}, scale: {}, missing: [], notes: [], from: { folders: 0, nexus: 0 } } : await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l), { drawn: battle, check });
         check();
-        const img = await worker.run("paint", { layout, art, scale, quality: plan.output.quality, drawn }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        // (the worker keeps the layout it made, so it isn't copied back to it; a worker started since gets it sent)
+        const paintIt = (which) => worker.run("paint", { ...which, art, scale, quality: plan.output.quality, drawn }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        const img = await paintIt({ layoutId }).catch((e) => (/no layout/.test(e.message) ? paintIt({ layout }) : Promise.reject(e)));
         // (a file that failed: left out from now on if it's still there, else looked for again next time)
         let broken = [];
         try {
@@ -320,13 +370,17 @@ const api = {
         } catch (e) {
           console.warn(`${MOD} | couldn't check the art that failed to load: ${e.message}`); // (never at the cost of the painted map)
         }
+        if (img.overBudget?.length) notes.push(`${img.overBudget.length === 1 ? "An art file was" : `${img.overBudget.length} art files were`} left out: all the art together came to more than a map can hold in memory`);
         if (broken.length) notes.push(`${broken.length === 1 ? "An art file" : `${broken.length} art files`} couldn't be loaded and ${broken.length === 1 ? "was" : "were"} left out: ${broken.slice(0, 5).join(", ")}${broken.length > 5 ? ", ..." : ""}`);
         check();
         let path = null, overheads = [], levels = [];
         if (save) {
           bar.update(0.97, "Saving");
           const dir = `${outputFolder()}/maps`;
-          const name = await freeName(dir, plan.id ?? "map", "webp");
+          // (dated, so the Files window can tell maps apart; with another GM on, their own too, so two renders of the
+          // same plan at once never pick the same name)
+          const gms = game.users?.filter?.((u) => u.isGM && u.active).length ?? 1;
+          const name = await freeName(dir, `${plan.id ?? "map"}-${stamp()}${gms > 1 ? `-${game.user.id.slice(0, 4)}` : ""}`, "webp");
           path = await upload(dir, name, img.blob);
           // A battle map's roofs and crowns go beside the map in a folder named after it (never one already there);
           // on a failure the error says where the map was saved
@@ -389,7 +443,9 @@ const api = {
         };
         Object.defineProperty(result, "thumb", { value: img.thumb ?? null, enumerable: false }); // for publish
       } catch (e) {
-        bar.done(e.cancelled ? `${title}: canceled` : `${title}: failed (${e.message})`);
+        bar.done(e.canceled ? `${title}: canceled` : `${title}: failed (${e.message})`);
+        // (a layout kept for a paint that won't come is let go)
+        if (!worker.busy) worker.run("forget").catch(() => {});
         throw e;
       }
       if (andPublish) {
@@ -415,32 +471,7 @@ const api = {
     requireGM();
     const { plan } = planOrThrow(input);
     return exclusive((check) => publishChecked(plan, image, { scene, force }, check));
-  },
-
-  /**
-   * Paints a test pattern in the worker and uploads it to <output>/tests. Proves the whole pipeline: the worker,
-   * image loading (texture: an image path to tile), soft masks, progress, WebP output and the upload.
-   * Returns { path, width, height, ms, bytes }.
-   */
-  async test({ width = 2048, height = 2048, texture = null, seed = 1 } = {}) {
-    requireGM();
-    return exclusive(async (check) => {
-      const bar = progressBar("AtlasScribe test");
-      try {
-        const textureUrl = texture ? new URL(texture, window.location.href).href : null;
-        const res = await worker.run("test", { width, height, texture: textureUrl, seed }, { onProgress: (p, l) => bar.update(p, l) });
-        check();
-        bar.update(0.95, "Saving");
-        const dir = `${outputFolder()}/tests`;
-        const path = await upload(dir, await freeName(dir, "atlas-scribe-test", "webp"), res.blob);
-        bar.done(`AtlasScribe test saved: ${path}`);
-        return { path, width: res.width, height: res.height, ms: res.ms, bytes: res.blob.size };
-      } catch (e) {
-        bar.done(e.cancelled ? "AtlasScribe test: canceled" : `AtlasScribe test: failed (${e.message})`);
-        throw e;
-      }
-    });
-  },
+  }
 };
 
 /** The saved plans' folder, and (host, below) what the window asks of the module. */
@@ -470,6 +501,7 @@ const host = {
   },
   cancel: () => api.cancel(),
   openArt: () => api.openArt(),
+  openFiles: () => api.openFiles(),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
     try {
@@ -501,6 +533,15 @@ Hooks.once("init", () => {
     config: true,
     type: String,
     default: "",
+  });
+  game.settings.register(MOD, "backups", {
+    name: "Scene backups",
+    hint: "When AtlasScribe saves a copy of a scene before updating it. A scene it didn't make is always backed up first.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: { every: "Every update", session: "First update each session", never: "Never" },
+    default: "every",
   });
   game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
   // (JSON: [{ source, path, bucket }]; empty until the GM sets a list, meaning FA Nexus's folder when it exists)
@@ -546,6 +587,18 @@ Hooks.once("init", () => {
   registerRulesSetting();
 });
 
+// "Open its plan" in the menu of a scene AtlasScribe made, for the GM
+Hooks.on("getSceneContextOptions", (app, options) => {
+  if (!game.user.isGM || !Array.isArray(options)) return;
+  const sceneOf = (li) => game.scenes.get((li instanceof HTMLElement ? li : li?.[0])?.dataset?.entryId);
+  options.push({
+    name: "Open its plan in AtlasScribe",
+    icon: `<i class="fa-solid fa-map"></i>`,
+    condition: (li) => !!sceneOf(li)?.getFlag(MOD, "plan"),
+    callback: (li) => api.openPlan(sceneOf(li)).catch((e) => note.error(e.message)),
+  });
+});
+
 // An AtlasScribe button at the top of the Scenes tab, for the GM
 Hooks.on("renderSceneDirectory", (app, html) => {
   if (!game.user.isGM) return;
@@ -555,8 +608,8 @@ Hooks.on("renderSceneDirectory", (app, html) => {
   button.type = "button";
   button.className = "atlas-scribe-open";
   button.innerHTML = `<i class="fa-solid fa-map"></i> AtlasScribe`;
-  button.dataset.tooltip = "Make a map with Quick Start, change it on the map, and make it a scene";
-  button.addEventListener("click", () => api.open().catch((e) => ui.notifications.error(e.message)));
+  button.dataset.tooltipText = "Make a map with Quick Start, change it on the map, and make it a scene";
+  button.addEventListener("click", () => api.open().catch((e) => note.error(e.message)));
   (root.querySelector(".header-actions") ?? root.querySelector(".directory-header") ?? root).append(button);
 });
 

@@ -9,7 +9,7 @@ import { BRIEF_LABELS, SITE_LACKS } from "./brief.mjs";
 /** Words for each choice (single words or phrases, lowercase; a word's plural and -y forms are matched too). */
 const WORDS = {
   season: { spring: ["spring", "springtime"], summer: ["summer", "summertime"], autumn: ["autumn", "fall", "autumnal"], winter: ["winter", "wintry", "wintertime"] },
-  time: { day: ["day", "daytime", "daylight", "noon", "midday", "afternoon", "morning"], dawn: ["dawn", "sunrise", "daybreak"], dusk: ["dusk", "sunset", "twilight", "evening", "nightfall"], night: ["night", "nighttime", "midnight"] },
+  time: { day: ["by day", "day", "daytime", "daylight", "noon", "midday", "afternoon", "morning"], dawn: ["dawn", "sunrise", "daybreak"], dusk: ["dusk", "sunset", "twilight", "evening", "nightfall"], night: ["night", "nighttime", "midnight"] },
   weather: { rain: ["rain", "rainy", "raining", "storm", "stormy", "downpour", "drizzle"], fog: ["fog", "foggy", "mist", "misty"], snow: ["snow", "snowing", "snowy", "blizzard", "snowfall"], none: ["clear"] },
   ground: { forest: ["forest", "woods", "woodland", "wooded", "jungle"], clearing: ["clearing", "glade"], open: ["open ground", "open country", "field", "fields", "meadow", "meadows", "plain", "plains", "grassland", "countryside"], hills: ["hills", "hilly", "hillside", "hilltop"] },
   features: { road: ["road", "path", "track", "trail", "highway", "lane", "roadside"], stream: ["stream", "creek", "brook", "river"], pond: ["pond", "lake", "pool"], cliff: ["cliff", "cliffs", "cliffside", "ledge", "bluff", "escarpment", "precipice"], rise: ["rise", "hill", "knoll", "mound", "hillock", "ridge"], hollow: ["hollow", "dip", "ravine", "gully", "depression", "sinkhole", "pit"] },
@@ -61,7 +61,8 @@ export function readDescription(text = "") {
   const used = []; // ([start, end] spans of the text read)
   const chip = (key, value, label) => { if (!chips.some((c) => c.key === key && c.value === value)) chips.push({ key, value, label }); };
   /** Every place a phrase occurs: [{ at, end }]. */
-  const find = (p) => [...lower.matchAll(pattern(p))].map((m) => ({ at: m.index, end: m.index + m[0].length }));
+  // (words inside a quoted name aren't read as anything else: "The Night Market" isn't night)
+  const find = (p) => [...lower.matchAll(pattern(p))].map((m) => ({ at: m.index, end: m.index + m[0].length })).filter((m) => !inName(m));
   // (a size said of a road or water, "a wide road", "a big river", isn't the map's or the building's)
   const ofWay = (m) => /^\s+(?:dirt\s+|stone\s+|old\s+)?(?:road|roads|street|streets|lane|track|path|highway|river|stream|creek|brook|pond|lake)\b/.test(lower.slice(m.end, m.end + 24));
   /** The first value of a group whose words occur, marking them read; null if none. */
@@ -78,9 +79,16 @@ export function readDescription(text = "") {
 
   // A name in quotes after "called" or "named": the building's (or the map's)
   // (in double quotes, or single ones: "Edric's Holding", 'The Gray Gull')
-  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w))/i);
+  // (a phrase in double quotes said alone, "The Night Market" by day, is the name too)
+  const quoted = [...raw.matchAll(/["“]([^"”]{1,60})["”]/g)];
+  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w))/i) ?? quoted[0] ?? null;
   if (named && named[1] === undefined) named[1] = named[2];
   if (named) used.push([named.index, named.index + named[0].length]);
+  for (const q of quoted) used.push([q.index, q.index + q[0].length]);
+  function inName(m) {
+    const inside = (x) => m.at >= x.index && m.end <= x.index + x[0].length;
+    return (!!named && inside(named)) || quoted.some(inside);
+  }
 
   // A cellar and floors above, and the rooms said to be there ("a cellar filled with casks", "an upstairs with 7 rooms
   // for rent"): each clause read on its own, for the building's cellar and floors (a building by a road's)
@@ -115,8 +123,9 @@ export function readDescription(text = "") {
   if (castle) { brief.site = "castle"; mark(SITE_WORDS.castle); }
   else if (camp) { brief.site = "camp"; mark(SITE_WORDS.camp); }
   else if (streetWords || (place && !use)) { brief.site = "street"; mark(SITE_WORDS.street); }
-  else if (use) brief.site = "roadside";
+  // (a wilderness said outright wins over a building word: a wilderness map has no building)
   else if (mentions(SITE_WORDS.wilderness)) { brief.site = "wilderness"; mark(SITE_WORDS.wilderness); }
+  else if (use) brief.site = "roadside";
   for (const k of ["season", "time", "weather", "ground"]) { const v = first(WORDS[k]); if (v) brief[k] = v; }
   if (!brief.site && (brief.ground || mentions(Object.values(WORDS.features).flat()))) brief.site = "wilderness";
   if (brief.site) chip("site", brief.site, BRIEF_LABELS.site[brief.site]);
@@ -158,6 +167,7 @@ export function readDescription(text = "") {
     const cw = [...WORDS.camp.caravan, ...WORDS.camp.soldiers].flatMap((w) => find(w)).sort((a, b) => a.at - b.at)[0];
     if (cw) { mark([...WORDS.camp.caravan, ...WORDS.camp.soldiers]); skipped.push({ label: lower.slice(cw.at, cw.end), why: "Wagons or soldiers make a camp only when it's said to be a camp (\"a caravan camp\"), with no building or place" }); }
   }
+  if (brief.site === "wilderness" && use) skipped.push({ label: lower.slice(useHits[0].at, useHits[0].end), why: "A wilderness map has no building: pick Roadside building for one" });
   if (brief.site === "camp" && use) skipped.push({ label: lower.slice(useHits[0].at, useHits[0].end), why: "A camp has no buildings" });
   if (brief.site === "camp") {
     const kind = first(WORDS.camp) ?? "campsite";

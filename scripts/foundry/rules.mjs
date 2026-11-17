@@ -20,8 +20,8 @@
  *   the ground's heights is made with them in it, and a jump over a cliff's edge is left in the air where it drops.
  */
 import { pf2e } from "./rules/pf2e.mjs";
+import { MOD } from "./util.mjs";
 
-const MOD = "atlas-scribe";
 const SETTING = "gameRules";
 
 /** Foundry's own rules: no adapter. */

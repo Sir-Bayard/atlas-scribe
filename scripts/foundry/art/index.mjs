@@ -9,6 +9,8 @@ import * as faNexus from "./fa-nexus.mjs";
 import * as folders from "./folders.mjs";
 import { roleChain } from "../../core/roles.mjs";
 
+export { styleRoles } from "./fa-nexus.mjs";
+
 /** The note when a textured map had no art from anywhere. */
 export const NO_ART = "No art folders are set and FA Nexus isn't active, so the map is painted in plain colors";
 
@@ -86,8 +88,8 @@ export async function forgetBroken(urls = []) {
     for (let u; (u = queue.shift()) !== undefined;) ((await folders.isGone(bare(u), CHECK_MS)) ? gone : kept).push(u);
   }));
   for (const u of kept) unloadable.add(bare(u));
-  if (gone.some((u) => folders.holds(u))) folders.forget();
-  else if (gone.length) for (const u of gone) folders.forgetHandFolder(u);
+  // (a gone file is taken out of what the folders read hold; a folder chosen by hand that held it is read again)
+  for (const u of gone) if (!folders.dropFile(u)) folders.forgetHandFolder(u);
   if (gone.some((u) => fromNexus.has(bare(u)))) faNexus.forget();
   return kept.map(nameOfUrl);
 }
@@ -105,17 +107,71 @@ function scaled(p, px) {
   return u.href;
 }
 
-export async function resolveArt(roles, progress = () => {}, { drawn = false } = {}) {
+/**
+ * Waits for `promise`, but throws what `check()` throws (a canceled job) as soon as it does: a folder read others may
+ * be waiting on goes on, and is kept for the next render.
+ */
+async function unlessCanceled(promise, check) {
+  if (!check) return promise;
+  let timer;
+  const stop = new Promise((_, fail) => {
+    timer = setInterval(() => {
+      try {
+        check();
+      } catch (e) {
+        fail(e);
+      }
+    }, 150);
+  });
+  try {
+    return await Promise.race([promise, stop]);
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+/** Premium FA files in FA Nexus's download folder, which go unused while the Patreon login is missing. */
+function lapsedTest() {
+  if (faNexus.patron()) return () => false;
+  const premium = faNexus.premiumNames();
+  if (!premium.size) return () => false;
+  const nexus = folders.nexusFolder();
+  const inNexus = (p) => {
+    const k = decodeSafe(String(p)).toLowerCase().replace(/^\w+:\/\/[^/]+\//, "");
+    const top = nexus.path.toLowerCase();
+    return k.startsWith(`${top}/`) || k.includes(`/${top}/`);
+  };
+  return (name, path) => !!path && premium.has(String(name).toLowerCase()) && inNexus(path);
+}
+const decodeSafe = (s) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
+export async function resolveArt(roles, progress = () => {}, { drawn = false, check = null } = {}) {
   // (what a role with no art becomes: drawn on a battle map, a plain color in the textured style)
   const instead = drawn ? "drawn instead" : "painted in plain colors";
   const notes = [];
   let idx = EMPTY;
   const skipped = new Set(); // (files left out because they couldn't be loaded earlier)
   try {
-    idx = await folders.folderIndex((label) => progress(0, label));
+    idx = await unlessCanceled(folders.folderIndex((label) => progress(0, label)), check);
   } catch (e) {
+    if (e?.canceled) throw e;
     notes.push(`The art folders couldn't be read (${faNexus.safeMessage(e)})`);
   }
+  faNexus.hold();
+  try {
+    return await resolveWith(idx, roles, progress, { drawn, check, instead, notes, skipped });
+  } finally {
+    await faNexus.release();
+  }
+}
+
+async function resolveWith(idx, roles, progress, { drawn, check, instead, notes, skipped }) {
   for (const f of idx.folders) {
     const name = `${f.folder.source === "data" ? "" : `${f.folder.source}: `}${f.folder.path || "(top)"}`;
     if (f.error) notes.push(`Art folder ${name}: ${f.error}`);
@@ -129,6 +185,8 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
   const from = { folders: 0, nexus: 0 };
   const got = new Map();
   let nexusWhy = null, lockedFiles = 0;
+  const lockedHere = new Set(); // (premium files on disk left unused, each counted once however many roles want it)
+  const lapsed = lapsedTest();
   // Each round settles every role whose name at its step gives art; a role whose FA files all come to nothing goes
   // on to the next name in its chain, so FA Nexus is asked only for the files of names actually reached
   let open = roles.map((role) => {
@@ -142,13 +200,22 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
         const r = o.chain[o.at];
         const own = ownArt(idx, r, skipped);
         if (own) { o.own = own; break; }
-        if (map[r]?.length) { o.files = map[r].map((name) => ({ name, path: folders.findFile(idx, name) })); break; }
+        if (map[r]?.length) {
+          o.files = map[r].map((name) => {
+            const path = folders.findFile(idx, name);
+            if (!lapsed(name, path)) return { name, path };
+            lockedHere.add(name);
+            return { name, path: null, locked: true };
+          });
+          break;
+        }
       }
-      if (o.files) for (const f of o.files) if (!f.path && !got.has(f.name)) asking.push(f.name);
+      if (o.files) for (const f of o.files) if (!f.path && !f.locked && !got.has(f.name)) asking.push(f.name);
     }
     const ask = [...new Set(asking)];
+    check?.();
     if (ask.length) {
-      const res = await faNexus.fetchNames(ask, progress);
+      const res = await faNexus.fetchNames(ask, progress, { check });
       for (const name of ask) got.set(name, res.paths.get(name) ?? null);
       for (const p of res.paths.values()) if (p) fromNexus.add(abs(p));
       if (res.why && faNexus.available()) nexusWhy ??= res.why;
@@ -164,7 +231,7 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
         if (k !== 1) for (const u of urls) scale[u] = k;
         from.folders++;
       } else if (o.files) {
-        const paths = o.files.map((f) => f.path ?? got.get(f.name)).filter((p) => {
+        const paths = o.files.map((f) => (f.locked ? null : f.path ?? got.get(f.name))).filter((p) => {
           if (p && unloadable.has(abs(p))) { skipped.add(abs(p)); return false; }
           return !!p;
         });
@@ -181,6 +248,7 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false } =
     }
     open = next;
   }
+  lockedFiles += lockedHere.size;
   if (nexusWhy) notes.push(`${nexusWhy}; art it would have given is ${instead}`);
   if (lockedFiles) notes.push(`${lockedFiles} Forgotten Adventures ${lockedFiles === 1 ? "file needs" : "files need"} FA Nexus connected to Patreon; ${instead === "drawn instead" ? "what they'd show is drawn instead" : "what they'd show is painted in plain colors"}`);
   if (skipped.size) notes.push(`${skipped.size === 1 ? "An art file" : `${skipped.size} art files`} couldn't be loaded earlier and ${skipped.size === 1 ? "is" : "are"} left out until the art is read again (the Art window's Read the folders again): ${[...skipped].slice(0, 5).map(nameOfUrl).join(", ")}${skipped.size > 5 ? ", ..." : ""}`);
@@ -210,6 +278,7 @@ export async function describeArt(roles) {
   }
   const map = await faNexus.faRoleMap();
   const nexus = faNexus.available();
+  const lapsed = lapsedTest();
   return roles.map((role) => {
     const chain = roleChain(role);
     const all = handAll(idx, chain);
@@ -218,7 +287,7 @@ export async function describeArt(roles) {
       const own = ownArt(idx, r);
       if (own) return { role, name: r, source: own.source, paths: own.paths.map(abs), count: own.paths.length };
       if (map[r]?.length) {
-        const found = map[r].map((n) => folders.findFile(idx, n)).filter((p) => p && !unloadable.has(abs(p)));
+        const found = map[r].map((n) => [n, folders.findFile(idx, n)]).filter(([n, p]) => p && !unloadable.has(abs(p)) && !lapsed(n, p)).map(([, p]) => p);
         if (found.length) return { role, name: r, source: "folder", paths: found.map(abs), count: nexus ? map[r].length : found.length };
         if (nexus) return { role, name: r, source: "nexus", paths: [], count: map[r].length };
       }

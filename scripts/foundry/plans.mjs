@@ -4,8 +4,8 @@
  */
 import { ensureDir } from "./files.mjs";
 import { readPlan } from "../core/plan.mjs";
+import { FP } from "./util.mjs";
 
-const FP = () => foundry.applications.apps.FilePicker.implementation;
 
 /** A file name for a plan id: lowercase letters, digits, - and _. */
 export const fileFor = (id) => `${String(id ?? "plan").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "plan"}.json`;

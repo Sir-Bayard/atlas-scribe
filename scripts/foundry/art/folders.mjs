@@ -3,10 +3,10 @@
  * manifest (atlas-scribe.json) names which of its images fill which roles; any image is also found by its file name,
  * so Forgotten Adventures files in a folder fill the FA role map with no FA Nexus.
  */
-import { safeMessage, faRoleMap } from "./fa-nexus.mjs";
+import { safeMessage, faRoleMap, styleRoles } from "./fa-nexus.mjs";
 import { roleChain } from "../../core/roles.mjs";
+import { FP, MOD } from "../util.mjs";
 
-const MOD = "atlas-scribe";
 export const MANIFEST = "atlas-scribe.json";
 const IMAGE = /\.(webp|png|jpe?g|avif)$/i;
 /** A folder tree past these is read no further (a whole Data folder, say), with a note. */
@@ -21,7 +21,6 @@ const GRID_PX = [20, 2000];
 /** At most this many variants for a role from a rule, a folder chosen by hand or a manifest (each is a full image). */
 export const MOST_VARIANTS = 32;
 
-const FP = () => foundry.applications.apps.FilePicker.implementation;
 // The folders read this session, the read under way, and a count forget() bumps so a read begun before it isn't kept;
 // the same for what's built from them and the GM's choices (rules and art chosen by hand), which forgetChoices()
 // clears alone; and the folders chosen by hand, read once each
@@ -100,9 +99,9 @@ export function storedRoles() {
 /** A role name as matched: trimmed and lowercased. */
 export const roleOf = (r) => String(r ?? "").trim().toLowerCase();
 
-/** A test of whether AtlasScribe paints a role (one in the FA role map, a kind of one, or one with kinds there). */
+/** A test of whether AtlasScribe paints a role (one the styles or the FA role map name, a kind of one, or one with kinds there). */
 async function rolesKnown() {
-  const keys = Object.keys(await faRoleMap());
+  const keys = [...new Set([...Object.keys(await faRoleMap()), ...(await styleRoles())])];
   if (!keys.length) return () => true; // (no role map to check against)
   const set = new Set(keys);
   return (r) => set.has(r) || roleChain(r).some((x) => set.has(x)) || keys.some((k) => k.startsWith(`${r}.`));
@@ -176,7 +175,7 @@ const stemOf = (name) => name.replace(/\.\w+$/, "");
  * Every image and manifest under a folder, sorted by path so the same files always win a name: { files, manifests,
  * dirs, cut, errors }. A subfolder that can't be read is skipped and listed; the folder itself failing throws.
  */
-async function walk(folder, budget, progress) {
+async function walk(folder, budget, progress, skip = new Set()) {
   const opts = folder.bucket ? { bucket: folder.bucket } : {};
   const files = [], manifests = [], errors = [];
   let dirs = 0, cut = false;
@@ -197,7 +196,8 @@ async function walk(folder, budget, progress) {
       if (n === MANIFEST) manifests.push(f);
       else if (IMAGE.test(n)) { files.push(f); budget.files--; }
     }
-    queue.push(...(r.dirs ?? []));
+    // (a subfolder that is another entry on the list, read already, isn't read again)
+    for (const d of r.dirs ?? []) if (!skip.has(keyOf(folderKey({ ...folder, path: folderOf({ path: d }).path })))) queue.push(d);
   };
   budget.dirs--;
   await one(queue.shift(), true);
@@ -311,12 +311,18 @@ function capped(paths, what, notes) {
 async function readAll(progress) {
   const byName = new Map(), byStem = new Map(), roles = new Map(), report = [], all = [];
   const budget = { dirs: MOST_DIRS, files: MOST_FILES }, seen = new Set();
-  for (const folder of await foldersToUse()) {
-    const row = { folder, files: 0, dirs: 0, manifests: 0, roles: 0, cut: false, error: null, errors: [] };
+  const list = await foldersToUse();
+  const walked = new Set();
+  for (const folder of list) {
+    const row = { folder, files: 0, dirs: 0, manifests: 0, roles: 0, cut: false, error: null, errors: [], within: null };
     report.push(row);
+    // (a folder inside one read already was read with it)
+    const outer = list.find((o) => walked.has(keyOf(folderKey(o))) && within(folder, o));
+    if (outer) { row.within = outer.path || outer.source; continue; }
     if (budget.dirs <= 0 || budget.files <= 0) { row.cut = true; continue; }
+    walked.add(keyOf(folderKey(folder)));
     try {
-      const { files, manifests, dirs, cut, errors } = await walk(folder, budget, progress);
+      const { files, manifests, dirs, cut, errors } = await walk(folder, budget, progress, walked);
       Object.assign(row, { files: files.length, dirs, cut, errors });
       // (a file in two folders on the list, one inside the other, counted once)
       const fresh = files.filter((x) => !seen.has(x.k));
@@ -353,6 +359,43 @@ async function readAll(progress) {
   return { byName, byStem, roles, all, keys: new Set(all.map((x) => x.k)), folders: report };
 }
 
+/** Whether folder `a` is `b` or lies inside it (the same source and bucket). */
+export function within(a, b) {
+  if (a.source !== b.source || (a.bucket ?? "") !== (b.bucket ?? "")) return false;
+  const x = keyOf(a.path), y = keyOf(b.path);
+  return !y || x === y || x.startsWith(`${y}/`);
+}
+
+/**
+ * Takes a file that is gone from the server out of what the folders read hold, so the next render needn't read every
+ * folder again. Returns true when the folders held it.
+ */
+export function dropFile(url) {
+  if (!base) return false;
+  const k = keyOf(String(url).replace(/[?#].*$/, ""));
+  const hit = base.all.filter((x) => x.k === k || k.endsWith(`/${x.k}`) || x.k.endsWith(`/${k}`));
+  if (!hit.length) return false;
+  const gone = new Set(hit.map((x) => x.f));
+  base.all = base.all.filter((x) => !gone.has(x.f));
+  for (const x of hit) base.keys.delete(x.k);
+  // (a name the gone file filled goes to the next file with that name, as a fresh read would give it)
+  for (const map of [base.byName, base.byStem]) {
+    for (const [n, f] of [...map]) {
+      if (!gone.has(f)) continue;
+      const next = base.all.find((x) => { const name = x.k.split("/").pop(); return map === base.byName ? name === n : stemOf(name) === n; });
+      if (next) map.set(n, next.f);
+      else map.delete(n);
+    }
+  }
+  for (const [role, v] of [...base.roles]) {
+    const paths = v.paths.filter((f) => !gone.has(f));
+    if (paths.length) base.roles.set(role, { ...v, paths });
+    else base.roles.delete(role);
+  }
+  forgetChoices();
+  return true;
+}
+
 /** Whether a file (a path or web address) is one the folders read hold. */
 export function holds(url) {
   if (!base) return false;
@@ -368,22 +411,41 @@ export function holds(url) {
 /** Forgets the folders chosen by hand that hold a file (by its web address), so they're read again. */
 export function forgetHandFolder(url) {
   const k = keyOf(String(url).replace(/[?#].*$/, ""));
-  for (const key of [...handWalks.keys()]) {
-    // (a key is source:path or source:bucket:path; a folder at the top holds everything)
-    const path = keyOf(key.slice(key.lastIndexOf(":") + 1));
+  for (const [key, { folder }] of [...handWalks]) {
+    // (a folder at the top holds everything)
+    const path = keyOf(folder.path);
     if (!path || k.includes(`/${path}/`) || k.startsWith(`${path}/`)) handWalks.delete(key);
   }
   forgetChoices();
 }
 
-/** Whether a file is gone from the server: true only when the server says so. */
-export async function isGone(url, ms = 5000) {
+/**
+ * Whether a file is on the server: "there", "gone", or "unknown" when nothing answered in time. A server that won't
+ * answer a cross-site HEAD (an S3 bucket without CORS, say) is asked by loading the file as an image, which needs no
+ * CORS: an image that won't load counts as gone.
+ */
+export async function probe(url, ms = 5000) {
   try {
     const res = await fetch(url, { method: "HEAD", cache: "no-cache", signal: AbortSignal.timeout(ms) });
-    return [403, 404, 410].includes(res.status);
-  } catch {
-    return false; // (a network or cross-site error says nothing about the file)
+    return [403, 404, 410].includes(res.status) ? "gone" : "there";
+  } catch (e) {
+    // (only a file on another site is asked again as an image: on this server a failed request is the network's fault)
+    let cross = false;
+    try { cross = new URL(url, globalThis.location?.href).origin !== globalThis.location?.origin; } catch { /* a bad address */ }
+    if (e?.name === "TimeoutError" || typeof Image === "undefined" || !cross || globalThis.navigator?.onLine === false) return "unknown";
   }
+  return new Promise((done) => {
+    const img = new Image();
+    const timer = setTimeout(() => { img.src = ""; done("unknown"); }, ms);
+    img.onload = () => { clearTimeout(timer); done("there"); };
+    img.onerror = () => { clearTimeout(timer); done("gone"); };
+    img.src = url;
+  });
+}
+
+/** Whether a file is gone from the server: true only when the server (or a failed image load) says so. */
+export async function isGone(url, ms = 5000) {
+  return (await probe(url, ms)) === "gone";
 }
 
 /** A folder chosen by hand, read once a session (until forget()). */
@@ -391,23 +453,19 @@ function handWalk(folder, progress) {
   const key = folderKey(folder);
   if (!handWalks.has(key)) {
     // (a folder that failed is tried again next time)
-    handWalks.set(key, walk(folder, { dirs: MOST_DIRS, files: MOST_FILES }, progress).catch((e) => {
+    const promise = walk(folder, { dirs: MOST_DIRS, files: MOST_FILES }, progress).catch((e) => {
       handWalks.delete(key);
       return { error: e };
-    }));
+    });
+    handWalks.set(key, { folder, promise });
   }
-  return handWalks.get(key);
+  return handWalks.get(key).promise;
 }
 
 /** Whether a file chosen by hand is still on the server: false only when the server says it's gone. */
 async function stillThere(path, b) {
   if (b.keys.has(keyOf(path))) return true;
-  try {
-    const res = await fetch(path, { method: "HEAD", cache: "no-cache" });
-    return ![403, 404, 410].includes(res.status);
-  } catch {
-    return true; // (a network or cross-site error says nothing about the file)
-  }
+  return (await probe(path)) !== "gone";
 }
 
 /** The GM's filename rules and art chosen by hand, built over the folders read. */

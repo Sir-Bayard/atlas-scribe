@@ -105,16 +105,18 @@ const GATE_WIDTH = {
  * What each district made, kept so a district whose inputs haven't changed isn't laid out again. Keyed by a hash of
  * everything its fill reads: its settings and seed, the plan's seed and size, all water and radial squares, its gates
  * and shared edges, the roads in or beside it, and what was placed before the districts within KEY_MARGIN squares.
- * Holds the last DISTRICT_CACHE_SIZE districts, per worker, never saved.
+ * Holds the districts used last, up to DISTRICT_CACHE_BYTES of their JSON in all, per worker, never saved.
  */
-const DISTRICT_CACHE_SIZE = 96;
+const DISTRICT_CACHE_BYTES = 12 * 1024 * 1024;
 const KEY_MARGIN = 4;
-const districtCache = new Map();
+const districtCache = new Map(); // key -> { rec, bytes }
+const cacheUse = { bytes: 0 }; // the bytes the district cache holds
 const cacheStats = { hits: 0, misses: 0 };
 
 /** Empties the cache of districts' layouts (for tests). */
 export function clearLayoutCache() {
   districtCache.clear();
+  cacheUse.bytes = 0;
   cacheStats.hits = cacheStats.misses = 0;
 }
 
@@ -1145,7 +1147,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
       districtCache.delete(key);
       districtCache.set(key, kept); // most recently used last
       // One clone of the whole record, so a building is the same object in items and in space.buildings, as it was
-      const rec = structuredClone(kept);
+      const rec = structuredClone(kept.rec);
       items.push(...rec.items);
       rec.buildings.forEach((b) => {
         space.buildings.push(b);
@@ -1348,11 +1350,20 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
     filling = null;
     const remember = () => {
       if (!key) return;
-      districtCache.set(key, structuredClone({
+      const rec = structuredClone({
         items: items.slice(mark.items), buildings: space.buildings.slice(mark.buildings), reserved: space.reserved.slice(mark.reserved),
         plots: space.plots.slice(mark.plots), gardens: space.gardens.slice(mark.gardens), ways: space.ways.slice(mark.ways), notes: notes.slice(mark.notes),
-      }));
-      while (districtCache.size > DISTRICT_CACHE_SIZE) districtCache.delete(districtCache.keys().next().value);
+      });
+      // (its size as JSON, two bytes a character: what the cache counts against its budget)
+      const bytes = keyJSON(rec).length * 2;
+      if (districtCache.has(key)) cacheUse.bytes -= districtCache.get(key).bytes;
+      districtCache.set(key, { rec, bytes });
+      cacheUse.bytes += bytes;
+      while (cacheUse.bytes > DISTRICT_CACHE_BYTES && districtCache.size > 1) {
+        const [old, e] = districtCache.entries().next().value;
+        districtCache.delete(old);
+        cacheUse.bytes -= e.bytes;
+      }
     };
     notes.push({ level: "info", id: d.id, message: `"${d.id}": ${own.length} ${own.length === 1 ? "street or lane" : "streets and lanes"}, ${made.bridges.length} ${made.bridges.length === 1 ? "bridge" : "bridges"}, ${lots.length - uses.sites.reduce((n, st) => n + st.lots.length - 1, 0)} plots, ${built.houses.filter((h) => !h.wing).length} houses (${built.houses.filter((h) => !h.wing && (h.shape === "row" || (h.shape === "steps" && Array.isArray(h.building.shape)))).length} in rows; ${["L", "T", "U", "court"].map((k) => `${built.houses.filter((h) => h.shape === k).length} ${k}`).join(", ")}; ${built.houses.filter((h) => h.shape === "steps").length} in steps, ${built.houses.filter((h) => /b$/.test(h.id)).length} bays, ${built.houses.filter((h) => /d\d$/.test(h.id)).length} dormers, ${built.houses.filter((h) => /t$/.test(h.id)).length} turrets), ${built.outbuildings.length} outbuildings, ${built.gardens.length} gardens, ${built.crofts.length} crofts, ${built.trees.length} trees in plots, ${wild} beyond.` });
     for (const use of uses?.missed ?? []) notes.push({ level: "info", id: d.id, message: `"${d.name ?? d.id}" had no room for its ${useLabel(use).toLowerCase()}.` });

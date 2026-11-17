@@ -11,8 +11,8 @@
  */
 import { environmentsOf } from "../../core/rules.mjs";
 import { withHoles } from "../../core/height.mjs";
+import { MOD } from "../util.mjs";
 
-const MOD = "atlas-scribe";
 
 /** An Environment behavior adding or setting environment types where it lies. */
 const environment = (types, mode = "add") => ({ type: "environment", name: "Environment", system: { environmentTypes: types, mode } });

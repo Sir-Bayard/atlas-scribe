@@ -175,14 +175,45 @@ function placeName(r, water) {
   return r.pick(first) + r.pick(last);
 }
 
-const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "quick-start";
+// (cut at 60 characters, so a long name still makes a file name a file system can save)
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60).replace(/-$/, "") || "quick-start";
+
+/** What was asked of Quick Start that can't be used (a seed below 1 or not a number, a choice it doesn't know). */
+/**
+ * Notes on what quickPlan was asked that it couldn't use and replaced (a size it doesn't know, a seed that isn't a
+ * whole number of 1 or more): a script would otherwise get the default with no word.
+ */
+function quickNotes(options) {
+  const notes = [];
+  const s = options.seed;
+  if (s !== undefined && s !== null && s !== "") {
+    const n = Number(s);
+    if (!Number.isFinite(n) || n < 1) notes.push(`The seed ${JSON.stringify(s)} isn't a number of 1 or more, so 1 was used.`);
+    else if (!Number.isInteger(n)) notes.push(`The seed ${n} was rounded down to ${Math.floor(n)}.`);
+  }
+  for (const [k, list] of Object.entries(QUICK)) {
+    const v = options[k];
+    if (v !== undefined && v !== null && v !== "" && !list.includes(v)) notes.push(`"${v}" isn't a ${k} Quick Start knows (${list.join(", ")}), so the seed picked one.`);
+  }
+  return notes;
+}
 
 /**
  * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, river, shape, name, seed }
- * (any left out is picked from the seed; seed itself defaults to 1). Returns { plan, choices }: choices are the ones
- * used.
+ * (any left out is picked from the seed; seed itself defaults to 1). Returns { plan, choices, notes }: choices are the
+ * ones used; notes, what was asked that couldn't be used (an unknown size or a bad seed), replaced by the seed's pick.
  */
 export function quickPlan(options = {}) {
+  options ??= {};
+  const notes = quickNotes(options);
+  const out = quickPlanOf(options);
+  // (a citadel is the garrison quarter walled in: asked for in a city with no garrison, it's said why there's none)
+  const q = out.choices?.quarters;
+  if (options.outside?.citadel === true && Array.isArray(q) && !q.includes("garrison")) notes.push("A citadel is the garrison quarter walled in, and this city has no garrison quarter, so it has no citadel. Add Garrison to its quarters for one.");
+  return { ...out, notes };
+}
+
+function quickPlanOf(options) {
   if (options.center === undefined && options.centre !== undefined) options = { ...options, center: options.centre }; // the name before 0.4.0, still read
   const seed = Number.isFinite(Number(options.seed)) && Number(options.seed) >= 1 ? Math.floor(Number(options.seed)) : 1;
   const pick = rng(seed, "quick", "choices");

@@ -25,6 +25,15 @@ const ROAD_WIDTH_FT = { highway: 30, street: 20, lane: 15, track: 10, path: 5 };
 /** The plan's cliffs with a usable line. */
 const cliffsOf = (plan) => plan.features.filter((f) => f.type === "wall" && f.class === "cliff" && Array.isArray(f.path) && f.path.length >= 2 && f.path.every(isPoint));
 
+/**
+ * About how much memory painting a map this size takes, in words ("1.2 GB"): the map's canvas, the copy saved from it,
+ * and the tiles it's painted in, four bytes a pixel.
+ */
+export function paintMemory(w, h) {
+  const bytes = w * h * 4 * 2.5;
+  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
 export function checkPlan(raw) {
   const out = [];
   const err = (id, field, message) => out.push({ level: "error", id, field, message });
@@ -69,7 +78,7 @@ export function checkPlan(raw) {
     if (side > OUTPUT_LIMITS.maxSide)
       err(null, "output.pxPerSquare", `The map would be ${w * pps} by ${h * pps} px; images can't be more than ${OUTPUT_LIMITS.maxSide} px a side. Use fewer pixels per square (at most ${Math.floor(OUTPUT_LIMITS.maxSide / Math.max(w, h))}).`);
     else if (side > OUTPUT_LIMITS.warnSide)
-      warn(null, "output.pxPerSquare", `The map will be ${w * pps} by ${h * pps} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and it takes a lot of memory to paint.`);
+      warn(null, "output.pxPerSquare", `The map will be ${w * pps} by ${h * pps} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(w * pps, h * pps)} of memory.`);
   }
   if (!(isNum(plan.output.quality) && plan.output.quality > 0 && plan.output.quality <= 1)) err(null, "output.quality", `output.quality is ${plan.output.quality}; it should be a number above 0, up to 1.`);
   if (plan.output.format !== "webp") warn(null, "output.format", `output.format "${plan.output.format}" isn't supported yet; the map is saved as WebP.`);
@@ -274,7 +283,7 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
     if (!Array.isArray(f.path) && f.shape && checkShape(f.shape, where, "shape", (ok) => ok) && !bodyOf(f, { W: w, H: h, seed: 1 }))
       warn(f.id, "shape", `"${where}" has nothing left to draw once its corners near the map's edge are moved onto it. Draw it farther from the edge.`);
     if (raw.widths != null && !(Array.isArray(f.path) && okWidths(raw.widths, f.path.length)))
-      warn(f.id, "widths", `"${where}": widths should be a list with one width in feet (1 or more) for each point of its path; it's ignored.`);
+      warn(f.id, "widths", `"${where}": widths should be a list with one width in feet (1 to 2,000) for each point of its path; it's ignored.`);
   }
 
   // A pinned building's drawing details, as the generator writes them (anything else is left out, with a warning)

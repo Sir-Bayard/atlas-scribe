@@ -80,7 +80,12 @@ export function readPlace(text = "", opts = {}) {
     return false;
   };
   /** Each value of a group whose words occur, with whether it's said with "no": [{ value, no, at }]. */
-  const hits = (group) => Object.entries(group).flatMap(([value, words]) => words.flatMap((w) => find(w).map((m) => ({ value, no: negated(m), at: m.at, end: m.end }))));
+  // (a word inside a phrase said with "no" is said with "no" too: "not on a river" holds "river")
+  const hits = (group) => {
+    const h = Object.entries(group).flatMap(([value, words]) => words.flatMap((w) => find(w).map((m) => ({ value, no: negated(m), at: m.at, end: m.end }))));
+    for (const x of h) if (!x.no && h.some((y) => y.no && y.value === x.value && y.at <= x.at && y.end >= x.end)) x.no = true;
+    return h;
+  };
   /** The first value of a group said (not with "no"), marking its words read; null if none. */
   const first = (group) => {
     const h = hits(group).filter((x) => !x.no && !inName(x)).sort((a, b) => a.at - b.at)[0];
@@ -89,9 +94,9 @@ export function readPlace(text = "", opts = {}) {
   };
 
   // A name: in quotes or capitalized after "called" or "named"
-  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w)|((?:[A-Z][\w'-]*)(?:\s+(?!(?:In|On|At|By|With|And|Near|During|Beside|Along|Among)\b)[A-Z][\w'-]*){0,3}))/);
+  const named = raw.match(/\b(?:called|named)\s+(?:["“]([^"”]{1,60})["”]|['‘]((?:[^'’]|['’]\w){1,60})['’](?!\w)|((?:the\s+)?(?:[A-Z][\w'-]*)(?:\s+(?!(?:In|On|At|By|With|And|Near|During|Beside|Along|Among)\b)[A-Z][\w'-]*){0,3}))/);
   if (named) {
-    const n = (named[1] ?? named[2] ?? named[3]).trim();
+    const n = (named[1] ?? named[2] ?? named[3]).trim().replace(/^the\s+/, "The ");
     choices.name = n;
     chip("name", n, `Named ${n}`);
     used.push([named.index, named.index + named[0].length]);
@@ -118,8 +123,9 @@ export function readPlace(text = "", opts = {}) {
   const wh = hits(WORDS.water).filter((x) => !inName(x));
   mark(Object.values(WORDS.water).flat());
   // (the first said, the longer phrase where two start together: "river mouth" over "river")
-  const water = wh.filter((x) => !x.no).sort((a, b) => a.at - b.at || (b.end - b.at) - (a.end - a.at))[0]?.value ?? (wh.some((x) => x.no) || find("inland").length ? "none" : null);
-  mark(["inland", "dry"]);
+  const noWater = find("inland").length || find("dry").filter((m) => !inName(m)).length || find("water").some((m) => negated(m));
+  const water = wh.filter((x) => !x.no).sort((a, b) => a.at - b.at || (b.end - b.at) - (a.end - a.at))[0]?.value ?? (wh.some((x) => x.no) || noWater ? "none" : null);
+  mark(["inland", "dry", "water"]);
   if (water) {
     if (!city && ["coast", "lake", "estuary"].includes(water)) skipped.push({ label: water === "coast" ? "the sea" : water, why: "A sea coast, a lake or an estuary is a city's (a village or town by the sea or a lake gets a river)" });
     else if (city && water === "stream") { choices.water = "river"; chip("water", "river", QUICK_LABELS.water.river); }
@@ -190,6 +196,8 @@ export function readPlace(text = "", opts = {}) {
     // A village's or town's buildings and places: said, or said with "no"
     const hh = hits(HAS_WORDS).filter((x) => !inName(x));
     mark(Object.values(HAS_WORDS).flat());
+    for (const m of [...find("unwalled"), ...find("unfortified")].filter((m) => !inName(m))) hh.push({ value: "walled", no: true, at: m.at, end: m.end });
+    mark(["unwalled", "unfortified"]);
     // ("mill" alone: a watermill by water, else a windmill)
     const mills = find("mill").concat(find("mills")).filter((m) => !inName(m));
     mark(["mill", "mills"]);

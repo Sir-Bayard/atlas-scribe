@@ -62,7 +62,7 @@ export const TYPES = {
     geometry: "path",
     classes: ["street", "highway", "lane", "track", "path"],
     fields: {
-      width: num(null, { unit: "ft", min: 1, byClass: { highway: 30, street: 20, lane: 15, track: 10, path: 5 } }),
+      width: num(null, { unit: "ft", min: 1, max: 200, byClass: { highway: 30, street: 20, lane: 15, track: 10, path: 5 } }),
       surface: oneOf(SURFACES, "dirt"),
       ruts: bool(false),
       straight: bool(false), // drawn straight between its points; else it curves smoothly through them
@@ -74,8 +74,8 @@ export const TYPES = {
     geometry: "path|shape",
     classes: ["stream", "river", "canal", "pond", "lake", "sea"],
     fields: {
-      width: num(null, { unit: "ft", min: 1, byClass: { stream: 15, river: 60, canal: 20 }, only: RUNNING }), // at its first point
-      endWidth: num(null, { unit: "ft", min: 1, only: RUNNING }), // at its last point, widening or narrowing smoothly between; else the same all along
+      width: num(null, { unit: "ft", min: 1, max: 2000, byClass: { stream: 15, river: 60, canal: 20 }, only: RUNNING }), // at its first point
+      endWidth: num(null, { unit: "ft", min: 1, max: 2000, only: RUNNING }), // at its last point, widening or narrowing smoothly between; else the same all along
       widths: { kind: "data", default: null, only: RUNNING }, // one width in feet for each point of its path (wins over width and endWidth)
       shore: { ...oneOf(SHORES, null), only: BODIES, fallback: "picked from its seed" },
       frozen: { kind: "boolean", default: false, byClass: { pond: null, lake: null } }, // a pond or lake left unset freezes in winter
@@ -112,7 +112,7 @@ export const TYPES = {
     geometry: "path",
     classes: ["quay", "wharf", "pier", "jetty"],
     fields: {
-      width: num(null, { unit: "ft", min: 3, byClass: { quay: 15, wharf: 15, pier: 15, jetty: 6 } }),
+      width: num(null, { unit: "ft", min: 3, max: 200, byClass: { quay: 15, wharf: 15, pier: 15, jetty: 6 } }),
       material: { ...oneOf(["stone", "wood"], null), byClass: { quay: "stone", wharf: "wood", pier: "stone", jetty: "wood" } },
     },
   },
@@ -121,8 +121,8 @@ export const TYPES = {
     classes: ["bridge", "footbridge", "ford"],
     fields: {
       angle: num(0, { unit: "deg" }),
-      length: num(null, { unit: "ft", min: 1, byClass: { bridge: 60, footbridge: 40, ford: 50 } }),
-      width: num(null, { unit: "ft", min: 1, byClass: { bridge: 20, footbridge: 10, ford: 50 } }),
+      length: num(null, { unit: "ft", min: 1, max: 2000, byClass: { bridge: 60, footbridge: 40, ford: 50 } }),
+      width: num(null, { unit: "ft", min: 1, max: 200, byClass: { bridge: 20, footbridge: 10, ford: 50 } }),
       frozen: bool(false),
     },
   },
@@ -134,11 +134,11 @@ export const TYPES = {
     geometry: "shape",
     fields: {
       roof: oneOf(ROOFS, "slate"),
-      height: num(20, { unit: "ft", min: 1 }),
+      height: num(20, { unit: "ft", min: 1, max: 500 }),
       rot: num(0, { unit: "deg" }),
       chimney: { kind: "boolean", default: null }, // null: the generator decides
       roofStyle: { ...oneOf(ROOF_STYLES, "gable"), fallback: "it's drawn as a gable" },
-      variant: num(null, { min: 0, integer: true }), // which of the roof art's pieces (else from the seed)
+      variant: num(null, { min: 0, max: 999, integer: true }), // which of the roof art's pieces (else from the seed)
       name: str(),
       use: { ...oneOf(USES, null), fallback: "it's taken as a house" }, // what it's for (a pinned building keeps its use); named on the scene's labels
       rooms: str(), // its rooms on a battle map, in words ("common room with stage, kitchen, 2 bedrooms"); else from its use
@@ -179,7 +179,7 @@ export const TYPES = {
       density: num(1, { min: 0, max: 1 }),
       surface: oneOf(SURFACES, null), // its streets' surface; else the surface of a road through it
       bend: num(null, { unit: "deg", min: 0, max: 90 }),
-      spacing: num(null, { unit: "ft", min: 25 }),
+      spacing: num(null, { unit: "ft", min: 25, max: 2000 }),
       axis: num(null, { unit: "deg" }),
       spacious: num(0, { min: 0, max: 1 }),
       crofts: num(null, { min: 0, max: 1 }), // the share of plots with a croft behind; else the type's
@@ -198,12 +198,12 @@ export const TYPES = {
       surface: { ...oneOf(SURFACES, null), only: ["yard"] },
       fence: { ...oneOf(["wattle", "wood", "stone"], null), only: ["yard"] },
       rot: num(0, { unit: "deg" }),
-      trees: num(null, { min: 0, only: ["woods"] }),
+      trees: num(null, { min: 0, max: 20000, integer: true, only: ["woods"] }),
       density: { ...oneOf(["sparse", "open", "thick", "dense"], null), only: ["woods"], fallback: "it's drawn as thick" }, // a wood's: how thick its trees stand (thick if left out); a tree count wins
       mix: { kind: "object", default: null, only: ["woods"] }, // a wood's species shares, { bare: 0.15 } (the rest are firs)
       style: { ...oneOf(["green", "formal"], null), only: ["park"] }, // a park's: a village green (the default) or a formal garden
       system: { ...oneOf(["patchwork", "strips"], null), only: ["fields"] }, // a fields area's: enclosed fields or open strips; else picked from its seed
-      fieldSize: num(null, { unit: "ft", min: 50, only: ["fields"] }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
+      fieldSize: num(null, { unit: "ft", min: 50, max: 5000, only: ["fields"] }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
       border: { ...oneOf(["hedge", "drystone", "none"], null), only: ["fields", "cemetery"], fallback: "its seed picks one" }, // a fields area's or a cemetery's: what bounds it; else picked from its seed
       coverage: num(null, { min: 0, max: 1, only: ["fields"] }), // a fields area's: the share of its fields that are cultivated (0.65 if left out); the rest is grass
     },
@@ -216,13 +216,13 @@ export const TYPES = {
       straight: bool(false), // drawn straight between its points (a town wall's straight runs, say); else it curves
       // Town walls and palisades. A path whose last point is its first is a closed loop, its outside outward; an open
       // run's outside is on its `side` (left or right, going along the path from its first point)
-      thickness: num(null, { unit: "ft", min: 1, byClass: { town: 12, palisade: 4 }, only: TOWN_WALLS }),
+      thickness: num(null, { unit: "ft", min: 1, max: 100, byClass: { town: 12, palisade: 4 }, only: TOWN_WALLS }),
       towers: { ...oneOf(["roofed", "open", "mixed"], null), only: TOWN_WALLS, fallback: "picked from its seed" },
       // (corners: round at its corners and ends, square between, as a battle map's castle has them by default)
       towerShape: { ...oneOf(["round", "square", "mixed", "corners"], null), only: TOWN_WALLS, fallback: "picked from its seed (a palisade's are square; on a battle map round at the corners, square between)" },
-      towerSpacing: num(null, { unit: "ft", min: 30, byClass: { town: 120, palisade: 90 }, only: TOWN_WALLS }),
+      towerSpacing: num(null, { unit: "ft", min: 30, max: 1000, byClass: { town: 120, palisade: 90 }, only: TOWN_WALLS }),
       outside: { ...oneOf(["none", "ditch", "moat"], "none"), only: TOWN_WALLS },
-      ditchWidth: num(null, { unit: "ft", min: 5, byClass: { town: 20, palisade: 12 }, only: TOWN_WALLS }),
+      ditchWidth: num(null, { unit: "ft", min: 5, max: 300, byClass: { town: 20, palisade: 12 }, only: TOWN_WALLS }),
       side: { ...oneOf(["left", "right"], "left"), only: [...TOWN_WALLS, "cliff"] },
       // A cliff: its path is its top edge, the drop on its side (the low ground, left or right going along it); its
       // rock is the stone it's cut in
@@ -237,7 +237,7 @@ export const TYPES = {
     // footprints in snow, drawn in winter only)
     classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll", "cairn", "standing-stone", "sledge", "tracks", "ribbon"],
     // (variant: which of its art's pieces, else from the seed: a soldiers' camp's tents all one cloth)
-    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }), variant: num(null, { min: 0, integer: true }) },
+    fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }), variant: num(null, { min: 0, max: 999, integer: true }) },
   },
   label: {
     geometry: "point",

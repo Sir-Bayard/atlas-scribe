@@ -9,8 +9,8 @@ import { rerollable } from "../core/seeds.mjs";
 import { TOOLS } from "../core/draw.mjs";
 import { OLD_PROFILES } from "../core/plan.mjs";
 import { cleanFont } from "../core/labels.mjs";
+import { esc, labelAttr } from "./util.mjs";
 
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 /** Words for a feature in the inspector's heading: "village district", "woods", "lane". */
 export function kindOf(f) {
@@ -91,10 +91,10 @@ function fieldHTML(field, disabled, fonts = []) {
   // Back to the default: shown only when the plan sets it (a kind can't be cleared)
   const reset = field.required ? ""
     : set && field.name !== "class" && field.kind !== "boolean"
-    ? `<button type="button" class="as-pv-reset" data-action="asReset" data-field="${esc(field.name)}" data-tooltip="Back to the default" ${dis}><i class="fa-solid fa-rotate-left"></i></button>`
-    : field.kind === "boolean" && set ? `<button type="button" class="as-pv-reset" data-action="asReset" data-field="${esc(field.name)}" data-tooltip="Back to the default (${esc(wordsFor(field, field.auto))})" ${dis}><i class="fa-solid fa-rotate-left"></i></button>` : "";
+    ? `<button type="button" class="as-pv-reset" data-action="asReset" data-field="${esc(field.name)}"${labelAttr(`${field.label}: back to the default`)} ${dis}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>`
+    : field.kind === "boolean" && set ? `<button type="button" class="as-pv-reset" data-action="asReset" data-field="${esc(field.name)}"${labelAttr(`${field.label}: back to the default (${wordsFor(field, field.auto)})`)} ${dis}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>` : "";
   return `<div class="as-pv-field as-k-${esc(field.kind)} ${set ? "as-set" : ""}">
-      <label for="${id}" ${field.help ? `data-tooltip="${esc(field.help)}"` : ""}>${esc(field.label)}</label>
+      <label for="${id}" ${field.help ? `data-tooltip-text="${esc(field.help)}"` : ""}>${esc(field.label)}</label>
       <div class="as-pv-input">${input}${unit}${reset}</div>
     </div>`;
 }
@@ -104,6 +104,12 @@ function groupsHTML(fields, disabled, fonts) {
   const main = fields.filter((f) => !f.more), more = fields.filter((f) => f.more);
   return `${main.map((f) => fieldHTML(f, disabled, fonts)).join("")}
     ${more.length ? `<details class="as-pv-more" ${more.some((f) => f.value !== undefined) ? "open" : ""}><summary>More</summary>${more.map((f) => fieldHTML(f, disabled, fonts)).join("")}</details>` : ""}`;
+}
+
+/** A feature's Reroll and Lock buttons (in the list and the inspector): named for it, Lock a toggle. */
+export function rerollButtons(id, name, locked, working) {
+  return `<button type="button" data-action="asReroll" data-id="${esc(id)}"${labelAttr(`Reroll ${name}`)} ${locked || working ? "disabled" : ""}><i class="fa-solid fa-dice" aria-hidden="true"></i></button>
+    <button type="button" data-action="asLock" data-id="${esc(id)}"${labelAttr(`Lock ${name}: rerolls leave it alone`)} aria-pressed="${locked}" class="${locked ? "as-on" : ""}" ${working ? "disabled" : ""}><i class="fa-solid ${locked ? "fa-lock" : "fa-lock-open"}" aria-hidden="true"></i></button>`;
 }
 
 /**
@@ -116,20 +122,19 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
   const fields = fieldsOf(plan, id);
   const locked = Array.isArray(plan.locked) && plan.locked.includes(id);
   const roll = rerollable(f)
-    ? `<button type="button" data-action="asReroll" data-id="${esc(id)}" data-tooltip="Reroll" ${locked || working ? "disabled" : ""}><i class="fa-solid fa-dice"></i></button>
-       <button type="button" data-action="asLock" data-id="${esc(id)}" data-tooltip="${locked ? "Locked: rerolls leave it alone. Click to unlock." : "Lock, so rerolls leave it alone"}" class="${locked ? "as-on" : ""}" ${working ? "disabled" : ""}><i class="fa-solid ${locked ? "fa-lock" : "fa-lock-open"}"></i></button>`
+    ? rerollButtons(id, f.name ?? id, locked, working)
     : "";
   const parts = f.type === "landmark" && Array.isArray(f.buildings) ? `<p class="as-pv-hint">${f.buildings.length} building${f.buildings.length === 1 ? "" : "s"}; their own settings can't be changed here yet.</p>` : "";
   return `<section class="as-pv-insp" data-id="${esc(id)}">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>${esc(f.name ?? f.text ?? id)}</strong><em>${esc(kindOf(f))}${f.name || f.text ? ` · ${esc(id)}` : ""}</em></span>
         ${roll}
       </header>
       <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
       <div class="as-pv-tools">
-        ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall in</button>` : ""}
-        <button type="button" data-action="asDelete" data-id="${esc(id)}" class="as-danger" data-tooltip="Take it out of the plan (Undo brings it back)" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Delete</button>
+        ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip-text="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall in</button>` : ""}
+        <button type="button" data-action="asDelete" data-id="${esc(id)}" class="as-danger" data-tooltip-text="Take it out of the plan (Undo brings it back)" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Delete</button>
       </div>
     </section>`;
 }
@@ -164,7 +169,7 @@ export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}
     : "Pinned, it becomes a road in the plan along the same line, and stays when the district is rerolled; the district's other streets then follow it, so they change.";
   return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>${esc(kind === "house" ? called : item.class === "street" ? "Street" : "Lane")}</strong><em>generated · ${esc(item.id)}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -172,7 +177,7 @@ export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}
         <p class="as-pv-hint">${esc(after)}</p>
       </div>
       <div class="as-pv-tools">
-        <button type="button" data-action="asPin" ${working || fixed ? "disabled" : ""} data-tooltip="${fixed ? "Its district's Centerpiece setting keeps it" : "Keep it when the district is rerolled"}"><i class="fa-solid fa-thumbtack"></i> Pin</button>
+        <button type="button" data-action="asPin" ${working || fixed ? "disabled" : ""} data-tooltip-text="${fixed ? "Its district's Centerpiece setting keeps it" : "Keep it when the district is rerolled"}"><i class="fa-solid fa-thumbtack"></i> Pin</button>
       </div>
     </section>`;
 }
@@ -184,10 +189,10 @@ export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}
 export function underlayHTML(u, { working = false } = {}) {
   const [x0, y0, x1, y1] = u.rect;
   const num = (key, label, value, step = 0.5) => `<div class="as-pv-field"><label>${esc(label)}</label><div class="as-pv-input"><input type="number" data-under="${key}" value="${Math.round(value * 100) / 100}" step="${step}"><span class="as-pv-unit">squares</span></div></div>`;
-  const box = (key, label, on, help) => `<div class="as-pv-field as-k-boolean"><label data-tooltip="${esc(help)}">${esc(label)}</label><div class="as-pv-input"><input type="checkbox" data-under="${key}" ${on ? "checked" : ""}></div></div>`;
+  const box = (key, label, on, help) => `<div class="as-pv-field as-k-boolean"><label data-tooltip-text="${esc(help)}">${esc(label)}</label><div class="as-pv-input"><input type="checkbox" data-under="${key}" ${on ? "checked" : ""}></div></div>`;
   return `<section class="as-pv-insp" data-id="@underlay">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Underlay</strong><em>${esc(u.path.split("/").pop())}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -213,7 +218,7 @@ export function planHTML(plan, { working = false, fonts = [] } = {}) {
   const scene = fields.filter((f) => f.group === "scene");
   return `<section class="as-pv-insp" data-id="@plan">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Plan settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -262,7 +267,7 @@ export function paletteHTML(tool, { points = 0, working = false } = {}) {
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">
       <header>
-        <button type="button" data-action="asBack" data-tooltip="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Draw</strong><em>${esc(active ? `a new ${active.label.toLowerCase()}` : "pick what to add")}</em></span>
       </header>
       <div class="as-pv-fields">
@@ -293,7 +298,7 @@ export function battleHTML(st) {
   const zoomLabel = (z) => (z === 1 ? "True size" : z === 1.5 ? "1.5 times true size" : `${z} times true size`);
   return `<section class="as-pv-insp as-pv-palette as-pv-battle">
       <header>
-        <button type="button" data-action="asBattle" data-tooltip="Back to the list" aria-label="Back to the list" ${st.working ? "disabled" : ""}><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" data-action="asBattle" data-tooltip-text="Back to the list" aria-label="Back to the list" ${st.working ? "disabled" : ""}><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Battle map</strong><em>an area of this map, at battle size</em></span>
       </header>
       <div class="as-pv-fields">
@@ -305,7 +310,7 @@ export function battleHTML(st) {
         <p class="as-pv-hint as-pv-battle-size ${st.big ? "as-warn" : ""}">${esc(battleSizeText(st))}</p>
       </div>
       <div class="as-pv-tools">
-        <button type="button" data-action="asBattleMake" ${st.placed && !st.working && !st.tooBig ? "" : "disabled"} data-tooltip="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making it" : "Make battle map"}</button>
+        <button type="button" data-action="asBattleMake" ${st.placed && !st.working && !st.tooBig ? "" : "disabled"} data-tooltip-text="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making it" : "Make battle map"}</button>
         ${st.zooming ? `<button type="button" data-action="asBattleStop"><i class="fa-solid fa-stop"></i> Stop</button>` : `<button type="button" data-action="asBattle" ${st.working ? "disabled" : ""}><i class="fa-solid fa-xmark"></i> Cancel</button>`}
       </div>
     </section>`;

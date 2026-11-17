@@ -4,6 +4,9 @@
  * art and reads at city scale. Squares throughout. paint(ctx) takes the same ctx as the other styles; art is never
  * asked for.
  */
+import { hashAt } from "../../core/rng.mjs";
+import { PALETTE, SEASON } from "./palette.mjs";
+import { cornersOf } from "./title.mjs";
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets, outlineOf } from "../roofs.mjs";
 import { offset, union, difference, intersect, bands, shapes } from "../../core/lots/poly.mjs";
@@ -13,30 +16,6 @@ import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
 export const MAX_BLUR = 1.5;
 
 export const rolesFor = () => [];
-
-/** The palette. Summer, with what spring, autumn and winter change. */
-const PALETTE = {
-  land: [178, 190, 140], // the country: a soft sage
-  urban: [212, 202, 176], // a city's built-up ground
-  street: [230, 221, 198],
-  edge: [138, 116, 84], // a street's inked edge
-  ink: [58, 46, 36],
-  paper: [236, 226, 200], // what every color leans toward, so they sit together
-  water: [152, 194, 196],
-  deep: [128, 176, 184],
-  bank: [206, 194, 156],
-  waterInk: [70, 112, 122],
-  stone: [204, 196, 176],
-  shadow: "rgba(66,52,34,0.18)",
-  canopy: [104, 132, 78],
-  canopyInk: [56, 70, 42],
-  lawn: [168, 186, 120],
-};
-const SEASON = {
-  autumn: { land: [186, 186, 136], canopy: [150, 130, 70], canopyMix: [[170, 112, 58], [128, 132, 70], [176, 146, 66]] },
-  winter: { land: [226, 230, 232], urban: [230, 228, 222], street: [244, 244, 242], canopy: [96, 112, 96], lawn: [214, 222, 226], water: [176, 200, 212], deep: [160, 188, 204] },
-  spring: { land: [172, 192, 132] },
-};
 
 const rgb = ([r, g, b], a = 1) => (a >= 1 ? `rgb(${r | 0},${g | 0},${b | 0})` : `rgba(${r | 0},${g | 0},${b | 0},${a})`);
 const mixA = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
@@ -59,7 +38,7 @@ function segDist([px, py], [ax, ay], [bx, by]) {
   return Math.hypot(ax + t * dx - px, ay + t * dy - py);
 }
 /** A small stable hash of a number pair, 0 to 1 (for per-item variety without a stream). */
-const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+const hash = (a, b) => hashAt(a, b);
 /** A smooth wander, -1 to 1, fixed to the map (so tiles join): a hand's unsteadiness. */
 const wander = (x, y) => Math.sin(x * 1.31 + y * 0.37) * 0.5 + Math.sin(x * 0.53 - y * 1.73 + 1.7) * 0.32 + Math.sin(x * 2.9 + y * 2.3) * 0.18;
 /** A path redrawn by hand: a point every 0.4 squares, each moved across the line by up to amp squares. */
@@ -620,50 +599,6 @@ function fieldMarks(ctx, P) {
   for (let i = 0; i < 60; i++) { u.g.fillStyle = `rgba(150,110,40,${0.18 + hash(i, 7) * 0.2})`; u.g.beginPath(); u.g.arc(hash(i, 8) * S, hash(i, 9) * S, Math.max(0.6, pp * 0.022), 0, 2 * Math.PI); u.g.fill(); }
   out.grain = mapPattern(g, u, ctx, 2);
   return out;
-}
-
-/**
- * The map's corners for its dressing, emptiest first (fewest buildings, roads and water there): the compass rose takes
- * the first, the scale bar the second and the cartouche with the map's name the third. unit: the dressing's own scale,
- * a hundredth of the map's shorter side; cw, ch: a corner's size; all in squares.
- */
-function cornersOf(L) {
-  const [mw, mh] = L.size?.squares ?? [0, 0];
-  const unit = Math.min(mw, mh) / 100;
-  const cw = mw * 0.24, ch = mh * 0.24;
-  const busy = (cx, cy, w, h) => L.items.filter((i) => (i.kind === "building" || i.kind === "way" || i.kind === "water") && [[i.cx ?? i.x ?? i.path?.[0]?.[0], i.cy ?? i.y ?? i.path?.[0]?.[1]]].some(([x, y]) => x > cx && x < cx + w && y > cy && y < cy + h)).length;
-  const corners = [["nw", 0, 0], ["ne", mw - cw, 0], ["sw", 0, mh - ch], ["se", mw - cw, mh - ch]].map(([k, cx, cy]) => ({ k, cx, cy, n: busy(cx, cy, cw, ch) })).sort((a, b) => a.n - b.n);
-  return { unit, cw, ch, corners };
-}
-
-/**
- * Where a dressed map's cartouche goes, for a tile of its own over the map (hidden until the GM shows it): { x, y, w, h,
- * font } in squares (x, y its top left; font the letters' height), or null for a map that isn't dressed or has no
- * name. measure(text, fontSquares): the text's width in squares, as the page will draw it.
- */
-export function titleBox(L, measure) {
-  const name = L.title;
-  if (!L.dressing || !name || !(L.size?.squares?.[0] > 0)) return null;
-  const { unit, cw, ch, corners } = cornersOf(L);
-  const c = corners[2], x = c.cx + cw / 2, y = c.cy + ch / 2;
-  // (a long name in smaller letters, so its box keeps to its corner)
-  let font = unit * 3.2;
-  const fit = (cw - unit * 11) / Math.max(1e-6, measure(name, font)); // (its padding, and clear of the frame each side)
-  if (fit < 1) font *= fit;
-  const w = measure(name, font) + unit * 6, h = unit * 6;
-  return { x: x - w / 2, y: y - h / 2, w, h, font, unit };
-}
-
-/** Paints the cartouche into its own canvas (g), box from titleBox, at pp pixels a square. */
-export function paintTitle(g, L, box, pp) {
-  const P = { ...PALETTE, ...(SEASON[L.season] ?? {}) };
-  const ink = (a = 1) => `rgba(${P.ink.join(",")},${a})`, paper = (a = 1) => `rgba(${P.paper.join(",")},${a})`;
-  const { w, h, unit, font } = box;
-  g.fillStyle = paper(0.92); g.fillRect(0, 0, w * pp, h * pp);
-  g.strokeStyle = ink(0.9); g.lineWidth = Math.max(1, pp * 0.06); g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, w * pp - g.lineWidth, h * pp - g.lineWidth);
-  g.lineWidth = Math.max(1, pp * 0.025); g.strokeRect(unit * 0.6 * pp, unit * 0.6 * pp, (w - unit * 1.2) * pp, (h - unit * 1.2) * pp);
-  g.fillStyle = ink(0.92); g.font = `italic ${Math.max(4, Math.round(font * pp))}px serif`; g.textAlign = "center"; g.textBaseline = "middle";
-  g.fillText(L.title, (w / 2) * pp, (h / 2 + unit * 0.2) * pp);
 }
 
 /**

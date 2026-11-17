@@ -6,18 +6,30 @@
  * Messages in:  { id, type, payload }
  * Messages out: { id, progress: { pct, label } } while working, then { id, result } or { id, error }.
  */
-import { rng } from "../core/rng.mjs";
 import { layoutPlan } from "../core/layout/index.mjs";
 import { pinnables } from "../core/pin.mjs";
 import { zoomPlan } from "../core/zoom.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
 import * as sketch from "./styles/sketch.mjs";
 
+/** The last layout made here, kept so a paint of it needn't be sent it back from the page: { id, layout }. */
+let kept = null, nextId = 1;
+
 const jobs = {
-  /** Plan to Layout. Returns { layout, roles }: roles are the art roles the layout's style needs. */
-  async layout({ plan }, progress) {
+  /**
+   * Plan to Layout. Returns { layout, roles, layoutId }: roles are the art roles the layout's style needs; with keep,
+   * the layout is kept here for a paint, and layoutId names it.
+   */
+  async layout({ plan, keep = false }, progress) {
     const layout = layoutPlan(plan, { onProgress: (p, l) => progress(p, l) });
-    return { layout, roles: styleOf(layout).rolesFor(layout) };
+    kept = keep ? { id: nextId++, layout } : null;
+    return { layout, roles: styleOf(layout).rolesFor(layout), layoutId: kept?.id ?? null };
+  },
+
+  /** Lets go of the layout kept for a paint that won't come (a render that failed or stopped first). */
+  async forget() {
+    kept = null;
+    return true;
   },
 
   /**
@@ -25,8 +37,12 @@ const jobs = {
    * look, all } for a battle map's drawn art. Returns paintLayout's result: { blob, thumb, width, height, tiles,
    * failedArt, brokenArt, overheads, furniture, mist, levels, drawnFiles, ms }.
    */
-  async paint({ layout, art, scale, tileSize, quality, drawn }, progress) {
-    return paintLayout({ layout, art, scale, tileSize, quality, drawn }, progress);
+  async paint({ layout = null, layoutId = null, art, scale, tileSize, quality, drawn }, progress) {
+    // (by its id, the layout made here last; a worker started since doesn't have it, and says so)
+    const L = layout ?? (kept && kept.id === layoutId ? kept.layout : null);
+    if (!L) throw new Error("no layout: the layout to paint isn't kept in this worker (send it)");
+    kept = null;
+    return paintLayout({ layout: L, art, scale, tileSize, quality, drawn }, progress);
   },
 
   /**
@@ -58,86 +74,7 @@ const jobs = {
     progress(0.95, "Making the battle map");
     return zoomPlan(plan, layout, rect, { zoom });
   },
-
-  /** A test pattern: proves the worker, image loading, soft masks, progress and WebP output. */
-  async test({ width = 2048, height = 2048, texture = null, seed = 1 }, progress) {
-    const t0 = performance.now();
-    const r = rng(seed, "test");
-    const c = new OffscreenCanvas(width, height);
-    const g = c.getContext("2d");
-    progress(0.05, "Ground");
-    g.fillStyle = "#d8dde3";
-    g.fillRect(0, 0, width, height);
-    if (texture) {
-      const bmp = await loadBitmap(texture);
-      const p = g.createPattern(bmp, "repeat");
-      p.setTransform(new DOMMatrix().scale(0.5));
-      g.fillStyle = p;
-      g.fillRect(0, 0, width, height);
-      bmp.close();
-    }
-    progress(0.25, "Soft patches");
-    softFill(g, width, height, (k) => {
-      for (let i = 0; i < 120; i++) {
-        k.beginPath();
-        k.arc(r.next() * width, r.next() * height, 20 + r.next() * 120, 0, Math.PI * 2);
-        k.fill();
-      }
-    }, "rgb(40,60,90)", 18, 0.35);
-    progress(0.5, "Grid");
-    g.strokeStyle = "rgba(20,30,40,0.35)";
-    g.lineWidth = 2;
-    for (let x = 0; x <= width; x += 100) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); }
-    for (let y = 0; y <= height; y += 100) { g.beginPath(); g.moveTo(0, y); g.lineTo(width, y); g.stroke(); }
-    progress(0.7, "Blocks");
-    for (let i = 0; i < 400; i++) {
-      g.save();
-      g.translate(r.next() * width, r.next() * height);
-      g.rotate(r.range(-0.2, 0.2));
-      g.fillStyle = `hsl(${r.int(40) + 10} 35% ${r.int(20) + 35}%)`;
-      g.fillRect(-30, -18, 60, 36);
-      g.strokeStyle = "rgba(20,20,28,0.8)";
-      g.strokeRect(-30, -18, 60, 36);
-      g.restore();
-    }
-    g.fillStyle = "rgba(20,30,40,0.9)";
-    g.font = `bold ${Math.round(width / 20)}px sans-serif`;
-    g.textAlign = "center";
-    g.fillText("AtlasScribe test", width / 2, height / 2);
-    progress(0.9, "Encoding");
-    const blob = await c.convertToBlob({ type: "image/webp", quality: 0.86 });
-    return { blob, width, height, ms: Math.round(performance.now() - t0) };
-  },
 };
-
-/** Fetch an image by URL (same origin as Foundry) and decode it, off the page. */
-async function loadBitmap(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`couldn't load ${url} (HTTP ${res.status})`);
-  return createImageBitmap(await res.blob());
-}
-
-/**
- * Soft edges: draw shapes blurred into a mask, fill the mask with a color or pattern (source-in), and lay it down.
- * Blurring the mask, never the texture, keeps the texture sharp.
- */
-function softFill(g, width, height, shape, fill, blurPx, alpha = 1, op = "source-over") {
-  const m = new OffscreenCanvas(width, height);
-  const q = m.getContext("2d");
-  q.filter = blurPx ? `blur(${blurPx}px)` : "none";
-  q.fillStyle = "#000";
-  q.strokeStyle = "#000";
-  shape(q);
-  q.filter = "none";
-  q.globalCompositeOperation = "source-in";
-  q.fillStyle = fill;
-  q.fillRect(0, 0, width, height);
-  g.save();
-  g.globalAlpha = alpha;
-  g.globalCompositeOperation = op;
-  g.drawImage(m, 0, 0);
-  g.restore();
-}
 
 // A message that can't be read (it failed to clone) would otherwise leave its job waiting forever
 self.onmessageerror = () => self.postMessage({ id: null, error: { message: "a message to the worker couldn't be read" } });

@@ -12,6 +12,7 @@
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
 import { makeNoise } from "../../core/noise.mjs";
+import { hashAt } from "../../core/rng.mjs";
 import { footprint, roofHeight } from "../../core/layout/battle.mjs";
 import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, waterBand, TERRAIN } from "../../core/layout/terrain.mjs";
@@ -109,6 +110,7 @@ function bandOf(im) {
     const d = k.getImageData(0, 0, w, im.height).data, rows = [];
     for (let y = 0; y < im.height; y++) { let s = 0; for (let x = 0; x < w; x++) s += d[(y * w + x) * 4 + 3]; if (s / w > 128) rows.push(y); }
     if (rows.length) band = { mid: (rows[0] + rows.at(-1) + 1) / 2, h: rows.at(-1) - rows[0] + 1 };
+    c.width = c.height = 1;
   } catch { /* (an image the canvas can't read: the guess above) */ }
   BANDS.set(im, band);
   return band;
@@ -135,7 +137,7 @@ function crownOf(t, s) {
   return ({ large: 4, medium: 3, small: 2 }[t.size] ?? 4) * (0.85 + 0.3 * k);
 }
 /** Where a tree's art is turned and which variant it takes: from its own, else from where it stands. */
-const treeTurn = (t) => (Number.isFinite(t.rot) ? t.rot : (Math.abs(Math.sin(t.x * 12.9898 + t.y * 78.233) * 43758.5453) % 1) * 360);
+const treeTurn = (t) => (Number.isFinite(t.rot) ? t.rot : hashAt(t.x, t.y) * 360);
 /** The shadow's direction: the sun low in the southeast, so shadows fall to the northwest. */
 const SHADOW = [-0.7, -0.7];
 
@@ -286,6 +288,16 @@ export function rolesFor(layout) {
  *        layout, art(role, variant) -> ImageBitmap | null, progress(pct, label) }
  */
 export function paint(ctx) {
+  const brush = brushOf(ctx);
+  if (ctx.floor) { brush.paintFloor(ctx.floor); return; }
+  for (const pass of PASSES) pass(brush);
+}
+
+/**
+ * What every pass of the ground's painting shares: the tile and its scratch canvases, the map's units, the art, and the
+ * drawing helpers. g is the canvas drawn on now (a pass may draw a while on a layer of its own: setG).
+ */
+function brushOf(ctx) {
   const { mask, W, H, x0, y0, pp, layout: L, art, progress = () => {} } = ctx;
   // (the map's canvas, or for a while a layer of its own to be laid over it softened)
   let g = ctx.g;
@@ -296,7 +308,7 @@ export function paint(ctx) {
   /** A number from 0 to 1 for a place on the map (and a key), the same in every tile. */
   // (a seed in words as a number)
   const seedN = Number.isFinite(Number(L.seed ?? 1)) ? Number(L.seed ?? 1) : [...String(L.seed)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 2147483647, 7);
-  const hashAt = (a, b, k = 0) => Math.abs(Math.sin(a * 12.9898 + b * 78.233 + k * 37.719 + seedN * 0.618) * 43758.5453) % 1;
+  const hashHere = (a, b, k = 0) => hashAt(a, b, k, seedN);
   /**
    * A clip around a piece drawn turned about its middle (w by h squares), so its shadow is worked out only near it
    * (shadows are slow).
@@ -371,7 +383,8 @@ export function paint(ctx) {
       bq.filter = "none";
       k = bq; out = ctx.blur;
     }
-    if (noise) { k.globalCompositeOperation = "destination-in"; k.imageSmoothingEnabled = true; k.drawImage(noise.canvas, noise.x, noise.y, noise.w, noise.h); }
+    // (a noise mask is made for one fill: let go once it's drawn)
+    if (noise) { k.globalCompositeOperation = "destination-in"; k.imageSmoothingEnabled = true; k.drawImage(noise.canvas, noise.x, noise.y, noise.w, noise.h); noise.canvas.width = noise.canvas.height = 1; }
     k.globalCompositeOperation = "source-in";
     k.fillStyle = fill;
     k.fillRect(rx, ry, rw, rh);
@@ -415,6 +428,9 @@ export function paint(ctx) {
     const n = noiseMask("battle-cap", C.scale, C.cut, C.soft), lg = layer.getContext("2d");
     lg.globalCompositeOperation = "destination-in"; lg.imageSmoothingEnabled = true; lg.drawImage(n.canvas, n.x, n.y, n.w, n.h);
     g.save(); g.globalAlpha = C.alpha; g.drawImage(layer, 0, 0); g.restore();
+    // (the layer and the mask let go at once: a map-sized canvas each)
+    layer.width = layer.height = 1;
+    n.canvas.width = n.canvas.height = 1;
   };
   /** A crisp fill straight onto the map. */
   const fill = (shape, style, alpha = 1) => { g.save(); g.globalAlpha = alpha; g.fillStyle = style; g.strokeStyle = style; shape(g); g.restore(); };
@@ -542,7 +558,6 @@ export function paint(ctx) {
   }
   const curls = (f) => items("stairs").filter((st) => st.curl && stairFloors(st).includes(f) && meets(bboxOf(st.box), 1));
 
-  if (ctx.floor) { paintFloor(ctx.floor); return; }
 
   /**
    * A floor above or below the ground (1 and up, -1 a cellar) as a level of its own: empty but for the buildings with
@@ -601,9 +616,20 @@ export function paint(ctx) {
     for (const st of curls(f)) curlStairs(st);
     progress(1, f < 0 ? "Cellars" : "Upper floors");
   }
+  return {
+    ctx, H, L, W, X, Y, art, bboxOf, boxAround, clipNear, curlStairs, curls, curtains, dark, feet, fill, gb, hashHere, items, line, masonry, meets, noiseMask, paintFloor, poly, pp, progress, q, rectAt, s, snowCap, soft, strip, stripPath, stroke, sub, tex, wallTops, ways, wx1, wy1, x0, y0,
+    get g() { return g; },
+    setG(v) { g = v; return v; },
+  };
+}
 
-  // 1. The ground: its art and two more in broad soft patches (in winter, snow, lighter snow and grass showing
-  // through)
+/**
+ * 1. The ground: its art and two more in broad soft patches (in winter, snow, lighter snow and grass showing
+ * through)
+ */
+function groundPass(brush) {
+  const { H, L, W, X, Y, art, bboxOf, boxAround, gb, items, meets, noiseMask, poly, pp, progress, s, soft, sub, tex } = brush;
+  const g = brush.g;
   progress(0.02, "Ground");
   const [gBase, gLight, gThird] = groundRoles(gb, s);
   const B = BLEND.ground;
@@ -648,13 +674,26 @@ export function paint(ctx) {
   // (a wood's own trees, not a park's or a hedgerow's; none in winter)
   const woods = s === "winter" ? [] : L.items.filter((i) => i.kind === "tree" && i.wild && meets([i.x, i.y, i.x, i.y], 4));
   if (woods.length && art(`ground.forest.${s}`)) soft((k) => { for (const t of woods) { k.beginPath(); k.arc(X(t.x), Y(t.y), 3.2 * pp, 0, 2 * Math.PI); k.fill(); } }, tex(`ground.forest.${s}`), { blur: 0.9, alpha: 0.4, noise: noiseMask("battle-forest", 4, -0.15, 0.3), box: boxAround(woods.map((t) => [t.x, t.y, t.x, t.y]), 3.5) });
+  Object.assign(brush, { levels });
+}
 
-  // 2. Ground worn by feet around the buildings
+/**
+ * 2. Ground worn by feet around the buildings
+ */
+function wornPass(brush) {
+  const { boxAround, feet, meets, noiseMask, poly, pp, s, soft, tex } = brush;
   const trodden = tex(`surface.trodden.${s}`);
   const near = feet.filter(({ bb }) => meets(bb, 4));
   if (near.length) soft((k) => { k.lineJoin = "round"; k.lineWidth = 2.2 * pp; for (const { f } of near) { poly(k, f); k.stroke(); k.fill(); } }, trodden, { blur: 0.9, noise: noiseMask("battle-yard", 3, -0.2, 0.3), alpha: 0.75, box: boxAround(near.map((x) => x.bb), 1.2) });
+  Object.assign(brush, { trodden, near });
+}
 
-  // 3. Water: a trodden bank, a stony edge, the water, deeper in the middle
+/**
+ * 3. Water: a trodden bank, a stony edge, the water, deeper in the middle
+ */
+function waterPass(brush) {
+  const { H, L, W, X, Y, art, bboxOf, boxAround, clipNear, fill, hashHere, items, levels, meets, noiseMask, poly, pp, progress, s, soft, strip, stripPath, stroke, sub, tex, trodden } = brush;
+  let g = brush.g;
   progress(0.15, "Water");
   for (const w of items("water")) {
     const role = w.frozen ? "water.ice" : `water.${w.class}`;
@@ -698,15 +737,15 @@ export function paint(ctx) {
     const pts = resample(w.path, I.drift.step);
     for (let i = 1; i < pts.length - 1; i++) {
       const p = pts[i];
-      if (hashAt(p[0], p[1], 21) > I.drift.chance || !meets([p[0], p[1], p[0], p[1]], 2)) continue;
+      if (hashHere(p[0], p[1], 21) > I.drift.chance || !meets([p[0], p[1], p[0], p[1]], 2)) continue;
       const a = Math.atan2(pts[i + 1][1] - pts[i - 1][1], pts[i + 1][0] - pts[i - 1][0]), n = [-Math.sin(a), Math.cos(a)];
-      const off = (hashAt(p[0], p[1], 22) - 0.5) * (w.width ?? 1) * 0.5, q = [p[0] + n[0] * off, p[1] + n[1] * off];
+      const off = (hashHere(p[0], p[1], 22) - 0.5) * (w.width ?? 1) * 0.5, q = [p[0] + n[0] * off, p[1] + n[1] * off];
       if (!pointInPolygon(q, w.channel)) continue;
-      const pick = hashAt(p[0], p[1], 23), kind = pick < 0.4 ? "foam" : pick < 0.75 ? "floe" : "icechunk";
-      const im = art(`prop.${kind}`, Math.floor(hashAt(p[0], p[1], 24) * 12));
+      const pick = hashHere(p[0], p[1], 23), kind = pick < 0.4 ? "foam" : pick < 0.75 ? "floe" : "icechunk";
+      const im = art(`prop.${kind}`, Math.floor(hashHere(p[0], p[1], 24) * 12));
       if (!im) continue;
       const size = I.drift[kind], ww = size * (kind === "foam" ? 2 : 1), hh = (ww * im.height) / im.width;
-      g.save(); g.globalAlpha = kind === "foam" ? I.drift.foamAlpha : 1; g.translate(X(q[0]), Y(q[1])); g.rotate(kind === "foam" ? a : hashAt(p[0], p[1], 25) * 2 * Math.PI); clipNear(ww, hh);
+      g.save(); g.globalAlpha = kind === "foam" ? I.drift.foamAlpha : 1; g.translate(X(q[0]), Y(q[1])); g.rotate(kind === "foam" ? a : hashHere(p[0], p[1], 25) * 2 * Math.PI); clipNear(ww, hh);
       if (kind !== "foam") { g.shadowColor = "rgba(6,14,22,0.35)"; g.shadowBlur = pp * 0.08; g.shadowOffsetX = SHADOW[0] * pp * 0.06; g.shadowOffsetY = SHADOW[1] * pp * 0.06; }
       g.drawImage(im, (-ww / 2) * pp, (-hh / 2) * pp, ww * pp, hh * pp); g.restore();
     }
@@ -864,13 +903,14 @@ export function paint(ctx) {
     const rw = Math.min(W, Math.ceil(X(box[2]))) - rx, rh = Math.min(H, Math.ceil(Y(box[3]))) - ry;
     if (rw <= 0 || rh <= 0) continue;
     const layer = new OffscreenCanvas(W, H), lg = layer.getContext("2d"), g0 = g;
-    g = lg;
-    try { for (const e of rims) shadeEdge(e); for (const e of rims) drawEdge(e); } finally { g = g0; }
+    g = brush.setG(lg);
+    try { for (const e of rims) shadeEdge(e); for (const e of rims) drawEdge(e); } finally { g = brush.setG(g0); }
     if (w && Array.isArray(w.path)) {
       lg.save(); lg.globalCompositeOperation = "destination-out"; lg.filter = `blur(${0.12 * pp}px)`;
       lg.beginPath(); for (const r of waterBand(w, -0.05)) sub(lg, r); lg.fill("evenodd"); lg.restore();
     }
     g.drawImage(layer, rx, ry, rw, rh, rx, ry, rw, rh);
+    layer.width = layer.height = 1;
   }
   // (the fall itself: dark water just below the step, white water broken along it)
   for (const e of edges.filter((x) => x.fall)) {
@@ -885,9 +925,16 @@ export function paint(ctx) {
     soft((kk) => stroke(kk, tierPath(e, 0.12, 2), 0.3, "butt"), "rgb(232,240,240)", { blur: 0.07, alpha: 0.8, noise: noiseMask("battle-fall", 0.3, -0.05, 0.45), box });
     g.restore();
   }
+  Object.assign(brush, { plain });
+}
 
-  // 4. Ways: a trodden verge, an unpaved way's dirt, a paved one's curb (with its shadow and the joint) and paving,
-  // narrower first so the main road runs through a junction. Ways of one look share a pass
+/**
+ * 4. Ways: a trodden verge, an unpaved way's dirt, a paved one's curb (with its shadow and the joint) and paving,
+ * narrower first so the main road runs through a junction. Ways of one look share a pass
+ */
+function waysPass(brush) {
+  const { H, L, W, X, Y, art, bboxOf, boxAround, fill, items, meets, noiseMask, poly, progress, s, soft, stripPath, stroke, tex, trodden, ways } = brush;
+  const g = brush.g;
   progress(0.25, "Streets");
   const wayBox = (list, add) => boxAround(list.map((w) => { const bb = bboxOf(w.path), r = (w.width ?? 1) / 2 + add; return [bb[0] - r, bb[1] - r, bb[2] + r, bb[3] + r]; }));
   const paved = ways.filter(wayPaving);
@@ -992,8 +1039,13 @@ export function paint(ctx) {
     // (a curb across the cut end)
     fill((k) => { for (const { p, dir, hw } of deadEnds) { const n = [-dir[1], dir[0]]; stroke(k, [[p[0] + n[0] * (hw + 0.25), p[1] + n[1] * (hw + 0.25)], [p[0] - n[0] * (hw + 0.25), p[1] - n[1] * (hw + 0.25)]], 0.25, "butt"); } }, tex("stone.curb"));
   }
+}
 
-  // 5. Squares: flagstones inside a curb
+/**
+ * 5. Squares: flagstones inside a curb
+ */
+function squaresPass(brush) {
+  const { L, bboxOf, fill, meets, poly, soft, stroke, tex } = brush;
   for (const sq of L.items.filter(isPlaza)) {
     const bb = bboxOf(sq.poly);
     if (!meets(bb, 1)) continue;
@@ -1002,8 +1054,14 @@ export function paint(ctx) {
     fill((k) => { poly(k, sq.poly); k.fill(); stroke(k, ring, 0.5); }, tex("stone.curb"));
     fill((k) => { poly(k, sq.poly); k.fill(); }, tex(PAVING[sq.surface] ?? "surface.flagstone"));
   }
+}
 
-  // 6. Gardens in tilled rows, graves, bridges (every shape a polygon on the map, so its pattern stays anchored)
+/**
+ * 6. Gardens in tilled rows, graves, bridges (every shape a polygon on the map, so its pattern stays anchored)
+ */
+function gardensPass(brush) {
+  const { X, Y, art, bboxOf, clipNear, fill, items, meets, noiseMask, poly, pp, progress, rectAt, s, soft, stroke, tex, trodden, ways } = brush;
+  const g = brush.g;
   progress(0.4, "Yards");
   for (const gd of items("surface").map((x) => x.garden).filter(Boolean)) {
     if (!meets([gd.cx, gd.cy, gd.cx, gd.cy], Math.max(gd.w, gd.d))) continue;
@@ -1086,9 +1144,14 @@ export function paint(ctx) {
       fill((k) => { poly(k, pts); k.fill(); }, s === "winter" ? tex("surface.flagstone.winter", 0, c.angle ?? 0) : tex("surface.flagstone", 1, c.angle ?? 0));
     }
   }
+}
 
-  // 7. Yards: trodden ground inside each house's fenced yard and each work yard (a grass yard isn't worn); fences and
-  // walls with their shadows
+/**
+ * 7. Yards: trodden ground inside each house's fenced yard and each work yard (a grass yard isn't worn); fences and
+ * walls with their shadows
+ */
+function yardsPass(brush) {
+  const { X, Y, art, bboxOf, boxAround, curtains, fill, items, meets, noiseMask, poly, pp, s, snowCap, soft, stripPath, stroke, tex, trodden, wallTops } = brush;
   const yards = items("surface").filter((i) => (i.class === "backyard" || (i.class === "yard" && i.surface !== "grass")) && Array.isArray(i.poly)).map((y) => ({ y, bb: bboxOf(y.poly) })).filter(({ bb }) => meets(bb, 1.5));
   if (yards.length) soft((k) => { for (const { y } of yards) { poly(k, y.poly); k.fill(); } }, trodden, { blur: 0.3, noise: noiseMask("battle-yd", 2.5, -0.3, 0.4), alpha: 0.7, box: boxAround(yards.map((x) => x.bb)) });
   // (rails: a yard's fence and any other fence or wall line; not hedges, balks or a garden's clipped box)
@@ -1156,8 +1219,13 @@ export function paint(ctx) {
     if (wood.length) fill((k) => { for (const w of wood) stroke(k, w.path, thick(w), "butt"); }, tex("wood.stake"));
     wallTops(curtains);
   }
+}
 
-  // 8. Fountains: a stone basin of water
+/**
+ * 8. Fountains: a stone basin of water
+ */
+function fountainsPass(brush) {
+  const { X, Y, fill, items, meets, pp, s, tex } = brush;
   for (const f of items("prop", "fountain")) {
     const r = Math.max(1.2, (0.45 * (f.scale ?? 1)) / 2);
     if (!meets([f.x, f.y, f.x, f.y], r + 0.5)) continue;
@@ -1165,8 +1233,14 @@ export function paint(ctx) {
     fill((k) => { k.beginPath(); k.arc(X(f.x), Y(f.y), (r - 0.35) * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond"));
     fill((k) => { k.beginPath(); k.arc(X(f.x), Y(f.y), 0.4 * pp, 0, 2 * Math.PI); k.fill(); }, tex("stone.curb"));
   }
+}
 
-  // 9. Buildings: their shadows, floors, a contact shadow along their walls, and the walls (from art, or plain)
+/**
+ * 9. Buildings: their shadows, floors, a contact shadow along their walls, and the walls (from art, or plain)
+ */
+function buildingsPass(brush) {
+  const { X, Y, art, bboxOf, boxAround, curlStairs, curls, feet, fill, items, line, masonry, meets, poly, pp, progress, rectAt, soft, strip, stroke, tex } = brush;
+  const g = brush.g;
   progress(0.55, "Buildings");
   if (feet.length) soft((k) => {
     for (const { b, f } of feet) {
@@ -1245,13 +1319,19 @@ export function paint(ctx) {
       }
     }
   }
+}
 
-  // 10. Props on the ground and tree shadows (each tree's own art, dark, to the northwest)
+/**
+ * 10. Props on the ground and tree shadows (each tree's own art, dark, to the northwest)
+ */
+function propsPass(brush) {
+  const { X, Y, art, boxAround, clipNear, feet, hashHere, items, levels, meets, pp, progress, s, soft, ways, wx1, wy1, x0, y0 } = brush;
+  const g = brush.g;
   progress(0.75, "Props and trees");
   // (wild props, a plan's own fern, log or rock too, at their art's own size)
   const isWild = (p) => p.wild || WILD_CLASSES.has(p.class);
   const P = BLEND.props;
-  const hash = hashAt;
+  const hash = hashHere;
   const inBed = (p) => levels.some((Lv) => Lv.bed && Lv.rings.some((r) => r.length >= 3 && pointInPolygon(p, r)));
   // (each prop's size across in squares: the plan's own; else its art's at the layout's scale, never under its least)
   const wildSize = (p, im) => {
@@ -1320,8 +1400,13 @@ export function paint(ctx) {
       k.restore();
     }
   }, "rgb(16,24,40)", { blur: 0.15, alpha: 0.35, box: boxAround(trees.map((t) => { const r = crownOf(t, s) / 2 + crownOf(t, s) * 0.26; return [t.x - r, t.y - r, t.x + r, t.y + r]; })) });
+}
 
-  // 12. The edge grade: the map darkened unevenly across its outer squares, so the play area is the lightest part
+/**
+ * 12. The edge grade: the map darkened unevenly across its outer squares, so the play area is the lightest part
+ */
+function gradePass(brush) {
+  const { L, X, Y, meets, noiseMask, pp, progress, soft } = brush;
   const [MW, MH] = L.size?.squares ?? [0, 0], GRADE = 2.5;
   if (MW > 4 * GRADE && MH > 4 * GRADE) {
     const frame = (k) => { k.beginPath(); k.rect(X(-3), Y(-3), (MW + 6) * pp, (MH + 6) * pp); k.rect(X(GRADE), Y(GRADE), (MW - 2 * GRADE) * pp, (MH - 2 * GRADE) * pp); k.fill("evenodd"); };
@@ -1331,6 +1416,10 @@ export function paint(ctx) {
   }
   progress(1, "Ground");
 }
+
+/** The passes, in the order they're painted. */
+const PASSES = [groundPass, wornPass, waterPass, waysPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
+
 
 /**
  * The pieces painted apart to lie over the map as tiles: { name, kind: "roof" | "canopy", box: [x0, y0, x1, y1] in
