@@ -375,6 +375,7 @@ export function paint(ctx) {
     else { g.beginPath(); g.ellipse(0, 0, (w / 2) * pp, (Lh / 2) * pp, 0, 0, 2 * Math.PI); g.fill(); g.stroke(); if (p.class === "ship") { g.fillStyle = rgb(P.paper); g.fillRect((-w * 0.62) * pp, (Lh * 0.04) * pp, w * 1.24 * pp, w * 0.18 * pp); } }
     g.restore();
   }
+  g.lineCap = "round"; // (the streets' square ends done: round again for what follows)
   // Bridges: the road carried over the water in its own paving, a parapet inked along each side with its ends
   // turned out onto the banks; fords as a pale shallow with the road's stones across
   const wayAt = (p) => { let best = null, bd = 1.2; for (const { w, S } of ways) for (let i = 1; i < w.path.length; i++) { const d = segDist(p, w.path[i - 1], w.path[i]); if (d < bd) { bd = d; best = { w, S }; } } return best; };
@@ -522,7 +523,7 @@ export function paint(ctx) {
   });
   // (in winter a leafy tree is bare: a ring of fine branches and its trunk, not a canopy)
   const bare = winter ? trees.filter((x) => x.t.species === "bare" || x.t.species === undefined || x.t.species === "deciduous") : [];
-  const crowns = trees.filter((x) => !bare.includes(x));
+  const bareSet = new Set(bare), crowns = trees.filter((x) => !bareSet.has(x));
   for (const { t, r } of crowns) dot(t.x + r * 0.35, t.y - r * 0.25, r, P.shadow);
   for (const { t, r } of crowns) dot(t.x, t.y, r + 0.06, rgb(P.canopyInk, 0.9));
   for (const { t, r, c } of crowns) dot(t.x, t.y, r, rgb(c));

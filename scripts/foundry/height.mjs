@@ -130,7 +130,7 @@ function onPreMove(doc, movement, operation) {
 }
 
 /** Whether a game system's rules drop a token left above the ground themselves (rules.mjs: falls). */
-const fallsIn = (R) => typeof R?.falls === "function";
+const fallsIn = (R) => typeof R?.falls === "function" && (typeof R.canFall !== "function" || R.canFall());
 /** What a waypoint carries into a move made again. */
 const WAY_KEYS = ["x", "y", "width", "height", "shape", "action", "snapped", "explicit", "checkpoint", "level"];
 

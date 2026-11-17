@@ -17,6 +17,9 @@
  * - climbCheck(dc): the check to climb a cliff, as chat card text (an inline check the system makes a button of).
  * - falls(token, position): for a system with its own falling, whether it drops a token there. With it, a move over
  *   the ground's heights is made with them in it, and a jump over a cliff's edge is left in the air where it drops.
+ *   canFall(): whether that falling can be used now (else AtlasScribe grounds tokens itself).
+ * - surfaces: true when the system's own movement reads the adapter's regions, so they're laid even with the rules
+ *   setting on Foundry's own (regionsAdapter).
  */
 import { pf2e } from "./rules/pf2e.mjs";
 import { dnd5e } from "./rules/dnd5e.mjs";
@@ -41,7 +44,7 @@ export function registerRules(systemId, adapter) {
 export function registerRulesSetting() {
   game.settings.register(MOD, SETTING, {
     name: "Battle map rules",
-    hint: "The rules a battle map's regions follow. The game system's: PF2e's environments and climb checks, D&D 5e's difficult terrain, floors and falling, or another system's when a module adds it (any other system keeps Foundry's own). Foundry's own: only the movement costs and level changes every system reads. Takes effect when a scene is made or updated.",
+    hint: "The rules a battle map's regions follow. The game system's: PF2e's environments and climb checks, D&D 5e's difficult terrain, floors and falling, or another system's when a module adds it (any other system keeps Foundry's own). Foundry's own: only the movement costs and level changes every system reads (D&D 5e's floors are laid either way, as its falling needs them). Takes effect when a scene is made or updated.",
     scope: "world",
     config: true,
     type: String,
@@ -57,6 +60,18 @@ export function rules() {
   try { which = game.settings.get(MOD, SETTING); } catch { /* before init: the system's */ }
   if (which === "core") return CORE;
   return adapters.get(globalThis.game?.system?.id) ?? CORE;
+}
+
+/**
+ * The regions a battle map lays for its game system whatever the rules setting says: a system whose own movement
+ * reads them (an adapter with surfaces: true, D&D 5e's floors, without which it drops a token raised onto a rise).
+ * Returns the adapter whose regions to lay: the one in use, else the system's surfaces-only one, or null.
+ */
+export function regionsAdapter() {
+  const R = rules();
+  if (typeof R.regions === "function") return R;
+  const own = adapters.get(globalThis.game?.system?.id);
+  return own?.surfaces && typeof own.regions === "function" ? { id: own.id ?? globalThis.game?.system?.id, label: own.label, regions: own.regions } : null;
 }
 
 /** The adapter for a system id, for tests and the API (Foundry's own when there's none). */

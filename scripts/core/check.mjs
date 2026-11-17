@@ -9,6 +9,7 @@ import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCross
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 import { cliffOf, runsOnFace } from "./cliffs.mjs";
 import { isTownWall, isClosed, wallReach, towerReach } from "./layout/walls.mjs";
+import { parseRooms, ROOM } from "./layout/rooms.mjs";
 import { waterEntries, nearWater, okWidths, bodyOf, RUNNING, BODIES } from "./water.mjs";
 import { offset, intersect, area as polyArea } from "./lots/poly.mjs";
 
@@ -298,6 +299,8 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
     if (b.join != null && !okJoin(b.join)) warn(f.id, "join", `${at}: join isn't as AtlasScribe writes it, so it's left out.`);
     if (b.cut != null && !okCut(b.cut)) warn(f.id, "cut", `${at}: cut isn't as AtlasScribe writes it, so it's left out.`);
     if (b.chimneyAt != null && !okChimney(b.chimneyAt)) warn(f.id, "chimneyAt", `${at}: chimneyAt isn't as AtlasScribe writes it, so it's left out.`);
+    // (a building's rooms past the first few aren't laid out: each one more makes the split much slower)
+    if (b.rooms != null) { const n = parseRooms(b.rooms).rooms.length; if (n > ROOM.most) warn(f.id, "rooms", `${at} names ${n} rooms; the first ${ROOM.most} are laid out and the rest left out.`); }
   };
   if (f.type === "building") details(raw, `"${where}"`);
   if (f.type === "landmark" && Array.isArray(raw.buildings)) raw.buildings.forEach((b, j) => isObj(b) && details(b, `"${where}", building ${j + 1}`));

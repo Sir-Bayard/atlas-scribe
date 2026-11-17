@@ -13,10 +13,13 @@ import { fordDetail } from "../crossings.mjs";
 export function tidyUp(ctx) {
   const { H, W, battle, items, lanes, notes, plan, sq } = ctx;
   const hard = items.filter((i) => i.kind === "way" && (!i.faint || lanes.includes(i))).map((w) => { const [x0, y0, x1, y1] = bbox(w.path), m = w.width / 2 + 0.05; return { w, m, box: [x0 - m, y0 - m, x1 + m, y1 + m] }; });
+  const dropped = new Set();
   for (let k = items.length - 1; k >= 0; k--) {
     const t = items[k];
-    if ((t.kind === "tree" || (t.kind === "prop" && t.class === "bush")) && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) items.splice(k, 1);
+    if ((t.kind === "tree" || (t.kind === "prop" && t.class === "bush")) && t.id !== t.from && hard.some(({ w, m, box }) => w.from !== t.from && t.x > box[0] && t.x < box[2] && t.y > box[1] && t.y < box[3] && distanceToPath([t.x, t.y], w.path) < m)) dropped.add(k);
   }
+  // (taken out in one pass, the rest kept in order)
+  if (dropped.size) { let j = 0; for (let k = 0; k < items.length; k++) if (!dropped.has(k)) items[j++] = items[k]; items.length = j; }
 
   // A grave under a tree the plan or another feature put in a temple's yard
   const yardTrees = items.filter((t) => t.kind === "tree");

@@ -1030,7 +1030,8 @@ function draw(role, variant, look) {
 function drawOne(role, variant, look) {
   const L = LOOKS[look] ?? LOOKS.painted, [name, s] = seasonOf(role), r = rngOf(`${look}|${role}|${variant}`), p = name.split(".");
   const [a, b, c] = p;
-  if ((s === "winter" && (a === "ground" || name === "surface.grass")) || name === "overlay.snow") return snowField(L, r);
+  if (s === "winter" && (a === "ground" || name === "surface.grass")) return snowField(L, r);
+  if (name === "overlay.snow") return snowPatches(L, r);
   if (name === "overlay.frost") return frost(L, r, false);
   if (name === "overlay.ice") return frost(L, r, true);
   if (a === "strip") return winterStrip(L, r, b === "track" ? "wheel" : b === "ice" ? "cracked" : c);
@@ -1099,6 +1100,18 @@ function drawOne(role, variant, look) {
 function snowField(L, r) {
   const c = cv(T, T), g = c.getContext("2d");
   mottle(g, T, r, L.ink ? "#e2e8ec" : "#c6d2dc", "#fbfdfe", { cells: 3, contrast: 0.7 });
+  return c;
+}
+
+/** Snow lying in patches over something (a roof, the ground): a snow field cut by soft blobs, about half covered. */
+function snowPatches(L, r) {
+  const c = snowField(L, r), g = c.getContext("2d");
+  const m = cv(T, T), k = m.getContext("2d");
+  k.fillStyle = "#000";
+  for (let i = 0; i < 26; i++) { k.globalAlpha = 0.35 + r() * 0.5; k.beginPath(); k.arc(r() * T, r() * T, T * (0.08 + r() * 0.14), 0, 2 * Math.PI); k.fill(); }
+  g.globalCompositeOperation = "destination-in"; g.filter = `blur(${Math.round(T * 0.03)}px)`; g.drawImage(m, 0, 0);
+  g.filter = "none"; g.globalCompositeOperation = "source-over";
+  m.width = m.height = 1;
   return c;
 }
 

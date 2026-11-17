@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.0.0
+
+Everything that was left, in one release: new kinds of map (caves, dungeons, regions), imports from other tools, new terrain, the window's files and keyboard, and every open item from the 0.9.0 review. Plans made before open and work as they did, but the same plan and seed now draws differently in places (listed under Maps that change).
+
+**New maps**
+- Caves (rock carved out by cellular automata, with openness from tight to open) and dungeons (rooms and corridors, with doors), both with floor wear: rubble, moss, puddles. On Quick Start's Battle map tab as the Cave and Dungeon sites, and in the Describe box ("a damp cave", "a dungeon with narrow corridors").
+- Region maps, miles across: towns, villages, castles, ruins, towers, temples, inns and mines, the roads between them, woods, hills, mountains, marsh and the sea or a lake. Quick Start's Region tab makes one; pick a place on it and Make its map starts that place's own plan. Their scenes have a grid in miles.
+- The ink style for town maps: the illustrated drawing in black ink on pale paper.
+- Hills, mountains and marsh areas on town and battle maps: hills shaded and ringed with contours, mountains steep with crags, marsh with reeds and pools. Quick Start's High ground choice puts hills, or mountains with hills before them, along an edge.
+- City greens and formal gardens, and a village or town green with a pond, a well, a maypole or a cross. A formal garden is built from parts (its walks, center, beds, edging and trees), each a field you can set. Maypoles and sundials as props.
+- Woods near a town are cleared toward it (scattered trees, stumps, logs and woodpiles), thickening farther off. A woods field, Cleared near town, sets it.
+- River shallows and islands, as two fields of a river or stream. Quick Start rivers get them.
+- A castle can have a moat (the Moat choice, or "a moated castle").
+
+**Imports and exports**
+- Import opens a Watabou city or village (its JSON) as a starting plan, or a Universal VTT file (.dd2vtt, .uvtt, .df2vtt) with its walls and image under the sketch.
+- Export as Universal VTT, from a scene's menu in the sidebar or `api.exportUVTT`.
+- Open scene's plan, from a scene's menu in the sidebar.
+- Three example plans in `examples/`: a village, a city and an inn.
+
+**The window**
+- A Files view: each plan's maps and backups, their sizes, and which one its scene uses.
+- Redo (Ctrl+Y), Undo (Ctrl+Z), and the Delete key removes the picked feature.
+- A draft is saved as you work and offered again after a reload or crash.
+- An as-built summary to copy into your notes, and what changed since the last Make scene.
+- The feature list's names are buttons, with an Everything view so every feature can be reached by keyboard; Reroll and Lock have labels for screen readers; Quick Start's tabs work with the arrow keys.
+- A big plan (over about 15,000 plots) says how long it will take before it's drawn.
+- The notes from the last Make scene stay in the window.
+- The Art window keeps your unsaved edits when another GM saves (with Use theirs), marks unsaved tabs, asks before closing on them, and shows small thumbnails.
+
+**Settings**
+- Backups: every update, the first update of a session, or never; and a Backup folder and a Cache folder of their own.
+- In Plan settings, Image file: WebP or JPEG (the default picks JPEG for maps over 24 megapixels, which saves several times faster), with its quality.
+- Largest image: a map bigger than this is also saved in parts and shown as tiles, for players whose graphics card can't take the whole picture.
+- Batch tag, Render in a worker, Art from FA Nexus, and Art order.
+
+**For scripts**
+- New API calls: `build`, `art`, `summary`, `batch`, `importPlan`, `exportUVTT`, `openPlan`, `openFiles`. `test` is removed.
+- `cancelled` is now `canceled` (on an error thrown by a canceled job); the old name still works in this release.
+
+**Fixes from the 0.9.0 review**
+- Notices and tooltips escape names from plans and tokens. Thumbnails and titles get fresh addresses, so an old one isn't shown from the cache.
+- The painter frees images and canvases when a paint fails, says plainly when the browser can't give a canvas that big, and the checker's size warning estimates the memory a map needs. Art is held within a memory budget, and huge images are read by their headers first.
+- FA Nexus: its window opens once per render, not once per round; files download a few at a time; when an FA Nexus update breaks the link you get a note to report instead of plain colors. Premium files on disk aren't used after a Patreon login lapses.
+- Art folders: a folder inside another is read once, a folder name with ":" works, a broken file no longer makes the next render read every folder, and Cancel stops the first read.
+- Number settings have upper limits, the inspector refuses fractions where a whole number is needed, and plan ids are kept to a sensible length.
+- The Describe boxes read "not on a river", "unwalled", "no water", "dry", a name starting with "the", "by day", "never had a cellar", "great" (but not "great hall"), a vault inside a building, "wide corridors", and words inside a quoted name.
+- Many speedups for big maps: plot lookups, street checks and district outlines.
+
+**Maps that change**
+The same plan and seed can now draw differently:
+- tree turns and small drift (a new hash in the battle and illustrated styles);
+- wagons and carts kept clear of walls, side streets painted under the main road, mill races under the river, logs and rocks off gate tracks;
+- row houses capped in length and cleaned of spikes; districts clipped to the map before filling;
+- a gatehouse on every street through a town wall, water gates where a river passes one, a track to each mill;
+- "woodland" around a place is mostly woods; inns of 24 squares or more get an upper floor;
+- formal parks are picked from more designs and greens get a feature;
+- a street's notable building gets a full interior; zoomed battle maps keep the overview's landmarks, palisades and cliffs;
+- a river below a meeting is as wide as the two together; cave walls and wear are traced anew.
+
+**Other**
+- Battle maps draw fields (one per area, its crop in rows by season), farmyards and docks, and a bare square as its ground rather than flagstones. A palisade on a battle map gets Foundry walls.
+- D&D Fifth Edition is supported, tested in a dnd5e 6.0 world: banks, slopes, shallows and ice are its own difficult terrain, the ground is laid as floors so its falling doesn't take a token on a rise for falling (laid even with Battle map rules on Foundry's own; not for the ground with Battle map heights off), and the climb card has an Athletics check button. A jump off a cliff lands below without the system's falling damage.
+- Said in notes: rooms asked for that don't fit, a cemetery, watermill or windmill asked for with no room, and an outline, water or river form Quick Start couldn't use. "0 bedrooms" means none.
+- Adding a feature on the Battle map tab (a stream, say) no longer moves the rest.
+- Faster metropolis plans; town maps' roofs and branches drawn with round line ends again; drawn snow on battle roofs lies in patches.
+- The checker no longer warns about class-only fields on other classes (a pond's banks, say), and says when a building names more rooms than are laid out.
+- Lanterns and lamp posts light a warmer, less white pool.
+- A wilderness cliff runs along the top or the foot of the map.
+
 ## 0.9.0
 
 Art for everyone, and the release candidate for 1.0.0 (there was no 0.8.0). Battle maps no longer need FA Nexus or any art: they paint with Forgotten Adventures files found by name in folders on your server, with any other pack set up through a manifest, filename rules or art you choose in the new Art window, and they draw whatever has no art, in a painted or an inked look. Quick Start's Settlement tab gets a Describe box and choices that follow the size. The README is rewritten for a first-time user, with pictures, and the full reference moves to `docs/guide.md`.

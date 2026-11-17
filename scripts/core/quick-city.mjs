@@ -5,14 +5,11 @@
  * coast with a harbor, a lake shore, or a river meeting the sea. Everything comes out as plan features, so rerolls,
  * locks and reshaping work as on any plan. Pure: runs anywhere. Numbers are in squares (25 ft).
  */
-import { rng } from "./rng.mjs";
 import { Delaunay } from "../../vendor/d3-delaunay.mjs";
 import { intersect, difference, union, offset, area, centroid, bands } from "./lots/poly.mjs";
-import { pathTouchesPolygon, polygonCrossesItself, polygonsOverlap, shapeToPolygon } from "./geom.mjs";
+import { pathTouchesPolygon, polygonCrossesItself, polygonsOverlap } from "./geom.mjs";
 import { meander, bends } from "./meander.mjs";
 import { watermill, windmill } from "./mills.mjs";
-import { PAVINGS, squareShape } from "./squares.mjs";
-import { cliffOf, cliffWidth, offsetLine } from "./cliffs.mjs";
 import { cityOutline, cityWater, cliffAndGates, wards, cityDistricts, cityGreens, wallsAndHarbor, outsideTheWalls } from "./city-steps/index.mjs";
 
 /**

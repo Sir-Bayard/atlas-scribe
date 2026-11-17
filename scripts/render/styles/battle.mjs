@@ -20,7 +20,7 @@ import { FURNITURE } from "../../core/layout/rooms.mjs";
 import { tiersOf, shelfOf, edgeSpan, shiftRight, resample, waterBand, TERRAIN } from "../../core/layout/terrain.mjs";
 import { paintRoof } from "./textured.mjs";
 import { groundOf, levelAt, deckOf } from "../../core/height.mjs";
-import { bands, union, offset, difference } from "../../core/lots/poly.mjs";
+import { union, offset, difference } from "../../core/lots/poly.mjs";
 import { distanceToPath, pointInPolygon } from "../../core/geom.mjs";
 import { offsetPath } from "../../core/layout/walls.mjs";
 import { CASTLE } from "../../core/layout/castle.mjs";
@@ -182,6 +182,8 @@ export const groundRoles = (base, s) => {
 };
 /** The surface art for a ground other than grass or snow (mud is dirt). */
 const GROUND_SURFACE = { dirt: "surface.dirt", mud: "surface.dirt", slush: "surface.slush", trodden: "surface.trodden", cobble: "surface.cobble", gravel: "surface.gravel", flagstone: "surface.flagstone", setts: "surface.setts", herringbone: "surface.herringbone", brick: "surface.brick", tiles: "surface.tiles" };
+/** A square's ground: its paving, or bare ground as a quarter's (dirt, gravel, trodden), else flagstones. */
+const plazaRole = (sq, s) => (PAVING[sq.surface] || !sq.surface || sq.surface === "paved" ? PAVING[sq.surface] ?? "surface.flagstone" : quarterRole(sq, s));
 const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class === "plaza" || i.class === "market") && Array.isArray(i.poly);
 
 /**
@@ -236,7 +238,7 @@ export function rolesFor(layout) {
   const roles = new Set([...groundRoles(g, s), `surface.trodden.${s}`, `surface.dirt.${s}`, "stone.curb", "floor.wood", "floor.stone", "wood.fence", `stone.rough.${s}`]);
   for (const i of layout.items) {
     if (i.kind === "way" && !i.faint) roles.add(wayRole(i, s));
-    if (isPlaza(i)) roles.add(PAVING[i.surface] ?? "surface.flagstone");
+    if (isPlaza(i)) roles.add(plazaRole(i, s));
     if (isQuarter(i)) roles.add(quarterRole(i, s));
     if (i.kind === "surface" && i.garden) roles.add(`surface.dirt.${s}`);
     if (i.kind === "water") roles.add(i.frozen ? "water.ice" : `water.${i.class}`);
@@ -362,7 +364,7 @@ function brushOf(ctx) {
    * at alpha. Only the mask is blurred, so the texture stays sharp. box: [x0, y0, x1, y1] in squares bounding the
    * shapes, so only that part of the tile is worked on (nothing when it misses the tile).
    */
-  const soft = (shape, fill, { blur = 0, alpha = 1, noise = null, op = "source-over", box = null, lift = 0, gain = 1 } = {}) => {
+  const soft = (shape, fill, { blur = 0, alpha = 1, noise: noiseIn = null, op = "source-over", box = null, lift = 0, gain = 1 } = {}) => {
     let rx = 0, ry = 0, rw = W, rh = H;
     if (box) {
       const m = blur * pp * 3 + 2;
@@ -370,6 +372,8 @@ function brushOf(ctx) {
       rw = Math.min(W, Math.ceil(X(box[2]) + m)) - rx; rh = Math.min(H, Math.ceil(Y(box[3]) + m)) - ry;
       if (rw <= 0 || rh <= 0) return;
     }
+    // (a noise mask may come as a function, made only once the fill is known to reach the tile)
+    const noise = typeof noiseIn === "function" ? noiseIn() : noiseIn;
     q.setTransform(1, 0, 0, 1, 0, 0);
     q.globalCompositeOperation = "source-over"; q.globalAlpha = 1; q.filter = "none";
     q.clearRect(rx, ry, rw, rh);
@@ -652,8 +656,8 @@ function groundPass(brush) {
     // (paving laid all over; worn ground in ragged, height-blended patches with grass between)
     const Q = PAVING[q.surface] ? null : BLEND.quarter;
     soft((k) => { poly(k, q.poly); k.fill(); }, tex(quarterRole(q, s)), Q
-      ? { blur: 0.5, alpha: Math.min(q.alpha ?? 0.7, Q.alpha), noise: noiseMask(`battle-q-${q.id}`, Q.scale, Q.cut, Q.soft), box: bb, lift: Q.lift, gain: Q.gain }
-      : { blur: 0.5, alpha: q.alpha ?? 0.7, noise: noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
+      ? { blur: 0.5, alpha: Math.min(q.alpha ?? 0.7, Q.alpha), noise: () => noiseMask(`battle-q-${q.id}`, Q.scale, Q.cut, Q.soft), box: bb, lift: Q.lift, gain: Q.gain }
+      : { blur: 0.5, alpha: q.alpha ?? 0.7, noise: () => noiseMask(`battle-q-${q.id}`, 5, -0.35, 0.35), box: bb });
   }
 
   // 1c. Height: the lower a level, the darker its ground; a stream's bed of stones under its water; then a forest
@@ -669,7 +673,7 @@ function groundPass(brush) {
   // (a rise's top in winter: thin, rocky snow in patches)
   if (s === "winter" && art("ground.snow.rocky")) for (const Lv of levels.filter((x) => x.elevation > 0 && !x.bed)) {
     const box = boxAround(Lv.rings.map(bboxOf), 0.4), R = BLEND.ground.rise;
-    soft((k) => { k.beginPath(); for (const r of Lv.rings) sub(k, r); k.fill("evenodd"); }, tex("ground.snow.rocky"), { blur: 0.4, alpha: R.alpha, noise: noiseMask(`battle-rise-${Lv.id}`, R.scale, R.cut, R.soft), box, lift: R.lift, gain: R.gain });
+    soft((k) => { k.beginPath(); for (const r of Lv.rings) sub(k, r); k.fill("evenodd"); }, tex("ground.snow.rocky"), { blur: 0.4, alpha: R.alpha, noise: () => noiseMask(`battle-rise-${Lv.id}`, R.scale, R.cut, R.soft), box, lift: R.lift, gain: R.gain });
   }
   for (const Lv of levels.filter((x) => x.elevation < 0)) {
     const box = boxAround(Lv.rings.map(bboxOf), 0.4);
@@ -677,7 +681,7 @@ function groundPass(brush) {
   }
   // (a wood's own trees, not a park's or a hedgerow's; none in winter)
   const woods = s === "winter" ? [] : L.items.filter((i) => i.kind === "tree" && i.wild && meets([i.x, i.y, i.x, i.y], 4));
-  if (woods.length && art(`ground.forest.${s}`)) soft((k) => { for (const t of woods) { k.beginPath(); k.arc(X(t.x), Y(t.y), 3.2 * pp, 0, 2 * Math.PI); k.fill(); } }, tex(`ground.forest.${s}`), { blur: 0.9, alpha: 0.4, noise: noiseMask("battle-forest", 4, -0.15, 0.3), box: boxAround(woods.map((t) => [t.x, t.y, t.x, t.y]), 3.5) });
+  if (woods.length && art(`ground.forest.${s}`)) soft((k) => { for (const t of woods) { k.beginPath(); k.arc(X(t.x), Y(t.y), 3.2 * pp, 0, 2 * Math.PI); k.fill(); } }, tex(`ground.forest.${s}`), { blur: 0.9, alpha: 0.4, noise: () => noiseMask("battle-forest", 4, -0.15, 0.3), box: boxAround(woods.map((t) => [t.x, t.y, t.x, t.y]), 3.5) });
   Object.assign(brush, { levels });
 }
 
@@ -708,7 +712,7 @@ function undergroundPass(brush) {
     // The rock: rough stone, darkened, in patches
     fill((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, tex(rockRole));
     soft((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, "rgb(26,22,20)", { alpha: 0.62, box });
-    soft((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, "rgb(70,62,54)", { noise: noiseMask(`rock-${rk.id}`, 2.2, 0.1, 0.35), alpha: 0.5, box });
+    soft((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, "rgb(70,62,54)", { noise: () => noiseMask(`rock-${rk.id}`, 2.2, 0.1, 0.35), alpha: 0.5, box });
     // The floor
     if (rk.style === "cave") {
       fill((k) => { carve(k); k.fill("evenodd"); }, tex("surface.dirt.summer"));
@@ -1107,14 +1111,15 @@ function waysPass(brush) {
  * 5. Squares: flagstones inside a curb
  */
 function squaresPass(brush) {
-  const { L, bboxOf, fill, meets, poly, soft, stroke, tex } = brush;
+  const { L, bboxOf, fill, meets, poly, s, soft, stroke, tex } = brush;
   for (const sq of L.items.filter(isPlaza)) {
     const bb = bboxOf(sq.poly);
     if (!meets(bb, 1)) continue;
     const ring = [...sq.poly, sq.poly[0]];
     soft((k) => { poly(k, sq.poly); k.fill(); stroke(k, ring, 0.6); }, "rgb(20,20,24)", { blur: 0.12, alpha: 0.35, box: [bb[0] - 0.3, bb[1] - 0.3, bb[2] + 0.3, bb[3] + 0.3] });
-    fill((k) => { poly(k, sq.poly); k.fill(); stroke(k, ring, 0.5); }, tex("stone.curb"));
-    fill((k) => { poly(k, sq.poly); k.fill(); }, tex(PAVING[sq.surface] ?? "surface.flagstone"));
+    // (a paved square has a stone curb; a bare one only its ground)
+    if (PAVING[sq.surface] || !UNPAVED[sq.surface]) fill((k) => { poly(k, sq.poly); k.fill(); stroke(k, ring, 0.5); }, tex("stone.curb"));
+    fill((k) => { poly(k, sq.poly); k.fill(); }, tex(plazaRole(sq, s)));
   }
 }
 
@@ -1499,7 +1504,50 @@ function gradePass(brush) {
 }
 
 /** The passes, in the order they're painted. */
-const PASSES = [groundPass, undergroundPass, reliefPass, wornPass, waterPass, waysPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
+/**
+ * 4b. Fields, farmyards and docks at battle size: a field's soil with its crop in rows (plowed furrows, green shoots,
+ * ripe grain, stubble, hay in windrows; pasture and fallow a rougher green), a farmyard's trodden earth, a dock's
+ * deck of stone or planks along its line.
+ */
+function farmsAndDocksPass(brush) {
+  const { X, Y, bboxOf, fill, items, meets, poly, pp, s, stroke, tex } = brush;
+  const g = brush.g;
+  const winter = s === "winter";
+  const CROP = { growing: "rgba(86,134,52,0.9)", ripe: "rgba(206,176,92,0.92)", stubble: "rgba(184,160,104,0.85)", hay: "rgba(170,160,88,0.9)", plowed: "rgba(92,70,48,0.75)" };
+  for (const fd of items("field").filter((f) => Array.isArray(f.poly) && f.poly.length >= 3 && meets(bboxOf(f.poly), 1))) {
+    const green = fd.crop === "pasture" || fd.crop === "fallow";
+    fill((k) => { poly(k, fd.poly); k.fill(); }, green ? (winter ? "rgba(226,230,234,0.55)" : "rgba(104,132,64,0.55)") : tex(`surface.dirt.${s}`));
+    if (!fd.rows || winter && fd.crop !== "plowed") continue;
+    // (rows across the whole field, clipped to it, along its angle)
+    const a = ((fd.angle ?? 0) * Math.PI) / 180, u = [Math.cos(a), Math.sin(a)], n = [-u[1], u[0]];
+    const [x0, y0, x1, y1] = bboxOf(fd.poly), c = [(x0 + x1) / 2, (y0 + y1) / 2], R = Math.hypot(x1 - x0, y1 - y0) / 2 + 1;
+    const step = Math.max(0.35, fd.rows * 2.2), width = fd.crop === "hay" ? step * 0.35 : step * 0.45;
+    g.save(); g.beginPath(); fd.poly.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); g.clip();
+    g.strokeStyle = CROP[fd.crop] ?? CROP.plowed; g.lineWidth = Math.max(1, width * pp); g.lineCap = "round";
+    g.beginPath();
+    for (let t = -R; t <= R; t += step) { const p = [c[0] + n[0] * t, c[1] + n[1] * t]; g.moveTo(X(p[0] - u[0] * R), Y(p[1] - u[1] * R)); g.lineTo(X(p[0] + u[0] * R), Y(p[1] + u[1] * R)); }
+    g.stroke(); g.restore();
+  }
+  for (const y of items("surface", "farmyard").filter((i) => Array.isArray(i.poly) && i.poly.length >= 3 && meets(bboxOf(i.poly), 1)))
+    fill((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.dirt.${s}`));
+  for (const d of items("dock").filter((i) => Array.isArray(i.path) && i.path.length >= 2 && meets(bboxOf(i.path), (i.width ?? 1) + 1))) {
+    const wood = d.material === "wood", w = d.width ?? 1;
+    fill((k) => stroke(k, d.path, w + 0.12, "butt"), "rgba(40,34,28,0.9)");
+    fill((k) => stroke(k, d.path, w, "butt"), wood ? "rgb(128,96,62)" : winter ? "rgb(206,208,210)" : "rgb(150,144,134)");
+    // (a wooden deck's planks across it, a stone one's joints)
+    g.save(); g.strokeStyle = wood ? "rgba(70,50,30,0.6)" : "rgba(90,86,80,0.5)"; g.lineWidth = Math.max(1, pp * 0.03);
+    for (let i = 1; i < d.path.length; i++) {
+      const a = d.path[i - 1], b = d.path[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.01) continue;
+      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [-u[1] * (w / 2), u[0] * (w / 2)], gap = wood ? 0.25 : 1;
+      g.beginPath();
+      for (let t = gap; t < L; t += gap) { const p = [a[0] + u[0] * t, a[1] + u[1] * t]; g.moveTo(X(p[0] - n[0]), Y(p[1] - n[1])); g.lineTo(X(p[0] + n[0]), Y(p[1] + n[1])); }
+      g.stroke();
+    }
+    g.restore();
+  }
+}
+
+const PASSES = [groundPass, undergroundPass, reliefPass, wornPass, waterPass, farmsAndDocksPass, waysPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
 
 
 /**

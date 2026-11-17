@@ -62,7 +62,7 @@ export function battleTabHTML() {
     <div data-site="castle" hidden>
       <h4>Castle</h4>
       <p class="hint">A curtain wall with a walk along its top, towers and a gatehouse with floors, a keep and its yard's buildings, each floor a level of the scene. Its size above is the castle's.</p>
-      <div class="as-qs-two">${select("towers", "Tower tops", "towers", b.castle.towers)}</div>
+      <div class="as-qs-two">${select("towers", "Tower tops", "towers", b.castle.towers)}${select("moat", "Moat", "moat", b.castle.moat)}</div>
     </div>
   </section>`;
 }
@@ -76,7 +76,7 @@ export function briefFromForm(form, seed) {
     building: { use: v("use"), size: v("bsize"), rooms: v("rooms"), name: v("bname"), floors: v("floors"), cellar: v("cellar"), upstairs: v("upstairs"), cellarRooms: v("crooms") },
     street: { place: v("place"), quarter: v("quarter") },
     camp: { kind: v("camp"), tents: v("tents") ? Number(v("tents")) : null },
-    castle: { towers: v("towers") },
+    castle: { towers: v("towers"), moat: v("moat") },
     underground: { openness: v("openness"), corridors: v("corridors"), doors: v("doors") },
     name: v("name"), seed,
   });
@@ -91,7 +91,7 @@ function setForm(form, b) {
   set("floors", b.building.floors ?? ""); set("cellar", b.building.cellar === true ? "yes" : b.building.cellar === false ? "no" : ""); set("upstairs", b.building.upstairs); set("crooms", b.building.cellarRooms);
   set("place", b.street.place); set("quarter", b.street.quarter);
   set("camp", b.camp.kind); set("tents", b.camp.tents ?? "");
-  set("towers", b.castle.towers);
+  set("towers", b.castle.towers); set("moat", b.castle.moat);
   set("openness", b.underground.openness); set("corridors", b.underground.corridors); set("doors", b.underground.doors);
   if (form.elements.name) form.elements.name.value = b.name ?? "";
 }
@@ -119,7 +119,7 @@ function showSite(root) {
 }
 
 /** A form field's brief key ("b-bsize" is "building.size", a feature's box "feature.pond"), or null for one that isn't. */
-const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", floors: "building.floors", cellar: "building.cellar", upstairs: "building.upstairs", crooms: "building.cellarRooms", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents", towers: "castle.towers", openness: "underground.openness", corridors: "underground.corridors", doors: "underground.doors" };
+const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", floors: "building.floors", cellar: "building.cellar", upstairs: "building.upstairs", crooms: "building.cellarRooms", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents", towers: "castle.towers", moat: "castle.moat", openness: "underground.openness", corridors: "underground.corridors", doors: "underground.doors" };
 function keyOf(name) {
   if (name === "name") return "name";
   if (!name?.startsWith("b-") || name === "b-describe") return null;

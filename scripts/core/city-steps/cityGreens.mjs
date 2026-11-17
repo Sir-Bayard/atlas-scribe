@@ -19,7 +19,7 @@ export function cityGreens(ctx) {
     const gr = r.fork("place", d.id);
     const [len, dep] = kind === "formal" ? [S.square * gr.range(1.6, 2.1), S.square * gr.range(1.1, 1.4)] : [S.square * gr.range(1.0, 1.4), S.square * gr.range(0.8, 1.1)];
     const at = placeGreen({ poly: d.shape, len, dep, roads, inWater, r: gr });
-    if (at) greens.push({ id: `${d.id}-${kind === "formal" ? "garden" : "green"}`, type: "area", class: "park", style: kind, ...(d.name ? { name: `${d.name.replace(/ Ward( II| III)?$/, "")} ${kind === "formal" ? "Gardens" : "Green"}` } : {}), ...at });
+    if (at) greens.push({ id: `${d.id}-${kind === "formal" ? "garden" : "green"}`, type: "area", class: "park", style: kind, ...(d.name ? { name: `${d.name.replace(/ Ward( [IVX]+)?$/, "")} ${kind === "formal" ? "Gardens" : "Green"}` } : {}), ...at });
   }
 }
 

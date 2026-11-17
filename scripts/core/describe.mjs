@@ -17,7 +17,7 @@ const WORDS = {
   place: { hamlet: ["hamlet"], village: ["village"], town: ["town"], city: ["city"] },
   quarter: { market: ["market", "marketplace", "bazaar"], merchants: ["merchants", "merchant"], crafts: ["crafts", "craftsmen", "artisans", "workshops"], docks: ["docks", "harbor", "wharf", "waterfront", "port"], nobles: ["nobles", "noble", "rich", "wealthy", "estates"], temple: ["temple", "temples", "cathedral"], poor: ["poor", "slum", "slums", "squalid"], garrison: ["garrison", "barracks"] },
   camp: { caravan: ["caravan", "wagons", "wagon"], soldiers: ["soldiers", "army", "military", "troops", "mercenaries", "warband", "legion"], campsite: ["campsite", "campfire"] },
-  size: { small: ["small", "tiny", "little", "cramped"], medium: ["medium", "medium-sized", "mid-sized", "modest"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand"] },
+  size: { small: ["small", "tiny", "little", "cramped"], medium: ["medium", "medium-sized", "mid-sized", "modest"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand", "great"] },
   towers: { roofed: ["roofed towers", "roofed tower", "tower roofs", "conical roofs", "cone roofs", "pointed roofs", "spires", "spire"], open: ["battlements", "crenellated", "crenelated", "crenellations", "open towers", "open tower"] },
 };
 /** Words that name the site: a wilderness, a camp, a street, a castle, a cave or a dungeon. */
@@ -71,7 +71,9 @@ export function readDescription(text = "") {
   /** The first value of a group whose words occur, marking them read; null if none. */
   const first = (group) => {
     let best = null;
-    for (const [value, words] of Object.entries(group)) for (const w of words) for (const m of find(w)) if ((!best || m.at < best.m.at) && !(group === WORDS.size && ofWay(m))) best = { value, m, w };
+    // ("great" before a room, "a great hall", is the room's name, not a size)
+    const roomName = (m, w) => w === "great" && /^\s+(?:hall|halls|room|chamber)\b/.test(lower.slice(m.end, m.end + 12));
+    for (const [value, words] of Object.entries(group)) for (const w of words) for (const m of find(w)) if ((!best || m.at < best.m.at) && !(group === WORDS.size && (ofWay(m) || roomName(m, w)))) best = { value, m, w };
     if (!best) return null;
     for (const words of Object.values(group)) for (const w of words) for (const m of find(w)) used.push([m.at, m.end]);
     return best.value;
@@ -106,7 +108,7 @@ export function readDescription(text = "") {
     used.push([s, e]);
     // (every clause of a kind read together: "upstairs rooms, three floors" says both how many floors and what's there)
     // ("no cellar", "without an upstairs", "a single-story inn": none, said so)
-    const no = /\b(?:no|without|not|never|nor)\s+(?:a\s+|an\s+|any\s+|the\s+)?$/.test(before.slice(-20)) || (what === "upstairs" && /\b(?:single|one)[\s-]+stor(?:y|ey)\b/.test(lower.slice(Math.max(0, m.at - 8), m.end)));
+    const no = /\b(?:no|without|not|never|nor)\s+(?:(?:has|had|have|having|got)\s+)?(?:a\s+|an\s+|any\s+|the\s+)?$/.test(before.slice(-28)) || (what === "upstairs" && /\b(?:single|one)[\s-]+stor(?:y|ey)\b/.test(lower.slice(Math.max(0, m.at - 8), m.end)));
     const had = floorsSaid.find((l) => l.what === what), text = lower.slice(s, e);
     if (!had) floorsSaid.push({ what, word: w, text, label: clause, no });
     else { if (!had.text.includes(text)) had.text += ` ; ${text}`; had.no = had.no && no; }
@@ -158,6 +160,9 @@ export function readDescription(text = "") {
     const towers = first(WORDS.towers);
     if (towers) { brief.castle = { towers }; chip("castle.towers", towers, towers === "open" ? "Towers open, with battlements" : "Towers roofed"); }
     mark(Object.values(WORDS.towers).flat());
+    // (a moat said: "moated", "with a moat"; "no moat" says none)
+    const moats = [...find("moat"), ...find("moated")];
+    if (moats.length) { const m = moats.some((x) => !/\b(?:no|without|not|never)\s+(?:a\s+|any\s+)?$/.test(lower.slice(Math.max(0, x.at - 16), x.at))) ? "moat" : "none"; brief.castle = { ...(brief.castle ?? {}), moat: m }; chip("castle.moat", m, m === "moat" ? "A moat" : "No moat"); mark(["moat", "moated"]); }
     // (its towers are its own; any other building is one of its yard's, which come with its size)
     const other = useHits.filter((m) => !WORDS.use.watchtower.some((w) => lower.slice(m.at, m.end).startsWith(w)));
     mark(WORDS.use.watchtower);
@@ -199,7 +204,7 @@ export function readDescription(text = "") {
   // Features: a road (a roadside site always has one), a stream, a pond, a cliff, a rise, a hollow
   // (hills as the ground aren't a rise as well: "on hills" isn't "with a hill")
   // (a feature said with "no" or "without" just before it, "no road", is left out)
-  const negated = (m) => /\b(?:no|without|not|never|nor)\s+(?:a\s+|an\s+|any\s+)?$/.test(lower.slice(Math.max(0, m.at - 16), m.at));
+  const negated = (m) => /\b(?:no|without|not|never|nor)\s+(?:(?:has|had|have|having|got)\s+)?(?:a\s+|an\s+|any\s+)?$/.test(lower.slice(Math.max(0, m.at - 24), m.at));
   const features = all(WORDS.features).filter((f) => WORDS.features[f].some((w) => find(w).some((m) => !negated(m)))).filter((f) => (f !== "road" || brief.site !== "street") && !(f === "rise" && brief.ground === "hills" && !/\b(?:rise|knoll|mound|hillock|ridge)s?\b/.test(lower)));
   const noRoad = WORDS.features.road.some((w) => find(w).some((m) => negated(m)));
   if (brief.site === "roadside" && !features.includes("road") && !noRoad) features.unshift("road");

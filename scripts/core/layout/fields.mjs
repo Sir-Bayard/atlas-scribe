@@ -31,6 +31,21 @@ const CROP_MIX = {
 };
 const STRIP_DAMP = { pasture: 0.15, hay: 0, fallow: 0.6 };
 
+/**
+ * A battle map's field: the whole area one field, a crop for the season (from r) and its rows along the area's longest
+ * side. Returns the field ({ poly, holes, crop, angle, shade, variant, rows }) or null for an area with no shape.
+ */
+export function battleField(area, r, season = "summer") {
+  const poly = shapeToPolygon(area.shape, area.rot ?? 0, 48);
+  if (poly.length < 3) return null;
+  const mix = Object.entries(CROP_MIX[season] ?? CROP_MIX.summer);
+  let t = r.next() * mix.reduce((a, [, w]) => a + w, 0), crop = mix[mix.length - 1][0];
+  for (const [c, w] of mix) if ((t -= w) < 0) { crop = c; break; }
+  let best = 0, angle = 0;
+  poly.forEach((a, i) => { const b = poly[(i + 1) % poly.length], d = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d > best) { best = d; angle = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI; } });
+  return { poly, holes: [], crop, angle, shade: r.range(-1, 1), variant: r.int(8), rows: ROWS[crop] ?? 0 };
+}
+
 /** The rows a crop shows: spacing in squares, or none. */
 export const ROWS = { plowed: 0.3, growing: 0.26, ripe: 0.26, stubble: 0.3, hay: 1.2 };
 

@@ -10,7 +10,6 @@ import { roofFacets, outlineOf } from "../roofs.mjs";
 import { paintRelief } from "../relief.mjs";
 import { paintRiverbed } from "../riverbed.mjs";
 import { offsetLine as shiftLine } from "../../core/cliffs.mjs";
-export { roofFacets };
 
 /** Roof materials whose winter art already has snow on it; every other roof gets the snow overlay in winter. */
 const SNOWY_IN_WINTER = new Set(["slate", "wood-shingle"]);
@@ -64,7 +63,7 @@ const FIELD_LIFT = {
 const TRODDEN_LIFT = "rgb(72,64,40)";
 
 /** The widest blur this style uses, in squares (tiles need this much margin). */
-export const MAX_BLUR = 2;
+export const MAX_BLUR = 3;
 
 const ROOF_SCALE = 0.1; // roof texture scale at 50 px a square (0.05 is true scale and reads as noise)
 

@@ -15,7 +15,7 @@ import { heightRegions, groundOf, WALKING } from "../core/height.mjs";
 import { LIGHTS, LIT_FROM } from "../core/layout/lights.mjs";
 import { CASTLE } from "../core/layout/castle.mjs";
 import { COVER } from "../core/rules.mjs";
-import { rules as rulesInUse, CORE } from "./rules.mjs";
+import { rules as rulesInUse, regionsAdapter, CORE } from "./rules.mjs";
 import { MOD } from "./util.mjs";
 
 const THUMB = 300;
@@ -293,7 +293,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null).map((w) => (typeof R.wall === "function" ? R.wall(w) ?? w : w)), "walls and doors", null, (n) => (walls = n)],
       ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs" && k !== "rules", (n) => (roofs = n)],
       ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null, R), "ground and water regions", isHeight, (n) => (heights = n)],
-      ["Region", () => rulesRegions(R, { plan, layout, levels: levelOf, sceneX, sceneY, pps }), `${R.label ?? R.id} regions`, (k) => k === "rules", (n) => (ruled = n)],
+      ["Region", () => rulesRegions(regionsAdapter(), { plan, layout, levels: levelOf, sceneX, sceneY, pps }), `${R.label ?? R.id} regions`, (k) => k === "rules", (n) => (ruled = n)],
       ["Region", () => (levelOf ? battleStairs(layout, sceneX, sceneY, pps, plan.id ?? null).filter((r) => r._floors.filter((f) => levelOf.has(f)).length > 1) : []), "stairs between floors", (k) => k === "stairs", (n) => (stairs = n)],
       ["AmbientLight", () => battleLights(layout, sceneX, sceneY, pps, plan.id ?? null), "lights", null, (n) => (lights = n)],
     ]) {
@@ -439,7 +439,7 @@ export function battleLights(layout, sceneX, sceneY, pps, plan) {
       x: Math.round(sceneX + l.at[0] * pps), y: Math.round(sceneY + l.at[1] * pps),
       elevation: Math.max(l.elevation ?? 0, 0),
       walls: true, vision: false,
-      config: { bright: L.bright, dim: L.dim, color: L.color, alpha: L.alpha, attenuation: 0.6, luminosity: 0.5, animation: { ...L.animation, reverse: false }, darkness: { min: L.dark ? LIT_FROM : 0, max: 1 } },
+      config: { bright: L.bright, dim: L.dim, color: L.color, alpha: L.alpha, attenuation: 0.6, luminosity: L.luminosity ?? 0.5, animation: { ...L.animation, reverse: false }, darkness: { min: L.dark ? LIT_FROM : 0, max: 1 } },
       locked: true,
       flags: { [MOD]: { built: plan, kind: "light", light: l.class } },
       ...(l.floor ? { _floor: l.floor } : {}),
@@ -536,6 +536,9 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
     const tall = (w.height ?? 0) * dist >= 8;
     for (let k = 1; k < w.path.length; k++) out.push(tall ? { c: c(w.path[k - 1], w.path[k]), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, flags: flags("wall") } : { ...fenceOnly, c: c(w.path[k - 1], w.path[k]), flags: flags("low-wall") });
   }
+  // (a palisade not built up as a castle's curtain: a line of stakes taller than a man, solid but for its gates' gaps)
+  for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "palisade" && !i.curtain && Array.isArray(i.path)))
+    for (let k = 1; k < w.path.length; k++) out.push({ c: c(w.path[k - 1], w.path[k]), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, flags: flags("palisade") });
   // (a water gate's grille: nothing passes it, but it's seen through)
   for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "watergate" && Array.isArray(i.path)))
     for (let k = 1; k < w.path.length; k++) out.push({ ...fenceOnly, c: c(w.path[k - 1], w.path[k]), flags: flags("water-gate") });

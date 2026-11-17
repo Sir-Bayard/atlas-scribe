@@ -35,6 +35,7 @@ export const BRIEF = {
   quarter: CHARACTERS,
   camp: ["campsite", "caravan", "soldiers"],
   towers: ["open", "roofed"],
+  moat: ["none", "moat"],
   openness: ["medium", "tight", "open"],
   corridors: ["narrow", "wide"],
   doors: ["some", "none", "all"],
@@ -62,6 +63,7 @@ export const BRIEF_LABELS = {
   quarter: { homes: "Homes", market: "Market", merchants: "Merchants", crafts: "Crafts", docks: "Docks", nobles: "Nobles", temple: "Temple", poor: "Poor quarter", garrison: "Garrison" },
   camp: { campsite: "Campsite", caravan: "Caravan", soldiers: "Soldiers" },
   towers: { open: "Open, with battlements", roofed: "Roofed" },
+  moat: { none: "None", moat: "A moat around the wall" },
   // (a castle's size names the castle, its map sized to hold it)
   castleSize: { small: "Fort (40 by 38)", medium: "Castle (48 by 46)", large: "Great castle (58 by 54)" },
 };
@@ -89,6 +91,11 @@ export const CASTLES = {
   medium: { map: [48, 46], wall: [34, 30], at: [7, 6], keep: [13, 8], spacing: 100, yard: [["barracks", 10, 5, "slate"], ["stable", 9, 5, "thatch"], ["chapel", 7, 5, "slate"], ["smithy", 6, 5, "slate"], ["store", 6, 4, "slate"]] },
   large: { map: [58, 54], wall: [44, 38], at: [7, 6], keep: [17, 10], spacing: 80, yard: [["barracks", 12, 5, "slate"], ["stable", 10, 5, "thatch"], ["chapel", 8, 5, "slate"], ["smithy", 6, 5, "slate"], ["store", 8, 5, "slate"], ["armory", 6, 5, "slate"], ["barracks", 9, 5, "slate"]] },
 };
+
+/** A castle moat's width in feet, and the squares added around the map for it on every side. */
+const MOAT_FT = 15, MOAT_ROOM = 6;
+/** A castle's map size and where its wall's corner stands: wider all around by MOAT_ROOM with a moat. */
+const castleFrame = (b) => { const C = CASTLES[b.size], m = b.castle?.moat === "moat" ? MOAT_ROOM : 0; return { map: [C.map[0] + 2 * m, C.map[1] + 2 * m], at: [C.at[0] + m, C.at[1] + m] }; };
 
 /** Each site's own defaults where the brief leaves a choice out (a camp in a clearing, a roadside by its road). */
 const SITE_DEFAULTS = {
@@ -157,7 +164,7 @@ export function normalizeBrief(input = {}) {
     },
     street: { place: oneOf(BRIEF.place, b.street?.place), quarter: oneOf(BRIEF.quarter, b.street?.quarter) },
     camp: { kind: oneOf(BRIEF.camp, b.camp?.kind), tents: Number.isFinite(Number(b.camp?.tents)) && Number(b.camp.tents) > 0 ? Math.min(TENTS.most, Math.round(Number(b.camp.tents))) : null },
-    castle: { towers: oneOf(BRIEF.towers, b.castle?.towers) },
+    castle: { towers: oneOf(BRIEF.towers, b.castle?.towers), moat: oneOf(BRIEF.moat, b.castle?.moat === true ? "moat" : b.castle?.moat) },
     underground: { openness: oneOf(BRIEF.openness, b.underground?.openness), corridors: oneOf(BRIEF.corridors, b.underground?.corridors), doors: oneOf(BRIEF.doors, b.underground?.doors) },
     name: typeof b.name === "string" ? b.name.trim() : "",
     seed,
@@ -171,8 +178,10 @@ export function normalizeBrief(input = {}) {
 export function briefPlan(input = {}) {
   input ??= {};
   const b = normalizeBrief(input);
-  const [W, H] = b.site === "castle" ? CASTLES[b.size].map : BRIEF_SIZES[b.size];
-  const r = rng(b.seed, "brief", b.site);
+  const [W, H] = b.site === "castle" ? castleFrame(b).map : BRIEF_SIZES[b.size];
+  // (each part from a stream of its own, so adding or leaving out one, a stream say, moves nothing else)
+  const base = rng(b.seed, "brief", b.site);
+  let r = base;
   const features = [];
   const notes = []; // (what couldn't be made as asked, for the window to say)
   // (a seed or a choice the brief doesn't know, replaced: said, so a script doesn't get a default with no word)
@@ -198,6 +207,7 @@ export function briefPlan(input = {}) {
   const mapWord = b.site === "castle" ? `on a ${BRIEF_LABELS.castleSize[b.size].replace(/ \(.*$/, "").toLowerCase()}'s map` : `on a ${b.size} map`;
   const noRoom = (what) => notes.push(`There's no room for ${what}${SITE_WORD[b.site] ? ` clear of ${SITE_WORD[b.site]}` : " clear of the rest"} ${mapWord}, so it's left out${biggest ? "" : ": a bigger one may have room"}.`);
 
+  r = base.fork("road");
   // 1. The road: across the map's long way, a little below its middle, wandering gently (a roadside's and a camp's by
   // it; a street's is the district's main street, below)
   let road = null;
@@ -219,6 +229,7 @@ export function briefPlan(input = {}) {
     taken.push({ path: road.path, half: road.width / 10 + 0.8 });
   }
 
+  r = base.fork("site");
   // 2. The site's own, by its road and before the cliff and the water, which keep clear of it: a building set back from
   // its road, a camp (a street's district comes after them, since its houses keep off them themselves)
   let site = null;
@@ -235,11 +246,14 @@ export function briefPlan(input = {}) {
   const ys = [...sitePts.map((q) => q[1]), ...(road ? road.path.filter((q) => q[0] > -1 && q[0] < W + 1).flatMap((q) => [q[1] - roadBand, q[1] + roadBand]) : [])];
   const roomTop = ys.length ? Math.min(...ys) : H, roomBottom = ys.length ? H - Math.max(...ys) : H;
 
+  r = base.fork("cliff");
   // 3. A cliff: high ground along the map's top, its edge wandering across it (along the bottom when the site leaves
   // more room there; left out when there's room for neither)
   let cliffEdge = null;
   if (has("cliff")) {
-    const want = H * r.range(0.24, 0.34), top = roomTop >= roomBottom || roomTop >= want + 3.5, room = top ? roomTop : roomBottom;
+    // (top or foot by a coin of its own when both have room, else the side with more)
+    const want = H * r.range(0.24, 0.34), both = roomTop >= want + 4.5 && roomBottom >= want + 4.5;
+    const top = both ? r.fork("cliff-side").chance(0.5) : roomTop >= roomBottom || roomTop >= want + 3.5, room = top ? roomTop : roomBottom;
     const depth = Math.min(want, room - 4.5);
     if (depth < 3.5) noRoom("a cliff");
     else {
@@ -253,6 +267,7 @@ export function briefPlan(input = {}) {
     }
   }
 
+  r = base.fork("stream");
   // 4. Water: a stream across the other way (along the map when the top is a cliff and the middle a road, or a camp
   // has the middle), clear of the site and its crossing where it meets the road; a pond in open ground
   if (has("stream")) {
@@ -293,11 +308,13 @@ export function briefPlan(input = {}) {
   };
   // (a smaller pond where a full one won't go)
   const pondR = r.range(3, 4.5);
+  r = base.fork("pond");
   if (has("pond") && ![1, 0.8, 0.65].some((k) => blob("pond", "water", pondR * k, { class: "pond" }))) noRoom("a pond");
 
   // (a street's main street, cross street and district)
   if (b.site === "street") street(b, r, W, H, features, taken, has);
 
+  r = base.fork("rises");
   // 5. Rises and hollows (hills bring a few low rises of their own), kept off what's placed
   // (smaller where a full one won't go, and said when none will)
   const riseR = r.range(5, 7.5), hollowR = r.range(4, 6);
@@ -305,6 +322,7 @@ export function briefPlan(input = {}) {
   if (has("hollow") && ![1, 0.8, 0.6].some((k) => blob("hollow", "height", hollowR * k, { height: -10, edge: "bank" }))) noRoom("a hollow");
   if (b.ground === "hills") for (let k = 0; k < 3; k++) blob(`hill-${k + 1}`, "height", r.range(4, 7), { height: 5 * r.int(2) + 5, edge: "slope" });
 
+  r = base.fork("woods");
   // 6. Woods by the ground: a forest all over (cleared around a site), a clearing's ring around an open middle, a few
   // copses on open ground or hills
   const density = WOOD[b.trees];
@@ -321,6 +339,7 @@ export function briefPlan(input = {}) {
     }
   }
 
+  r = base.fork("scatter");
   // 7. Scatter: stumps and logs, rocks and boulders, bushes and ferns, on top of what the woods have, kept off roads,
   // water, buildings and each other
   const area = W * H;
@@ -495,9 +514,10 @@ function roadside(b, r, W, H, road, features, taken) {
  * clear by what's placed after it).
  */
 function castle(b, r, W, H, features, taken, crossRoad) {
-  const C = CASTLES[b.size], [cw, ch] = C.wall, [X0, Y0] = C.at, X1 = X0 + cw, Y1 = Y0 + ch;
+  const C = CASTLES[b.size], [cw, ch] = C.wall, [X0, Y0] = castleFrame(b).at, X1 = X0 + cw, Y1 = Y0 + ch;
   const cx = r2((X0 + X1) / 2);
-  features.push({ id: "curtain", type: "wall", class: "town", path: [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1], [X0, Y0]], straight: true, towers: b.castle.towers, towerSpacing: C.spacing });
+  const moat = b.castle.moat === "moat" ? { outside: "moat", ditchWidth: MOAT_FT } : {};
+  features.push({ id: "curtain", type: "wall", class: "town", path: [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1], [X0, Y0]], straight: true, towers: b.castle.towers, towerSpacing: C.spacing, ...moat });
   // (the gate's road: up from the map's foot, or off a track across it, through the gate to the keep's door)
   const [kl, kd] = C.keep, ky0 = Y0 + 5, ky1 = ky0 + kd;
   const foot = crossRoad ? H - 2.6 : H + 2;
@@ -530,7 +550,9 @@ function castle(b, r, W, H, features, taken, crossRoad) {
   things.forEach(([cls, at], k) => { if (!placed.some((o) => meets([at[0], at[1], at[0], at[1]], o, 1.2))) features.push({ id: `${cls}-${k + 1}`, type: "prop", class: cls, at: pt(at), rot: Math.round(r.range(-30, 30)) }); });
   // (kept clear: the castle and a little around it)
   const pts = [];
-  for (let x = X0 - 4; x <= X1 + 4; x += 1.5) for (let y = Y0 - 4; y <= Y1 + 4.5; y += 1.5) { pts.push([x, y]); taken.push({ at: [x, y], r: 1.2 }); }
+  // (with a moat, out past it: nothing scattered in the water or on its banks)
+  const m = moat.outside ? MOAT_ROOM + 5 : 4;
+  for (let x = X0 - m; x <= X1 + m; x += 1.5) for (let y = Y0 - m; y <= Y1 + m + 0.5; y += 1.5) { pts.push([x, y]); taken.push({ at: [x, y], r: 1.2 }); }
   return { at: [cx, (Y0 + Y1) / 2], r: Math.hypot(cw, ch) / 2 + 4, pts };
 }
 

@@ -9,7 +9,7 @@
 import { marketStalls } from "./market.mjs";
 import { PAVINGS } from "../squares.mjs";
 import { pointInPolygon, distanceToPath, polygonsOverlap } from "../geom.mjs";
-import { centroid, area } from "../lots/poly.mjs";
+import { centroid } from "../lots/poly.mjs";
 import { characterOf } from "../character.mjs";
 import { rng } from "../rng.mjs";
 import { ANCHOR_PLACES } from "../plan.mjs";

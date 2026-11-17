@@ -503,7 +503,7 @@ export class AtlasScribeApp extends Base {
           <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip-text="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
         <div class="as-pv-tools as-pv-scene">
-          <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip-text="${scene ? "Draw the map and update the scene made from this plan (it's backed up first)" : "Draw the map and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
+          <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip-text="${scene ? "Draw the map and update the scene made from this plan (backed up as the Scene backups setting says)" : "Draw the map and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
           ${this.#publishing ? `<button type="button" data-action="asCancel" data-tooltip-text="Stop painting (no scene is made or changed)"><i class="fa-solid fa-xmark"></i> Cancel</button>` : ""}
           ${scene && !this.#publishing ? `<button type="button" data-action="asView" data-tooltip-text="Go to the scene"><i class="fa-solid fa-eye"></i></button>` : ""}
         </div>

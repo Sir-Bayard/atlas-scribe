@@ -6,13 +6,7 @@
  */
 import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
-import { cityPlan, CITY_WATER, RIVER_FORMS, CITY_SHAPES, SHAPE_WATER, SHAPE_FORMS } from "./quick-city.mjs";
-import { meander, bends } from "./meander.mjs";
-import { watermill, windmill } from "./mills.mjs";
-import { PAVINGS, UNPAVED, squareShape } from "./squares.mjs";
-import { crossesCliff } from "./cliffs.mjs";
-import { union, offset, area as polyArea } from "./lots/poly.mjs";
-import { wallReach } from "./layout/walls.mjs";
+import { cityPlan, RIVER_FORMS, CITY_SHAPES } from "./quick-city.mjs";
 import { readChoices, roadsAndDistricts, wallsAndCenter, waterBeyond, millsAndCemetery, farmsAndFields, woodsAndCliffs, finishPlan, highGround } from "./quick-steps/index.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
@@ -218,6 +212,12 @@ export function quickPlan(options = {}) {
   if (out.stepNotes) { notes.push(...out.stepNotes); delete out.stepNotes; }
   if (options.high && options.high !== "none" && !QUICK_HIGH.includes(options.high)) notes.push(`"${options.high}" isn't high ground Quick Start knows (${QUICK_HIGH.join(", ")}), so the map has none.`);
   if (options.high && options.high !== "none" && CITIES.includes(out.choices?.size)) notes.push("A city's own ground makes its high ground; the High ground choice is for a village or town.");
+  // (choices asked for that the rest didn't allow, and what was used instead)
+  const used = out.choices ?? {};
+  if (CITIES.includes(used.size)) {
+    if (options.shape && QUICK.shape?.includes?.(options.shape) && used.shape && used.shape !== options.shape) notes.push(`A ${options.shape} outline doesn't go with ${used.water === "river" && options.river ? `a river's ${options.river} form` : ({ none: "no water", river: "a river", coast: "the sea", lake: "a lake", estuary: "a river mouth" })[used.water] ?? used.water}, so its outline is ${used.shape}.`);
+    if (RIVER_FORMS.includes(options.river) && used.water && !["river", "estuary"].includes(used.water)) notes.push(`A river's form (${options.river}) needs a river, and this city's water is ${used.water}, so it's left out.`);
+  } else if (used.size && ["coast", "lake", "estuary"].includes(options.water)) notes.push(`The ${options.water === "coast" ? "sea" : options.water === "lake" ? "lake shore" : "river mouth"} is a city's; a village or town gets a river instead.`);
   return { ...out, notes };
 }
 

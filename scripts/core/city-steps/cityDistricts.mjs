@@ -67,7 +67,8 @@ export function cityDistricts(ctx) {
     const d = districts[k];
     if (roads.some((rd) => pathTouchesPolygon(rd.path, d.shape))) continue;
     const mid = centroid(d.shape);
-    const best = roadPts.map((x) => ({ ...x, l: Math.hypot(x.p[0] - mid[0], x.p[1] - mid[1]) })).filter((x) => x.l < R * 0.6 && !densify([mid, x.p], 0.4).some((q) => inWater(q))).sort((a, b) => a.l - b.l)[0];
+    // (nearest first, and only those tested for a dry way in until one has it)
+    const best = roadPts.map((x) => ({ ...x, l: Math.hypot(x.p[0] - mid[0], x.p[1] - mid[1]) })).filter((x) => x.l < R * 0.6).sort((a, b) => a.l - b.l).find((x) => !densify([mid, x.p], 0.4).some((q) => inWater(q)));
     if (best) roads.push({ id: `${d.id}-street`, type: "road", class: "street", surface: "cobble", path: [pt(best.p), pt(mid)] });
     else districts.splice(k, 1);
   }

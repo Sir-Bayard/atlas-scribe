@@ -185,17 +185,17 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       features.push({ ...structuredClone(f), id: idFor(f.id), at: P(f.at) });
     }
   }
-  // The plan's own low walls, hedges and fences, cut to the rectangle; its stone town walls too, built up as a
-  // castle's (layout/castle.mjs), towers spaced for the zoom (a palisade or cliff is left off, and the notes say so)
-  const LOW_WALLS = new Set(["drystone", "hedge", "fence", "stone"]);
-  const notYet = new Set();
+  // The plan's own low walls, hedges, fences and cliffs, cut to the rectangle; its town walls and palisades too, built
+  // up as a castle's (layout/castle.mjs), towers spaced for the zoom
+  const LOW_WALLS = new Set(["drystone", "hedge", "fence", "stone", "cliff"]);
   for (const f of plan?.features ?? []) {
     if (f.type !== "wall" || !Array.isArray(f.path)) continue;
     // (a low wall's piece lying only in the reach past the rectangle is left out; a town wall's is kept, as thick
     // walls and towers reach in from it)
-    const pieces = clipPath(f.path, box).filter((piece) => f.class === "town" || reaches(piece, (Number.isFinite(f.thickness) ? f.thickness / ft : 0.1) / 2));
+    const ring = f.class === "town" || f.class === "palisade";
+    const pieces = clipPath(f.path, box).filter((piece) => ring || reaches(piece, (Number.isFinite(f.thickness) ? f.thickness / ft : f.class === "cliff" ? 1 : 0.1) / 2));
     if (!pieces.length) continue;
-    if (f.class === "town") {
+    if (ring) {
       const closed = f.path.length >= 4 && same(f.path[0], f.path[f.path.length - 1]);
       // (a loop whose start lies in the rectangle comes out cut there in two, its last piece ending where its first
       // begins: one run, so its corner there gets one tower)
@@ -206,7 +206,7 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
         const loop = closed && piece.length >= 4 && same(piece[0], piece[piece.length - 1]);
         const side = loop ? null : closed ? outsideOf(piece, f.path) : f.side ?? null;
         features.push({
-          id: idFor(f.id), type: "wall", class: "town", path: piece.map(P), straight: true, ...(side ? { side } : {}),
+          id: idFor(f.id), type: "wall", class: f.class, path: piece.map(P), straight: true, ...(side ? { side } : {}),
           ...(Number.isFinite(f.thickness) ? { thickness: f.thickness } : {}), ...(Number.isFinite(f.height) ? { height: f.height } : {}),
           ...(f.towers ? { towers: f.towers } : {}), ...(f.towerShape ? { towerShape: f.towerShape } : {}),
           towerSpacing: Math.round((Number.isFinite(f.towerSpacing) ? f.towerSpacing : 120) * zoom),
@@ -215,10 +215,9 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       }
       continue;
     }
-    if (!LOW_WALLS.has(f.class ?? "drystone")) { notYet.add(f.class === "cliff" ? "cliffs" : "palisades"); continue; }
+    if (!LOW_WALLS.has(f.class ?? "drystone")) continue;
     for (const piece of pieces) features.push({ ...structuredClone(f), id: idFor(f.id), path: piece.map(P) });
   }
-  for (const what of notYet) notes.push(`A battle map doesn't draw ${what} yet, so the ${what.slice(0, -1)} here is left off.`);
   // Districts cut to the rectangle, kind, character and roofs kept, filled again at battle size; their streets and
   // notable buildings come from the overview, so they lay none of their own
   // (a district that no street of the overview reaches inside the area builds no houses of its own there: it keeps

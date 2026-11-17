@@ -3,6 +3,9 @@ import { TAU, add, apart, biggest, crossings, densify, dirOf, distToPath, inside
 import { area, bands, difference } from "../lots/poly.mjs";
 import { cliffOf, cliffWidth, offsetLine } from "../cliffs.mjs";
 
+/** A path's length in squares. */
+const lengthOf = (path) => path.slice(1).reduce((t, q, i) => t + Math.hypot(q[0] - path[i][0], q[1] - path[i][1]), 0);
+
 /**
  * A cliff across the map behind the city, clear of the water; the wall ends at it and nothing is built on it
  */
@@ -23,7 +26,7 @@ export function cliffAndGates(ctx) {
       const U = dirOf(B), V = [-U[1], U[0]], mid = add(C, mul(U, radiusAt(B) * dc)), span = Math.hypot(W, H), line = [];
       let off = 0;
       for (let s = -span; s <= span; s += 5) { off = Math.max(-2.5, Math.min(2.5, off + sp.range(-1.2, 1.2))); line.push(add(add(mid, mul(V, s)), mul(U, off))); }
-      const run = onMapRuns(line, W, H).sort((a, b) => ctx.along(b).at(-1) - ctx.along(a).at(-1))[0];
+      const run = onMapRuns(line, W, H).sort((a, b) => lengthOf(b) - lengthOf(a))[0]; // (the longest run on the map)
       if (!run) continue;
       const pts = densify(run, 1);
       if (ctx.rivers.some((rv) => pathsCross(run, rv.path) || pts.some((p) => distToPath(p, rv.path) < widestOf(rv) / 25 / 2 + 3))) continue;

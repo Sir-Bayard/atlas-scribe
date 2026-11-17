@@ -3,14 +3,10 @@
  * and in hamlets and villages often a croft (a small fenced field) at the back, with the plot's boundary drawn.
  * Everything in squares. Pure: runs anywhere.
  */
-import { pointInPolygon, polygonsOverlap, unturn, shapeToPolygon } from "../geom.mjs";
-import { lotTypeOf } from "./index.mjs";
-import { intersect, area, difference, offset, union } from "./poly.mjs";
+import { pointInPolygon, shapeToPolygon } from "../geom.mjs";
+import { intersect, area, offset } from "./poly.mjs";
 import { ROOFS, ROOF_STYLES } from "../plan.mjs";
-import { SegGrid, finitePaths } from "../spatial.mjs";
-import { gardenShare as gardenShareOf, characterOf, LOOK } from "../character.mjs";
-import { USE_INFO } from "../uses.mjs";
-import { joinLots, layForm, rectCorners } from "./forms.mjs";
+import { rectCorners } from "./forms.mjs";
 import { lotRules, ownBuildings, plotByPlot, yardsAndFences } from "./build-steps/index.mjs";
 
 /** A key from { key: weight } for a roll in [0, 1). */

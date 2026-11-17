@@ -1,17 +1,20 @@
 // One phase of laying out a plan (layout/index.mjs, layoutPlan): ctx holds what the phases share.
-import { earlierFields, fieldKeepOut, fieldRoads, fillFields } from "../fields.mjs";
+import { battleField, earlierFields, fieldKeepOut, fieldRoads, fillFields } from "../fields.mjs";
 import { hedgeBushes } from "../settlement.mjs";
 import { seasonOf } from "../../roles.mjs";
 
 /**
- * Field systems: open ground, so nothing keeps out of them; their hedgerow trees keep clear of every building
+ * Field systems: open ground, so nothing keeps out of them; their hedgerow trees keep clear of every building (on a
+ * battle map each area is one field)
  */
 export function fieldSystems(ctx) {
-  const { H, W, free, items, notes, plan, progress, sq, streamFor } = ctx;
+  const { H, W, battle, free, items, notes, plan, progress, sq, streamFor } = ctx;
   progress(0.55, "Fields");
   const keepOutMemo = {}; // what every field system keeps out of, worked out once
   for (const f of plan.features.filter((f) => f.type === "area" && f.class === "fields")) {
     const r = streamFor(f.id);
+    // (on a battle map the area is one field, its rows at battle size)
+    if (battle) { const fd = battleField(f, r, seasonOf(plan)); if (fd) items.push({ kind: "field", id: `${f.id}/f1`, from: f.id, system: "field", ...fd }); continue; }
     const made = fillFields({ area: f, r, keepOut: fieldKeepOut(plan, f, keepOutMemo), earlier: earlierFields(plan, f), along: fieldRoads(plan), W, H, ftPerSquare: sq, season: seasonOf(plan) });
     notes.push(...made.notes);
     made.fields.forEach((fd, k) => items.push({ kind: "field", id: `${f.id}/f${k + 1}`, from: f.id, system: made.system, ...fd }));

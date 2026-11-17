@@ -6,10 +6,9 @@
  *   - Floors: the system's falling reads a scene's surfaces as the floors a creature stands on, so the ground is laid as
  *     surfaces (each piece at its elevation, a bridge's deck over its bed) and every floor above or below as one at its
  *     height. Without them a token standing on a rise would count as falling.
- *   - Falling: a move over the ground's heights is made with them in it, so a token walking down a bank isn't taken for
- *     falling, and one that jumps down over a cliff's edge is left in the air for the system's falling to take, with
- *     its damage (unless it can't fall: it flies, hovers, or the world turned falling off). Walking off a cliff is still
- *     stopped, as in every system.
+ *   - Falling: AtlasScribe grounds a token on the ground's heights itself, as in every system, so the floors keep the
+ *     system from taking a token on a rise for falling. A jump off a cliff lands it below without the system's falling
+ *     damage (handing moves to the system's falling waits for floors that slope). Walking off a cliff is stopped.
  *   - Climbing: the card shown to a walker stopped at a cliff carries an Athletics check at the cliff's DC.
  * Cover: a fence, low wall or parapet keeps AtlasScribe's cover mark (the system works out no cover by itself).
  */
@@ -25,6 +24,12 @@ const floor = { type: "defineSurface", name: "Floor", system: { placement: "bott
 export const dnd5e = {
   id: "dnd5e",
   label: "Dungeons & Dragons Fifth Edition",
+  // (its floors are laid even with the rules setting on Foundry's own: the system's falling reads them either way)
+  surfaces: true,
+  // (its falling isn't handed moves: Foundry's floors are flat, so a move made again over a slope stops at the top's
+  // edge, below the raised floor (seen in dnd5e 6.0 on Foundry 14.370); AtlasScribe grounds tokens itself, as in
+  // every system, and falls() stays for when floors can slope)
+  canFall: () => false,
 
   heightBehaviors(spec, { core }) {
     const rough = roughOf(spec);
@@ -37,7 +42,10 @@ export const dnd5e = {
     const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
     const [W, H] = layout?.size?.squares ?? [0, 0];
     const out = [];
-    for (const s of groundSurfaces(layout)) out.push({
+    // (with Battle map heights off tokens stay at 0 ft, so the ground's heights aren't laid: each level's base is the floor)
+    let heights = true;
+    try { heights = game.settings.get("atlas-scribe", "battleHeight") !== false; } catch { /* before init: on */ }
+    for (const s of heights ? groundSurfaces(layout) : []) out.push({
       name: s.name, color: s.deck ? "#7a5a3a" : "#6f6a4a",
       shapes: s.polys.map((p) => ({ type: "polygon", points: pts(p.points), hole: p.hole })),
       elevation: { bottom: s.elevation, top: s.elevation, topInclusive: true },

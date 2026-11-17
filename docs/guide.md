@@ -5,10 +5,13 @@ The full guide to AtlasScribe: Map Generator. For a quick start, see the [README
 - [The window](#the-window)
 - [Quick Start: villages and towns](#quick-start-villages-and-towns)
 - [Cities](#cities)
+- [Regions](#regions)
 - [Changing the map](#changing-the-map)
 - [Features in detail](#features-in-detail)
 - [Saving and making scenes](#saving-and-making-scenes)
 - [Battle maps](#battle-maps)
+- [Caves and dungeons](#caves-and-dungeons)
+- [Imports and exports](#imports-and-exports)
 - [Battle map rules](#battle-map-rules)
 - [Art](#art)
 - [Settings](#settings)
@@ -16,7 +19,7 @@ The full guide to AtlasScribe: Map Generator. For a quick start, see the [README
 
 ## The window
 
-As the GM, open the Scenes tab and click **AtlasScribe**. The window shows the plan you're working on as a quick sketch in plain colors, with its districts and areas listed on the right. Above the list, the top row has Quick Start (the wand); open, import, save, download and copy the plan; the plan's settings (the gear); and the Art window (the pictures). The row under it has Draw, the Battle map tool, Reroll all and Undo. The plan you had open comes back with the window.
+As the GM, open the Scenes tab and click **AtlasScribe**. The window shows the plan you're working on as a quick sketch in plain colors, with its districts and areas listed on the right. Above the list, the top row has Quick Start (the wand); open, import, save, download and copy the plan; the plan's settings (the gear); the Files window (the folders); the as-built summary; and the Art window (the pictures). The row under it has Draw, the Battle map tool, Reroll all, Undo and Redo. Ctrl+Z undoes, Ctrl+Y redoes, and the Delete key removes the picked feature. The plan you had open comes back with the window, and a draft of your unsaved changes is kept as you work, so after a reload or a crash the window offers it back.
 
 A plan is what you decided: the roads, the water, the districts and what they're like, the buildings and labels you placed. Everything else (side streets, plots, houses, gardens, trees, clutter) is filled in from it each time it's drawn. Every random choice is seeded, so the same plan always gives the same map, and each district has its own seed: reroll one and the districts beside it don't move (only trees its new houses and streets crowd can change), and lock the ones you like so a reroll leaves them alone.
 
@@ -27,7 +30,8 @@ Quick Start's Settlement tab writes a plan from a few choices:
 - **Place:** a hamlet, village, town, city or metropolis (see [Cities](#cities)).
 - **Season**, **Water** (a river, a stream or none; a city has more) and **Roads** (a crossroads, a road through or a fork).
 - **Center:** a market square, a green, a well or none. A city's can also be a cathedral or a palace beside its square.
-- **Around it:** farms and woods, farmland, woodland or open ground. Farmland is laid out in fields, hedged patchwork or open strips.
+- **Around it:** farms and woods, farmland, woodland or open ground. Farmland is laid out in fields, hedged patchwork or open strips. Woods near the place are cleared toward it: scattered trees, stumps, logs and woodpiles, thickening farther off.
+- **High ground** (a village or town): none, hills, or mountains with hills before them, along the edge with the most room, short of the houses, farms, fields and water.
 - **It has:** Temple, Inn, Smithy, Cemetery, Watermill, Windmill and Walled (a palisade around a village, a town wall around a town). A box you leave alone is as its size has it (half-checked: now and then, by the seed), and Reset puts them all back.
 - **Name** and **Seed.**
 
@@ -35,7 +39,7 @@ Set a choice to Any (last in its list) and the seed picks; Place on Any is a ham
 
 Or type what you want in the **Describe** box ("a walled village called 'Ashby' with a green, a watermill and an inn, in winter"). What it understood shows as chips and is set in the form, where you can change it; a chip's × takes it out, and words it doesn't know are listed and left out.
 
-What you get: a river or stream bends through the country, often with a watermill on its own mill race by the houses; windmills stand among the fields; a town has a cemetery at its edge; and the market square is full of stalls. The square is paved in one of several pavings (cobbles, setts, flagstones, herringbone or plain brick, stone tiles) or, in a poorer place, left as bare ground, and it may be round, a rectangle, an irregular market place, a triangle at a fork or a long market street. Now and then an escarpment runs through the country. Quick Start writes the plan and draws it in about a second.
+What you get: a river or stream bends through the country, often with a watermill on its own mill race by the houses; windmills stand among the fields; a town has a cemetery at its edge; and the market square is full of stalls. The square is paved in one of several pavings (cobbles, setts, flagstones, herringbone or plain brick, stone tiles) or, in a poorer place, left as bare ground, and it may be round, a rectangle, an irregular market place, a triangle at a fork or a long market street. Now and then an escarpment runs through the country. A river has gravel shallows on its bends and now and then an island or two; where two rivers meet in a city, the river below is as wide as the two together. Quick Start writes the plan and draws it in about a second.
 
 ## Cities
 
@@ -51,6 +55,10 @@ A city's center can also be a cathedral or a palace beside its square (the templ
 
 Suburbs grow along the roads outside some gates, with one or two walled or hedged burial grounds by the roads, a watermill on the river, windmills, farms, fields and woods beyond. A city takes a few seconds to draw, a metropolis about 20.
 
+## Regions
+
+Quick Start's **Region** tab makes a map miles across (half a mile a square by default): a city and its towns, villages and hamlets, castles, ruins, towers, temples, inns and mines, the highways and roads between them, woods, hills, mountains and marsh, and the sea or a lake. Places keep to dry, low ground and their names follow them when moved or renamed. Pick a city, town, village, hamlet or castle and click **Make its map** to start that place's own plan, which opens in the window. A region is drawn in its own style, and its scene has a grid in miles. The Draw palette has the places (City to Mine) and High road.
+
 ## Changing the map
 
 Each district and area in the list has a button to reroll it and one to lock it; Reroll all rerolls everything that isn't locked; Undo steps back (up to 50 changes). Click anything on the map (a district, wood, field system, farm, road, river, pond, lake, wall, quay, square, building, bridge, prop or label) or a district or area in the list to open its settings in the side panel; a district, area, pond, lake, sea, road, river, wall or dock can also be reshaped by dragging its corners or points (corners two districts share move together, and bridges follow a moved road or river); drag the dot in a side's middle to add a corner, and alt-click or right-click a corner to remove it; a circle's or ellipse's edge handle sets its size. Shapes shows every handle at once, and Outlines hides or shows the outlines. Scroll to zoom, drag to move, double-click (or Fit) to fit.
@@ -61,7 +69,7 @@ A feature's panel shows only the settings that thing uses, each showing in gray 
 
 ### Drawing
 
-**Draw** adds something new: pick a tool (district, woods, fields, park, cemetery, farm, yard, square; building, windmill, watermill; road, lane, track, wall, hedge, town wall, palisade, cliff; river, stream, pond, lake, sea, quay, pier, boat, ship; bridge, ford, tree, well, cart, fountain, market cross, crane, label; rise, hollow; campfire, brazier, torch, lamp post, cairn, standing stone, sledge), then click on the map. A district or area is drawn corner by corner (double-click, Enter or a click on the first corner finishes it) or by dragging a box; its corners snap onto other districts' and areas' corners and sides and onto the map's edge, and where it meets a neighbor along a side each takes the other's corners there, so the two share that side, their streets meet across it, and its corners move together. A road, river or wall is drawn point by point, and its points snap onto a road (water onto water, a wall onto a wall) or the map's edge. Where a new road crosses water, or a new river or stream crosses a road, a bridge is added (a ford where a track or path crosses a stream), unless one is already there; click it to change it or delete it. Bridges and lanes added this way are ordinary features you can change or delete. A district drawn with no road into it and no neighboring streets gets a lane from the nearest road it can reach without running through another district, square, building, yard, park, farm or pond, and a square drawn off the roads inside a district gets a street (a lane in a village or hamlet) from the nearest road into it, so houses line the way to it. Farms, yards, parks, squares and mills out in the country get a faint lane of their own to the nearest road when the map is drawn (none through water, and none where the only way is a long way around). A building is a box, or a click for one of the usual size; a bridge, ford, prop or label is one click (a bridge or ford moves onto the nearest place a road crosses the water). Finish (in the palette) ends a drawing too, Backspace or Delete takes the last point off and Esc cancels. The new feature's settings open when it's drawn.
+**Draw** adds something new: pick a tool (district, woods, fields, park, cemetery, farm, yard, square, hills, mountains, marsh, cave, dungeon; building, windmill, watermill; road, lane, track, wall, hedge, town wall, palisade, cliff; river, stream, pond, lake, sea, quay, pier, boat, ship; bridge, ford, tree, well, cart, fountain, market cross, crane, label; rise, hollow; campfire, brazier, torch, lamp post, cairn, standing stone, sledge; on a region, the places and high road), then click on the map. A district or area is drawn corner by corner (double-click, Enter or a click on the first corner finishes it) or by dragging a box; its corners snap onto other districts' and areas' corners and sides and onto the map's edge, and where it meets a neighbor along a side each takes the other's corners there, so the two share that side, their streets meet across it, and its corners move together. A road, river or wall is drawn point by point, and its points snap onto a road (water onto water, a wall onto a wall) or the map's edge. Where a new road crosses water, or a new river or stream crosses a road, a bridge is added (a ford where a track or path crosses a stream), unless one is already there; click it to change it or delete it. Bridges and lanes added this way are ordinary features you can change or delete. A district drawn with no road into it and no neighboring streets gets a lane from the nearest road it can reach without running through another district, square, building, yard, park, farm or pond, and a square drawn off the roads inside a district gets a street (a lane in a village or hamlet) from the nearest road into it, so houses line the way to it. Farms, yards, parks, squares and mills out in the country get a faint lane of their own to the nearest road when the map is drawn (none through water, and none where the only way is a long way around). A building is a box, or a click for one of the usual size; a bridge, ford, prop or label is one click (a bridge or ford moves onto the nearest place a road crosses the water). Finish (in the palette) ends a drawing too, Backspace or Delete takes the last point off and Esc cancels. The new feature's settings open when it's drawn.
 
 ### Pin
 
@@ -73,11 +81,11 @@ An image under the sketch to trace over (a hand sketch, an old map). Underlay pi
 
 ### Plan settings
 
-The gear opens the plan's own settings: the name, style, map dressing, season, ground, the map's size, feet and pixels a square, the seed, the labels' color and font, and the scene's settings (its name, weather, time of day, darkness, light, fog, token vision, padding and grid).
+The gear opens the plan's own settings: the name, style, map dressing, season, ground, the map's size, feet and pixels a square, the seed, the labels' color and font, the image file (WebP, or JPEG, which saves several times faster; the default picks JPEG past 24 megapixels) and its quality, and the scene's settings (its name, weather, time of day, darkness, light, fog, token vision, padding and grid).
 
 ### Limits for now
 
-An ellipse building is drawn as its bounding box (a polygon one is drawn under a gable, its ridge the way it's turned). A turned area can't be reshaped, and a circle or ellipse only changes size. Squares, buildings, bridges and props can't be dragged once drawn: delete one and draw it again. A pinned house's buildings change together, not one by one. Changes you haven't saved last only until Foundry reloads.
+An ellipse building is drawn as its bounding box (a polygon one is drawn under a gable, its ridge the way it's turned). A turned area can't be reshaped, and a circle or ellipse only changes size. Squares, buildings, bridges and props can't be dragged once drawn: delete one and draw it again. A pinned house's buildings change together, not one by one. Drawing and reshaping need a mouse; everything else, including the feature list (its Everything view reaches every feature), works from the keyboard.
 
 ## Features in detail
 
@@ -109,6 +117,18 @@ A river, stream or canal is drawn point by point; its width is at its first poin
 
 A square's Market stalls setting fills it with stalls in rows (awnings in many colors, a little larger than life so they read on a map of a whole town), with lanes between and goods set out, clear of the roads through it; a market quarter's square has them too. A square's In its middle setting puts a fountain or a market cross near its middle, clear of the roads (else picked from its seed: a market square a cross or a fountain). A cemetery is drawn with the Cemetery tool: a gate where the nearest road meets it, a path across it (a cross path in a big one), graves in rows with open patches, yews, tombs beside the paths and a chapel at the far end of a big one, and a drystone wall or a hedge around it (its Border setting). A building whose use is windmill gets sails over its cap; one whose use is watermill gets a wheel on the side facing the nearest river or stream. Boats are moored along quays, wharves, piers and jetties, ships at the sea's, with cranes on stone quays, a few ships at anchor off a harbor and rowboats on a river by the houses; none on frozen water. Ships are drawn in plain shapes where you have no hull art.
 
+### Parks and greens
+
+A park area is a green or a formal garden (its Style). A green can have a feature (a pond, a well, a maypole or a market cross). A formal garden is built from parts, each picked by the seed unless you set it: its layout (quartered, saltire, goose foot, concentric, long canal or compartments), its center (a basin, fountain, statue, sundial or rond-point), its beds (lawn, knot parterres, kitchen beds or an orchard quarter), its edging (hedges, low walls or none) and its planting (an avenue, a quincunx, bosquets or none).
+
+### Hills, mountains and marsh
+
+Drawn as areas. Hills rise in rings of contours, shaded from the northwest, with rocky outcrops on their upper ground; houses can stand on them. Mountains are steep rock with close contours, crags and scree; nothing is built on them. A marsh is damp ground with reeds and pools; nothing is built in it either. On a battle map they're drawn at battle size, and zoomed maps keep them.
+
+### Woods and rivers
+
+A wood's **Cleared near town** setting thins it toward the town's nearest houses: scattered trees, stumps, logs and woodpiles close by, thick woods farther off (about 300 feet on a town map, at most 80 on a battle map). A river's or stream's **Shallows** puts gravel bars on the inside of its bends, and **Islands** (0 to 6) puts small islands where it runs wide and straight (on town maps), clear of its bridges, fords, docks, boats and mills.
+
 ### Cliffs
 
 Draw one with the Cliff tool along its top edge; the drop is on its left as you draw it (its "Drop is on the" setting turns it around). Its height sets how wide its face looks from above, and its rock is earthy brown stone or gray slate. An end inside the map dies away over a few squares; an end on the map's edge runs on. Houses, streets, fields and farm lanes keep off it, and the plan check warns about a road that runs over it (no road can climb a cliff).
@@ -119,22 +139,22 @@ A label is drawn at its true size, in its color and font. Click one, then drag i
 
 ### Style and map dressing
 
-A map is drawn in the illustrated style unless the plan's Style says textured. Illustrated draws everything itself: a light palette with ink lines, a town's built-up ground as one pale mass, streets in the tone of their paving (gray cobbles, tan dirt lanes, speckled gravel), squares paved through to their streets, fields marked by their crop (furrows, stubble, stippled grain, grass tufts), clumped trees (bare in winter), water with its banks inked (a river with a dashed ripple down its middle, a lake or the sea with lines following its shore), and a faint paper grain. Textured paints the map from map art (see [Art](#art)); it's made for battle maps, where its art is at home. Map dressing (a setting, on for a Quick Start city or metropolis) adds a ruled frame, a compass rose and a scale bar in feet in the map's emptiest corners; the frame takes a narrow margin around the map's edge (about a sixtieth of its shorter side). The map's name goes on a cartouche in another corner as a tile of its own, hidden when the scene is made: show it to the players from the Tiles controls when you're ready.
+A map is drawn in the illustrated style unless the plan's Style says textured or ink. Illustrated draws everything itself: a light palette with ink lines, a town's built-up ground as one pale mass, streets in the tone of their paving (gray cobbles, tan dirt lanes, speckled gravel), squares paved through to their streets, fields marked by their crop (furrows, stubble, stippled grain, grass tufts), clumped trees (bare in winter), water with its banks inked (a river with a dashed ripple down its middle, a lake or the sea with lines following its shore), and a faint paper grain. Ink is the same drawing in black ink on pale paper. Textured paints the map from map art (see [Art](#art)); it's made for battle maps, where its art is at home. A region has a style of its own. Map dressing (a setting, on for a Quick Start city or metropolis) adds a ruled frame, a compass rose and a scale bar in feet in the map's emptiest corners; the frame takes a narrow margin around the map's edge (about a sixtieth of its shorter side). The map's name goes on a cartouche in another corner as a tile of its own, hidden when the scene is made: show it to the players from the Tiles controls when you're ready.
 
 ## Saving and making scenes
 
-**Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file) and downloaded.
+**Save** keeps the plan in your world (in the output folder's `plans` folder), to open again later; it opens with the window next time. Plans can also be imported (pasted or from a file, see [Imports and exports](#imports-and-exports)) and downloaded. **Files** lists each saved plan's maps and backups, their sizes, and which one its scene shows; delete the old ones in Foundry's file browser.
 
-**Make scene** saves the plan, draws the map in its style (painting it with your art, for the textured style) and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise) and a small hidden label on each notable building naming its use ("Inn", "Temple", "Smithy", "Market hall"), or the name you gave it when you pinned it. Where two would overlap, the more telling one stays (a district's centerpiece first, then buildings of their own, then trades, then street-corner shrines and watch posts). Cancel stops the painting. If some art couldn't be had, it says so: on a battle map those parts are drawn, in the textured style painted in plain colors. The scene is in the Scenes tab; the eye button beside Update scene goes to it. After changes, **Update scene** repaints that scene (it's backed up first). The art folders read and the art FA Nexus found are remembered until Foundry reloads or the Art window's **Read the folders again** button (the arrows at its top right) is clicked (the folders alone also when the folder list changes), so later scenes and updates don't wait for them again.
+**Make scene** saves the plan, draws the map in its style (painting it with your art, for the textured style) and makes it a scene, with the plan's labels hidden from players (unless a label says otherwise) and a small hidden label on each notable building naming its use ("Inn", "Temple", "Smithy", "Market hall"), or the name you gave it when you pinned it. Where two would overlap, the more telling one stays (a district's centerpiece first, then buildings of their own, then trades, then street-corner shrines and watch posts). Cancel stops the painting. If some art couldn't be had, it says so: on a battle map those parts are drawn, in the textured style painted in plain colors. The scene is in the Scenes tab; the eye button beside Update scene goes to it. After changes, **Update scene** repaints that scene (backed up first, as the Scene backups setting says), and the window says what changed since the last map. The notes from the last Make scene stay in the window. The **summary** button gives the plan as built (its size, districts and what each holds, roads, water, walls, squares, parks and landmarks) to copy into your notes. A map bigger than the Largest image setting is also saved in parts, shown in its scene as tiles. The art folders read and the art FA Nexus found are remembered until Foundry reloads or the Art window's **Read the folders again** button (the arrows at its top right) is clicked (the folders alone also when the folder list changes), so later scenes and updates don't wait for them again.
 
-**Restoring a backup:** right-click the scene in the Scenes sidebar, choose Import Data, and pick the backup file from the output folder's `backups` folder. That puts the scene back exactly as it was.
+**Restoring a backup:** right-click the scene in the Scenes sidebar, choose Import Data, and pick the backup file from the backups folder (the Backup folder setting, by default `backups` in the output folder). That puts the scene back exactly as it was.
 
 ## Battle maps
 
 A battle map is a plan at 5 feet a square, made to fight on. It's painted from your map art (art folders, art you choose, or FA Nexus) and drawn where there's none (see [Art](#art)), and made a scene with its walls, doors, regions, lights and roof tiles. There are three ways to make one:
 
-- **Quick Start's Battle map tab:** pick a Site (Wilderness, Roadside building, Village or town street, Camp or Castle), its size, the season, time of day, weather and ground, its features (a road, a stream, a pond, a cliff, a rise, a hollow) and how much is scattered over it. Or type what you want in the Describe box ("a roadside inn at night in spring with a stage and a kitchen"): what it understood is set in the form, where you can change it, and words it doesn't know are listed and left out.
-- **From a town map:** on a village, town or city, the Battle map tool takes a box you drag (or a 30, 45 or 60 square one you click to place) and **Make battle map** makes that area a battle map, twice true size by default so there's room to fight, and opens it in the window ready for Make scene. It keeps the town map's streets, water, squares and notable buildings where they are and builds the rest again at battle size.
+- **Quick Start's Battle map tab:** pick a Site (Wilderness, Roadside building, Village or town street, Camp, Castle, Cave or Dungeon; a castle can have roofed or open towers and a moat), its size, the season, time of day, weather and ground, its features (a road, a stream, a pond, a cliff, a rise, a hollow) and how much is scattered over it. Or type what you want in the Describe box ("a roadside inn at night in spring with a stage and a kitchen"): what it understood is set in the form, where you can change it, and words it doesn't know are listed and left out.
+- **From a town map:** on a village, town or city, the Battle map tool takes a box you drag (or a 30, 45 or 60 square one you click to place) and **Make battle map** makes that area a battle map, twice true size by default so there's room to fight, and opens it in the window ready for Make scene. It keeps the town map's streets, water, squares, notable buildings, walls, palisades, cliffs and high ground where they are and builds the rest again at battle size.
 - **By hand:** start from a Quick Start battle map (or import a plan with `"kind": "battle"`) and draw on it with the same tools as any map, plus Rise and Hollow for height, and Campfire, Brazier, Torch, Lamp post and the story props (Cairn, Standing stone, Sledge).
 
 What you get:
@@ -142,24 +162,45 @@ What you get:
 - **Buildings to fight in:** walls, doors and windows as Foundry walls, rooms divided by what the building is for and furnished, and a roof tile over each that fades when a token walks in. An inn, a mansion, a keep or a tower can have floors above and a cellar, each a level of the scene, joined by stairs.
 - **Castles:** a stone town wall is built as a castle's, with a wall walk at 20 feet, towers with a room on every floor, and gatehouses with a portcullis.
 - **Height:** rises, hollows, cliffs, banks and stream beds, each a region at its elevation. With the Battle map heights setting a token's elevation follows the ground, and a walker can't go up or down a cliff.
-- **The land:** woods at battle size, streams and rivers that wander in their beds, ponds and loose rock; in winter, snow, drifts and ice along the streams.
+- **The land:** woods at battle size, streams and rivers that wander in their beds, ponds and loose rock, fields in rows, farmyards and docks; in winter, snow, drifts and ice along the streams.
 - **Light:** a fire at each hearth, lamps and torches, and the plan's Time of day (day, dawn, dusk or night).
 
 Limits for now: a big battle map is slow to paint, so the Battle map tool's box turns amber past 60 squares a side.
+
+## Caves and dungeons
+
+Two of the Battle map tab's sites, and two Draw tools for areas on any battle map:
+
+- **A cave:** rock carved out by cellular automata. **Open ground** sets how much is open, from tight twisting passages to wide caverns.
+- **A dungeon:** rooms in solid rock joined by corridors, with doors where they meet. **Corridors** (narrow or wide) and **Doors** (none, some or all) set it.
+- **Wear** on both (some or none): cracks, rubble, moss and puddles across the floor.
+
+Their rock walls become Foundry walls that block movement and sight, and a dungeon's doors are Foundry doors. Underground, no road, stream, pond, cliff or weather is drawn. The Describe box knows "a damp cave", "a dungeon with narrow corridors" and the like.
+
+## Imports and exports
+
+**Import** (in the window) reads:
+
+- an AtlasScribe plan (JSON, or text with a fenced `mapplan` block);
+- a Watabou city or village export (its JSON): its walls, roads, water and districts as a starting plan, built again by AtlasScribe (a script can keep its buildings);
+- a Universal VTT file (.dd2vtt, .uvtt, .df2vtt): its walls and doors as stone walls with gaps, its lights, and its image under the sketch.
+
+A scene's menu in the Scenes sidebar has **Export as Universal VTT** (its ground floor's walls, doors and lights, and its map as a PNG) and **Open scene's plan**.
 
 ## Battle map rules
 
 A battle map works in any game system with Foundry's own region behaviors: banks, slopes and shallow water slow walkers and stairs change level. With the Battle map heights setting (on by default) deep water is swum, a token's elevation follows the ground and a walker can't go up or down a cliff; with it off, deep water is greater difficult terrain. The Battle map rules setting adds the game system's own rules (set it to Foundry's own to leave them out):
 
 - **Pathfinder Second Edition:** the scene's environment (urban, forest or plains) and the places in it of another kind (a wood, deep water, a cellar), so terrain-based abilities see the terrain a token stands in; a scene's environment you set yourself is kept. With PF2E Visioner, fences, low walls and parapets give standard cover.
-- **Climbing:** a walker stopped at a cliff gets a card, whispered to them and the GM, with an Athletics check at the cliff's Climb DC (15, or 20 for a cut or built face, unless a cliff's own Climb DC setting says otherwise): a button in Pathfinder Second Edition, plain words in other systems.
-- **Other systems:** Foundry's own rules for now; more systems' rules may come after 1.0. A system that automates falling may mark a token standing on raised ground as falling: turn off its falling setting, or AtlasScribe's Battle map heights setting, to avoid that.
+- **D&D Fifth Edition:** banks, slopes, shallows and ice are the system's own difficult terrain, of its kinds (slope, liquid, ice); the ground is laid as floors so the system's falling knows where a token stands and doesn't take a token on a rise for falling (laid even with Battle map rules on Foundry's own, and not for the ground with Battle map heights off). A token that jumps off a cliff lands below without the system's falling damage: roll it yourself.
+- **Climbing:** a walker stopped at a cliff gets a card, whispered to them and the GM, with an Athletics check at the cliff's Climb DC (15, or 20 for a cut or built face, unless a cliff's own Climb DC setting says otherwise): a button in Pathfinder Second Edition and D&D Fifth Edition, plain words in other systems.
+- **Other systems:** Foundry's own rules. A system that automates falling may mark a token standing on raised ground as falling: turn off its falling setting, or AtlasScribe's Battle map heights setting, to avoid that.
 
 Another module can add the rules for its system with `registerRules` (see [From a script](#from-a-script)).
 
 ## Art
 
-AtlasScribe ships no art. The illustrated style needs none: everything on it is drawn. The textured style and battle maps paint with art you already have: from art folders on your server first, then through FA Nexus when it's installed. Where a battle map has no art for something, AtlasScribe draws it: grass, paving, floors, roofs, water, trees, props and furniture, so a battle map needs no art at all (the textured style paints a plain color instead). The drawn art comes in two looks, set in Configure Settings, AtlasScribe, Drawn battle art: Painted (shaded, in natural colors, sitting closest to Forgotten Adventures art) or Inked (pale colors with ink lines, like a town map). Draw whole battle maps draws every battle map entirely, even where you have art, so a map has one look. A map painted from someone's art is for your own table under that art's license.
+AtlasScribe ships no art. The illustrated style needs none: everything on it is drawn. The textured style and battle maps paint with art you already have: from art folders on your server first, then through FA Nexus when it's installed and the Art from FA Nexus setting is on. Where a battle map has no art for something, AtlasScribe draws it: grass, paving, floors, roofs, water, trees, props and furniture, so a battle map needs no art at all (the textured style paints a plain color instead). The drawn art comes in two looks, set in Configure Settings, AtlasScribe, Drawn battle art: Painted (shaded, in natural colors, sitting closest to Forgotten Adventures art) or Inked (pale colors with ink lines, like a town map). Draw whole battle maps draws every battle map entirely, even where you have art, so a map has one look. A map painted from someone's art is for your own table under that art's license.
 
 The Art window (Configure Settings, AtlasScribe, Art, or the pictures button in the AtlasScribe window) has three tabs.
 
@@ -191,7 +232,7 @@ Every kind of art AtlasScribe paints (its roles, grouped as roofs, trees, props,
 
 Filename rules for a pack with no manifest. A rule gives a role every image in your folders whose name matches its pattern, where `*` stands for anything (`*slate*roof*`), or, when the pattern has a `/`, whose path inside its folder does (`roofs/*slate*`); with the art's pixels a square. Each rule shows how many files it matched; an earlier rule wins a role two rules both name. **Save and read** applies them.
 
-Which art a role gets: the most specific name first (a season's before the plain role's), and at each name your art chosen by hand, then a rule's, then a manifest's, then Forgotten Adventures files, from your folders or FA Nexus. A name with no art to be had passes on to the next.
+Which art a role gets: the most specific name first (a season's before the plain role's), and at each name your art chosen by hand, then a rule's, then a manifest's, then Forgotten Adventures files, from your folders or FA Nexus (the Art order setting can put Forgotten Adventures files before rules and manifests). A name with no art to be had passes on to the next.
 
 ## Settings
 
@@ -199,6 +240,13 @@ In Configure Settings, AtlasScribe:
 
 - **Art** (a button): opens the Art window.
 - **Output folder:** where plans, maps, thumbnails and scene backups are saved, under the Data folder. Leave it empty for this world's own `atlas-scribe` folder.
+- **Backup folder** and **Cache folder:** where scene backups go, and what AtlasScribe remembers between renders to say what changed. Left empty, folders in the output folder.
+- **Scene backups:** every update, the first update in a session, or never. A scene AtlasScribe didn't make is always backed up first.
+- **Art from FA Nexus:** let AtlasScribe ask FA Nexus for the Forgotten Adventures files your folders lack. It uses your FA Nexus Patreon connection, downloads into FA Nexus's folder, and may open and close FA Nexus's window during a render.
+- **Art order:** whether a folder's own art (a manifest or rule) or a Forgotten Adventures file comes first for a role.
+- **Batch tag:** a word every scene, tile, wall, light and region AtlasScribe makes is marked with (else each plan's id), for `api.batch`.
+- **Largest image:** a map wider or taller than this is also saved in parts and shown as tiles.
+- **Render in a worker:** lay out and paint off Foundry's page (the default). Turn it off only if maps fail to render in your browser.
 - **Battle map zoom** (each user's own): how big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight.
 - **Drawn battle art:** Painted or Inked, for whatever a battle map has no art for.
 - **Draw whole battle maps:** draws every battle map entirely, even where you have art, so it has one look.
@@ -223,18 +271,22 @@ await as.preview(plan);                // a quick sketch in a window: reroll and
 await as.render(plan, { publish: true }); // paints it, saves it, and makes a new scene
 ```
 
-- `open()`: opens the AtlasScribe window. `quickPlan({ size, season, water, roads, center, surroundings, river, shape, name, seed, has, quarters, outside })` gives `{ plan, choices }` without the window (`has: { inn: true, temple: false }` for a village or town, `quarters: ["market", "docks"]` to keep only those, `outside: { citadel: true, suburbs: false }` for a city); `quickChoices` lists the choices.
-- `briefPlan(brief)`: a battle map's plan from Quick Start's Battle map choices (`{ site, size, season, time, weather, ground, features, trees, litter, rocks, brush, building, street, camp, castle, name, seed }`; any left out has a default), giving `{ plan, brief, notes }`. `briefChoices` lists the choices and their labels, and `readDescription(text)` reads words as the Describe box does.
+- Pass your own `seed` or `id` in a plan a script makes: otherwise every unnamed village gets the same id, and making a second one updates the first one's scene.
+- `open()`: opens the AtlasScribe window. `quickPlan({ size, season, water, roads, center, surroundings, river, shape, high, name, seed, has, quarters, outside })` gives `{ plan, choices }` without the window (`has: { inn: true, temple: false }` for a village or town, `quarters: ["market", "docks"]` to keep only those, `outside: { citadel: true, suburbs: false }` for a city); `quickChoices` lists the choices.
+- `briefPlan(brief)`: a battle map's plan from Quick Start's Battle map choices (`{ site, size, season, time, weather, ground, features, trees, litter, rocks, brush, building, street, camp, castle: { towers, moat }, underground: { openness, corridors, doors }, name, seed }`; any left out has a default), giving `{ plan, brief, notes }`. `briefChoices` lists the choices and their labels, and `readDescription(text)` reads words as the Describe box does.
 - `checkPlan(plan)`: reads a plan (an object, JSON text, or text with a fenced `mapplan` block) and lists its problems, errors first. Errors stop a render; warnings don't.
-- `render(plan, options)`: lays the plan out and paints it in the background (Foundry stays responsive, with a progress bar), then saves the image to the output folder's `maps` folder. It never writes over a file. `publish: true` also makes a scene; `save: false` paints without saving. It gives `{ path, width, height, tiles, ms, layout, missingArt, artNotes, notes, warnings }` (and `scene` when published).
+- `render(plan, options)`: lays the plan out and paints it in the background (Foundry stays responsive, with a progress bar), then saves the image to the output folder's `maps` folder. It never writes over a file. `publish: true` also makes a scene; `save: false` paints without saving. It gives `{ path, width, height, tiles, parts, ms, layout, overheads, furniture, mist, levels, drawn, missingArt, artFrom, artNotes, notes, warnings, changed }` (and `scene` when published).
 - `publish(plan, { image })`: makes a scene from a rendered map (render's result, or the image's path): the background, the grid, lighting, fog, weather and navigation from the plan's `output.scene`, a thumbnail, and the plan's labels as locked text drawings, hidden from players unless the label says `show: "all"`. Given only an image path, it lays the plan out again for the buildings' use labels, which takes a moment for a big city; if that fails, the scene is made without them and a warning says so.
-- To update a scene instead of making a new one, give its id: `publish(plan, { image, scene: "<scene id>" })` (or the same options to `render`). AtlasScribe only changes scenes it made; for any other scene add `force: true`. Before anything changes, the whole scene is saved to the output folder's `backups` folder. The scene keeps its name, your own drawings, tokens, walls and lights stay, and the labels AtlasScribe added before (from any plan) are replaced. If the map's size or padding changes, things you placed by hand may no longer line up with it.
+- To update a scene instead of making a new one, give its id: `publish(plan, { image, scene: "<scene id>" })` (or the same options to `render`). AtlasScribe only changes scenes it made; for any other scene add `force: true`. Before anything changes, the whole scene is saved to the backups folder (as the Scene backups setting says; always for a scene AtlasScribe didn't make). The scene keeps its name, your own drawings, tokens, walls and lights stay, and the labels AtlasScribe added before (from any plan) are replaced. If the map's size or padding changes, things you placed by hand may no longer line up with it.
 - `reroll(plan, ids)`: gives `{ plan, rerolled, skipped }`, the plan a copy with new seeds for those districts or areas (one id or a list), so they're drawn again and nothing else moves. Leave out `ids` to reroll every district and area that isn't locked. `const { plan: next } = as.reroll(plan, "town"); await as.render(next);`
 - `lock(plan, ids)` and `unlock(plan, ids)`: a copy of the plan with those features locked or unlocked; a reroll leaves locked ones alone. Seeds and locks are kept in the plan (`seeds`, `locked`), so a plan always draws the same map.
-- `openArt()`: opens the Art window.
+- `openArt()`: opens the Art window. `openFiles()`: opens the Files window. `openPlan(scene)`: opens a scene's plan (or `{ path }` a plan file's) in the window.
+- `build(plan)`: lays a plan out without painting: `{ layout, roles, notes }`. `art(plan or roles)`: the art each role would be painted with: `{ art, missing, notes, from }`. `summary(plan or { scene })`: the plan as built, as text.
+- `importPlan(input)`: imports a plan, a Watabou export or a Universal VTT file (text or object), its image saved under the output folder: `{ plan, notes, from }`. `exportUVTT(scene, { download })`: a scene as a Universal VTT object.
+- `batch(tag)`: what AtlasScribe made with a batch tag: `[{ id, name, scene, documents }]`.
 - `rescanArt()`: reads the art folders again and gives what each holds: `[{ folder, files, dirs, manifests, roles, cut, error, errors }]`.
-- `preview(plan)`: opens the plan in the AtlasScribe window (see [Changing the map](#changing-the-map)) and gives the window. Copy plan puts the plan, with its new seeds and locks, on the clipboard, and the window's `plan` holds it too: `const app = await as.preview(plan); /* reroll until you like it */ await as.render(app.plan, { publish: true });`
+- `preview(plan, { px })`: opens the plan in the AtlasScribe window (px: the sketch's pixels a square) (see [Changing the map](#changing-the-map)) and gives the window. Copy plan puts the plan, with its new seeds and locks, on the clipboard, and the window's `plan` holds it too: `const app = await as.preview(plan); /* reroll until you like it */ await as.render(app.plan, { publish: true });`
 - If the window holds a plan you haven't saved, `preview` shows it and asks before replacing it, and throws if you keep it.
 - `registerRules(systemId, adapter)`: adds the battle map rules for a game system; what an adapter can give (region behaviors, more regions, the scene's own settings, walls, the climb check, falling) is described at the top of `scripts/foundry/rules.mjs`. A module can also add its adapter on the `atlas-scribe.rules` hook, fired at setup with this function. `rules` names the rules battle maps follow now.
-- `cancel()`: stops the job that's running. One job runs at a time; `busy` says whether one is, and `version` is the module's version.
+- `cancel()`: stops the job that's running; its promise rejects with an error whose `canceled` is true (the old British spelling of that name also works in 1.0.0, then goes). One job runs at a time; `busy` says whether one is, and `version` is the module's version.
 

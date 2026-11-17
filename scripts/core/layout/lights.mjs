@@ -26,7 +26,8 @@ export const LIGHT_PROPS = ["campfire", "firepit", "brazier", "torch", "lamp-pos
 export const LIT_FROM = 0.4;
 
 /**
- * Each light: bright and dim (feet), color, how see-through its color is, its flicker (Foundry's animation), and
+ * Each light: bright and dim (feet), color, how see-through its color is (and how bright its middle, luminosity,
+ * lower for a lantern so its pool reads warm, not white), its flicker (Foundry's animation), and
  * whether it waits for the dark. prop: the piece of furniture art it's drawn as (none for a hearth, oven or forge,
  * whose own art is the fire).
  */
@@ -37,10 +38,10 @@ export const LIGHTS = {
   forge: { bright: 10, dim: 25, color: "#ff6a2a", alpha: 0.4, animation: { type: "flame", speed: 3, intensity: 4 } },
   candles: { bright: 0, dim: 10, color: "#ffd590", alpha: 0.3, animation: { type: "torch", speed: 2, intensity: 1 }, prop: "candles" },
   lamp: { bright: 5, dim: 15, color: "#ffcf80", alpha: 0.3, animation: { type: "torch", speed: 1, intensity: 1 }, prop: "lamp.table" },
-  lantern: { bright: 10, dim: 20, color: "#ffc56b", alpha: 0.35, animation: { type: "torch", speed: 1, intensity: 1 }, dark: true, prop: "lantern.wall" },
-  "lantern-indoor": { bright: 10, dim: 20, color: "#ffc56b", alpha: 0.35, animation: { type: "torch", speed: 1, intensity: 1 }, prop: "lantern.wall" },
+  lantern: { bright: 10, dim: 20, color: "#ffc56b", alpha: 0.55, luminosity: 0.3, animation: { type: "torch", speed: 1, intensity: 1 }, dark: true, prop: "lantern.wall" },
+  "lantern-indoor": { bright: 10, dim: 20, color: "#ffc56b", alpha: 0.55, luminosity: 0.3, animation: { type: "torch", speed: 1, intensity: 1 }, prop: "lantern.wall" },
   "gate-torch": { bright: 20, dim: 40, color: "#ff9a40", alpha: 0.4, animation: { type: "torch", speed: 3, intensity: 3 }, dark: true, prop: "torch.stake" },
-  "lamp-post": { bright: 5, dim: 20, color: "#ffc56b", alpha: 0.35, animation: { type: "torch", speed: 1, intensity: 1 }, dark: true, prop: "lamp.post" },
+  "lamp-post": { bright: 5, dim: 20, color: "#ffc56b", alpha: 0.55, luminosity: 0.3, animation: { type: "torch", speed: 1, intensity: 1 }, dark: true, prop: "lamp.post" },
   campfire: { bright: 20, dim: 40, color: "#ff9040", alpha: 0.4, animation: { type: "flame", speed: 3, intensity: 3 }, prop: "campfire" },
   firepit: { bright: 15, dim: 30, color: "#ff9040", alpha: 0.4, animation: { type: "flame", speed: 3, intensity: 3 }, prop: "firepit" },
   brazier: { bright: 15, dim: 30, color: "#ff9a40", alpha: 0.4, animation: { type: "flame", speed: 3, intensity: 3 }, prop: "brazier" },

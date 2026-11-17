@@ -4,41 +4,15 @@
  * and its id), drawing the same number of times whatever fits, so reseeding one moves only what it places. Every
  * random choice is made here, never in the painter, so a plan always paints the same map. Pure: worker and node.
  */
-import { roadWaterCrossings, snapCrossings, fordDetail, easeOnto } from "./crossings.mjs";
-import { ROOF_STYLES, normalize, okJoin, okCut, okChimney, NOT_DRAWN_YET, PROP_SQUARES, PROP_SIZE, isConifer, OLD_PROFILES } from "../plan.mjs";
-import { smoothPlanPaths } from "../smooth.mjs";
-import { rng, hash128 } from "../rng.mjs";
-import { shapeToPolygon, bbox, pointInPolygon, distanceToPath, pathTouchesPolygon, polygonsOverlap, spansAt } from "../geom.mjs";
-import { BoxGrid, SegGrid } from "../spatial.mjs";
-import { seasonOf } from "../roles.mjs";
+import { ROOF_STYLES, normalize, okChimney } from "../plan.mjs";
+import { rng } from "../rng.mjs";
+import { bbox, pointInPolygon, distanceToPath, spansAt } from "../geom.mjs";
 import { seedOf } from "../seeds.mjs";
-import { labelsOf } from "../labels.mjs";
-import { fillFarmstead, fillWoods, fillPark, hedgeBushes, groundPatches } from "./settlement.mjs";
-import { fillFields, fieldKeepOut, earlierFields, fieldRoads, accessLanes } from "./fields.mjs";
-import { streetsFor, districtGates, gateSpacing, DISTRICT_TYPES, typeOf } from "../streets/index.mjs";
-import { sharedEdges } from "../streets/borders.mjs";
-import { lotsFor, lotTypeOf } from "../lots/index.mjs";
-import { isTownWall, layWall, bandPieces, offsetPath } from "./walls.mjs";
-import { buildOnLots } from "../lots/build.mjs";
-import { centroid, shapes, offset, area } from "../lots/poly.mjs";
-import { notablesFor, planUses, useLabel, USE_INFO, CLUTTER_FT } from "../uses.mjs";
-import { LOOK, characterOf, lookOf } from "../character.mjs";
-import { anchorFor, layAnchor } from "./anchors.mjs";
-import { poissonInPolygon } from "../scatter.mjs";
-import { makeNoise } from "../noise.mjs";
-import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, frozenOf, keepOf, nearWater, segClears, pastEdge, wander, SHORE_REACH } from "../water.mjs";
-import { layDock, shoreRuns } from "./docks.mjs";
-import { shoreLife } from "./shores.mjs";
-import { marketStalls } from "./market.mjs";
-import { fillCemetery } from "./cemetery.mjs";
-import { harborProps, afloat, BOAT_SQUARES } from "./harbor.mjs";
-import { cliffOf, offsetLine } from "../cliffs.mjs";
-import { battleYards, battleBack, footprint } from "./battle.mjs";
-import { castleWorks } from "./castle.mjs";
-import { terrainOf, edgeSpan, shiftRight, resample, iceShelves } from "./terrain.mjs";
-import { battleWoods, rockfall, openRocks, WILD_PROPS, WILD_SCALE } from "./wild.mjs";
-import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
-import { lightsOf, mistOf, LIGHT_PROPS } from "./lights.mjs";
+import { DISTRICT_TYPES } from "../streets/index.mjs";
+import { lotTypeOf } from "../lots/index.mjs";
+import { offset, area } from "../lots/poly.mjs";
+import { LOOK, characterOf } from "../character.mjs";
+import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, keepOf, wander } from "../water.mjs";
 import { layoutRegion } from "./region.mjs";
 import { readPlan, fixedFeatures, battleHeights, millsAndPlacing, spaceGrids, quays, townWalls, squares, boatsAndCranes, parksAndFarms, fillDistricts, fieldSystems, countryLanes, fillParks, wildTracks, woodsAndRocks, tidyUp, finishLayout, underground, riverbeds } from "./phases/index.mjs";
 

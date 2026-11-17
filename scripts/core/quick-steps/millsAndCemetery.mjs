@@ -21,7 +21,7 @@ export function millsAndCemetery(ctx) {
         features.push(...made);
         const [x0, y0, x1, y1] = made[1].shape.rect;
         millKeep.push({ path: made[0].path, half: 0.2 + 0.6 }, { path: [[(x0 + x1) / 2, (y0 + y1) / 2], [(x0 + x1) / 2, (y0 + y1) / 2]], half: Math.hypot(x1 - x0, y1 - y0) / 2 + 0.5 });
-      }
+      } else if (has.watermill) (ctx.notes ??= []).push("No room was found for the watermill asked for, by the water and clear of the houses and roads, so there's none.");
     }
     const fieldy = choices.surroundings === "farmland" || choices.surroundings === "mixed";
     const autoWind = !fieldy ? 0 : choices.size === "town" ? 1 + (mr.chance(0.4) ? 1 : 0) : choices.size === "village" ? (mr.chance(0.6) ? 1 : 0) : 0;
@@ -35,7 +35,7 @@ export function millsAndCemetery(ctx) {
         features.push(...made);
         const [x0, y0, x1, y1] = made[0].shape.rect;
         millKeep.push({ poly: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
-      }
+      } else if (has.windmill && k === 0) (ctx.notes ??= []).push("No room was found for the windmill asked for, near a road and out past the houses, so there's none.");
     }
   }
 
@@ -63,6 +63,6 @@ export function millsAndCemetery(ctx) {
     if (ctx.cemetery) {
       features.push({ id: "cemetery", type: "area", class: "cemetery", name: "The cemetery", shape: ctx.cemetery });
       millKeep.push({ poly: ctx.cemetery }); // (the farms and woods keep off it)
-    }
+    } else if (has.cemetery) (ctx.notes ??= []).push("No room was found for the cemetery asked for, by a road just past the houses, so there's none.");
   }
 }

@@ -75,7 +75,7 @@ export function parseRooms(given) {
     let part = part0;
     let n = 1;
     const m = part.match(/^(\d+|one|two|three|four|five|six|seven|eight|a|an)\s+(.*)$/);
-    if (m) { n = Math.min(8, Number(m[1]) || NUMBERS[m[1]] || 1); part = m[2]; }
+    if (m) { const v = /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBERS[m[1]] ?? 1; if (v === 0) continue; n = Math.min(8, v); part = m[2]; }
     const [head, ...withs] = part.split(/\s+with\s+/);
     const features = new Set(withs.join(" ").split(/\s+/).map((w) => w.replace(/s$/, "")).filter((w) => ROOM_FEATURES.includes(w)));
     const noun = head.replace(/ies$/, "y").replace(/s$/, "");
@@ -732,6 +732,8 @@ export function buildingInteriors(items, seed, notes = []) {
     const holes = sh.walls.filter((w) => w.type === "door" || w.type === "window").map((w) => { const a = toFrame(w.a), b = toFrame(w.b), along = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 0 : 1; return { axis: along, a: Math.min(a[along], b[along]) - pad, b: Math.max(a[along], b[along]) + pad, pos: (a[1 - along] + b[1 - along]) / 2 }; });
     const laid = layRooms(framePoly, program, doors, holes);
     if (!laid.rooms.length) continue;
+    // (rooms asked for that didn't fit its ground floor: said)
+    if (given?.length && laid.rooms.length < program.length) notes.push({ level: "info", id: main.from ?? main.id, message: `${who}: ${program.length - laid.rooms.length} of the rooms asked for didn't fit its ground floor, so they're left out.` });
     const ringF = sh.ring.map(toFrame);
     const ground = wallsOf(laid, ringF, front, r);
 
@@ -756,6 +758,8 @@ export function buildingInteriors(items, seed, notes = []) {
       stairs = stairsOf(framePoly, ground, groundOpenings, long - 1.5, laid.rooms[0]?.room.kind);
       if (!stairs) {
         if (asked || askedCellar) notes.push({ level: "warning", id: main.from ?? main.id, message: `${who}: no room for stairs in its ground floor's rooms, so it keeps its one floor.` });
+        // (floors its use would give it, not asked for: said too, quietly)
+        else notes.push({ level: "info", id: main.from ?? main.id, message: `${who}: no room for stairs in its ground floor's rooms, so it has no ${up > 0 ? "upper floor" : "cellar"}.` });
         up = 0; cellar = false;
       }
     }
