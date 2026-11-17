@@ -229,6 +229,15 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
     const D = pass.depth, ds = 0.25;
     const fronts = lines.filter((l) => !l.edge && (l.kind === "road" || l.kind === "street"));
     const made = [];
+    // (the back lanes' points so far, in cells half a plot's depth wide, so a shared lane is found among a few)
+    const laneCell = Math.max(0.25, D * 0.5), lanePts = new Map();
+    const laneKey = (i, j) => `${i},${j}`;
+    const nearLane = (x, y) => {
+      const ci = Math.floor(x / laneCell), cj = Math.floor(y / laneCell);
+      for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++)
+        for (const [mx, my] of lanePts.get(laneKey(i, j)) ?? []) if (Math.hypot(mx - x, my - y) < D * 0.5) return true;
+      return false;
+    };
     const nearParallel = (x, y, tx, ty, skip, dist) => {
       for (const sg of grid.near(x, y, dist)) {
         if (sg.line === skip || sg.line.edge) continue; // only streets and roads count, not the edge or buildings
@@ -255,7 +264,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
               Math.abs(Math.cos(ma) * tx + Math.sin(ma) * ty) > 0.82 && // this stretch of street runs with the major direction
               inside(qx, qy) && !blocked.some((b) => pointInPolygon([qx, qy], b)) &&
               !nearParallel(qx, qy, tx, ty, f, D * 0.85) && // no other street running the same way within a plot's depth
-              !made.some((m) => m.pts.some(([mx, my]) => Math.hypot(mx - qx, my - qy) < D * 0.5)); // another street's back lane is here: share it
+              !nearLane(qx, qy); // another street's back lane is here: share it
             if (ok) { if (!cur) { cur = []; runs.push(cur); } cur.push([qx, qy]); }
             else cur = null;
           }
@@ -263,6 +272,7 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
         for (const pts of runs) {
           if (pts.length * ds < Math.max(2, D)) continue;
           made.push({ pts, from: f });
+          for (const [x, y] of pts) { const k = laneKey(Math.floor(x / laneCell), Math.floor(y / laneCell)); if (!lanePts.has(k)) lanePts.set(k, []); lanePts.get(k).push([x, y]); }
         }
       }
     }
@@ -504,7 +514,9 @@ export function traceStreets({ poly, field, roads = [], water = [], blocked = []
 
   let out = lines.filter((l) => !l.fixed && !l.dropped);
   if (trimDeadEnds) {
-    const minSpur = Math.min(...passes.filter((p) => p.spacing).map((p) => p.spacing));
+    // (the shortest spacing among the passes; with none given, no spur is too short)
+    const spacings = passes.filter((p) => p.spacing).map((p) => p.spacing);
+    const minSpur = spacings.length ? Math.min(...spacings) : 0;
     out = out.filter((l) => l.gate || !(l.ends.includes("open") && pathLen(l.path) < minSpur));
   }
   // A bridge belongs to a street that was kept

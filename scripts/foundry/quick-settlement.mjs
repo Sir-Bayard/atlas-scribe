@@ -35,7 +35,7 @@ export function settlementTabHTML() {
       ${select("surroundings", "Around it", QUICK.surroundings, L.surroundings, false)}${select("center", "Center", QUICK.center, CENTER_LABELS, false)}
       ${select("river", "River", QUICK.river, L.river, QUICK_ANY.includes("river"))}${select("shape", "Outline", QUICK.shape, L.shape, QUICK_ANY.includes("shape"))}
     </div>
-    <div class="as-qs-two" data-for="town">${select("high", "High ground", QUICK_HIGH, QUICK_HIGH_LABELS, false).replace(ANY, "")}</div>
+    <div class="as-qs-two" data-for="town">${select("high", "High ground", QUICK_HIGH, QUICK_HIGH_LABELS, false).replace(ANY, "").replace("<select ", '<select data-tooltip-text="Along the edge with the most room; mountains come with hills before them" ')}</div>
     <div class="form-group" data-for="town"><label id="as-qs-has">It has</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-has">${HAS.map((k) => box(`s-h-${k}`, HAS_LABELS[k])).join("")}<button type="button" class="as-qs-reset" data-tooltip-text="Back to what its size has" hidden>Reset</button></div></div>
     <div class="form-group" data-for="city"><label id="as-qs-quarters">Quarters</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-quarters">${QUARTERS.map((k) => box(`s-q-${k}`, QUARTER_LABELS[k])).join("")}</div></div>
     <div class="as-qs-two" data-for="city">${yesNo("citadel", "Citadel")}</div>

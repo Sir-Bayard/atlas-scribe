@@ -166,9 +166,9 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       features.push({ id: idFor(i.id.replace(/^.*\//, "")), type: "prop", class: "tree", at: P([i.x, i.y]), ...(i.species && i.species !== "bare" ? { species: i.species } : {}) });
     }
   }
-  // Bridges and fords where the overview put them (a stone town wall's moat comes with the wall, which bridges it
-  // again)
-  const moated = new Set((plan?.features ?? []).filter((f) => f.type === "wall" && f.class === "town" && f.outside === "moat").map((f) => f.id));
+  // Bridges and fords where the overview put them (a town wall's or palisade's moat comes with the wall, which
+  // bridges it again)
+  const moated = new Set((plan?.features ?? []).filter((f) => f.type === "wall" && (f.class === "town" || f.class === "palisade") && f.outside === "moat").map((f) => f.id));
   for (const c of items.filter((i) => i.kind === "crossing" && Array.isArray(i.at) && !moated.has(i.from))) {
     if (c.at[0] < box[0] || c.at[0] > box[2] || c.at[1] < box[1] || c.at[1] > box[3]) continue;
     features.push({ id: idFor(c.id), type: "crossing", class: ["bridge", "footbridge", "ford"].includes(c.class) ? c.class : "bridge", at: P(c.at) });
@@ -185,8 +185,8 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
       features.push({ ...structuredClone(f), id: idFor(f.id), at: P(f.at) });
     }
   }
-  // The plan's own low walls, hedges, fences and cliffs, cut to the rectangle; its town walls and palisades too, built
-  // up as a castle's (layout/castle.mjs), towers spaced for the zoom
+  // The plan's own low walls, hedges, fences and cliffs, cut to the rectangle; its town walls and palisades too, with
+  // their towers spaced for the zoom (a town wall built up as a castle's, layout/castle.mjs; a palisade as stakes)
   const LOW_WALLS = new Set(["drystone", "hedge", "fence", "stone", "cliff"]);
   for (const f of plan?.features ?? []) {
     if (f.type !== "wall" || !Array.isArray(f.path)) continue;

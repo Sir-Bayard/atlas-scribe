@@ -2,7 +2,7 @@
 
 ## 1.0.0
 
-Everything that was left, in one release: new kinds of map (caves, dungeons, regions), imports from other tools, new terrain, the window's files and keyboard, and every open item from the 0.9.0 review. Plans made before open and work as they did, but the same plan and seed now draws differently in places (listed under Maps that change).
+Everything that was left, in one release: new kinds of map (caves, dungeons, regions), imports from other tools, new terrain, the window's files and keyboard, and every open item from the 0.9.0 review. Plans made before still open and work, but the same plan and seed may now draw differently in places (listed under Maps that change).
 
 **New maps**
 - Caves (rock carved out by cellular automata, with openness from tight to open) and dungeons (rooms and corridors, with doors), both with floor wear: rubble, moss, puddles. On Quick Start's Battle map tab as the Cave and Dungeon sites, and in the Describe box ("a damp cave", "a dungeon with narrow corridors").
@@ -12,7 +12,7 @@ Everything that was left, in one release: new kinds of map (caves, dungeons, reg
 - City greens and formal gardens, and a village or town green with a pond, a well, a maypole or a cross. A formal garden is built from parts (its walks, center, beds, edging and trees), each a field you can set. Maypoles and sundials as props.
 - Woods near a town are cleared toward it (scattered trees, stumps, logs and woodpiles), thickening farther off. A woods field, Cleared near town, sets it.
 - River shallows and islands, as two fields of a river or stream. Quick Start rivers get them.
-- A castle can have a moat (the Moat choice, or "a moated castle").
+- A castle can have a moat (the Moat choice, or "a moated castle"); the map grows 12 squares each way for it.
 
 **Imports and exports**
 - Import opens a Watabou city or village (its JSON) as a starting plan, or a Universal VTT file (.dd2vtt, .uvtt, .df2vtt) with its walls and image under the sketch.
@@ -47,7 +47,7 @@ Everything that was left, in one release: new kinds of map (caves, dungeons, reg
 - Art folders: a folder inside another is read once, a folder name with ":" works, a broken file no longer makes the next render read every folder, and Cancel stops the first read.
 - Number settings have upper limits, the inspector refuses fractions where a whole number is needed, and plan ids are kept to a sensible length.
 - The Describe boxes read "not on a river", "unwalled", "no water", "dry", a name starting with "the", "by day", "never had a cellar", "great" (but not "great hall"), a vault inside a building, "wide corridors", and words inside a quoted name.
-- Many speedups for big maps: plot lookups, street checks and district outlines.
+- Many speedups for big maps: plot lookups, street checks, back lanes and district outlines.
 
 **Maps that change**
 The same plan and seed can now draw differently:
@@ -58,13 +58,15 @@ The same plan and seed can now draw differently:
 - "woodland" around a place is mostly woods; inns of 24 squares or more get an upper floor;
 - formal parks are picked from more designs and greens get a feature;
 - a street's notable building gets a full interior; zoomed battle maps keep the overview's landmarks, palisades and cliffs;
-- a river below a meeting is as wide as the two together; cave walls and wear are traced anew.
+- a river below a meeting is as wide as the two together; cave walls and wear are traced anew;
+- a Battle map tab plan's road, cliff, stream, pond, rises, woods, street and scatter each have a stream of numbers of their own; snow on drawn battle roofs repeats without seams;
+- a script's street pass with no spacing keeps its short dead ends.
 
 **Other**
 - Battle maps draw fields (one per area, its crop in rows by season), farmyards and docks, and a bare square as its ground rather than flagstones. A palisade on a battle map gets Foundry walls.
 - D&D Fifth Edition is supported, tested in a dnd5e 6.0 world: banks, slopes, shallows and ice are its own difficult terrain, the ground is laid as floors so its falling doesn't take a token on a rise for falling (laid even with Battle map rules on Foundry's own; not for the ground with Battle map heights off), and the climb card has an Athletics check button. A jump off a cliff lands below without the system's falling damage.
 - Said in notes: rooms asked for that don't fit, a cemetery, watermill or windmill asked for with no room, and an outline, water or river form Quick Start couldn't use. "0 bedrooms" means none.
-- Adding a feature on the Battle map tab (a stream, say) no longer moves the rest.
+- Adding a feature on the Battle map tab (a stream, say) no longer moves the rest, only what stood in its way.
 - Faster metropolis plans; town maps' roofs and branches drawn with round line ends again; drawn snow on battle roofs lies in patches.
 - The checker no longer warns about class-only fields on other classes (a pond's banks, say), and says when a building names more rooms than are laid out.
 - Lanterns and lamp posts light a warmer, less white pool.

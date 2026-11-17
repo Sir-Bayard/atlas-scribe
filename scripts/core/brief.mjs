@@ -63,7 +63,7 @@ export const BRIEF_LABELS = {
   quarter: { homes: "Homes", market: "Market", merchants: "Merchants", crafts: "Crafts", docks: "Docks", nobles: "Nobles", temple: "Temple", poor: "Poor quarter", garrison: "Garrison" },
   camp: { campsite: "Campsite", caravan: "Caravan", soldiers: "Soldiers" },
   towers: { open: "Open, with battlements", roofed: "Roofed" },
-  moat: { none: "None", moat: "A moat around the wall" },
+  moat: { none: "None", moat: "A moat (map 12 squares larger each way)" },
   // (a castle's size names the castle, its map sized to hold it)
   castleSize: { small: "Fort (40 by 38)", medium: "Castle (48 by 46)", large: "Great castle (58 by 54)" },
 };
@@ -179,7 +179,7 @@ export function briefPlan(input = {}) {
   input ??= {};
   const b = normalizeBrief(input);
   const [W, H] = b.site === "castle" ? castleFrame(b).map : BRIEF_SIZES[b.size];
-  // (each part from a stream of its own, so adding or leaving out one, a stream say, moves nothing else)
+  // (each part from a stream of its own: adding or leaving out one, a stream say, moves only what was in its way)
   const base = rng(b.seed, "brief", b.site);
   let r = base;
   const features = [];
@@ -307,11 +307,12 @@ export function briefPlan(input = {}) {
     return null;
   };
   // (a smaller pond where a full one won't go)
-  const pondR = r.range(3, 4.5);
   r = base.fork("pond");
+  const pondR = r.range(3, 4.5);
   if (has("pond") && ![1, 0.8, 0.65].some((k) => blob("pond", "water", pondR * k, { class: "pond" }))) noRoom("a pond");
 
   // (a street's main street, cross street and district)
+  r = base.fork("street");
   if (b.site === "street") street(b, r, W, H, features, taken, has);
 
   r = base.fork("rises");

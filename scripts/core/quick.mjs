@@ -6,7 +6,7 @@
  */
 import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
-import { cityPlan, RIVER_FORMS, CITY_SHAPES } from "./quick-city.mjs";
+import { cityPlan, RIVER_FORMS, CITY_SHAPES, SHAPE_WATER } from "./quick-city.mjs";
 import { readChoices, roadsAndDistricts, wallsAndCenter, waterBeyond, millsAndCemetery, farmsAndFields, woodsAndCliffs, finishPlan, highGround } from "./quick-steps/index.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
@@ -23,7 +23,7 @@ export const QUICK = {
 
 /** High ground along an edge of a village's or town's map: none unless asked (so older seeds make the same places). */
 export const QUICK_HIGH = ["none", "hills", "mountains"];
-export const QUICK_HIGH_LABELS = { none: "None", hills: "Hills along an edge", mountains: "Mountains along an edge" };
+export const QUICK_HIGH_LABELS = { none: "None", hills: "Hills", mountains: "Mountains" };
 
 /** Choices the dialog leaves on Any unless they're picked, and that only some places use. */
 export const QUICK_ANY = ["river", "shape"];
@@ -215,8 +215,17 @@ export function quickPlan(options = {}) {
   // (choices asked for that the rest didn't allow, and what was used instead)
   const used = out.choices ?? {};
   if (CITIES.includes(used.size)) {
-    if (options.shape && QUICK.shape?.includes?.(options.shape) && used.shape && used.shape !== options.shape) notes.push(`A ${options.shape} outline doesn't go with ${used.water === "river" && options.river ? `a river's ${options.river} form` : ({ none: "no water", river: "a river", coast: "the sea", lake: "a lake", estuary: "a river mouth" })[used.water] ?? used.water}, so its outline is ${used.shape}.`);
-    if (RIVER_FORMS.includes(options.river) && used.water && !["river", "estuary"].includes(used.water)) notes.push(`A river's form (${options.river}) needs a river, and this city's water is ${used.water}, so it's left out.`);
+    // (outlines and water in a few words each, for the notes)
+    const SHAPE_WORD = { compact: "compact", lobed: "lobed", promontory: "promontory", shore: "shoreline", cliff: "cliff" };
+    const WATER_WORD = { none: "no water", river: "a river", coast: "the sea", lake: "a lake", estuary: "a river mouth" };
+    const shapeWord = (k) => SHAPE_WORD[k] ?? k;
+    if (options.shape && QUICK.shape?.includes?.(options.shape) && used.shape && used.shape !== options.shape) {
+      // (a river's form is blamed only when the outline takes a river but not that form)
+      const formAt = used.water === "river" && options.river && SHAPE_WATER[options.shape]?.includes("river");
+      const by = used.water === "none" ? "needs water" : `doesn't suit ${formAt ? `a river's ${options.river} form` : WATER_WORD[used.water] ?? used.water}`;
+      notes.push(`A ${shapeWord(options.shape)} outline ${by}, so this city's outline is ${shapeWord(used.shape)}.`);
+    }
+    if (RIVER_FORMS.includes(options.river) && used.water && !["river", "estuary"].includes(used.water)) notes.push(`A river's form (${options.river}) needs a river, and this city has ${WATER_WORD[used.water] ?? used.water}, so it's left out.`);
   } else if (used.size && ["coast", "lake", "estuary"].includes(options.water)) notes.push(`The ${options.water === "coast" ? "sea" : options.water === "lake" ? "lake shore" : "river mouth"} is a city's; a village or town gets a river instead.`);
   return { ...out, notes };
 }

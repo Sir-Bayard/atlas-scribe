@@ -21,7 +21,7 @@ export const REGION = {
   season: ["summer", "spring", "autumn", "winter"],
 };
 export const REGION_LABELS = {
-  size: { small: "Small (40 by 30 miles)", medium: "Medium (60 by 45 miles)", large: "Large (80 by 60 miles)" },
+  size: { small: "Small (40 by 30 mi)", medium: "Medium (60 by 45 mi)", large: "Large (80 by 60 mi)" },
   coast: { any: "Any", none: "None", north: "North", south: "South", east: "East", west: "West" },
   mountains: { any: "Any", none: "None", edge: "Along an edge", scattered: "Scattered" },
   woods: { few: "Few", some: "Some", many: "Many" },

@@ -27,16 +27,20 @@ export function millsAndCemetery(ctx) {
     const autoWind = !fieldy ? 0 : choices.size === "town" ? 1 + (mr.chance(0.4) ? 1 : 0) : choices.size === "village" ? (mr.chance(0.6) ? 1 : 0) : 0;
     const wind = has.windmill === false ? 0 : has.windmill ? Math.max(1, autoWind) : autoWind;
     const wr = mr.fork("wind");
+    let windmills = 0;
     for (let k = 0; k < wind; k++) {
       // Out past the houses, near a road (a lane comes to its yard)
       const spot = () => { const rd = wr.pick(roads), i = 1 + wr.int(rd.path.length - 1), t = wr.next(), a = rd.path[i - 1], b = rd.path[i], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(...d) || 1, side = wr.chance(0.5) ? 1 : -1, off = roadHalf(rd) + wr.range(4, 8); return [a[0] + d[0] * t - (d[1] / l) * side * off, a[1] + d[1] * t + (d[0] / l) * side * off]; };
       const made = windmill({ ok: (p, m) => clearOf(p, m) && !nearCluster(p, 5), spot, r: wr.fork(k), id: k ? `windmill-${k + 1}` : "windmill" });
       if (made) {
         features.push(...made);
+        windmills++;
         const [x0, y0, x1, y1] = made[0].shape.rect;
         millKeep.push({ poly: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
-      } else if (has.windmill && k === 0) (ctx.notes ??= []).push("No room was found for the windmill asked for, near a road and out past the houses, so there's none.");
+      }
     }
+    // (said only when a windmill was asked for and none at all found room)
+    if (has.windmill && wind && !windmills) (ctx.notes ??= []).push("No room was found for the windmill asked for, near a road and out past the houses, so there's none.");
   }
 
   // A town's cemetery beside a road a little beyond its edge, clear of everything (its own stream)

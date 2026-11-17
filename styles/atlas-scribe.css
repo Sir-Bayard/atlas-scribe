@@ -297,7 +297,7 @@
   font-size: 0.85em;
 }
 .atlas-scribe .as-pv-problems summary i {
-  color: rgb(200, 120, 20);
+  color: var(--color-level-warning, rgb(200, 120, 20));
 }
 .atlas-scribe .as-pv-problems li.as-error {
   color: var(--color-level-error, #c33);

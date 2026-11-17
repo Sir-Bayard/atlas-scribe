@@ -293,7 +293,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null).map((w) => (typeof R.wall === "function" ? R.wall(w) ?? w : w)), "walls and doors", null, (n) => (walls = n)],
       ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs" && k !== "rules", (n) => (roofs = n)],
       ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null, R), "ground and water regions", isHeight, (n) => (heights = n)],
-      ["Region", () => rulesRegions(regionsAdapter(), { plan, layout, levels: levelOf, sceneX, sceneY, pps }), `${R.label ?? R.id} regions`, (k) => k === "rules", (n) => (ruled = n)],
+      ["Region", () => rulesRegions(regionsAdapter(), { plan, layout, levels: levelOf, sceneX, sceneY, pps }), `${regionsAdapter()?.label ?? regionsAdapter()?.id ?? R.label ?? R.id} regions`, (k) => k === "rules", (n) => (ruled = n)],
       ["Region", () => (levelOf ? battleStairs(layout, sceneX, sceneY, pps, plan.id ?? null).filter((r) => r._floors.filter((f) => levelOf.has(f)).length > 1) : []), "stairs between floors", (k) => k === "stairs", (n) => (stairs = n)],
       ["AmbientLight", () => battleLights(layout, sceneX, sceneY, pps, plan.id ?? null), "lights", null, (n) => (lights = n)],
     ]) {

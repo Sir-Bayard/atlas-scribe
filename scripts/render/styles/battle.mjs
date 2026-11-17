@@ -1529,7 +1529,7 @@ function farmsAndDocksPass(brush) {
     g.stroke(); g.restore();
   }
   for (const y of items("surface", "farmyard").filter((i) => Array.isArray(i.poly) && i.poly.length >= 3 && meets(bboxOf(i.poly), 1)))
-    fill((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.dirt.${s}`));
+    fill((k) => { poly(k, y.poly); k.fill(); }, tex(y.surface === "dirt" ? `surface.dirt.${s}` : `surface.trodden.${s}`));
   for (const d of items("dock").filter((i) => Array.isArray(i.path) && i.path.length >= 2 && meets(bboxOf(i.path), (i.width ?? 1) + 1))) {
     const wood = d.material === "wood", w = d.width ?? 1;
     fill((k) => stroke(k, d.path, w + 0.12, "butt"), "rgba(40,34,28,0.9)");

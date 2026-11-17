@@ -174,7 +174,7 @@ export function readPlace(text = "", opts = {}) {
     mark(Object.values(HIGH_WORDS).flat());
     const v = hh.some((x) => !x.no && x.value === "mountains") ? "mountains" : hh.some((x) => !x.no) ? "hills" : hh.length ? "none" : null;
     if (v && city && v !== "none") skipped.push({ label: v, why: "High ground along an edge is a village's or town's" });
-    else if (v && !city) { choices.high = v; chip("high", v, v === "none" ? "No high ground" : QUICK_HIGH_LABELS[v]); }
+    else if (v && !city) { choices.high = v; chip("high", v, v === "none" ? "No high ground" : `${QUICK_HIGH_LABELS[v]} along an edge`); }
   }
 
   if (city) {

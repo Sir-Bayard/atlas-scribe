@@ -1106,12 +1106,20 @@ function snowField(L, r) {
 /** Snow lying in patches over something (a roof, the ground): a snow field cut by soft blobs, about half covered. */
 function snowPatches(L, r) {
   const c = snowField(L, r), g = c.getContext("2d");
-  const m = cv(T, T), k = m.getContext("2d");
+  // (the patches drawn on three tiles by three, each blob again on every side, and blurred there, so the middle tile
+  // repeats without a seam)
+  const m = cv(3 * T, 3 * T), k = m.getContext("2d");
   k.fillStyle = "#000";
-  for (let i = 0; i < 26; i++) { k.globalAlpha = 0.35 + r() * 0.5; k.beginPath(); k.arc(r() * T, r() * T, T * (0.08 + r() * 0.14), 0, 2 * Math.PI); k.fill(); }
-  g.globalCompositeOperation = "destination-in"; g.filter = `blur(${Math.round(T * 0.03)}px)`; g.drawImage(m, 0, 0);
-  g.filter = "none"; g.globalCompositeOperation = "source-over";
-  m.width = m.height = 1;
+  for (let i = 0; i < 26; i++) {
+    const a = 0.35 + r() * 0.5, x = r() * T, y = r() * T, rad = T * (0.08 + r() * 0.14);
+    k.globalAlpha = a;
+    for (let dx = 0; dx < 3; dx++) for (let dy = 0; dy < 3; dy++) { k.beginPath(); k.arc(x + dx * T, y + dy * T, rad, 0, 2 * Math.PI); k.fill(); }
+  }
+  const b = cv(3 * T, 3 * T), bk = b.getContext("2d");
+  bk.filter = `blur(${Math.round(T * 0.03)}px)`; bk.drawImage(m, 0, 0); bk.filter = "none";
+  g.globalCompositeOperation = "destination-in"; g.drawImage(b, T, T, T, T, 0, 0, T, T);
+  g.globalCompositeOperation = "source-over";
+  m.width = m.height = b.width = b.height = 1;
   return c;
 }
 
