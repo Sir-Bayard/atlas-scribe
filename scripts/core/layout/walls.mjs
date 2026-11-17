@@ -6,7 +6,7 @@
  * side. Towers stand at its corners, at the ends of an open run and about every `towerSpacing` feet between.
  * Everything in squares; every random choice comes from the wall's own stream. Pure: runs anywhere.
  */
-import { pointInPolygon, distanceToPath } from "../geom.mjs";
+import { pointInPolygon, distanceToPath, segmentsIntersect } from "../geom.mjs";
 import { offset, bands } from "../lots/poly.mjs";
 import { roadWaterCrossings, snapTo } from "./crossings.mjs";
 import { TOWN_WALLS } from "../plan.mjs";
@@ -190,6 +190,7 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
   const spacing = ft(f.towerSpacing ?? (palisade ? 90 : 120));
   const height = f.height ?? (palisade ? 10 : 25);
   const R = (D / 2) * (shape === "round" ? 1 : Math.SQRT2); // how far a tower reaches from its center, at most
+  const reachMost = works ? Math.max(R, (ft(BATTLE_TOWER_FT.square) / 2) * Math.SQRT2) : R; // (a works square tower is its own size)
   const wrap = (s) => (closed ? ((s % L) + L) % L : s);
 
   // The wall's corners (any turn of 5 degrees or more) as lengths along it; cornerIn(a, b): whether one lies between
@@ -215,12 +216,24 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
       const u = along(path, cum, x.s).u;
       const sin = Math.max(0.25, Math.abs(u[0] * x.dir[1] - u[1] * x.dir[0])), cos = Math.sqrt(1 - sin * sin);
       const rh = (rd.width ?? 1) / 2;
-      let h = Math.max((rh + 0.25) / sin, (rh + half * cos + 0.05) / sin, (rh + R + 0.05 + push * cos) / sin - D / 2 + 0.02);
+      // Each side on its own, so a slanting road has its two towers the same distance from it: a tower stands out from
+      // the wall (push), which brings the one on the road's acute side nearer the road and the other farther away
+      const su = u[0] * x.dir[1] - u[1] * x.dir[0], n = [sign * u[1], -sign * u[0]], cn = n[0] * x.dir[1] - n[1] * x.dir[0];
+      const tower = (sg) => (rh + R + 0.05 + sg * Math.sign(su || 1) * push * cn) / sin - D / 2 + 0.02;
+      const base = Math.max((rh + 0.25) / sin, (rh + half * cos + 0.05) / sin);
+      const h = { [-1]: Math.max(base, tower(-1)), [1]: Math.max(base, tower(1)) };
       // Past a corner the wall can turn back toward the road: wider until both ends clear it, measured straight
-      const endClear = (sg) => { const sv = x.s + sg * h; return !closed && (sv < 0 || sv > L) ? true : distanceToPath(along(path, cum, wrap(sv)).at, rd.path) >= rh + half + 0.05; };
-      for (let k = 0; k < 60 && !(endClear(-1) && endClear(1)); k++) h += 0.1;
-      const corner = cornerIn(x.s - h, x.s + h);
-      iv.push({ a: x.s - h, b: x.s + h, water: false, roads: [{ id: rd.id, at: x.at, dir: x.dir, width: rd.width, sin, corner }] });
+      const endClear = (sg) => { const sv = x.s + sg * h[sg]; return !closed && (sv < 0 || sv > L) ? true : distanceToPath(along(path, cum, wrap(sv)).at, rd.path) >= rh + half + 0.05; };
+      // (and the tower over that end clears the road, measured where it stands: past a corner the wall runs another way)
+      const towerClear = (sg) => {
+        const st = x.s + sg * (h[sg] + D / 2 - 0.02);
+        if (!closed && (st < 0 || st > L)) return true;
+        const p = along(path, cum, wrap(st)), n = [sign * p.u[1], -sign * p.u[0]];
+        return [0, push].every((o) => distanceToPath([p.at[0] + n[0] * o, p.at[1] + n[1] * o], rd.path) >= rh + reachMost + 0.03);
+      };
+      for (const sg of [-1, 1]) for (let k = 0; k < 60 && !(endClear(sg) && towerClear(sg)); k++) h[sg] += 0.1;
+      const corner = cornerIn(x.s - h[-1], x.s + h[1]);
+      iv.push({ a: x.s - h[-1], b: x.s + h[1], water: false, roads: [{ id: rd.id, at: x.at, dir: x.dir, width: rd.width, sin, corner, class: rd.class }] });
     }
   }
   // Wherever the wall would stand in water or on its bank (crossing a river, or running along it), it stops with a
@@ -336,7 +349,10 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
     const blockRoll = gr.next(), lookRoll2 = gr.next();
     // (on a battle map a gatehouse only over a road crossing within about 25 degrees of square, so the road runs down
     // its square passage, not through its guard rooms; else a tower each side)
-    const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= (works ? GATE_SQUARE : 0.6) && !g.roads[0].corner && (works || blockRoll < 0.5);
+    // (a street or a high road through a stone wall always gets one; a lane or track a tower each side, now and then
+    // a gatehouse)
+    const street = ["street", "highway"].includes(g.roads[0]?.class);
+    const block = !g.water && g.roads.length === 1 && !palisade && g.roads[0].sin >= (works ? GATE_SQUARE : 0.6) && !g.roads[0].corner && (works || street || blockRoll < 0.5);
     if (block) {
       const n = outward(g.u);
       // (a works gatehouse: its passage the road's width or more, a guard room each side, its walls)
@@ -449,7 +465,14 @@ export function layWall(f, { roads = [], waters = [], sq, r, battle = false }) {
       }
     }
   }
-  return { runs, towers, gates, ditches, bridges, band: { path, half: wallReach(f, sq) }, side: sign, closed, notes };
+  // A water gate where a river or stream passes a stone wall: a grille across the water between the wall's two ends
+  const waterGates = palisade ? [] : gaps.filter((g) => g.water && !g.roads.length).flatMap((g) => {
+    const a = along(path, cum, wrap(g.s - g.half)).at, b = along(path, cum, wrap(g.s + g.half)).at, mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    // (only over running water: a moat's or a lake's edge the wall merely runs beside has none)
+    // (and the water must cross between the wall's ends: a wall running along a bank has no grille down its length)
+    return waters.some((w) => Array.isArray(w.path) && !w.body && w.path.length >= 2 && distanceToPath(mid, w.path) < (Math.max(w.width ?? 1, ...(w.widths ?? [])) / 2) && w.path.some((p, i) => i && segmentsIntersect(a, b, w.path[i - 1], p))) ? [[a, b]] : [];
+  });
+  return { runs, towers, gates, ditches, bridges, waterGates, band: { path, half: wallReach(f, sq) }, side: sign, closed, notes };
 }
 
 function ringArea(p) {

@@ -13,7 +13,7 @@ import { meander, bends } from "./meander.mjs";
 import { watermill, windmill } from "./mills.mjs";
 import { PAVINGS, squareShape } from "./squares.mjs";
 import { cliffOf, cliffWidth, offsetLine } from "./cliffs.mjs";
-import { cityOutline, cityWater, cliffAndGates, wards, cityDistricts, wallsAndHarbor, outsideTheWalls } from "./city-steps/index.mjs";
+import { cityOutline, cityWater, cliffAndGates, wards, cityDistricts, cityGreens, wallsAndHarbor, outsideTheWalls } from "./city-steps/index.mjs";
 
 /**
  * Per size: the map in squares, the wall's mean radius, the wards wanted, pixels a square (so the image stays under
@@ -171,6 +171,7 @@ export function cityPlan(choices, seed) {
   cliffAndGates(ctx);
   wards(ctx);
   cityDistricts(ctx);
+  cityGreens(ctx);
   wallsAndHarbor(ctx);
   return outsideTheWalls(ctx);
 }
@@ -691,9 +692,13 @@ export function riverForm({ form, water, r, C, R, W, H, S, radiusAt, riverAngle,
       if (T.some((p, i) => Ta[i] > clearFrom && (distToPath(p, M) < half + tHalf + 3 || (sea && inside(p, sea))))) continue;
       if (densify(T, 0.5).some((p) => Math.hypot(p[0] - C[0], p[1] - C[1]) < S.square + tHalf + 3)) continue;
       if (pathsCross(T, M, 2)) continue;
-      const path = simplifyKeeping(M, [j]);
+      // (below the meeting the river carries both: as wide as the two together would be, the root of their squares'
+      // sum, as a river's width goes with the root of the water it carries; widening on to the sea at an estuary)
+      const keep = simplifyKeeping(M.map((p, i) => [...p, i]), [j]);
+      const below = Math.round(Math.hypot(width, tribW)), share = along(keep), Ls = share.at(-1) || 1;
+      const ft = keep.map((p, k) => { const w0 = p[2] > j ? below : width; return Math.round(endWidth ? w0 * (1 + (endWidth / width - 1) * (share[k] / Ls)) : w0); });
       const trib = { id: "river-2", type: "water", class: "river", width: tribW, path: simplify([...T].reverse(), 0.08) };
-      return { rivers: [main(path), trib], island: null, form };
+      return { rivers: [main(keep.map((p) => [p[0], p[1]]), { widths: ft }), trib], island: null, form };
     }
     return meanderOnly();
   }

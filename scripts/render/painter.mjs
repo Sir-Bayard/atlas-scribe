@@ -5,13 +5,14 @@
 import * as textured from "./styles/textured.mjs";
 import * as illustrated from "./styles/illustrated.mjs";
 import * as battle from "./styles/battle.mjs";
+import * as region from "./styles/region.mjs";
 import { artPlacement } from "../core/layout/rooms.mjs";
 import { drawnSet } from "./drawn-art.mjs";
 
 /** The art scale every style paints at (Forgotten Adventures' 200 px a square); art at another is resized to it. */
 const ART_PX = 200;
 
-export const STYLES = { illustrated, textured };
+export const STYLES = { illustrated, textured, ink: illustrated }; // (ink: the illustrated style in black and white)
 
 /**
  * The style module for a layout: a battle map's own, whatever style its plan names (a settlement's styles are drawn
@@ -19,6 +20,7 @@ export const STYLES = { illustrated, textured };
  */
 export function styleOf(layout) {
   if (layout.kind === "battle") return battle;
+  if (layout.kind === "region") return region;
   return STYLES[layout.style] ?? STYLES.illustrated;
 }
 
@@ -108,7 +110,13 @@ export function canvasOf(w, h, what) {
 /** Lets a canvas's memory go. */
 const free = (c) => { if (c) { c.width = 1; c.height = 1; } };
 
-async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86, drawn = null }, progress, drawnImages) {
+/** Pixels past which a map saved "auto" is saved as JPEG: a 24 megapixel WebP takes a browser about 8 s to save. */
+export const AUTO_JPEG = 24e6;
+
+async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 0.86, format = "webp", drawn = null, partSide = 0 }, progress, drawnImages) {
+  // (the map as WebP, or JPEG, which a browser saves several times faster; "auto" takes JPEG past AUTO_JPEG pixels.
+  // Its floors, roofs and drawn pieces keep WebP's see-through parts)
+  const type = format === "jpeg" || (format === "auto" && Math.round(layout.size.squares[0] * layout.pxPerSquare) * Math.round(layout.size.squares[1] * layout.pxPerSquare) > AUTO_JPEG) ? "image/jpeg" : "image/webp";
   const t0 = performance.now();
   const style = styleOf(layout);
   const pp = layout.pxPerSquare;
@@ -240,7 +248,20 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
     // (the ground saved, its thumbnail made and let go before any other floor is painted: one map-sized canvas at a
     // time)
     progress(floors.length ? 0.6 : 0.9, "Saving the image");
-    const blob = await out.convertToBlob({ type: "image/webp", quality });
+    const blob = await out.convertToBlob({ type, quality });
+    // (and in parts no more than partSide px a side, when the map is bigger: some graphics cards can't show it whole)
+    const parts = [];
+    if (partSide > 0 && Math.max(W, H) > partSide) {
+      const nx = Math.ceil(W / partSide), ny = Math.ceil(H / partSide), pw = Math.ceil(W / nx), ph = Math.ceil(H / ny);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const x = i * pw, y = j * ph, w = Math.min(pw, W - x), h = Math.min(ph, H - y);
+        const c = new OffscreenCanvas(w, h);
+        canvases.add(c);
+        c.getContext("2d").drawImage(out, x, y, w, h, 0, 0, w, h);
+        parts.push({ x, y, width: w, height: h, blob: await c.convertToBlob({ type, quality }) });
+        free(c); canvases.delete(c);
+      }
+    }
     progress(floors.length ? 0.62 : 0.94, "Making the thumbnail");
     const th = thumbCanvas(out, THUMB);
     free(out);
@@ -287,7 +308,7 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
       mist.push({ src: url ?? d.src, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
     }
     const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-    return { blob, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overBudget, overheads, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
+    return { blob, parts, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overBudget, overheads, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
   } finally {
     for (const bmp of loaded.values()) bmp?.close();
     for (const c of canvases) free(c);

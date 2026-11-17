@@ -7,11 +7,15 @@
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
 import { roofFacets, outlineOf } from "../roofs.mjs";
+import { paintRelief } from "../relief.mjs";
+import { paintRiverbed } from "../riverbed.mjs";
 import { offsetLine as shiftLine } from "../../core/cliffs.mjs";
 export { roofFacets };
 
 /** Roof materials whose winter art already has snow on it; every other roof gets the snow overlay in winter. */
 const SNOWY_IN_WINTER = new Set(["slate", "wood-shingle"]);
+/** Each art image's copies at half, a quarter and so on of its size (kept only while the image is). */
+const halves = new WeakMap();
 /** A tree's art: a deciduous tree is bare in winter and in leaf in the other seasons; conifers by size. */
 const treeRole = (t, s) => (t.species === "bare" ? (s === "winter" ? "tree.bare.winter" : `tree.deciduous.${s}`) : `tree.conifer.${t.size ?? "large"}.${s}`);
 /**
@@ -124,13 +128,15 @@ export function paint(ctx) {
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
   const items = (kind, cls) => L.items.filter((i) => i.kind === kind && (cls === undefined || i.class === cls));
   const winter = s === "winter";
+  // (a low sun, as in winter, casts every shadow longer)
+  const sunLong = L.sun === "low-south" ? 1.7 : 1;
 
   /** A fill for a role: its texture as a map-anchored pattern (sqPerTile squares to one repeat), or its plain color. */
-  const tex = (role, sqPerTile, variant = 0) => {
+  const tex = (role, sqPerTile, variant = 0, turn = 0) => {
     const im = art(role, variant);
     if (!im) return fallbackColor(role);
     const p = g.createPattern(im, "repeat");
-    p.setTransform(new DOMMatrix().translate(-x0 * pp, -y0 * pp).scale((pp * sqPerTile) / im.width));
+    p.setTransform(new DOMMatrix().translate(-x0 * pp, -y0 * pp).rotate(turn).scale((pp * sqPerTile) / im.width));
     return p;
   };
   const path = (k, pts) => { k.beginPath(); pts.forEach(([x, y], i) => (i ? k.lineTo(X(x), Y(y)) : k.moveTo(X(x), Y(y)))); };
@@ -162,7 +168,8 @@ export function paint(ctx) {
    */
   const bq = ctx.blur?.getContext("2d") ?? null;
   // box: [x0, y0, x1, y1] in squares bounding the shapes, so only that part of the tile is worked on
-  const soft = (shape, fill, blur, alpha = 1, op = "source-over", box = null) => {
+  // more: further [fill, alpha, op] layers over the same shape, blurred once for all of them
+  const soft = (shape, fill, blur, alpha = 1, op = "source-over", box = null, more = []) => {
     let rx = 0, ry = 0, rw = W, rh = H;
     if (box) {
       const m = (blur || 0) * pp * 3 + 2;
@@ -187,16 +194,25 @@ export function paint(ctx) {
       bq.drawImage(mask, rx, ry, rw, rh, rx, ry, rw, rh);
       bq.filter = "none";
       k = bq; out = ctx.blur;
+      // (the blurred shape kept on the mask for the layers after the first, which copy it back instead of blurring again)
+      if (more.length) { q.clearRect(rx, ry, rw, rh); q.drawImage(ctx.blur, rx, ry, rw, rh, rx, ry, rw, rh); }
     }
-    k.globalCompositeOperation = "source-in";
-    k.fillStyle = fill;
-    k.fillRect(rx, ry, rw, rh);
-    k.globalCompositeOperation = "source-over";
-    g.save();
-    g.globalAlpha = alpha;
-    g.globalCompositeOperation = op;
-    g.drawImage(out, rx, ry, rw, rh, rx, ry, rw, rh);
-    g.restore();
+    const layer = ([f, a, o], again) => {
+      if (again) { k.clearRect(rx, ry, rw, rh); k.drawImage(mask, rx, ry, rw, rh, rx, ry, rw, rh); }
+      k.globalCompositeOperation = "source-in";
+      k.fillStyle = f;
+      k.fillRect(rx, ry, rw, rh);
+      k.globalCompositeOperation = "source-over";
+      g.save();
+      g.globalAlpha = a;
+      g.globalCompositeOperation = o;
+      g.drawImage(out, rx, ry, rw, rh, rx, ry, rw, rh);
+      g.restore();
+    };
+    layer([fill, alpha, op], false);
+    if (!more.length) return;
+    if (k === bq) for (const m of more) layer([m[0], m[1] ?? 1, m[2] ?? "source-over"], true);
+    else for (const m of more) soft(shape, m[0], blur, m[1] ?? 1, m[2] ?? "source-over", box); // (no second canvas: each blurred as it's drawn)
   };
   // The tile's window in squares, so a pass or a thing wholly outside it is skipped
   const wx1 = x0 + W / pp, wy1 = y0 + H / pp;
@@ -207,6 +223,23 @@ export function paint(ctx) {
     for (const pts of lists) for (const [x, y] of pts) { if (x < a) a = x; if (y < b) b = y; if (x > c) c = x; if (y > d) d = y; }
     return a === Infinity ? [-1e9, -1e9, -1e9, -1e9] : [a - pad, b - pad, c + pad, d + pad];
   };
+  // Art drawn much smaller than its file (a tree's 1200 px crown drawn 60 px wide) is drawn from a copy made once at
+  // about the size it's drawn, by halves, so each tree isn't shrunk from its whole file again
+  const smaller = (im, w) => {
+    if (!(im.width > 2 * w) || typeof OffscreenCanvas === "undefined") return im;
+    let list = halves.get(im);
+    if (!list) halves.set(im, (list = [im]));
+    while (list.at(-1).width > 2 * w && list.at(-1).width >= 4) {
+      const prev = list.at(-1), c = new OffscreenCanvas(Math.max(1, Math.round(prev.width / 2)), Math.max(1, Math.round(prev.height / 2)));
+      const k = c.getContext("2d");
+      k.imageSmoothingQuality = "high";
+      k.drawImage(prev, 0, 0, c.width, c.height);
+      list.push(c);
+    }
+    let pickIm = im;
+    for (const c of list) if (c.width >= w) pickIm = c;
+    return pickIm;
+  };
   /** An image (a tree, a cart) size squares wide, turned, with a sun shadow; a plain blob when there's no art. */
   // (reach: how far the art reaches from its middle, when its long side is longer than size, its width)
   const img = (role, variant, x, y, size, rot = 0, shadow = 0, reach = size) => {
@@ -214,10 +247,10 @@ export function paint(ctx) {
     const im = art(role, variant);
     g.save();
     g.translate(X(x), Y(y));
-    if (shadow) { g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.2; g.shadowOffsetY = -shadow * pp; g.shadowOffsetX = shadow * pp * 0.3; }
+    if (shadow) { g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.2; g.shadowOffsetY = -sunLong * shadow * pp; g.shadowOffsetX = sunLong * shadow * pp * 0.3; }
     g.rotate((rot * Math.PI) / 180);
     const w = size * pp;
-    if (im) g.drawImage(im, -w / 2, -(w * im.height) / im.width / 2, w, (w * im.height) / im.width);
+    if (im) g.drawImage(smaller(im, w), -w / 2, -(w * im.height) / im.width / 2, w, (w * im.height) / im.width);
     else { g.fillStyle = fallbackColor(role); g.beginPath(); g.arc(0, 0, w * 0.35, 0, Math.PI * 2); g.fill(); }
     g.restore();
   };
@@ -227,7 +260,7 @@ export function paint(ctx) {
     g.save(); g.translate(X(x), Y(y)); g.rotate((rot * Math.PI) / 180);
     const W2 = (w * pp) / 2, L2 = (L * pp) / 2;
     const shape = (k) => { g.beginPath(); g.moveTo(0, L2); g.quadraticCurveTo(W2 * 1.05, L2 * 0.45, W2, -L2 * 0.55); g.lineTo(W2 * 0.8, -L2); g.lineTo(-W2 * 0.8, -L2); g.lineTo(-W2, -L2 * 0.55); g.quadraticCurveTo(-W2 * 1.05, L2 * 0.45, 0, L2); g.closePath(); };
-    g.shadowColor = "rgba(20,30,45,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -pp * 0.04;
+    g.shadowColor = "rgba(20,30,45,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -sunLong * pp * 0.04;
     shape(); g.fillStyle = "rgb(92,66,44)"; g.fill();
     g.shadowColor = "transparent";
     g.scale(0.78, 0.86); shape(); g.fillStyle = "rgb(150,118,82)"; g.fill();
@@ -236,10 +269,27 @@ export function paint(ctx) {
     if (ship) { g.fillStyle = "rgb(60,44,30)"; g.beginPath(); g.arc(0, L2 * 0.1, Math.max(1, w * pp * 0.08), 0, 2 * Math.PI); g.fill(); }
     g.restore();
   };
+  /** A maypole (its pole, ribbons out to a ring of trodden grass) or a sundial (a stone pillar, its dial and gnomon). */
+  const plainProp = (kind, x, y, size, rot) => {
+    g.save(); g.translate(X(x), Y(y)); g.rotate((rot * Math.PI) / 180);
+    const r = (size * pp) / 2;
+    if (kind === "maypole") {
+      g.strokeStyle = "rgba(120,104,80,0.5)"; g.lineWidth = Math.max(1, pp * 0.03); g.beginPath(); g.arc(0, 0, r, 0, 2 * Math.PI); g.stroke();
+      const colors = ["rgb(196,64,58)", "rgb(232,214,120)", "rgb(70,110,170)", "rgb(240,240,236)"];
+      for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4; g.strokeStyle = colors[k % 4]; g.lineWidth = Math.max(1, pp * 0.025); g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * r, Math.sin(a) * r); g.stroke(); }
+      g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.1; g.fillStyle = "rgb(150,116,82)"; g.beginPath(); g.arc(0, 0, r * 0.16, 0, 2 * Math.PI); g.fill();
+    } else {
+      g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.1; g.shadowOffsetY = -sunLong * pp * 0.04;
+      g.fillStyle = "rgb(168,162,152)"; g.fillRect(-r, -r, 2 * r, 2 * r); g.shadowColor = "transparent";
+      g.fillStyle = "rgb(186,160,96)"; g.beginPath(); g.arc(0, 0, r * 0.7, 0, 2 * Math.PI); g.fill();
+      g.strokeStyle = "rgb(70,64,58)"; g.lineWidth = Math.max(1, pp * 0.02); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -r * 0.65); g.stroke();
+    }
+    g.restore();
+  };
   /** A market cross in plain shapes (no art): a stepped stone base and its shaft. */
   const cross = (x, y, size, rot) => {
     g.save(); g.translate(X(x), Y(y)); g.rotate((rot * Math.PI) / 180);
-    g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -pp * 0.05;
+    g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -sunLong * pp * 0.05;
     for (const [f, c] of [[1, "rgb(150,144,134)"], [0.72, "rgb(172,166,156)"], [0.45, "rgb(190,184,174)"]]) { g.fillStyle = c; const h = (size * f * pp) / 2; g.fillRect(-h, -h, 2 * h, 2 * h); g.shadowColor = "transparent"; }
     g.fillStyle = "rgb(120,114,106)"; const t = size * pp * 0.08, a = size * pp * 0.3; g.fillRect(-t / 2, -a, t, 2 * a); g.fillRect(-a * 0.6, -t / 2, a * 1.2, t);
     g.restore();
@@ -251,6 +301,9 @@ export function paint(ctx) {
   g.fillStyle = tex(`ground.${gb}`, 5);
   g.fillRect(0, 0, W, H);
   const blobs = ground?.patches ?? [];
+  // (the ground's own texture again, bigger, turned and of another variant, in broad soft patches: so its tiles
+  // don't repeat in rows across a big map)
+  soft((k) => { for (const [x, y, r, t] of blobs) if (t >= 0.45 && t < 0.7) { k.beginPath(); k.arc(X(x), Y(y), r * 1.3 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}`, 11, 1, 37), 3, 0.45);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t < 0.45) { k.beginPath(); k.arc(X(x), Y(y), r * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.light`, 4), 2, 0.7);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.7) { k.beginPath(); k.arc(X(x), Y(y), r * 0.7 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.grassy`, 4), 1.5, 0.4);
   soft((k) => { for (const [x, y, r, t] of blobs) if (t > 0.93) { k.beginPath(); k.arc(X(x), Y(y), r * 0.4 * pp, 0, 7); k.fill(); } }, tex(`ground.${gb}.rocky`, 3), 0.8, 0.6);
@@ -262,12 +315,10 @@ export function paint(ctx) {
   for (const qg of items("surface", "quarter")) {
     const box = boxOf([qg.poly], 1);
     if (qg.lush) {
-      if (s !== "winter") soft((k) => { poly(k, qg.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.6, qg.alpha ?? 0.5, "source-over", box);
-      if (s !== "winter" && grassLift) soft((k) => { poly(k, qg.poly); k.fill(); }, "rgb(60,84,26)", 0.6, 0.5, "screen", box);
+      if (s !== "winter") soft((k) => { poly(k, qg.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.6, qg.alpha ?? 0.5, "source-over", box, grassLift ? [["rgb(60,84,26)", 0.5, "screen"]] : []);
       continue;
     }
-    soft((k) => { poly(k, qg.poly); k.fill(); }, tex(`surface.${qg.surface}.${s}`, 2.5), 0.6, qg.alpha ?? 0.7, "source-over", box);
-    if (qg.mud) soft((k) => { poly(k, qg.poly); k.fill(); }, "rgb(120,100,80)", 0.6, s === "winter" ? 0.15 : 0.35, "multiply", box);
+    soft((k) => { poly(k, qg.poly); k.fill(); }, tex(`surface.${qg.surface}.${s}`, 2.5), 0.6, qg.alpha ?? 0.7, "source-over", box, qg.mud ? [["rgb(120,100,80)", s === "winter" ? 0.15 : 0.35, "multiply"]] : []);
   }
   for (const a of items("surface", "trodden")) soft((k) => { poly(k, a.poly); k.fill(); }, tex(`surface.trodden.${s}`, 3), 2, 0.5, "source-over", boxOf([a.poly]));
 
@@ -338,6 +389,8 @@ export function paint(ctx) {
   const balks = items("boundary", "balk");
   if (balks.length) soft((k) => { for (const b of balks) strokeLine(k, b.path, 0.16); }, tex(`ground.${gb}.grassy`, 4), 0.05, 0.95);
 
+  // Hills, mountains and marshes, over the fields
+  paintRelief(g, L.items, { X, Y, pp, near: (b) => b[2] >= x0 - 1 && b[3] >= y0 - 1 && b[0] <= x0 + W / pp + 1 && b[1] <= y0 + H / pp + 1, contours: false, colors: { ink: "rgb(60,52,42)", light: "rgb(255,250,236)", shade: "rgb(30,28,40)", stone: winter ? "rgb(214,218,222)" : "rgb(150,144,134)", stoneInk: "rgba(50,46,40,0.7)", water: "rgb(78,110,118)", waterInk: "rgba(40,60,66,0.7)", reed: winter ? "rgb(150,140,110)" : "rgb(88,96,52)", marsh: winter ? "rgba(200,206,212,0.5)" : "rgba(84,98,64,0.45)" } });
   progress(0.12, "Yards and gardens");
   const yards = items("surface", "yard"), farmyards = items("surface", "farmyard");
   if (yards.length) soft((k) => { for (const y of yards) { poly(k, y.poly); k.fill(); } }, tex(`surface.trodden.${s}`, 2.5), 0.25, 0.95, "source-over", boxOf(yards.map((y) => y.poly)));
@@ -347,8 +400,7 @@ export function paint(ctx) {
   if (grassLift && allYards.length) soft((k) => { for (const y of allYards) { poly(k, y.poly); k.fill(); } }, TRODDEN_LIFT, 0.4, 0.8, "screen", boxOf(allYards.map((y) => y.poly)));
   for (const y of yards.filter((y) => y.surface && y.surface !== "trodden")) {
     const box = boxOf([y.poly]);
-    soft((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.${y.surface}.${s}`, 2.5), 0.12, 0.55, "source-over", box);
-    soft((k) => { poly(k, y.poly); k.fill(); }, "rgb(160,150,138)", 0.12, 0.35, "multiply", box);
+    soft((k) => { poly(k, y.poly); k.fill(); }, tex(`surface.${y.surface}.${s}`, 2.5), 0.12, 0.55, "source-over", box, [["rgb(160,150,138)", 0.35, "multiply"]]);
   }
   for (const y of yards.filter((y) => y.fence)) {
     g.save(); g.strokeStyle = "rgba(88,66,46,0.9)"; g.lineWidth = Math.max(1.5, pp * 0.05); g.setLineDash([pp * 0.14, pp * 0.06]); poly(g, y.poly); g.stroke(); g.setLineDash([]); g.restore();
@@ -357,30 +409,34 @@ export function paint(ctx) {
   for (const pk of items("surface", "park")) {
     const box = boxOf([pk.poly, ...(pk.paths ?? []).map((w) => w.path)], 1 + Math.max(0, ...(pk.paths ?? []).map((w) => w.width / 2)));
     // A green stands out from the fields around it: lusher grass, a little lighter
-    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, pk.style === "formal" ? 0.45 : 0.65, "source-over", box);
+    if (s !== "winter") soft((k) => { poly(k, pk.poly); k.fill(); }, tex(`ground.grass.grassy`, 4), 0.4, pk.style === "formal" ? 0.45 : 0.65, "source-over", box, grassLift ? [["rgb(70,92,30)", 0.6, "screen"]] : []);
     if (s !== "winter" && grassLift) {
-      soft((k) => { poly(k, pk.poly); k.fill(); }, "rgb(70,92,30)", 0.4, 0.6, "screen", box);
       soft((k) => { k.lineWidth = 0.3 * pp; poly(k, pk.poly); k.stroke(); }, "rgb(110,112,80)", 0.25, 0.3, "multiply", box); // where the mowing stops
     }
     // Under snow every path is trodden snow
     for (const w of pk.paths ?? []) soft((k) => strokeLine(k, w.path, w.width), tex(s === "winter" ? "surface.trodden.winter" : `surface.${w.surface}.${s}`, 2.5), 0.06, w.surface === "gravel" ? 0.95 : 0.75, "source-over", box);
     // A little darker, as a road's worn middle is, so a path shows on grass or snow alike
     if (pk.paths?.length) soft((k) => { for (const w of pk.paths) strokeLine(k, w.path, w.width * 0.8); }, "rgb(150,142,132)", 0.08, s === "winter" ? 0.45 : 0.3, "multiply", box);
-    if (pk.basin) {
-      const { at, radius } = pk.basin;
+    if (pk.basin?.poly) {
+      // (a canal: a long stone-edged basin)
+      const bp = pk.basin.poly, bb = boxOf([bp], 0.3);
+      soft((k) => { poly(k, bp); k.lineWidth = 0.24 * pp; k.lineJoin = "miter"; k.stroke(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", bb);
+      soft((k) => { poly(k, bp); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), 0.01, 1, "source-over", bb);
+      g.save(); g.strokeStyle = "rgba(40,40,46,0.6)"; g.lineWidth = Math.max(1, pp * 0.025); poly(g, bp); g.stroke(); g.restore();
+    } else if (pk.basin) {
+      const { at, radius } = pk.basin, rim = pk.basin.rim !== false;
       const bb = [at[0] - radius - 0.2, at[1] - radius - 0.2, at[0] + radius + 0.2, at[1] + radius + 0.2];
-      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); k.fill(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", bb);
-      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), radius * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), 0.01, 1, "source-over", bb);
-      g.save(); g.strokeStyle = "rgba(40,40,46,0.6)"; g.lineWidth = Math.max(1, pp * 0.025);
-      g.beginPath(); g.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); g.stroke(); g.restore();
+      if (rim) soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); k.fill(); }, tex(`stone.rough.${s}`, 0.8), 0.01, 1, "source-over", bb);
+      // (a pond's edge soft, with no rim)
+      soft((k) => { k.beginPath(); k.arc(X(at[0]), Y(at[1]), radius * pp, 0, 2 * Math.PI); k.fill(); }, tex(s === "winter" ? "water.ice" : "water.pond", 2), rim ? 0.01 : 0.12, 1, "source-over", bb);
+      if (rim) { g.save(); g.strokeStyle = "rgba(40,40,46,0.6)"; g.lineWidth = Math.max(1, pp * 0.025); g.beginPath(); g.arc(X(at[0]), Y(at[1]), (radius + 0.12) * pp, 0, 2 * Math.PI); g.stroke(); g.restore(); }
     }
   }
   // A landmark's lawns and its cloister's garden: lush kept grass
   for (const ln of [...items("surface", "lawn"), ...items("surface", "garth")]) {
     if (s === "winter") continue;
     const box = boxOf([ln.poly], 1);
-    soft((k) => { poly(k, ln.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.3, 0.6, "source-over", box);
-    if (grassLift) soft((k) => { poly(k, ln.poly); k.fill(); }, "rgb(60,84,26)", 0.3, 0.5, "screen", box);
+    soft((k) => { poly(k, ln.poly); k.fill(); }, tex("ground.grass.grassy", 4), 0.3, 0.6, "source-over", box, grassLift ? [["rgb(60,84,26)", 0.5, "screen"]] : []);
   }
   // A landmark's square or forecourt: paved, crisp at its edge, worn a little around it
   for (const pz of items("surface", "plaza")) {
@@ -417,7 +473,7 @@ export function paint(ctx) {
   // Kilns: a round brick hearth with its dark fire hole
   for (const kl of items("kiln")) {
     if (!near(kl.x, kl.y, kl.rad)) continue;
-    g.save(); g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -pp * 0.12;
+    g.save(); g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.15; g.shadowOffsetY = -sunLong * pp * 0.12;
     g.fillStyle = "rgb(150,86,64)"; g.beginPath(); g.arc(X(kl.x), Y(kl.y), kl.rad * pp, 0, 2 * Math.PI); g.fill(); g.restore();
     g.save(); g.strokeStyle = "rgba(60,36,28,0.8)"; g.lineWidth = Math.max(1, pp * 0.04);
     g.beginPath(); g.arc(X(kl.x), Y(kl.y), kl.rad * pp, 0, 2 * Math.PI); g.stroke();
@@ -431,7 +487,13 @@ export function paint(ctx) {
     const w = gw * pp, d = gdp * pp;
     g.fillStyle = winter ? "rgba(110,120,135,0.07)" : "rgba(105,85,55,0.16)";
     g.fillRect(-w / 2, -d / 2, w, d);
-    const rows = Math.max(3, Math.round(gdp / 0.25));
+    const rows = gd.garden.knot ? 0 : Math.max(3, Math.round(gdp / 0.25));
+    // (a parterre's knot: low clipped box in a diamond and a saltire, on gravel)
+    if (gd.garden.knot) {
+      g.strokeStyle = winter ? "rgba(70,84,72,0.55)" : "rgba(52,84,40,0.85)"; g.lineWidth = Math.max(1.5, pp * 0.09); g.lineCap = "round";
+      g.beginPath(); g.moveTo(0, -d / 2 + pp * 0.15); g.lineTo(w / 2 - pp * 0.15, 0); g.lineTo(0, d / 2 - pp * 0.15); g.lineTo(-w / 2 + pp * 0.15, 0); g.closePath();
+      g.moveTo(-w / 2 + pp * 0.15, -d / 2 + pp * 0.15); g.lineTo(w / 2 - pp * 0.15, d / 2 - pp * 0.15); g.moveTo(w / 2 - pp * 0.15, -d / 2 + pp * 0.15); g.lineTo(-w / 2 + pp * 0.15, d / 2 - pp * 0.15); g.stroke();
+    }
     for (let i = 1; i < rows; i++) {
       const yy = -d / 2 + (d * i) / rows;
       g.fillStyle = winter ? "rgba(80,92,110,0.08)" : "rgba(70,95,45,0.22)";
@@ -534,7 +596,7 @@ export function paint(ctx) {
   }
 
   progress(0.25, "Walls and hedges");
-  const walls = items("wall").filter((w) => !w.thickness); // town walls and palisades come after the water
+  const walls = items("wall").filter((w) => !w.thickness && w.class !== "watergate"); // town walls and palisades come after the water, a water gate over it
   if (walls.length) {
     const box = boxOf(walls.map((w) => w.path), 0.5);
     soft((k) => { for (const w of walls) { k.save(); k.translate(pp * 0.03, -pp * 0.09); strokeLine(k, w.path, 0.2); k.restore(); } }, "rgb(30,40,58)", 0.08, 0.35, "source-over", box);
@@ -566,9 +628,12 @@ export function paint(ctx) {
   const ways = items("way").filter((w) => !w.faint);
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, tex(`surface.trodden.${s}`, 2.5), 0.25, LINES.verge);
   if (grassLift) soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width + 0.7); }, TRODDEN_LIFT, 0.25, 0.45, "screen"); // no dark rim on the lifted grass
-  // Widest roads' surfaces first, as the sketch lays them, so a lane's surface runs over the road it meets
-  for (const surf of new Set([...ways].sort((a, b) => b.width - a.width).map((w) => w.surface)))
-    soft((k) => { for (const w of ways.filter((w) => w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);
+  // Each width's surfaces narrowest first, so a side street's end lies under the road it meets, in that road's surface
+  // (widths by the half square, so a city's many streets are laid in a few passes)
+  const band = (w) => Math.round(w.width * 2) / 2;
+  const byWidth = [...new Set(ways.map(band))].sort((a, b) => a - b);
+  for (const wd of byWidth) for (const surf of new Set(ways.filter((w) => band(w) === wd).map((w) => w.surface)))
+    soft((k) => { for (const w of ways.filter((w) => band(w) === wd && w.surface === surf)) strokeLine(k, w.path, w.width); }, tex(`surface.${surf}.${s}`, 2.5), 0.15, 0.95);
   // A darker worn middle: strong on snow and slush, lighter on summer dirt, which is dark enough already
   soft((k) => { for (const w of ways) strokeLine(k, w.path, w.width * (w.class === "highway" ? 0.85 : 0.7)); }, "rgb(118,108,96)", 0.2, (s === "winter" ? 0.5 : 0.25) * LINES.worn, "multiply");
   // Ruts where a road has them, else (when LINES.center isn't 0) a faint worn line down its middle
@@ -609,7 +674,9 @@ export function paint(ctx) {
   for (const { w, box } of waters) soft((k) => waterLine(k, w, 0.3), "rgb(48,62,80)", 0.12, LINES.waterEdge, "source-over", box);
   // A lake's dark edge, but not along a beach, which slopes into the water
   for (const { b, box } of lakes) if (b.shore !== "sand" && b.shore !== "pebbles") soft((k) => strokeLine(k, b.ring, 0.3), "rgb(48,62,80)", 0.12, LINES.waterEdge, "source-over", box);
-  for (const { w, box } of waters) {
+  // (narrowest first, so a mill race's or a stream's end, and its dark middle, lie under the river it opens into)
+  const widest = (w) => Math.max(Number(w.width) || 0, ...(Array.isArray(w.widths) ? w.widths.filter(Number.isFinite) : []));
+  for (const { w, box } of [...waters].sort((a, b) => widest(a.w) - widest(b.w))) {
     soft((k) => waterLine(k, w), tex(w.frozen ? "water.ice" : `water.${w.class}`, 2.5), 0.06, 1, "source-over", box);
     if (w.frozen) soft((k) => waterLine(k, w, 0, 0.48), tex("water.ice.cracked", 2), 0.2, 0.55, "source-over", box);
     soft((k) => strokeLine(k, w.path, 0.25), "rgb(40,60,82)", 0.15, 0.35, "multiply", box);
@@ -623,6 +690,7 @@ export function paint(ctx) {
       soft((k) => { poly(k, b.poly); k.fill(); k.globalCompositeOperation = "source-in"; waterLine(k, w); k.globalCompositeOperation = "source-over"; }, tex(`water.${w.class}`, 2.5), 0.8, 0.5, "source-over", wb);
     }
   }
+  paintRiverbed(g, L.items, { X, Y, pp, near: (b) => b[2] >= x0 - 1 && b[3] >= y0 - 1 && b[0] <= x0 + W / pp + 1 && b[1] <= y0 + H / pp + 1, colors: { bar: winter ? "rgb(214,220,226)" : "rgb(176,166,136)", land: winter ? "rgb(228,232,236)" : "rgb(104,118,62)", bank: winter ? "rgb(200,204,208)" : "rgb(146,132,106)", ink: "rgba(40,60,66,0.7)" } });
   for (const p of items("lily")) img("prop.lily", p.variant, p.x, p.y, p.s, p.rot, 0);
 
   /** A lake's or the sea's shore: a band of its ground out from the water's edge (none where a quay is). */
@@ -746,7 +814,7 @@ export function paint(ctx) {
       // The rock's corners are worked out in tile space, so its texture stays anchored to the map
       const turn = rock.turn, ct = Math.cos(turn), st = Math.sin(turn), px = X(x), py = Y(y);
       g.save();
-      g.shadowColor = "rgba(20,30,48,0.55)"; g.shadowBlur = pp * 0.05; g.shadowOffsetY = -pp * 0.04;
+      g.shadowColor = "rgba(20,30,48,0.55)"; g.shadowBlur = pp * 0.05; g.shadowOffsetY = -sunLong * pp * 0.04;
       g.fillStyle = tex(`ground.${gb}`, 2);
       g.beginPath();
       const nv = rock.corners.length;
@@ -769,7 +837,7 @@ export function paint(ctx) {
     const [x, y] = c.at;
     const len = c.length, wid = c.width;
     g.save(); g.translate(X(x), Y(y)); g.rotate((c.angle * Math.PI) / 180);
-    g.save(); g.shadowColor = "rgba(25,35,55,0.5)"; g.shadowBlur = pp * 0.1; g.shadowOffsetY = -pp * 0.1;
+    g.save(); g.shadowColor = "rgba(25,35,55,0.5)"; g.shadowBlur = pp * 0.1; g.shadowOffsetY = -sunLong * pp * 0.1;
     g.fillStyle = "rgb(150,140,128)"; g.fillRect((-len / 2) * pp, (-wid / 2) * pp, len * pp, wid * pp); g.restore();
     g.fillStyle = "rgba(110,82,56,0.85)"; g.fillRect((-len / 2) * pp, (-wid / 2) * pp, len * pp, wid * pp);
     g.strokeStyle = "rgba(60,42,28,0.9)"; g.lineWidth = Math.max(1, pp * 0.04);
@@ -779,6 +847,14 @@ export function paint(ctx) {
   }
 
   // Town walls and palisades, over the water and roads they meet (their towers are buildings, below)
+  // A water gate's grille across the river, over the water: a dark bar with its uprights
+  for (const w of items("wall").filter((w) => w.class === "watergate" && w.path?.length >= 2)) {
+    const [a, b] = [w.path[0], w.path.at(-1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / L, (b[0] - a[0]) / L];
+    g.save(); g.strokeStyle = "rgba(38,34,30,0.9)"; g.lineWidth = Math.max(1.5, pp * 0.1); g.lineCap = "butt";
+    g.beginPath(); g.moveTo(X(a[0]), Y(a[1])); g.lineTo(X(b[0]), Y(b[1]));
+    for (let t = 0.2; t < L; t += 0.4) { const p = [a[0] + ((b[0] - a[0]) * t) / L, a[1] + ((b[1] - a[1]) * t) / L]; g.moveTo(X(p[0] - n[0] * 0.12), Y(p[1] - n[1] * 0.12)); g.lineTo(X(p[0] + n[0] * 0.12), Y(p[1] + n[1] * 0.12)); }
+    g.stroke(); g.restore();
+  }
   for (const w of items("wall").filter((w) => w.thickness)) {
     const T = w.thickness;
     const box = boxOf([w.path], T + 1.5);
@@ -822,7 +898,7 @@ export function paint(ctx) {
   const rs = (ROOF_SCALE * pp) / 50;
   for (const b of buildings) {
     if (!near(b.cx, b.cy, Math.max(b.len, b.dep))) continue;
-    paintRoof(g, b, { x: X(b.cx), y: Y(b.cy), pp, art, season: s, texPx: rs * 1200, chimney: 0.3 });
+    paintRoof(g, b, { x: X(b.cx), y: Y(b.cy), pp, art, season: s, texPx: rs * 1200, chimney: 0.3, sunLong });
   }
 
   // Props, then trees from north to south so southern crowns overlap
@@ -847,7 +923,7 @@ export function paint(ctx) {
       else if (near(p.x, p.y, span)) {
         // No art: four pale sails on dark stocks
         g.save(); g.translate(X(p.x), Y(p.y)); g.rotate((p.rot * Math.PI) / 180);
-        g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.2; g.shadowOffsetY = -pp * 0.15;
+        g.shadowColor = "rgba(25,35,55,0.45)"; g.shadowBlur = pp * 0.2; g.shadowOffsetY = -sunLong * pp * 0.15;
         for (const turn of [0, 90]) { g.save(); g.rotate((turn * Math.PI) / 180); g.fillStyle = "rgb(226,218,198)"; g.fillRect((-span / 2) * pp, -span * 0.07 * pp, span * pp, span * 0.14 * pp); g.fillStyle = "rgb(70,54,38)"; g.fillRect((-span / 2) * pp, -span * 0.012 * pp, span * pp, span * 0.024 * pp); g.restore(); }
         g.restore();
       }
@@ -866,6 +942,8 @@ export function paint(ctx) {
       continue;
     }
     if (p.class === "cross" && !art("prop.cross", p.variant)) { cross(p.x, p.y, size * (p.scale ?? 1), p.rot); continue; }
+    // (no art for a maypole or sundial: drawn plain)
+    if ((p.class === "maypole" || p.class === "sundial") && !art(`prop.${p.class}`, p.variant)) { plainProp(p.class, p.x, p.y, size * (p.scale ?? 1), p.rot); continue; }
     const shadow = { well: 0.1, cart: 0.08, wagon: 0.1 }[p.class] ?? 0.08;
     // (art longer than it's wide: a wheel 1 by 6, a crane 2 by 4, a wagon 3 by 6, a long stall 2 by 3)
     const long = { waterwheel: 6, crane: 4, wagon: 2, "stall-long": 1.5, firewood: 3, hay: 2 }[p.class] ?? 1;
@@ -1027,7 +1105,7 @@ const SUN = [0, 1];
  * valleys, ridge caps, a flat roof's parapet, a mansard's skylight, outlined eaves and its chimney. texPx: the roof
  * art's drawn width in px; chimney: its width in squares. Shared with the battle style.
  */
-export function paintRoof(g, b, { x, y, pp, art, season: s, texPx, chimney = 0.3 }) {
+export function paintRoof(g, b, { x, y, pp, art, season: s, texPx, chimney = 0.3, sunLong = 1 }) {
   const th = (b.rot * Math.PI) / 180, c = Math.cos(th), sn = Math.sin(th);
   const facets = roofFacets(b);
   g.save(); g.translate(x, y); g.rotate(th);
@@ -1093,7 +1171,7 @@ export function paintRoof(g, b, { x, y, pp, art, season: s, texPx, chimney = 0.3
   if (b.chimney) {
     const ci = art("chimney.stone", b.chimney.variant);
     const cw = chimney * pp, len = b.len * pp, dep = b.dep * pp;
-    g.save(); g.shadowColor = "rgba(25,35,55,0.5)"; g.shadowBlur = pp * 0.06; g.shadowOffsetY = -pp * 0.12;
+    g.save(); g.shadowColor = "rgba(25,35,55,0.5)"; g.shadowBlur = pp * 0.06; g.shadowOffsetY = -sunLong * pp * 0.12;
     const ccx = len * b.chimney.u, ccy = dep * b.chimney.v;
     if (ci) { const ch = (cw * ci.height) / ci.width; g.drawImage(ci, ccx - cw / 2, ccy - ch / 2, cw, ch); }
     else { g.fillStyle = fallbackColor("chimney.stone"); g.fillRect(ccx - cw / 2, ccy - cw / 2, cw, cw); }

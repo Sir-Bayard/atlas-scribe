@@ -151,6 +151,12 @@ const decodeSafe = (s) => {
   }
 };
 
+/** The art settings: whether FA Nexus is asked, and whether a folder's own art or Forgotten Adventures' comes first. */
+function artSettings() {
+  const get = (k, d) => { try { return game.settings.get("atlas-scribe", k) ?? d; } catch { return d; } };
+  return { nexus: get("artNexus", true) !== false, order: get("artOrder", "yours") === "fa" ? "fa" : "yours" };
+}
+
 export async function resolveArt(roles, progress = () => {}, { drawn = false, check = null } = {}) {
   // (what a role with no art becomes: drawn on a battle map, a plain color in the textured style)
   const instead = drawn ? "drawn instead" : "painted in plain colors";
@@ -165,13 +171,13 @@ export async function resolveArt(roles, progress = () => {}, { drawn = false, ch
   }
   faNexus.hold();
   try {
-    return await resolveWith(idx, roles, progress, { drawn, check, instead, notes, skipped });
+    return await resolveWith(idx, roles, progress, { drawn, check, instead, notes, skipped, ...artSettings() });
   } finally {
     await faNexus.release();
   }
 }
 
-async function resolveWith(idx, roles, progress, { drawn, check, instead, notes, skipped }) {
+async function resolveWith(idx, roles, progress, { drawn, check, instead, notes, skipped, nexus = true, order = "yours" }) {
   for (const f of idx.folders) {
     const name = `${f.folder.source === "data" ? "" : `${f.folder.source}: `}${f.folder.path || "(top)"}`;
     if (f.error) notes.push(`Art folder ${name}: ${f.error}`);
@@ -198,7 +204,9 @@ async function resolveWith(idx, roles, progress, { drawn, check, instead, notes,
     for (const o of open) {
       for (; !o.own && o.at < o.chain.length; o.at++) {
         const r = o.chain[o.at];
-        const own = ownArt(idx, r, skipped);
+        // (a folder's own art for the name first, or with Forgotten Adventures first, FA's files for it when there are
+        // any; art chosen by hand for the whole role won already)
+        const own = order === "fa" && map[r]?.length ? null : ownArt(idx, r, skipped);
         if (own) { o.own = own; break; }
         if (map[r]?.length) {
           o.files = map[r].map((name) => {
@@ -214,7 +222,8 @@ async function resolveWith(idx, roles, progress, { drawn, check, instead, notes,
     }
     const ask = [...new Set(asking)];
     check?.();
-    if (ask.length) {
+    if (ask.length && !nexus) for (const name of ask) got.set(name, null); // (FA Nexus not asked: the Art setting)
+    else if (ask.length) {
       const res = await faNexus.fetchNames(ask, progress, { check });
       for (const name of ask) got.set(name, res.paths.get(name) ?? null);
       for (const p of res.paths.values()) if (p) fromNexus.add(abs(p));
@@ -240,8 +249,11 @@ async function resolveWith(idx, roles, progress, { drawn, check, instead, notes,
           if (o.files.some((f) => f.path)) from.folders++;
           else from.nexus++;
         } else {
+          // (none came: with Forgotten Adventures first, the folder's own art for the name, else the next name)
           o.files = null;
-          o.at++;
+          const own = order === "fa" ? ownArt(idx, o.chain[o.at], skipped) : null;
+          if (own) o.own = own;
+          else o.at++;
           next.push(o);
         }
       } else missing.push(o.role);

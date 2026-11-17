@@ -28,6 +28,8 @@ function areaCentroid(poly) {
 
 /** The point a feature's name label sits at when it has no offset: well inside its shape. Null if it has none. */
 export function anchorOf(f) {
+  // A region's place: where it stands
+  if (f?.type === "place") return isPt(f.at) ? f.at : null;
   // A landmark's (a pinned house's): the middle of its first building
   if (f?.type === "landmark") {
     const b = Array.isArray(f.buildings) ? f.buildings[0] : null;

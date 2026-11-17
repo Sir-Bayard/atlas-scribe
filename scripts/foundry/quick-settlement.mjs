@@ -5,7 +5,7 @@
  * grayed out with why. A choice left on Any, and a building or place neither said nor checked or cleared by hand, is
  * picked from the seed.
  */
-import { QUICK, QUICK_LABELS, QUICK_ANY, HAS, QUARTERS, quickLacks } from "../core/quick.mjs";
+import { QUICK, QUICK_LABELS, QUICK_ANY, QUICK_HIGH, QUICK_HIGH_LABELS, HAS, QUARTERS, quickLacks } from "../core/quick.mjs";
 import { readPlace } from "../core/describe-place.mjs";
 import { esc } from "./util.mjs";
 
@@ -35,6 +35,7 @@ export function settlementTabHTML() {
       ${select("surroundings", "Around it", QUICK.surroundings, L.surroundings, false)}${select("center", "Center", QUICK.center, CENTER_LABELS, false)}
       ${select("river", "River", QUICK.river, L.river, QUICK_ANY.includes("river"))}${select("shape", "Outline", QUICK.shape, L.shape, QUICK_ANY.includes("shape"))}
     </div>
+    <div class="as-qs-two" data-for="town">${select("high", "High ground", QUICK_HIGH, QUICK_HIGH_LABELS, false).replace(ANY, "")}</div>
     <div class="form-group" data-for="town"><label id="as-qs-has">It has</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-has">${HAS.map((k) => box(`s-h-${k}`, HAS_LABELS[k])).join("")}<button type="button" class="as-qs-reset" data-tooltip-text="Back to what its size has" hidden>Reset</button></div></div>
     <div class="form-group" data-for="city"><label id="as-qs-quarters">Quarters</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-quarters">${QUARTERS.map((k) => box(`s-q-${k}`, QUARTER_LABELS[k])).join("")}</div></div>
     <div class="as-qs-two" data-for="city">${yesNo("citadel", "Citadel")}</div>
@@ -89,6 +90,7 @@ export function wireSettlementTab(root) {
   const draw = () => {
     // (a choice neither said nor set shows its first value, as the dialog always has; a city's river and outline Any)
     for (const k of ["size", "season", "water", "roads", "surroundings", "center", "river", "shape"]) el(`s-${k}`).value = known(k) ? value(k) ?? "" : QUICK_ANY.includes(k) ? "" : QUICK[k][0];
+    el("s-high").value = known("high") ? value("high") ?? "none" : "none";
     // (a name the description gave and no longer gives is cleared, unless it was typed over)
     if (el("name")) {
       if (known("name")) el("name").value = shownName = value("name") ?? "";
@@ -227,6 +229,7 @@ export function wireSettlementTab(root) {
     const o = {};
     for (const k of ["size", "season", "water", "roads", "surroundings", "center", "river", "shape"]) { const s = el(`s-${k}`); if (s?.value && !s.disabled) o[k] = s.value; }
     const size = el("s-size").value;
+    if (!CITIES.includes(size) && el("s-high").value !== "none") o.high = el("s-high").value;
     if (CITIES.includes(size)) {
       if (QUARTERS.some((k) => known(`quarters.${k}`) || el(`s-q-${k}`).disabled)) o.quarters = QUARTERS.filter((k) => el(`s-q-${k}`).checked);
       const out = {};

@@ -9,6 +9,8 @@
  * The map is painted a tile at a time; every pattern and noise is anchored to the map, so tiles meet without seams.
  * Squares throughout.
  */
+import { paintRelief } from "../relief.mjs";
+import { paintRiverbed } from "../riverbed.mjs";
 import { fallbackColor } from "../../core/roles.mjs";
 import { PROP_SQUARES } from "../../core/plan.mjs";
 import { makeNoise } from "../../core/noise.mjs";
@@ -271,6 +273,8 @@ export function rolesFor(layout) {
     }
     if (i.kind === "tree" && i.wild && s !== "winter") roles.add(`ground.forest.${s}`);
     if (i.kind === "prop" && i.class === "fountain") roles.add(s === "winter" ? "water.ice" : "water.pond");
+    if (i.kind === "surface" && i.class === "park" && i.basin) roles.add(s === "winter" ? "water.ice" : "water.pond");
+    if (i.kind === "rock") { roles.add("stone.rough.summer"); roles.add(i.style === "cave" ? "surface.dirt.summer" : "floor.stone"); }
     if (i.kind === "reed") roles.add("prop.reeds");
     if (i.kind === "lily") roles.add("prop.lily");
     if (i.kind === "prop" && i.class !== "fountain") roles.add(i.class === "bush" ? bushRole(s) : propRole(i.class, s));
@@ -678,6 +682,62 @@ function groundPass(brush) {
 }
 
 /**
+ * 1e. Hills, mountains and marshes: shaded ring by ring, rocks of rough stone, a marsh's pools and reeds
+ */
+function reliefPass(brush) {
+  const { X, Y, items, meets, pp, s } = brush;
+  if (!items("relief").length) return;
+  const winter = s === "winter";
+  paintRelief(brush.g, items("relief"), { X, Y, pp, near: (b) => meets(b, 1), contours: false, grain: 2, colors: { ink: "rgb(60,52,42)", light: "rgb(255,250,236)", shade: "rgb(28,26,38)", stone: winter ? "rgb(214,218,222)" : "rgb(140,134,124)", stoneInk: "rgba(40,36,30,0.7)", water: "rgb(64,96,104)", waterInk: "rgba(30,50,56,0.7)", reed: winter ? "rgb(170,158,120)" : "rgb(150,146,78)", marsh: winter ? "rgba(200,206,212,0.4)" : "rgba(70,86,52,0.4)" } });
+}
+
+/**
+ * 1d. Caves and dungeons: the rock, dark and rough, with the floor carved out of it (a cave's earth and stone, a
+ * dungeon's flagstones), a shadow along the foot of every rock wall and its edge inked; the floor's wear (cracks, moss,
+ * puddles; rubble comes with the props), and a door's sill where a corridor meets a room. Underground, no season shows.
+ */
+function undergroundPass(brush) {
+  const { X, Y, bboxOf, boxAround, fill, hashHere, items, meets, noiseMask, pp, progress, soft, stroke, sub, tex } = brush;
+  const rocks = items("rock").filter((rk) => meets(bboxOf(rk.ring), 2));
+  if (!rocks.length) return;
+  progress(0.05, "Caves and dungeons");
+  const rockRole = "stone.rough.summer";
+  for (const rk of rocks) {
+    const box = boxAround([bboxOf(rk.ring)], 1);
+    const carve = (k) => { k.beginPath(); for (const r of rk.holes) sub(k, r); };
+    // The rock: rough stone, darkened, in patches
+    fill((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, tex(rockRole));
+    soft((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, "rgb(26,22,20)", { alpha: 0.62, box });
+    soft((k) => { k.beginPath(); sub(k, rk.ring); for (const r of rk.holes) sub(k, r); k.fill("evenodd"); }, "rgb(70,62,54)", { noise: noiseMask(`rock-${rk.id}`, 2.2, 0.1, 0.35), alpha: 0.5, box });
+    // The floor
+    if (rk.style === "cave") {
+      fill((k) => { carve(k); k.fill("evenodd"); }, tex("surface.dirt.summer"));
+      soft((k) => { carve(k); k.fill("evenodd"); }, tex(rockRole), { noise: noiseMask(`cave-${rk.id}`, 3, 0.05, 0.4), alpha: 0.55, box });
+    } else fill((k) => { carve(k); k.fill("evenodd"); }, tex("floor.stone"));
+    soft((k) => { carve(k); k.fill("evenodd"); }, "rgb(18,16,22)", { alpha: 0.25, box });
+    // A shadow inside along the walls, then the walls' edge
+    soft((k) => { k.lineWidth = 0.9 * pp; k.lineJoin = "round"; for (const r of rk.holes) { k.beginPath(); sub(k, r); k.stroke(); } }, "rgb(8,8,12)", { blur: 0.35, alpha: 0.7, box });
+    fill((k) => { for (const r of rk.holes) stroke(k, [...r, r[0]], 0.08); }, "rgb(20,17,15)");
+  }
+  // The wear
+  for (const w of items("wear").filter((w) => meets([w.x, w.y, w.x, w.y], 1))) {
+    const r = 0.45 * (w.s ?? 1);
+    if (w.class === "crack") {
+      const a = (w.rot * Math.PI) / 180, pts = [];
+      for (let t = -1; t <= 1.001; t += 0.25) pts.push([w.x + Math.cos(a) * t * r + (hashHere(w.x, w.y, t * 7) - 0.5) * 0.18, w.y + Math.sin(a) * t * r + (hashHere(w.y, w.x, t * 5) - 0.5) * 0.18]);
+      fill((k) => stroke(k, pts, 0.035), "rgba(12,10,10,0.75)");
+    } else if (w.class === "moss") {
+      soft((k) => { k.beginPath(); k.arc(X(w.x), Y(w.y), r * pp, 0, 2 * Math.PI); k.fill(); }, "rgb(64,92,46)", { blur: 0.2, alpha: 0.55, noise: noiseMask("moss", 0.8, -0.1, 0.3), box: [w.x - 1, w.y - 1, w.x + 1, w.y + 1] });
+    } else if (w.class === "puddle") {
+      soft((k) => { k.beginPath(); k.ellipse(X(w.x), Y(w.y), r * pp, r * 0.7 * pp, (w.rot * Math.PI) / 180, 0, 2 * Math.PI); k.fill(); }, "rgb(30,44,58)", { blur: 0.12, alpha: 0.75, box: [w.x - 1, w.y - 1, w.x + 1, w.y + 1] });
+      fill((k) => { k.beginPath(); k.ellipse(X(w.x - r * 0.25), Y(w.y - r * 0.2), r * 0.35 * pp, r * 0.15 * pp, (w.rot * Math.PI) / 180, 0, 2 * Math.PI); k.fill(); }, "rgba(170,190,205,0.25)");
+    }
+  }
+  // A door's sill across its opening
+  for (const d of items("door").filter((d) => meets([d.a[0], d.a[1], d.b[0], d.b[1]], 1))) fill((k) => stroke(k, [d.a, d.b], 0.3, "butt"), "rgb(70,60,52)");
+}
+
+/**
  * 2. Ground worn by feet around the buildings
  */
 function wornPass(brush) {
@@ -750,6 +810,8 @@ function waterPass(brush) {
       g.drawImage(im, (-ww / 2) * pp, (-hh / 2) * pp, ww * pp, hh * pp); g.restore();
     }
   }
+  // (a river's shallows: gravel bars on the inside of its bends; in winter under the ice along its banks)
+  if (s !== "winter") paintRiverbed(g, L.items, { X, Y, pp, near: (b) => meets(b, 1), colors: { bar: "rgba(168,156,124,0.7)", land: "rgb(110,120,70)", bank: "rgb(146,132,106)", ink: "rgba(30,50,56,0.7)" } });
   // (a hollow a stream fills: its water over the whole hollow, its edge's banks laid over the shore, deeper in the middle)
   for (const Lv of levels.filter((x) => x.within)) {
     const w = L.items.find((i) => i.id === Lv.water);
@@ -1225,7 +1287,26 @@ function yardsPass(brush) {
  * 8. Fountains: a stone basin of water
  */
 function fountainsPass(brush) {
-  const { X, Y, fill, items, meets, pp, s, tex } = brush;
+  const { X, Y, bboxOf, fill, items, meets, poly, pp, s, soft, tex } = brush;
+  // A park's basin (a stone rim around its water), its canal (a long one), or a green's pond (soft-edged, no rim)
+  for (const pk of items("surface", "park").filter((x) => x.basin)) {
+    const b = pk.basin, water = tex(s === "winter" ? "water.ice" : "water.pond");
+    if (b.poly) {
+      if (!meets(bboxOf(b.poly), 1)) continue;
+      fill((k) => { poly(k, b.poly); k.lineWidth = 0.6 * pp; k.lineJoin = "miter"; k.stroke(); }, tex("stone.curb"));
+      fill((k) => { poly(k, b.poly); k.fill(); }, water);
+      continue;
+    }
+    if (!meets([b.at[0], b.at[1], b.at[0], b.at[1]], b.radius + 1)) continue;
+    const disc = (r) => (k) => { k.beginPath(); k.arc(X(b.at[0]), Y(b.at[1]), r * pp, 0, 2 * Math.PI); k.fill(); };
+    if (b.rim === false) {
+      soft(disc(b.radius + 0.3), tex(`surface.dirt.${s}`), { blur: 0.3, alpha: 0.7, box: [b.at[0] - b.radius - 1, b.at[1] - b.radius - 1, b.at[0] + b.radius + 1, b.at[1] + b.radius + 1] });
+      soft(disc(b.radius), water, { blur: 0.12, box: [b.at[0] - b.radius - 1, b.at[1] - b.radius - 1, b.at[0] + b.radius + 1, b.at[1] + b.radius + 1] });
+    } else {
+      fill(disc(b.radius + 0.3), tex("stone.curb"));
+      fill(disc(b.radius), water);
+    }
+  }
   for (const f of items("prop", "fountain")) {
     const r = Math.max(1.2, (0.45 * (f.scale ?? 1)) / 2);
     if (!meets([f.x, f.y, f.x, f.y], r + 0.5)) continue;
@@ -1418,7 +1499,7 @@ function gradePass(brush) {
 }
 
 /** The passes, in the order they're painted. */
-const PASSES = [groundPass, wornPass, waterPass, waysPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
+const PASSES = [groundPass, undergroundPass, reliefPass, wornPass, waterPass, waysPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
 
 
 /**

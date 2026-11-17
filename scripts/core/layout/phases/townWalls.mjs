@@ -16,7 +16,7 @@ export function townWalls(ctx) {
   {
     // (and quays: one with no water near it yet may be moved onto a moat, below, so it gets a gate where it crosses
     // and keeps towers off it, but doesn't stop the wall where it only runs over it)
-    const roadsSq = [...plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width) })), ...laid.map((q) => ({ id: q.d.way.id, path: q.d.way.path, width: q.d.way.width, ...(q.d.snapped ? {} : { over: false }) }))];
+    const roadsSq = [...plan.features.filter((f) => f.type === "road" && Array.isArray(f.path)).map((f) => ({ id: f.id, path: f.path, width: ft(f.width), class: f.class })), ...laid.map((q) => ({ id: q.d.way.id, path: q.d.way.path, width: q.d.way.width, class: q.d.way.class, ...(q.d.snapped ? {} : { over: false }) }))];
     const watersSq = [
       ...plan.features.filter((f) => f.type === "water" && Array.isArray(f.path)).map((f) => (f._w ? { id: f.id, path: f.path, width: Math.max(...f._w), widths: f._w } : { id: f.id, path: f.path, width: ft(f.width) })),
       ...bodies.map((b) => ({ id: b.id, path: b.ring, width: 0, body: b.poly, reach: b.keep })),
@@ -35,6 +35,8 @@ export function townWalls(ctx) {
       });
       if (!w.runs.length && !w.notes.some((n) => /too short|all gates or water/.test(n.message))) notes.push({ level: "warning", id: f.id, message: `Nothing of "${f.id}" is built: all of it lies on roads or water.` });
       // Each run carries its outer face (where the battlements are) and its inner one
+      // (a water gate's grille, a low wall across the river that stops boats and swimmers but not sight)
+      (w.waterGates ?? []).forEach((path, k) => items.push({ kind: "wall", id: `${f.id}/watergate${k + 1}`, from: f.id, class: "watergate", path, height: ft(f.height) }));
       w.runs.forEach((path, k) => items.push({ kind: "wall", id: w.runs.length === 1 ? f.id : `${f.id}/r${k + 1}`, from: f.id, class: f.class, path, height: ft(f.height), tall: tallOf(f.height ?? 25), thickness: ft(f.thickness), side: w.side, face: offsetPath(path, (w.side * ft(f.thickness)) / 2), back: offsetPath(path, (-w.side * ft(f.thickness)) / 2) }));
       w.ditches.forEach((d, k) => {
         const id = `${f.id}/${d.moat ? "moat" : "ditch"}${k ? `-${k + 1}` : ""}`;

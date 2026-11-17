@@ -26,6 +26,7 @@ export function outsideTheWalls(ctx) {
       ...(ctx.oldWall ? [ctx.oldWall] : []),
       ...(citadel ? citadel.features : []),
       ...districts,
+      ...(ctx.greens ?? []),
       ...outside,
     ],
     label,

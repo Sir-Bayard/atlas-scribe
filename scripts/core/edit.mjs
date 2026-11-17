@@ -26,6 +26,9 @@ export const PROFILE_CHOICES = ["hamlet", "village", "town", "city"];
  * spec), names (words for enum values), hidden (never shown: a field the generator ignores for now).
  * Keyed by "<type>.<field>", or "*.<field>" for every type.
  */
+/** A formal garden's own fields. */
+const FORMAL_FIELDS = new Set(["layout", "center", "beds", "edging", "planting"]);
+
 export const FIELD_TEXT = {
   "*.name": { label: "Name", help: "What the window calls it, in place of its id", auto: "its id" },
   "*.class": { label: "Kind" },
@@ -109,6 +112,21 @@ export const FIELD_TEXT = {
   "area.trees": { label: "Tree count", help: "A set number of trees, in place of the density (setting one clears the other)", auto: "from its density and size", more: true },
   "area.mix": { label: "Leafy share", kind: "share", key: "bare", help: "The share of leafy trees; the rest are firs (0 to 1)", auto: "by density and season: outside winter half to three quarters leafy (0.5 sparse, 0.75 open, 0.7 thick, 0.6 dense), in winter mostly firs" },
   "area.style": { label: "Style", names: { green: "village green", formal: "formal garden" }, auto: "village green" },
+  "water.shallows": { label: "Shallows", help: "Gravel bars on the inside of its bends" },
+  "water.islands": { label: "Islands", help: "Small islands where it runs wide and straight, on a settlement map (0 to 6)" },
+  "area.cleared": { label: "Cleared near town", help: "Its trees thin toward the town: scattered trees, stumps, logs and woodpiles near it, thick woods farther off" },
+  "area.openness": { label: "Open ground", names: { tight: "tight passages", medium: "passages and chambers", open: "wide caverns" }, help: "How much of the cave is open ground" },
+  "area.corridors": { label: "Corridors", names: { narrow: "one square", wide: "two squares" } },
+  "area.doors": { label: "Doors", names: { none: "none", some: "some", all: "every one" }, help: "Where corridors meet rooms" },
+  "area.wear": { label: "Wear", names: { some: "cracks, rubble, moss, puddles", none: "none" } },
+  "place.name": { label: "Name" },
+  "place.seed": { label: "Its map's seed", help: "The seed Make its map gives the place's own map; else one from the region's", more: true },
+  "area.feature": { label: "On the green", names: { pond: "a pond", well: "a well", maypole: "a maypole", cross: "a market cross", none: "nothing" }, help: "A village green's", auto: "by seed" },
+  "area.layout": { label: "Walks", names: { quartered: "quartered", saltire: "saltire", "goose-foot": "goose foot", concentric: "concentric", canal: "long canal", compartments: "compartments" }, help: "A formal garden's", auto: "by seed" },
+  "area.center": { label: "Center", names: { basin: "basin", fountain: "fountain", statue: "statue", sundial: "sundial", "rond-point": "rond-point" }, help: "A formal garden's", auto: "by seed" },
+  "area.beds": { label: "Beds", names: { lawn: "lawn", parterre: "parterre", kitchen: "kitchen beds", orchard: "orchard" }, help: "A formal garden's", auto: "by seed" },
+  "area.edging": { label: "Edging", names: { hedge: "hedge", wall: "low wall", none: "none" }, help: "Around a formal garden's beds", auto: "by seed" },
+  "area.planting": { label: "Trees", names: { avenue: "avenue", quincunx: "quincunx", bosquets: "bosquets", none: "none" }, help: "A formal garden's", auto: "by seed" },
   "area.system": { label: "Field system", names: { patchwork: "hedged patchwork", strips: "open strips" }, help: "Else picked from its seed", auto: "by seed" },
   "area.fieldSize": { label: "Field size", help: "About how big a field (or a furlong of strips) is, in feet", auto: "by system" },
   "area.border": { label: "Border", help: "What bounds its fields, or a cemetery: a hedge, a drystone wall or nothing", auto: "by seed" },
@@ -153,14 +171,16 @@ export const FIELD_TEXT = {
 export const PLAN_FIELDS = [
   { path: "name", label: "Name", kind: "string" },
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
-  { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)" }, help: "Illustrated draws the map in ink and color, with no art needed; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
+  { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },
-  { path: "size.ftPerSquare", label: "Feet a square", kind: "number", min: 1, max: 100, help: "25 suits a village or town" },
+  { path: "size.ftPerSquare", label: "Feet a square", kind: "number", min: 1, max: 100, help: "25 suits a village or town, 5 a battle map" },
   { path: "output.pxPerSquare", label: "Pixels a square", kind: "number", min: 20, step: 1, whole: true, help: "The finished image's grid size, and so its size" },
   { path: "seed", label: "Seed", kind: "number", step: 1, whole: true, help: "Changing it redraws everything that has no seed of its own", more: true },
+  { path: "output.format", label: "Image file", kind: "enum", values: ["auto", "webp", "jpeg"], names: { auto: "WebP, JPEG when big", webp: "WebP (smaller)", jpeg: "JPEG (saves faster)" }, more: true, help: "A big map saves several times faster as JPEG" },
+  { path: "output.quality", label: "Image quality", kind: "number", min: 0.5, max: 1, step: 0.01, more: true, help: "From 0.5 to 1: higher keeps more detail and makes a bigger file" },
   { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own" },
   { path: "output.scene.labelFont", label: "Label font", kind: "font", more: true, help: "Every label's font, unless a label sets its own" },
   { path: "output.scene.name", label: "Scene name", kind: "string", group: "scene" },
@@ -206,6 +226,8 @@ export function fieldsOf(plan, id) {
     if (f.type === "district" && (name === "anchor" || name === "anchorAt") && (!ANCHORED.has(characterOf(f)) || f.profile === "hamlet" || f.profile === "roadside")) continue;
     if (f.type === "district" && name === "anchorAt" && f.anchor === false) continue; // (no centerpiece, no place for it)
     if (shaped && (name === "width" || name === "straight")) continue;
+    // (a green's feature only on a green, a formal garden's parts only on one)
+    if (f.type === "area" && f.class === "park" && (name === "feature" ? f.style === "formal" : FORMAL_FIELDS.has(name) && f.style !== "formal")) continue;
     const kind = txt.kind ?? (spec.kind === "enum" ? "enum" : spec.kind);
     const values = txt.values ?? spec.values;
     const dflt = fieldDefault(spec, cls);
@@ -231,7 +253,7 @@ export function fieldsOf(plan, id) {
       const roofs = new Set((Array.isArray(f.buildings) ? f.buildings : []).map((b) => b?.roof ?? "slate"));
       out.push({ name: ROOF_ALL, label: "Roof", help: "The roof of all its buildings", kind: "enum", values: ROOFS, names: null, unit: null, min: null, max: null, value: roofs.size === 1 ? [...roofs][0] : undefined, auto: roofs.size > 1 ? "mixed" : null, more: false, required: true });
     }
-    if (name === "name" && (f.type === "district" || f.type === "area" || f.type === "landmark"))
+    if (name === "name" && (f.type === "district" || f.type === "area" || f.type === "landmark" || f.type === "place"))
       out.push({ name: NAME_LABEL, label: "Name on the map", help: "A label with its name that sits inside it and moves with it. Click the label to move it, turn it or change its look", kind: "boolean", values: null, names: null, unit: null, min: null, max: null, value: nameLabelsOf(plan, id).length > 0, auto: false, more: false, required: true });
   }
   return out;
@@ -338,7 +360,7 @@ function withNameLabel(plan, id, on) {
   const taken = new Set(next.features.map((x) => x?.id));
   let lid = `${id}-name`;
   for (let n = 2; taken.has(lid); n++) lid = `${id}-name-${n}`;
-  next.features.push({ id: lid, type: "label", of: id, size: f.type === "district" ? "large" : "normal" });
+  next.features.push({ id: lid, type: "label", of: id, size: f.type === "district" ? "large" : "normal", ...(f.type === "place" ? { offset: [0, 1.2] } : {}) });
   return next;
 }
 
@@ -353,10 +375,16 @@ export function deleteFeature(plan, id) {
 
 const getPath = (obj, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
 
-/** The plan-wide settings: PLAN_FIELDS with each one's value now (as written) and what applies when it's left out. */
+/**
+ * The plan-wide settings: PLAN_FIELDS with each one's value now (as written) and what applies when it's left out (a
+ * region's style and dressing left out: it has its own; its scale in hundreds or thousands of feet).
+ */
 export function planFieldsOf(plan) {
   const full = normalize(plan);
-  return PLAN_FIELDS.map((p) => ({ ...p, name: p.path, value: getPath(plan, p.path), auto: getPath(full, p.path) ?? null }));
+  const region = plan?.kind === "region";
+  const fields = !region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && p.path !== "output.dressing")
+    .map((p) => (p.path === "size.ftPerSquare" ? { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" } : p));
+  return fields.map((p) => ({ ...p, name: p.path, value: getPath(plan, p.path), auto: getPath(full, p.path) ?? null }));
 }
 
 /** The plan with one plan-wide setting changed. Returns { plan } or { error }. */

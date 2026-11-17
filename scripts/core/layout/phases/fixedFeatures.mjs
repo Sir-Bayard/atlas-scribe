@@ -1,4 +1,5 @@
 // One phase of laying out a plan (layout/index.mjs, layoutPlan): ctx holds what the phases share.
+import { layRelief } from "../relief.mjs";
 import { NOT_DRAWN_YET, PROP_SIZE, PROP_SQUARES, isConifer, okChimney, okCut, okJoin } from "../../plan.mjs";
 import { SHORE_REACH, frozenOf, isRunning, segClears } from "../../water.mjs";
 import { WILD_PROPS, WILD_SCALE } from "../wild.mjs";
@@ -208,7 +209,12 @@ export function fixedFeatures(ctx) {
           items.push({ kind: "surface", id: f.id, from: f.id, class: "trodden", poly: shapeToPolygon(f.shape, f.rot, 48), surface: "trodden" });
         } else if (f.class === "park" || f.class === "cemetery") {
           parks.push(f); // laid out once every road is known, so its paths can meet them
-        } else if (f.class !== "farmstead" && f.class !== "woods" && f.class !== "fields" && !NOT_DRAWN_YET.area.includes(f.class)) {
+        } else if (f.class === "hills" || f.class === "mountains" || f.class === "marsh") {
+          // (high or wet ground: shaded and contoured, rocks on it; nothing built on a mountain or in a marsh)
+          const made = layRelief(f, streamFor(f.id), { sq });
+          items.push(...made.items);
+          for (const poly of made.reserve) { space.reserved.push(poly); space.zones.push(poly); }
+        } else if (f.class !== "farmstead" && f.class !== "woods" && f.class !== "fields" && f.class !== "cave" && f.class !== "dungeon" && !NOT_DRAWN_YET.area.includes(f.class)) {
           notes.push({ level: "warning", id: f.id, message: `"${f.id}": areas of class "${f.class}" aren't drawn yet.` }); // (the checker already says so for a class not drawn yet)
         }
         break;

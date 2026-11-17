@@ -1,6 +1,6 @@
 /**
  * The Files window: what AtlasScribe has saved, plan by plan. Each plan's file, the maps rendered from it (with the
- * roofs, drawn pieces and floors saved beside a battle map), which map each of its scenes shows, the scene backups,
+ * roofs, drawn pieces and floors saved beside a battle map, and a big map's parts), which map each of its scenes shows, the scene backups,
  * and how much room each takes. Foundry can't delete files, so this only shows them, with their paths to copy.
  */
 import { listPlans } from "./plans.mjs";
@@ -38,7 +38,7 @@ export function sortFiles({ plans, maps, dirs, backups, scenes }) {
   for (const s of scenes) if (s.image) used.set(bare(s.image), [...(used.get(bare(s.image)) ?? []), s.name]);
   for (const path of maps) {
     const stem = nameOf(path).replace(/\.\w+$/, "").toLowerCase();
-    const own = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(overhead|drawn|levels)(-\\d+)?$`);
+    const own = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(overhead|drawn|levels|parts)(-\\d+)?$`);
     const parts = dirs.filter((d) => own.test(nameOf(d).toLowerCase()));
     const entry = { path, parts, scenes: used.get(bare(path)) ?? [] };
     const g = groupOf(planFor(stem));
@@ -90,7 +90,7 @@ export class FilesView extends Base {
   #reading = false;
   #open = new Set();
 
-  /** Where to look: { folder, plansDir }. */
+  /** Where to look: { folder, plansDir, backupDir }. */
   set where(w) {
     this.#where = w;
   }
@@ -100,11 +100,11 @@ export class FilesView extends Base {
     this.#reading = true;
     if (this.rendered) this.render();
     try {
-      const { folder, plansDir } = this.#where;
-      const [plans, maps, backups] = await Promise.all([listPlans(plansDir), browse(`${folder}/maps`), browse(`${folder}/backups`)]);
+      const { folder, plansDir, backupDir = `${folder}/backups` } = this.#where;
+      const [plans, maps, backups] = await Promise.all([listPlans(plansDir), browse(`${folder}/maps`), browse(backupDir)]);
       const scenes = game.scenes.filter((s) => s.flags?.[MOD]).map((s) => ({ id: s.id, name: s.name, plan: s.getFlag(MOD, "plan") ?? null, image: s.getFlag(MOD, "image") ?? s.background?.src ?? null }));
       const parts = new Map(await Promise.all(maps.dirs.map(async (d) => [d, (await browse(d)).files])));
-      this.#data = { ...sortFiles({ plans, maps: maps.files.filter((f) => /\.webp$/i.test(f)), dirs: maps.dirs, backups: backups.files, scenes }), parts, folder };
+      this.#data = { ...sortFiles({ plans, maps: maps.files.filter((f) => /\.(webp|jpe?g)$/i.test(f)), dirs: maps.dirs, backups: backups.files, scenes }), parts, folder };
     } catch (e) {
       note.error(`AtlasScribe: the files couldn't be read (${e.message})`);
     } finally {

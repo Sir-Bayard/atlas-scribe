@@ -1,12 +1,13 @@
 // One step of making a plan from Quick Start's choices (quick.mjs, quickPlan): ctx holds what the steps share.
+import { rng } from "../rng.mjs";
 import { bends, meander } from "../meander.mjs";
 import { crossings, distToPath, distToPoly, pt, thin } from "../quick.mjs";
 
 /**
- * Water: across the main road beyond the districts (or along one side if there's no room), clear of them
+ * Water: across the main road beyond the districts (or along one side if there's no room), clear of them; a river with shallows and now and then an island
  */
 export function waterBeyond(ctx) {
-  const { C, H, U, V, W, at, choices, cluster, features, nearCluster, r, roadHalf, roads, theta, winter } = ctx;
+  const { C, H, U, V, W, at, choices, cluster, features, nearCluster, r, roadHalf, roads, seed, theta, winter } = ctx;
   ctx.water = null;
   if (choices.water !== "none") {
     const width = choices.water === "river" ? r.range(45, 70) : r.range(12, 18);
@@ -39,6 +40,13 @@ export function waterBeyond(ctx) {
       ctx.water = { id: choices.water, type: "water", class: choices.water, width: Math.round(width), path, frozen: winter && choices.water === "stream" };
     }
     if (ctx.water) {
+      // (a river's shallows on its bends, and now and then an island or two; from a stream of its own)
+      if (choices.water === "river") {
+        const br = rng(seed, "quick", "riverbed");
+        ctx.water.shallows = true;
+        const isl = br.next() < 0.5 ? 0 : 1 + br.int(2);
+        if (isl) ctx.water.islands = isl;
+      }
       features.push(ctx.water);
       // A bridge (or, on a stream, sometimes a ford) wherever a road crosses it
       let n = 0;

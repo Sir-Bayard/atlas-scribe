@@ -5,10 +5,12 @@
  * asked for.
  */
 import { hashAt } from "../../core/rng.mjs";
-import { PALETTE, SEASON } from "./palette.mjs";
+import { PALETTE, SEASON, INK } from "./palette.mjs";
 import { cornersOf } from "./title.mjs";
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets, outlineOf } from "../roofs.mjs";
+import { paintRelief } from "../relief.mjs";
+import { paintRiverbed } from "../riverbed.mjs";
 import { offset, union, difference, intersect, bands, shapes } from "../../core/lots/poly.mjs";
 import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
 
@@ -141,12 +143,14 @@ function geometryOf(L) {
 
 export function paint(ctx) {
   const { g, W, H, x0, y0, pp, layout: L, progress = () => {} } = ctx;
+  // (the ink style: this style in black ink on pale paper, every color a light gray, no season shown but snow)
+  const inked = L.style === "ink";
   const s = L.season;
   const winter = s === "winter";
-  const P = { ...PALETTE, ...(SEASON[s] ?? {}) };
+  const P = inked ? { ...INK } : { ...PALETTE, ...(SEASON[s] ?? {}) };
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
   const items = (kind, cls) => L.items.filter((i) => i.kind === kind && (cls === undefined || i.class === cls));
-  const col = (role) => rgbOf(fallbackColor(role));
+  const col = (role) => { const c = rgbOf(fallbackColor(role)); if (!inked) return c; const v = Math.round(150 + (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) * 0.4); return [v, v, v]; };
   const px = (sq, min = 1) => Math.max(min, sq * pp);
   const inkW = Math.max(1, pp * 0.035);
   const path = (pts) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); };
@@ -190,6 +194,8 @@ export function paint(ctx) {
   }
 
   // The built-up ground: every town and city district one pale mass (a village's a lighter wash of it)
+  // Hills, mountains and marshes, over the fields and under the town
+  paintRelief(g, L.items, { X, Y, pp, near: (b) => b[2] >= x0 - 1 && b[3] >= y0 - 1 && b[0] <= x0 + W / pp + 1 && b[1] <= y0 + H / pp + 1, colors: { ink: rgb(P.ink), light: rgb(P.paper), shade: "rgb(64,52,40)", stone: rgb(P.stone), stoneInk: rgb(P.ink, 0.8), water: rgb(P.water), waterInk: rgb(P.waterInk), reed: rgb(P.canopyInk), marsh: rgb(mixA(P.land, P.water, 0.35)) } });
   progress(0.15, "Districts");
   const geo = geometryOf(L);
   for (const m of geo.masses) {
@@ -238,6 +244,8 @@ export function paint(ctx) {
     g.save(); g.translate(X(cx), Y(cy)); g.rotate((rot * Math.PI) / 180);
     g.fillStyle = rgb(P.lawn, 0.8); g.fillRect((-w / 2) * pp, (-d / 2) * pp, w * pp, d * pp);
     g.strokeStyle = rgb(P.ink, 0.3); g.lineWidth = Math.max(1, pp * 0.02); g.strokeRect((-w / 2) * pp, (-d / 2) * pp, w * pp, d * pp);
+    // (a parterre's knot: a diamond and a saltire)
+    if (gd.garden.knot) { const a = (w / 2) * pp, b = (d / 2) * pp; g.beginPath(); g.moveTo(0, -b); g.lineTo(a, 0); g.lineTo(0, b); g.lineTo(-a, 0); g.closePath(); g.moveTo(-a, -b); g.lineTo(a, b); g.moveTo(a, -b); g.lineTo(-a, b); g.stroke(); }
     g.restore();
   }
   for (const c of items("surface", "croft")) { g.globalAlpha = 0.5; fillPoly(c.poly, rgb(P.lawn)); g.globalAlpha = 1; }
@@ -245,7 +253,9 @@ export function paint(ctx) {
   for (const pk of items("surface", "park")) {
     fillPoly(pk.poly, rgb(P.lawn)); inkPoly(pk.poly, rgb(P.ink, 0.35));
     for (const w of pk.paths ?? []) { stroke(w.path, w.width + 0.08, rgb(P.edge, 0.7)); stroke(w.path, w.width, rgb(P.street)); }
-    if (pk.basin) { const { at, radius } = pk.basin; dot(at[0], at[1], radius + 0.12, rgb(P.stone)); dot(at[0], at[1], radius, rgb(P.water)); }
+    // (a round basin with its stone rim, a pond without one, or a canal: a long basin)
+    if (pk.basin?.poly) { inkPoly(pk.basin.poly, rgb(P.stone), 0.24 * pp); fillPoly(pk.basin.poly, rgb(P.water)); }
+    else if (pk.basin) { const { at, radius } = pk.basin; if (pk.basin.rim !== false) dot(at[0], at[1], radius + 0.12, rgb(P.stone)); dot(at[0], at[1], radius, rgb(P.water)); }
   }
   for (const ln of [...items("surface", "lawn"), ...items("surface", "garth"), ...items("surface", "churchyard")]) fillPoly(ln.poly, rgb(P.lawn, 0.85));
   for (const pt of items("pit")) dot(pt.x, pt.y, pt.size * 0.45, rgb(mixA(P.edge, P.ink, 0.3), 0.7));
@@ -256,7 +266,7 @@ export function paint(ctx) {
     else if (b.class === "balk") stroke(b.path, 0.08, rgb(mixA(P.land, P.paper, 0.3)));
     else stroke(b.path, 0.035, rgb(P.ink, 0.35));
   }
-  for (const w of items("wall").filter((w) => !w.thickness)) { stroke(w.path, 0.15, rgb(P.ink, 0.75), 1.5); stroke(w.path, 0.09, rgb(P.stone)); }
+  for (const w of items("wall").filter((w) => !w.thickness && w.class !== "watergate")) { stroke(w.path, 0.15, rgb(P.ink, 0.75), 1.5); stroke(w.path, 0.09, rgb(P.stone)); }
   // Cliffs: a hatched face from top to toe, inked along the top
   for (const c of items("cliff")) {
     fillPoly([...c.path, ...[...c.toe].reverse()], rgb(tame(c.rock === "slate" ? [128, 130, 134] : [150, 132, 108], 0.2, P.paper)));
@@ -308,6 +318,8 @@ export function paint(ctx) {
     if (!b.frozen) for (const off of [3.2, 2.0, 1.1, 0.5]) { stroke(b.ring, 2 * off + 0.09, rgb(P.paper, 0.6)); stroke(b.ring, 2 * off - 0.09, rgb(wc)); }
     g.restore();
   }
+  // A river's shallows and islands
+  paintRiverbed(g, L.items, { X, Y, pp, near: (b) => b[2] >= x0 - 1 && b[3] >= y0 - 1 && b[0] <= x0 + W / pp + 1 && b[1] <= y0 + H / pp + 1, colors: { bar: rgb(mixA(P.water, P.bank, 0.7)), land: rgb(P.land), bank: rgb(P.bank), ink: rgb(P.waterInk) } });
   // Ripples on a river: a thin pale dashed line down its middle
   for (const w of runs) {
     if (w.frozen || w.width < 1) continue;
@@ -327,7 +339,7 @@ export function paint(ctx) {
 
   // Streets and roads: an inked edge under everything, then the surface, so junctions join cleanly; squares open
   progress(0.5, "Streets");
-  const ways = [...items("way")].filter((w) => !w.faint).map((w) => ({ w, path: wobble(w.path, 0.02), S: SURFACE[w.surface] ?? SURFACE.cobble, r: RANK[w.surface] ?? 3 })).sort((a, b) => a.r - b.r || a.w.width - b.w.width);
+  const ways = [...items("way")].filter((w) => !w.faint).map((w) => ({ w, path: wobble(w.path, 0.02), S: SURFACE[w.surface] ?? SURFACE.cobble, r: RANK[w.surface] ?? 3 })).sort((a, b) => a.w.width - b.w.width || a.r - b.r); // (the widest last: a side street's end lies under the road it meets)
   for (const t of items("way").filter((w) => w.faint)) stroke(wobble(t.path, 0.05), t.width * 0.8, rgb(mixA(P.land, P.paper, 0.4), 0.8));
   // (square ends: a street that stops at a quay, a bridge or the map's edge stops square, with no rounded cap)
   g.lineCap = "butt";
@@ -391,6 +403,14 @@ export function paint(ctx) {
   }
 
   // Town walls: inked both sides, pale stone, a walk along the top (the towers are buildings, drawn with the roofs)
+  // A water gate's grille across the river, over the water: a dark bar with its uprights
+  for (const w of items("wall").filter((w) => w.class === "watergate" && w.path?.length >= 2)) {
+    const [a, b] = [w.path[0], w.path.at(-1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / L, (b[0] - a[0]) / L];
+    g.save(); g.strokeStyle = rgb(P.ink, 0.85); g.lineWidth = Math.max(1.5, pp * 0.1); g.lineCap = "butt";
+    g.beginPath(); g.moveTo(X(a[0]), Y(a[1])); g.lineTo(X(b[0]), Y(b[1]));
+    for (let t = 0.2; t < L; t += 0.4) { const p = [a[0] + ((b[0] - a[0]) * t) / L, a[1] + ((b[1] - a[1]) * t) / L]; g.moveTo(X(p[0] - n[0] * 0.12), Y(p[1] - n[1] * 0.12)); g.lineTo(X(p[0] + n[0] * 0.12), Y(p[1] + n[1] * 0.12)); }
+    g.stroke(); g.restore();
+  }
   for (const w of items("wall").filter((w) => w.thickness)) {
     const T = w.thickness;
     g.save(); g.translate(0.12 * pp, -0.3 * pp); stroke(w.path, T, P.shadow); g.restore();
@@ -475,8 +495,19 @@ export function paint(ctx) {
     g.restore();
   }
   // (only the bigger things a map like this would show: wells, carts and the like as small inked dots; clutter left out)
-  const SHOWN = new Set(["well", "cart", "wagon", "statue", "shrine", "crane", "obelisk", "hay"]);
+  const SHOWN = new Set(["well", "cart", "wagon", "statue", "shrine", "crane", "obelisk", "hay", "sundial"]);
+  // A maypole: its pole, and its ribbons out to a ring
+  for (const p of items("prop").filter((p) => p.class === "maypole")) {
+    const rad = (0.6 * (p.scale ?? 1)) / 2;
+    g.save(); g.strokeStyle = rgb(P.ink, 0.6); g.lineWidth = Math.max(1, pp * 0.02);
+    g.beginPath(); g.arc(X(p.x), Y(p.y), rad * pp, 0, 2 * Math.PI); g.stroke();
+    for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4 + ((p.rot ?? 0) * Math.PI) / 180; g.beginPath(); g.moveTo(X(p.x), Y(p.y)); g.lineTo(X(p.x + Math.cos(a) * rad), Y(p.y + Math.sin(a) * rad)); g.stroke(); }
+    g.restore();
+    dot(p.x, p.y, 0.09, rgb([150, 116, 82]));
+  }
   for (const p of items("prop").filter((p) => SHOWN.has(p.class))) { dot(p.x, p.y, 0.16 * (p.scale ?? 1) + 0.04, rgb(P.ink, 0.8)); dot(p.x, p.y, 0.16 * (p.scale ?? 1), rgb(mixA(P.stone, P.paper, 0.2))); }
+  // (a cleared wood's stumps, logs and woodpiles: specks of cut wood)
+  for (const p of items("prop").filter((p) => p.felled)) dot(p.x, p.y, p.class === "stump" ? 0.05 : 0.08, rgb([128, 98, 66], 0.9));
 
   // Trees as clumped canopies: every crown's inked rim first, then every crown, then their sunlit tops, so trees that
   // touch merge into one canopy as on a drawn map
@@ -525,6 +556,13 @@ export function paint(ctx) {
   vg.addColorStop(0, "rgba(90,70,40,0)"); vg.addColorStop(1, "rgba(90,70,40,0.22)");
   g.save(); g.globalCompositeOperation = "multiply"; g.fillStyle = vg; g.fillRect(0, 0, W, H); g.restore();
   if (L.dressing) dress(ctx, P);
+  // (ink: what kept a color of its own, a road's paving or a stall's awning, made gray too, then warmed to the paper)
+  if (inked) {
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "saturation"; g.fillStyle = "rgb(128,128,128)"; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = "multiply"; g.fillStyle = "rgb(252,249,242)"; g.fillRect(0, 0, W, H);
+    g.restore();
+  }
   progress(1, "Done");
 }
 

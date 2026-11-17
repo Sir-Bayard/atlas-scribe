@@ -33,6 +33,12 @@ export function sharedEdges(a, b) {
     const [ax, ay] = a[i], [bx, by] = a[(i + 1) % a.length];
     const l = Math.hypot(bx - ax, by - ay);
     const n = Math.max(1, Math.ceil(l / STEP));
+    // (an edge whose box lies apart from b's has no sample near it)
+    if (Math.min(ax, bx) > bx1 + TOUCH || bx0 > Math.max(ax, bx) + TOUCH || Math.min(ay, by) > by1 + TOUCH || by0 > Math.max(ay, by) + TOUCH) {
+      firstSample ??= [ax, ay];
+      run = null;
+      continue;
+    }
     for (let k = 0; k < n; k++) {
       const p = [ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n];
       firstSample ??= p;

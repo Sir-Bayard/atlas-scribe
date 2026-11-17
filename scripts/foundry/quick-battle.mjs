@@ -49,6 +49,16 @@ export function battleTabHTML() {
       <h4>Camp</h4>
       <div class="as-qs-two">${select("camp", "Kind", "camp", b.camp.kind)}<div class="form-group"><label for="as-qb-tents">Tents</label><input type="number" id="as-qb-tents" name="b-tents" min="1" max="16" step="1" placeholder="By its kind"></div></div>
     </div>
+    <div data-site="cave" hidden>
+      <h4>Cave</h4>
+      <p class="hint">Solid rock, its passages and chambers carved out, the floor worn with cracks, rubble, moss and puddles.</p>
+      <div class="as-qs-two">${select("openness", "Open ground", "openness", b.underground.openness)}</div>
+    </div>
+    <div data-site="dungeon" hidden>
+      <h4>Dungeon</h4>
+      <p class="hint">Rooms in solid rock, joined by corridors, doors where they meet.</p>
+      <div class="as-qs-two">${select("corridors", "Corridors", "corridors", b.underground.corridors)}${select("doors", "Doors", "doors", b.underground.doors)}</div>
+    </div>
     <div data-site="castle" hidden>
       <h4>Castle</h4>
       <p class="hint">A curtain wall with a walk along its top, towers and a gatehouse with floors, a keep and its yard's buildings, each floor a level of the scene. Its size above is the castle's.</p>
@@ -67,6 +77,7 @@ export function briefFromForm(form, seed) {
     street: { place: v("place"), quarter: v("quarter") },
     camp: { kind: v("camp"), tents: v("tents") ? Number(v("tents")) : null },
     castle: { towers: v("towers") },
+    underground: { openness: v("openness"), corridors: v("corridors"), doors: v("doors") },
     name: v("name"), seed,
   });
 }
@@ -81,6 +92,7 @@ function setForm(form, b) {
   set("place", b.street.place); set("quarter", b.street.quarter);
   set("camp", b.camp.kind); set("tents", b.camp.tents ?? "");
   set("towers", b.castle.towers);
+  set("openness", b.underground.openness); set("corridors", b.underground.corridors); set("doors", b.underground.doors);
   if (form.elements.name) form.elements.name.value = b.name ?? "";
 }
 
@@ -107,7 +119,7 @@ function showSite(root) {
 }
 
 /** A form field's brief key ("b-bsize" is "building.size", a feature's box "feature.pond"), or null for one that isn't. */
-const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", floors: "building.floors", cellar: "building.cellar", upstairs: "building.upstairs", crooms: "building.cellarRooms", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents", towers: "castle.towers" };
+const FIELD_KEYS = { use: "building.use", bsize: "building.size", rooms: "building.rooms", bname: "building.name", floors: "building.floors", cellar: "building.cellar", upstairs: "building.upstairs", crooms: "building.cellarRooms", place: "street.place", quarter: "street.quarter", camp: "camp.kind", tents: "camp.tents", towers: "castle.towers", openness: "underground.openness", corridors: "underground.corridors", doors: "underground.doors" };
 function keyOf(name) {
   if (name === "name") return "name";
   if (!name?.startsWith("b-") || name === "b-describe") return null;

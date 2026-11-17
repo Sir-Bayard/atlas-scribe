@@ -1,7 +1,7 @@
 // One phase of laying out a plan (layout/index.mjs, layoutPlan): ctx holds what the phases share.
 import { labelsOf } from "../../labels.mjs";
 import { normalize } from "../../plan.mjs";
-import { polygonsOverlap, shapeToPolygon } from "../../geom.mjs";
+import { bbox, polygonsOverlap, shapeToPolygon } from "../../geom.mjs";
 import { rng } from "../../rng.mjs";
 import { seedOf } from "../../seeds.mjs";
 import { shrink, windAlike, withWater } from "../index.mjs";
@@ -34,7 +34,12 @@ export function readPlan(ctx) {
   const districts = plan.features.filter((f) => f.type === "district").map((f) => ({ id: f.id, poly: shapeToPolygon(f.shape) })); ctx.districts = districts;
   const districtIds = new Set(districts.map((d) => d.id));
   const touching = new Set(); ctx.touching = touching; // "a|b" for districts that overlap: free() sees each other's things there (wild trees and tracks), though houses are built over each other
-  for (const a of districts) for (const b of districts) if (a !== b && polygonsOverlap(shrink(a.poly, 0.01), shrink(b.poly, 0.01))) touching.add(`${a.id}|${b.id}`);
+  // (each outline drawn in once, and only pairs whose boxes meet compared)
+  const drawnIn = districts.map((d) => { const poly = shrink(d.poly, 0.01); return { d, poly, box: bbox(poly) }; });
+  for (const a of drawnIn) for (const b of drawnIn) {
+    if (a === b || a.box[0] > b.box[2] || b.box[0] > a.box[2] || a.box[1] > b.box[3] || b.box[1] > a.box[3]) continue;
+    if (polygonsOverlap(a.poly, b.poly)) touching.add(`${a.d.id}|${b.d.id}`);
+  }
   ctx.filling = null; // the district being filled
   let otherFor = null, other = new Map(); // owner -> whether it counts as elsewhere, while `filling` is otherFor
   const elsewhere = (o) => {

@@ -18,7 +18,7 @@ import { CHARACTERS } from "./character.mjs";
 
 /** The choices, the first of each the default. features and scatter levels as below. */
 export const BRIEF = {
-  site: ["wilderness", "roadside", "street", "camp", "castle"],
+  site: ["wilderness", "roadside", "street", "camp", "castle", "cave", "dungeon"],
   size: ["medium", "small", "large"],
   season: ["summer", "spring", "autumn", "winter"],
   time: ["day", "dawn", "dusk", "night"],
@@ -35,11 +35,17 @@ export const BRIEF = {
   quarter: CHARACTERS,
   camp: ["campsite", "caravan", "soldiers"],
   towers: ["open", "roofed"],
+  openness: ["medium", "tight", "open"],
+  corridors: ["narrow", "wide"],
+  doors: ["some", "none", "all"],
 };
 
 /** How each choice reads in the dialog (and on the Describe box's chips). */
 export const BRIEF_LABELS = {
-  site: { wilderness: "Wilderness", roadside: "Roadside building", street: "Village or town street", camp: "Camp", castle: "Castle" },
+  site: { wilderness: "Wilderness", roadside: "Roadside building", street: "Village or town street", camp: "Camp", castle: "Castle", cave: "Cave", dungeon: "Dungeon" },
+  openness: { tight: "Tight passages", medium: "Passages and chambers", open: "Wide caverns" },
+  corridors: { narrow: "One square", wide: "Two squares" },
+  doors: { some: "Some", none: "None", all: "Every one" },
   size: { small: "Small (30 by 24)", medium: "Medium (45 by 34)", large: "Large (60 by 45)" },
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
   time: { day: "Day", dawn: "Dawn", dusk: "Dusk", night: "Night" },
@@ -67,6 +73,8 @@ export const BRIEF_LABELS = {
 export const SITE_LACKS = {
   castle: { pond: "A castle's walls and yard leave no room for a pond", cliff: "A castle's walls and yard leave no room for a cliff" },
   street: { rise: "A street's houses leave no room for a rise", hollow: "A street's houses leave no room for a hollow" },
+  cave: Object.fromEntries(["road", "stream", "pond", "cliff", "rise", "hollow"].map((f) => [f, "Underground, in solid rock"])),
+  dungeon: Object.fromEntries(["road", "stream", "pond", "cliff", "rise", "hollow"].map((f) => [f, "Underground, in solid rock"])),
 };
 /** The map in squares, by size. */
 export const BRIEF_SIZES = { small: [30, 24], medium: [45, 34], large: [60, 45] };
@@ -89,6 +97,8 @@ const SITE_DEFAULTS = {
   street: { ground: "open", trees: "sparse", litter: "none", rocks: "none", brush: "few" },
   camp: { ground: "clearing", trees: "thick" },
   castle: { ground: "open", trees: "sparse", litter: "few", rocks: "few", brush: "few" },
+  cave: { ground: "open", trees: "none", litter: "none", rocks: "none", brush: "none", features: [] },
+  dungeon: { ground: "open", trees: "none", litter: "none", rocks: "none", brush: "none", features: [] },
 };
 
 /** Scattered props per 100 square squares, by level: stumps and logs, rocks and boulders, bushes and ferns. */
@@ -148,6 +158,7 @@ export function normalizeBrief(input = {}) {
     street: { place: oneOf(BRIEF.place, b.street?.place), quarter: oneOf(BRIEF.quarter, b.street?.quarter) },
     camp: { kind: oneOf(BRIEF.camp, b.camp?.kind), tents: Number.isFinite(Number(b.camp?.tents)) && Number(b.camp.tents) > 0 ? Math.min(TENTS.most, Math.round(Number(b.camp.tents))) : null },
     castle: { towers: oneOf(BRIEF.towers, b.castle?.towers) },
+    underground: { openness: oneOf(BRIEF.openness, b.underground?.openness), corridors: oneOf(BRIEF.corridors, b.underground?.corridors), doors: oneOf(BRIEF.doors, b.underground?.doors) },
     name: typeof b.name === "string" ? b.name.trim() : "",
     seed,
   };
@@ -169,6 +180,13 @@ export function briefPlan(input = {}) {
   for (const k of ["site", "size", "season", "time", "weather", "ground", "trees", "litter", "rocks", "brush"]) {
     const v = input[k];
     if (v !== undefined && v !== null && v !== "" && v !== b[k]) notes.push(`"${v}" isn't a ${k} the brief knows (${BRIEF[k].join(", ")}), so ${b[k]} was used.`);
+  }
+  // A cave or dungeon: the whole map solid rock with its floor carved out (layout/underground.mjs), dark, torches at
+  // its door or its mouth left to the GM
+  if (b.site === "cave" || b.site === "dungeon") {
+    const u = b.underground;
+    features.push({ id: b.site, type: "area", class: b.site, shape: { rect: [0, 0, W, H] }, ...(b.site === "cave" ? { openness: u.openness } : { corridors: u.corridors, doors: u.doors }) });
+    return finish(b, features, notes, W, H, null);
   }
   const taken = []; // (places kept clear of scatter, woods and each other: { at, r } circles, or { path, half } bands)
   const free = (p, pad = 0) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1 && !taken.some((t) => (t.path ? nearPath(p, t.path) < t.half + pad : Math.hypot(p[0] - t.at[0], p[1] - t.at[1]) < t.r + pad));
@@ -322,6 +340,11 @@ export function briefPlan(input = {}) {
   scatter(b.rocks, ["rock", "rock", "rock", "boulder"], "rocks");
   scatter(b.brush, b.season === "winter" ? ["bush"] : ["bush", "fern", "fern"], "brush");
 
+  return finish(b, features, notes, W, H, site);
+}
+
+/** The brief's plan, its features made: named, marked with its choices. Returns { plan, brief, notes }. */
+function finish(b, features, notes, W, H, site) {
   const name = b.name || defaultName(b, site);
   const plan = {
     atlasScribe: PLAN_VERSION,
@@ -335,7 +358,7 @@ export function briefPlan(input = {}) {
     size: { squares: [W, H], ftPerSquare: 5 },
     features,
     brief: structuredClone(b),
-    output: { pxPerSquare: 100, scene: { name, time: b.time, ...(b.weather !== "season" ? { weather: b.weather } : {}) } },
+    output: { pxPerSquare: 100, scene: { name, time: b.time, ...(b.site === "cave" || b.site === "dungeon" ? { weather: "none" } : b.weather !== "season" ? { weather: b.weather } : {}) } },
   };
   return { plan, brief: b, notes };
 }
@@ -368,7 +391,7 @@ function pointsOf(feats) {
   const out = [];
   for (const f of feats) {
     // (a wagon or a cart reaches farther from its middle than the rest)
-    if (f.type === "prop") out.push([f.at[0], f.at[1], f.class === "wagon" || f.class === "cart" ? 1.4 : 0]);
+    if (f.type === "prop") out.push([f.at[0], f.at[1], f.class === "wagon" || f.class === "cart" ? 2 : 0]);
     else if (Array.isArray(f.shape)) {
       const xs = f.shape.map((q) => q[0]), ys = f.shape.map((q) => q[1]);
       const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -414,13 +437,22 @@ function ring(r, c, rx, ry, W, H) {
   ];
 }
 
+/** A roadside building's props: an inn's wagon and barrels and well, a farm's cart, a smithy's barrels and crates. */
+const PROPS = { inn: ["wagon", "barrel", "barrel", "well"], farmstead: ["cart", "barrel", "crate"], smithy: ["barrel", "crate", "crate"], shrine: [], watchtower: ["crate", "barrel"] };
+
 /** A roadside site: the building set back above the road, square to it, its outbuildings along beside it, a few props. */
 function roadside(b, r, W, H, road, features, taken) {
   const B = BUILDINGS[b.building.use], [len, dep] = B.dims[b.building.size];
   const path = road?.path ?? wander(r, H * 0.66, W, 1.4);
   const at = roadAt(path, W * r.range(0.36, 0.46)), u = at.u, n = [u[1], -u[0]]; // (n: away from the road, upward)
-  const back = (road ? road.width / 10 : 2) + 3.5 + dep / 2;
-  const c = add(at.p, mul(n, back)), rot = r2((Math.atan2(u[1], u[0]) * 180) / Math.PI);
+  // (set back farther where a wagon or a cart stands in front: they're long, and need room from the walls and the road)
+  const wheeled = (PROPS[b.building.use] ?? []).some((p) => p === "wagon" || p === "cart");
+  // (as far as the map's top edge allows: on a small map the building keeps on it, and a wagon may find no room)
+  const rot = r2((Math.atan2(u[1], u[0]) * 180) / Math.PI), th = (rot * Math.PI) / 180;
+  const base = (road ? road.width / 10 : 2) + 3.5 + dep / 2, halfY = (Math.abs(Math.sin(th)) * len + Math.abs(Math.cos(th)) * dep) / 2;
+  const room = n[1] < 0 ? (at.p[1] + n[1] * base - halfY - 0.6) / -n[1] : 1.5;
+  const back = base + (wheeled ? Math.min(1.5, Math.max(0, room)) : 0);
+  const c = add(at.p, mul(n, back));
   const rect = (cx, cy, l, d) => [[cx - l / 2, cy - d / 2], [cx + l / 2, cy - d / 2], [cx + l / 2, cy + d / 2], [cx - l / 2, cy + d / 2]].map(pt);
   const id = b.building.use;
   const name = b.building.name || (b.building.use === "inn" ? innName(r) : "");
@@ -435,15 +467,18 @@ function roadside(b, r, W, H, road, features, taken) {
     taken.push({ at: oc, r: Math.hypot(ol, od) / 2 + 2 });
     x += ol + 3;
   }
-  // (a few props by it: an inn's wagon and barrels and well, a farm's cart, a smithy's barrels and crates)
-  const PROPS = { inn: ["wagon", "barrel", "barrel", "well"], farmstead: ["cart", "barrel", "crate"], smithy: ["barrel", "crate", "crate"], shrine: [], watchtower: ["crate", "barrel"] };
+  // (a few props by it, PROPS)
   const placed = [];
   for (const [k, cls] of (PROPS[b.building.use] ?? []).entries()) {
     // (in front, between the buildings and the road, clear of the middle of the front where the door and its path are,
     // and of each other)
+    // (a wagon or a cart, about 4 squares long with its shafts and 2 wide, turned near the front's line: its middle 2
+    // squares out from the walls at the least, and as far from the road and the rest)
+    const big = cls === "wagon" || cls === "cart", out = big ? [-dep / 2 - 3, -dep / 2 - 2] : [-dep / 2 - 2.5, -dep / 2 - 1];
     for (let t = 0; t < 30; t++) {
-      const along = r.range(-len / 2 - 4, len / 2 + 6), p = add(c, add(mul(u, along), mul(n, r.range(-dep / 2 - 2.5, -dep / 2 - 1))));
-      if (Math.abs(along) < 2.5 || (road && nearPath(p, road.path) < road.width / 10 + 1) || placed.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1.6)) continue;
+      const along = r.range(-len / 2 - 4, len / 2 + 6), p = add(c, add(mul(u, along), mul(n, r.range(out[0], out[1]))));
+      if (Math.abs(along) < 2.5 || (road && nearPath(p, road.path) < road.width / 10 + (big ? 2 : 1)) || placed.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < (big || q.big ? 2.6 : 1.6))) continue;
+      p.big = big;
       placed.push(p);
       features.push({ id: `${id}-prop${k + 1}`, type: "prop", class: cls, at: pt(p), rot: Math.round(rot + r.range(-25, 25)) });
       break;
@@ -499,6 +534,9 @@ function castle(b, r, W, H, features, taken, crossRoad) {
   return { at: [cx, (Y0 + Y1) / 2], r: Math.hypot(cw, ch) / 2 + 4, pts };
 }
 
+/** The notable building a street map's quarter stands around. */
+const STREET_NOTABLE = { homes: "inn", market: "inn", poor: "inn", crafts: "inn", merchants: "guildhall", docks: "warehouse", nobles: "mansion", temple: "temple", garrison: "barracks" };
+
 /** A street site: the main street across, a lane or cross street off it, a square where a town's meet, the district over all. */
 function street(b, r, W, H, features, taken, has) {
   const { place, quarter } = b.street;
@@ -512,6 +550,19 @@ function street(b, r, W, H, features, taken, has) {
   if (big) features.push({ id: "square", type: "square", surface: "flagstone", middle: place === "city" ? "fountain" : r.chance(0.5) ? "cross" : "none", shape: { circle: [r2(at.p[0]), r2(at.p[1]), r2(r.range(4, 5.5))] } });
   features.push({ id: "quarter", type: "district", profile: place, character: quarter, shape: { rect: [0, 0, W, H] } });
   taken.push({ path: main, half: 3 }, { path: cross, half: 3 });
+  // The quarter's notable building on the main street, away from the crossing, at its full size (so it has its whole
+  // inside: an inn's common room, kitchen, cellar and guest floor; a temple's nave and vestry; a mansion's floors)
+  const use = STREET_NOTABLE[quarter] ?? "inn";
+  if (W >= 30 && H >= 24) {
+    const [len, dep] = use === "temple" ? [9, 14] : [13, 9];
+    const nx = x < W / 2 ? W * 0.76 : W * 0.24, na = roadAt(main, nx), n = [na.u[1], -na.u[0]];
+    const c = add(na.p, mul(n, 2.6 + dep / 2)), rot = r2((Math.atan2(na.u[1], na.u[0]) * 180) / Math.PI);
+    if (c[1] - dep / 2 > 1 && c[0] - len / 2 > 1 && c[0] + len / 2 < W - 1) {
+      const name = use === "inn" ? innName(r) : "";
+      features.push({ id: "notable", type: "building", use, rot, ...(name ? { name } : {}), shape: [[c[0] - len / 2, c[1] - dep / 2], [c[0] + len / 2, c[1] - dep / 2], [c[0] + len / 2, c[1] + dep / 2], [c[0] - len / 2, c[1] + dep / 2]].map(pt) });
+      taken.push({ at: c, r: Math.hypot(len, dep) / 2 + 1 });
+    }
+  }
   // (the houses take the ground: woods, rises and scatter keep to its edges)
   for (let yy = 4; yy < H - 3; yy += 3) for (let xx = 4; xx < W - 3; xx += 3) taken.push({ at: [xx, yy], r: 2.2 });
   return null;
@@ -631,5 +682,7 @@ function defaultName(b, site) {
   if (b.site === "roadside") return site?.name || `Roadside ${BRIEF_LABELS.use[b.building.use].toLowerCase()}`;
   if (b.site === "street") return `${BRIEF_LABELS.place[b.street.place]} street`;
   if (b.site === "castle") return BRIEF_LABELS.castleSize[b.size].replace(/ \(.*$/, "");
+  if (b.site === "cave") return b.underground.openness === "open" ? "Caverns" : "Cave";
+  if (b.site === "dungeon") return "Dungeon";
   return `${BRIEF_LABELS.camp[b.camp.kind]} camp`;
 }

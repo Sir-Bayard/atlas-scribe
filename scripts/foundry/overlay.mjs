@@ -20,6 +20,45 @@ export function centroid(poly) {
   return [cx / (3 * a), cy / (3 * a)];
 }
 
+/**
+ * Where an outline's name goes: its middle, unless that's outside it or off the map, or much nearer its edge than the
+ * point farthest inside (a sea wrapped around a city on a promontory, whose middle is on the land): then that point,
+ * found on a grid over the part of it on the map. size: the map's [width, height] in squares.
+ */
+export function namePoint(poly, size) {
+  const [MW, MH] = size;
+  const inPoly = (x, y) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi || 1e-12) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const edge = (x, y) => {
+    let d = Math.min(x, y, MW - x, MH - y);
+    for (let i = 0; i < poly.length; i++) {
+      const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+      d = Math.min(d, Math.hypot(ax + t * dx - x, ay + t * dy - y));
+    }
+    return d;
+  };
+  const c = centroid(poly);
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.max(0, Math.min(...xs)), Math.min(MW, Math.max(...xs)), Math.max(0, Math.min(...ys)), Math.min(MH, Math.max(...ys))];
+  let best = null;
+  if (x1 > x0 && y1 > y0) for (let i = 1; i < 16; i++) for (let j = 1; j < 16; j++) {
+    const x = x0 + ((x1 - x0) * i) / 16, y = y0 + ((y1 - y0) * j) / 16;
+    if (!inPoly(x, y)) continue;
+    const d = edge(x, y);
+    if (!best || d > best.d) best = { p: [x, y], d };
+  }
+  if (!best) return c;
+  const ok = c[0] >= 0 && c[1] >= 0 && c[0] <= MW && c[1] <= MH && inPoly(c[0], c[1]) && edge(c[0], c[1]) >= best.d * 0.6;
+  return ok ? c : best.p;
+}
+
 /** Where the underlay image sits on the stage, in its pixels. */
 export const underStyle = (rect, px, opacity) => `left:${rect[0] * px}px;top:${rect[1] * px}px;width:${(rect[2] - rect[0]) * px}px;height:${(rect[3] - rect[1]) * px}px;opacity:${opacity}`;
 
@@ -44,7 +83,7 @@ export function overlaySVG(o) {
   const [MW, MH] = o.size;
   const fs = Math.max(MW, MH) / 55;
   const shapes = (o.feats ?? []).filter((f) => f.poly.length >= 3).map((f) => {
-    const [cx, cy] = centroid(f.poly);
+    const [cx, cy] = namePoint(f.poly, o.size);
     return `<g class="as-pv-shape as-${esc(f.type)} ${sel(f.id, o.selected)}" data-id="${esc(f.id)}">
         <polygon points="${pts(f.poly)}" vector-effect="non-scaling-stroke"></polygon>
         <text x="${cx}" y="${cy}" data-fs="${fs}">${esc(f.name ?? f.id)}</text></g>`;

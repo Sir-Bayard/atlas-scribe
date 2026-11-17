@@ -3,7 +3,7 @@
  * corners), and the cartouche with the map's name, painted as a tile of its own over the map so the GM can show it to
  * the players when ready.
  */
-import { PALETTE, SEASON } from "./palette.mjs";
+import { PALETTE, SEASON, INK } from "./palette.mjs";
 
 /**
  * The map's corners for its dressing, emptiest first (fewest buildings, roads and water there): the compass rose takes
@@ -39,7 +39,7 @@ export function titleBox(L, measure) {
 
 /** Paints the cartouche into its own canvas (g), box from titleBox, at pp pixels a square. */
 export function paintTitle(g, L, box, pp) {
-  const P = { ...PALETTE, ...(SEASON[L.season] ?? {}) };
+  const P = L.style === "ink" ? INK : { ...PALETTE, ...(SEASON[L.season] ?? {}) };
   const ink = (a = 1) => `rgba(${P.ink.join(",")},${a})`, paper = (a = 1) => `rgba(${P.paper.join(",")},${a})`;
   const { w, h, unit, font } = box;
   g.fillStyle = paper(0.92); g.fillRect(0, 0, w * pp, h * pp);

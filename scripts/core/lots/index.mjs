@@ -4,7 +4,7 @@
  * each street side, a band as deep as the type's plots, cut square at varied frontages, the wider street first so it
  * takes the corner; slivers merged; the rest is back land. Squares; pure.
  */
-import { pointInPolygon } from "../geom.mjs";
+import { bbox, pointInPolygon } from "../geom.mjs";
 import { OLD_PROFILES } from "../plan.mjs";
 import { withCharacterLots, characterOf } from "../character.mjs";
 import { bands, difference, intersect, union, offset, area, shapes, centroid } from "./poly.mjs";
@@ -86,7 +86,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
   const lots = [];
   const back = [];
   const fronting = ways.filter((w) => w.class !== "back");
-  const frontGrid = finitePaths(fronting.map((w) => w.path)) && fronting.every((w) => Number.isFinite(w.width)) ? new SegGrid(fronting.map((w) => w.path)) : null;
+  const frontGrid = finitePaths(fronting.map((w) => w.path)) && fronting.every((w) => Number.isFinite(w.width)) ? new SegGrid(fronting.map((w) => w.path), { pad: (p) => fronting[p].width / 2 + 0.09 }) : null;
   blocks.forEach((block, bi) => {
     const br = r.fork("block", bi);
     const whole = [block.outer, ...block.holes];
@@ -95,7 +95,10 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
     const runs = frontageRuns(block.outer, fronting, frontGrid);
     // The band along the streets, as deep as a plot; the wider street cuts first, so it takes the corners
     const band = difference(whole, offset(whole, -depth));
-    let claimed = [];
+    // (the plots claimed so far, each with its box: a new plot's cut is clipped by those near it only, not by one
+    // union grown plot by plot)
+    const claimed = [];
+    const claimedNear = (poly) => { const [x0, y0, x1, y1] = bbox(poly); return claimed.filter((c) => c.box[0] <= x1 && x0 <= c.box[2] && c.box[1] <= y1 && y0 <= c.box[3]).map((c) => c.poly); };
     runs.sort((a, b) => b.width - a.width || b.length - a.length);
     runs.forEach((run, ri) => {
       const rr = br.fork("run", ri);
@@ -119,7 +122,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
         // Plots meet back to back halfway to the next street behind them
         const others = runs.filter((o) => o !== run).map((o) => o.path);
         const slab = slabOf(front, n, depth * 1.6, others);
-        const pieces = difference(intersect(band, [slab]), claimed);
+        const pieces = difference(intersect(band, [slab]), claimedNear(slab));
         const piece = pieces.reduce((a, b) => (!a || area(b) > area(a) ? b : a), null);
         if (!piece || area(piece) < 0.05) continue;
         // A piece that wraps around a plot already claimed (its cut came back around it, at a lane's end) has that plot as
@@ -128,7 +131,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
         // A piece cut on the run's extension that barely touches this street is left for the street it does face
         // (on a curving block, the extension runs on past the corner along another street's frontage)
         if (frontOn({ poly: piece }, run) < fmin * 0.3) continue;
-        claimed = union(claimed, [piece]);
+        claimed.push({ poly: piece, box: bbox(piece) });
         // Its real front: the stretch of its edge that lies on the street (a corner plot's cut front ran past it)
         const onStreet = piece.filter((p) => distToPath(p, run.path) < 0.05);
         let a = front[0], b = front[front.length - 1];
@@ -176,7 +179,7 @@ export function lotsFor({ district, poly, ways, water = [], blocked = [], ftPerS
         prev = lot;
       }
     });
-    for (const p of difference(whole, claimed)) if (area(p) > 0.3) back.push(p);
+    for (const p of difference(whole, claimed.map((c) => c.poly))) if (area(p) > 0.3) back.push(p);
   });
   return { blocks: blocks.map((b) => b.outer), lots, back };
 }
@@ -218,8 +221,8 @@ function frontOn(lot, run) {
 function frontageRuns(outer, ways, grid = null) {
   const n = outer.length;
   const tag = [];
-  // With the ways' segments in a grid, only the ways near each edge are measured (the same answer as measuring all)
-  const maxHalf = ways.reduce((m, w) => Math.max(m, w.width / 2), 0);
+  // With the ways' segments in a grid (each padded by its half width), only the ways near each edge are measured (the
+  // same answer as measuring all)
   for (let i = 0; i < n; i++) {
     const a = outer[i], b = outer[(i + 1) % n];
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
@@ -228,7 +231,7 @@ function frontageRuns(outer, ways, grid = null) {
       const d = Math.abs(dist - w.width / 2);
       if (d < 0.08 && (!best || w.width > best.width)) best = w;
     };
-    if (grid) grid.eachNear(mid[0], mid[1], maxHalf + 0.08, (p, dist) => consider(ways[p], dist));
+    if (grid) grid.eachNear(mid[0], mid[1], 0, (p, dist) => consider(ways[p], dist));
     else for (const w of ways) consider(w, distToPath(mid, w.path));
     tag.push(best);
   }

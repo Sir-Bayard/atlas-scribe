@@ -339,9 +339,17 @@ function wallStrip(L, r, kind) {
       g.fillStyle = L.woodDark; g.fillRect(0, y0, w, h);
       for (let k = 0; k < 4; k++) { g.fillStyle = rgb(mix(hex(L.wood[0]), hex(L.wood[1]), r())); g.fillRect(0, y0 + 1 + k * (h / 4), w, h / 4 - 2); }
     } else if (kind === "timber") {
-      g.fillStyle = L.plaster; g.fillRect(0, y0, w, h);
-      g.fillStyle = L.beam; g.fillRect(0, y0, w, 9); g.fillRect(0, y0 + h - 9, w, 9);
-      for (let x = 0; x < w; x += 100) g.fillRect(x, y0, 12, h);
+      // (from above a timber wall shows its top plate: one long beam with its grain, a joint every square; posts and
+      // plaster panels squeezed to the wall's thickness read as dashes)
+      g.fillStyle = L.beam; g.fillRect(0, y0, w, h);
+      const grain = rgb(hex(L.beam).map((v) => v * 0.78)), light = rgb(hex(L.beam).map((v) => Math.min(255, v * 1.18)));
+      for (let k = 0; k < 7; k++) {
+        const y = y0 + 6 + r() * (h - 12), x0 = r() * w, len = r.range(w * 0.2, w * 0.6);
+        g.strokeStyle = k % 3 ? grain : light; g.lineWidth = r.range(1, 2.2);
+        for (const dx of x0 + len > w ? [0, -w] : [0]) { g.beginPath(); g.moveTo(x0 + dx, y); g.lineTo(x0 + dx + len, y + r.range(-2, 2)); g.stroke(); }
+      }
+      g.fillStyle = rgb(hex(L.beam).map((v) => v * 0.55));
+      for (let x = 0; x < w; x += PX) { g.fillRect(x, y0, 3, h); g.fillRect(x + 3, y0 + h * 0.3, 2, h * 0.4); }
     } else {
       g.fillStyle = L.mortar; g.fillRect(0, y0, w, h);
       // (two courses: a wall is squeezed to its thickness, so more would read as dashes)
@@ -666,11 +674,33 @@ function light(L, r, w, h) {
 }
 /** A wagon or cart: a bed of boards between wheels. */
 function wagon(L, r, w, h) {
+  // (a wagon, 3 by 6: four wheels, a tongue, and half the time a canvas tilt over hoops; a cart, 2 by 3: two wheels and
+  // a pair of shafts. Its bed has side rails, and an open bed now and then a load of sacks, barrels or hay)
+  const big = h >= 5, cover = big && r() < 0.5, load = cover ? null : r.pick(["sacks", "barrels", "hay", null]);
   return sprite(w, h, (g, W, H) => {
-    for (const y of [H * 0.28, H * 0.72]) for (const x of [W * 0.12, W * 0.88]) finish(g, L, roundRect(g, x - W * 0.07, y - H * 0.1, W * 0.14, H * 0.2, 4), L.woodDark, { shadow: true });
-    finish(g, L, roundRect(g, W * 0.18, H * 0.06, W * 0.64, H * 0.8, 6), L.wood[1]);
-    g.strokeStyle = L.ink ?? L.woodDark; g.lineWidth = 2; for (let y = H * 0.12; y < H * 0.84; y += H * 0.08) { g.beginPath(); g.moveTo(W * 0.2, y); g.lineTo(W * 0.8, y); g.stroke(); }
-    g.lineWidth = 6; g.beginPath(); g.moveTo(W / 2, H * 0.86); g.lineTo(W / 2, H); g.stroke();
+    const bed = [W * 0.2, H * 0.08, W * 0.6, big ? H * 0.72 : H * 0.62];
+    const wheel = (x, y) => { finish(g, L, roundRect(g, x - W * 0.045, y - H * (big ? 0.075 : 0.13), W * 0.09, H * (big ? 0.15 : 0.26), 3), L.woodDark, { shadow: true }); g.fillStyle = L.ink ?? "#2a2018"; g.fillRect(x - W * 0.012, y - H * (big ? 0.07 : 0.12), W * 0.024, H * (big ? 0.14 : 0.24)); };
+    for (const y of big ? [H * 0.2, H * 0.62] : [H * 0.42]) for (const x of [bed[0] - W * 0.03, bed[0] + bed[2] + W * 0.03]) wheel(x, y);
+    // (the tongue or the shafts, out of the front)
+    g.strokeStyle = L.woodDark; g.lineCap = "round";
+    if (big) { g.lineWidth = W * 0.06; g.beginPath(); g.moveTo(W / 2, bed[1] + bed[3]); g.lineTo(W / 2, H * 0.98); g.stroke(); g.lineWidth = W * 0.035; g.beginPath(); g.moveTo(W * 0.36, H * 0.93); g.lineTo(W * 0.64, H * 0.93); g.stroke(); }
+    else for (const x of [W * 0.3, W * 0.7]) { g.lineWidth = W * 0.05; g.beginPath(); g.moveTo(x, bed[1] + bed[3] - H * 0.02); g.lineTo(x + (x < W / 2 ? W * 0.06 : -W * 0.06), H * 0.98); g.stroke(); }
+    finish(g, L, roundRect(g, ...bed, 6), L.wood[0]);
+    finish(g, L, roundRect(g, bed[0] + W * 0.05, bed[1] + H * 0.025, bed[2] - W * 0.1, bed[3] - H * 0.05, 4), L.wood[1], { shadow: false, lw: 0.6 });
+    g.strokeStyle = L.ink ? rgb(hex(L.ink), 0.5) : rgb(hex(L.woodDark), 0.7); g.lineWidth = 1.5;
+    for (let y = bed[1] + H * 0.05; y < bed[1] + bed[3] - H * 0.03; y += H * 0.06) { g.beginPath(); g.moveTo(bed[0] + W * 0.06, y); g.lineTo(bed[0] + bed[2] - W * 0.06, y); g.stroke(); }
+    if (cover) {
+      const col = L.ink ? "#efe6cf" : "#d8ccac";
+      finish(g, L, roundRect(g, bed[0] - W * 0.02, bed[1] + H * 0.04, bed[2] + W * 0.04, bed[3] * 0.82, 18), col);
+      g.strokeStyle = L.ink ? rgb(hex(L.ink), 0.45) : "rgba(120,104,76,0.55)"; g.lineWidth = 3;
+      for (let k = 1; k < 5; k++) { const y = bed[1] + H * 0.04 + (bed[3] * 0.82 * k) / 5; g.beginPath(); g.moveTo(bed[0] - W * 0.02, y); g.lineTo(bed[0] + bed[2] + W * 0.02, y); g.stroke(); }
+    } else if (load === "sacks") {
+      for (let k = 0; k < (big ? 6 : 3); k++) { const x = bed[0] + W * 0.1 + (k % 2) * bed[2] * 0.42, y = bed[1] + H * 0.06 + Math.floor(k / 2) * H * (big ? 0.18 : 0.2); finish(g, L, roundRect(g, x, y, bed[2] * 0.36, H * (big ? 0.15 : 0.17), 14), L.ink ? "#e4d6b4" : "#b9a37a", { lw: 0.6 }); }
+    } else if (load === "barrels") {
+      for (let k = 0; k < (big ? 6 : 2); k++) { const x = bed[0] + bed[2] * (k % 2 ? 0.72 : 0.28), y = bed[1] + H * 0.1 + Math.floor(k / 2) * H * (big ? 0.2 : 0.26); finish(g, L, circle(g, x, y, Math.min(bed[2] * 0.2, H * 0.08)), L.wood[0], { lw: 0.6 }); }
+    } else if (load === "hay") {
+      finish(g, L, roundRect(g, bed[0] + W * 0.04, bed[1] + H * 0.03, bed[2] - W * 0.08, bed[3] - H * 0.06, 16), L.roof.thatch[1], { lw: 0.6 });
+    }
   });
 }
 /** A well: a ring of stones round dark water. */
@@ -790,6 +820,24 @@ function obelisk(L, r) {
     const tri = (a, b, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(c, c); g.lineTo(...a); g.lineTo(...b); g.closePath(); g.fill(); if (L.ink) { g.strokeStyle = L.ink; g.lineWidth = 1.5; g.stroke(); } };
     const [x0, y0, x1, y1] = [c - R, c - R, c + R, c + R];
     tri([x0, y0], [x1, y0], shade(L.stone[0], 0.75)); tri([x0, y0], [x0, y1], shade(L.stone[0], 0.85)); tri([x1, y0], [x1, y1], L.stone[1]); tri([x0, y1], [x1, y1], shade(L.stone[1], 1.08));
+  });
+}
+/** A maypole from above: its pole, ribbons in the look's colors out to a ring (3 by 3). */
+function maypole(L, r) {
+  return sprite(3, 3, (g, w) => {
+    const c = w / 2, R = w * 0.44;
+    g.strokeStyle = L.ink ? rgb(hex(L.ink), 0.4) : "rgba(90,76,52,0.45)"; g.lineWidth = 3; g.beginPath(); g.arc(c, c, R, 0, 7); g.stroke();
+    const cols = [...L.cloth, L.ink ? "#f3ecd9" : "#e9e2cc"];
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * 2 * Math.PI; g.strokeStyle = cols[k % cols.length]; g.lineWidth = 5; g.beginPath(); g.moveTo(c, c); g.lineTo(c + Math.cos(a) * R, c + Math.sin(a) * R); g.stroke(); }
+    finish(g, L, circle(g, c, c, w * 0.06), L.wood[1]);
+  });
+}
+/** A sundial: a stone pillar's square top, a brass dial and its gnomon (1 by 1). */
+function sundial(L, r) {
+  return sprite(1, 1, (g, w) => {
+    finish(g, L, roundRect(g, w * 0.18, w * 0.18, w * 0.64, w * 0.64, 4), L.stone[0]);
+    finish(g, L, circle(g, w / 2, w / 2, w * 0.24), L.ink ? "#e2c98a" : "#b8975a", { shadow: false });
+    g.strokeStyle = L.ink ?? "#3a3128"; g.lineWidth = 3; g.beginPath(); g.moveTo(w / 2, w / 2); g.lineTo(w / 2, w * 0.28); g.stroke();
   });
 }
 /** A dockside crane: a wooden frame with its arm (2 by 4). */
@@ -1035,6 +1083,7 @@ function drawOne(role, variant, look) {
     if (b === "tent") return tent(L, r); if (b === "bedroll") return bedroll(L, r); if (b === "fountain") return fountain(L, r); if (b === "statue") return statue(L, r);
     if (b === "stall") return stall(L, r, 2); if (b === "stall-long") return stall(L, r, 3); if (b === "sails") return sails(L, r); if (b === "waterwheel") return waterwheel(L, r);
     if (b === "boat" || b === "ship") return boat(L, r, b === "ship"); if (b === "sail") return sail(L, r);
+    if (b === "maypole") return maypole(L, r); if (b === "sundial") return sundial(L, r);
     if (b === "cross" || b === "standing-stone") return obelisk(L, r); if (b === "crane") return crane(L, r); if (b === "grave") return grave(L, r);
     if (b === "topiary") return topiary(L, r, s); if (b === "firewood") return firewood(L, r); if (b === "planks") return plankStack(L, r); if (b === "sacks") return sacks(L, r);
     if (b === "rack") return rack(L, r); if (b === "pots") return pots(L, r); if (b === "anvil") return metalThing(L, r, "anvil", 1, 1); if (b === "cannonballs") return cannonballs(L, r);

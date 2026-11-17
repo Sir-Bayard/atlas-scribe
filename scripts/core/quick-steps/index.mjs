@@ -7,3 +7,4 @@ export { millsAndCemetery } from "./millsAndCemetery.mjs";
 export { farmsAndFields } from "./farmsAndFields.mjs";
 export { woodsAndCliffs } from "./woodsAndCliffs.mjs";
 export { finishPlan } from "./finishPlan.mjs";
+export { highGround } from "./highGround.mjs";

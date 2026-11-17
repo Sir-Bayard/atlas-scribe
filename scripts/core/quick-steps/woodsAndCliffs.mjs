@@ -4,15 +4,17 @@ import { crossesCliff } from "../cliffs.mjs";
 import { rng } from "../rng.mjs";
 
 /**
- * Woods toward the edges, clear of everything
+ * Woods toward the edges, clear of everything; those near the place cleared toward it
  */
 export function woodsAndCliffs(ctx) {
   const { H, S, W, choices, clearOf, clearOfThings, farms, features, r, roads, seed, woodish } = ctx;
   const [w0, w1] = S.woods;
-  const woodsWanted = woodish ? w0 + r.int(w1 - w0 + 1) : choices.surroundings === "open" ? 0 : r.int(2);
+  // (woodland: mostly woods, bigger and more of them, up to the map's edges)
+  const woodland = choices.surroundings === "woodland";
+  const woodsWanted = woodland ? w1 + 2 + r.int(w1 - w0 + 3) : woodish ? w0 + r.int(w1 - w0 + 1) : choices.surroundings === "open" ? 0 : r.int(2);
   const woods = [];
-  for (let t = 0; t < 300 && woods.length < woodsWanted; t++) {
-    const rad = r.range(3.5, choices.size === "town" ? 9 : 7);
+  for (let t = 0; t < (woodland ? 700 : 300) && woods.length < woodsWanted; t++) {
+    const rad = woodland ? r.range(5, choices.size === "town" ? 13 : 10) : r.range(3.5, choices.size === "town" ? 9 : 7);
     const c = [r.range(1, W - 1), r.range(1, H - 1)];
     const n = 12, blob = [];
     for (let k = 0; k < n; k++) {
@@ -25,12 +27,14 @@ export function woodsAndCliffs(ctx) {
     // nor a road or the water running through its middle, between the points tested above
     if ([...roads.map((rd) => rd.path), ...(ctx.water ? [ctx.water.path] : [])].some((path) => densify(path, 0.5).some((q) => inside(q, blob)))) continue;
     if (!clearOf(c, rad * 0.8)) continue;
-    if (woods.some((w) => Math.hypot(w.c[0] - c[0], w.c[1] - c[1]) < w.rad + rad + 2)) continue;
+    if (woods.some((w) => Math.hypot(w.c[0] - c[0], w.c[1] - c[1]) < w.rad + rad + (woodland ? 0.5 : 2))) continue;
     if (farms.some((f) => Math.hypot(f.c[0] - c[0], f.c[1] - c[1]) < rad * 1.2 + f.size)) continue;
     if (ctx.cemetery && (distToPoly(c, ctx.cemetery) < rad * 1.2 + 2 || inside(c, ctx.cemetery))) continue;
     woods.push({ c, rad, blob });
   }
-  woods.forEach((w, n) => features.push({ id: `woods-${n + 1}`, type: "area", class: "woods", shape: outline(w.blob) }));
+  // (a wood near the place is cleared toward it: felled for timber and firewood, thickening farther off)
+  const nearTown = (blob) => (ctx.cluster ?? []).some((poly) => blob.some((p) => distToPoly(p, poly) < 12));
+  woods.forEach((w, n) => features.push({ id: `woods-${n + 1}`, type: "area", class: "woods", shape: outline(w.blob), ...(nearTown(w.blob) ? { cleared: true } : {}) }));
 
   // Now and then an escarpment in the country (its own stream): a cliff in from the map's edge, clear of the place,
   // its roads, water, mills and farms

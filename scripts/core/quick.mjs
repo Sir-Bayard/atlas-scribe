@@ -13,7 +13,7 @@ import { PAVINGS, UNPAVED, squareShape } from "./squares.mjs";
 import { crossesCliff } from "./cliffs.mjs";
 import { union, offset, area as polyArea } from "./lots/poly.mjs";
 import { wallReach } from "./layout/walls.mjs";
-import { readChoices, roadsAndDistricts, wallsAndCenter, waterBeyond, millsAndCemetery, farmsAndFields, woodsAndCliffs, finishPlan } from "./quick-steps/index.mjs";
+import { readChoices, roadsAndDistricts, wallsAndCenter, waterBeyond, millsAndCemetery, farmsAndFields, woodsAndCliffs, finishPlan, highGround } from "./quick-steps/index.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
 export const QUICK = {
@@ -26,6 +26,10 @@ export const QUICK = {
   river: RIVER_FORMS, // a city's river (left out, the seed picks; the dialog shows Any first)
   shape: CITY_SHAPES, // a city's outline (the same)
 };
+
+/** High ground along an edge of a village's or town's map: none unless asked (so older seeds make the same places). */
+export const QUICK_HIGH = ["none", "hills", "mountains"];
+export const QUICK_HIGH_LABELS = { none: "None", hills: "Hills along an edge", mountains: "Mountains along an edge" };
 
 /** Choices the dialog leaves on Any unless they're picked, and that only some places use. */
 export const QUICK_ANY = ["river", "shape"];
@@ -200,7 +204,7 @@ function quickNotes(options) {
 }
 
 /**
- * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, river, shape, name, seed }
+ * A plan from Quick Start's choices: { size, season, water, roads, center, surroundings, river, shape, high, name, seed }
  * (any left out is picked from the seed; seed itself defaults to 1). Returns { plan, choices, notes }: choices are the
  * ones used; notes, what was asked that couldn't be used (an unknown size or a bad seed), replaced by the seed's pick.
  */
@@ -211,6 +215,9 @@ export function quickPlan(options = {}) {
   // (a citadel is the garrison quarter walled in: asked for in a city with no garrison, it's said why there's none)
   const q = out.choices?.quarters;
   if (options.outside?.citadel === true && Array.isArray(q) && !q.includes("garrison")) notes.push("A citadel is the garrison quarter walled in, and this city has no garrison quarter, so it has no citadel. Add Garrison to its quarters for one.");
+  if (out.stepNotes) { notes.push(...out.stepNotes); delete out.stepNotes; }
+  if (options.high && options.high !== "none" && !QUICK_HIGH.includes(options.high)) notes.push(`"${options.high}" isn't high ground Quick Start knows (${QUICK_HIGH.join(", ")}), so the map has none.`);
+  if (options.high && options.high !== "none" && CITIES.includes(out.choices?.size)) notes.push("A city's own ground makes its high ground; the High ground choice is for a village or town.");
   return { ...out, notes };
 }
 
@@ -224,6 +231,7 @@ function quickPlanOf(options) {
   millsAndCemetery(ctx);
   farmsAndFields(ctx);
   woodsAndCliffs(ctx);
+  highGround(ctx);
   return finishPlan(ctx);
 }
 

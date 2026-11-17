@@ -20,7 +20,7 @@ export function fieldSystems(ctx) {
     made.hedges.forEach((path, k) => {
       items.push({ kind: "boundary", id: `${f.id}/h${k + 1}`, from: f.id, class: "hedge", path });
       // Each hedge's bushes from a stream keyed by where it runs, so a hedge nothing touched keeps its bushes
-      hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: r.fork("hedge", ...path[0].map((v) => v.toFixed(2)), ...path[path.length - 1].map((v) => v.toFixed(2))), items, step: 0.45, scale: [0.55, 0.25] });
+      hedgeBushes({ wall: { id: `${f.id}/h${k + 1}`, from: f.id, path }, r: r.fork("hedge", ...path[0].map((v) => v.toFixed(2)), ...path[path.length - 1].map((v) => v.toFixed(2))), items, step: 0.45, scale: [0.55, 0.25], free });
     });
     let n = 0;
     for (const t of made.trees) if (free(t.x, t.y, 0.4)) items.push({ kind: "tree", id: `${f.id}/t${++n}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant });

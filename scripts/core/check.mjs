@@ -62,11 +62,13 @@ export function checkPlan(raw) {
   const [w, h] = plan.size.squares;
   if (!(plan.size.squares.length === 2 && Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
   // Past 100 ft a square a district holds thousands of plots a square and takes minutes to lay out
-  if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square; 25 suits a village or town).");
+  if (plan.kind === "region") { if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 500 && plan.size.ftPerSquare <= 26400)) err(null, "size.ftPerSquare", "A region map's size.ftPerSquare must be a number from 500 to 26400 (feet a square; 2640 is half a mile, 5280 a mile)."); }
+  else if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square; 25 suits a village or town).");
   // (a battle map's walls, rooms, yards and furniture are sized in squares, made for 5 feet each)
   else if (plan.kind === "battle" && plan.size.ftPerSquare !== 5) warn(null, "size.ftPerSquare", `A battle map is made for 5 feet a square: its walls, rooms, yards and furniture are sized in squares, so at ${plan.size.ftPerSquare} feet a square they'd be ${Math.round((plan.size.ftPerSquare / 5) * 10) / 10} times too big. Set Feet a square to 5.`);
   if (!isNum(plan.seed) && !(typeof plan.seed === "string" && plan.seed)) err(null, "seed", "seed must be a number.");
-  for (const [name, values] of [["season", SEASONS], ["style", STYLES], ["ground", SURFACES]])
+  if (!["settlement", "battle", "region"].includes(plan.kind)) warn(null, "kind", `kind "${plan.kind}" isn't one AtlasScribe knows (settlement, battle, region); it's drawn as a settlement.`);
+  for (const [name, values] of [["season", SEASONS], ["style", plan.kind === "region" ? ["region"] : STYLES], ["ground", SURFACES]])
     if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "illustrated" : "a plain fill"} will be used.`);
 
   // The image: Foundry's grid needs a whole number of pixels, 20 or more; WebP stops at 16383 px a side
@@ -78,13 +80,17 @@ export function checkPlan(raw) {
     if (side > OUTPUT_LIMITS.maxSide)
       err(null, "output.pxPerSquare", `The map would be ${w * pps} by ${h * pps} px; images can't be more than ${OUTPUT_LIMITS.maxSide} px a side. Use fewer pixels per square (at most ${Math.floor(OUTPUT_LIMITS.maxSide / Math.max(w, h))}).`);
     else if (side > OUTPUT_LIMITS.warnSide)
-      warn(null, "output.pxPerSquare", `The map will be ${w * pps} by ${h * pps} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(w * pps, h * pps)} of memory.`);
+      warn(null, "output.pxPerSquare", `The map will be ${w * pps} by ${h * pps} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(w * pps, h * pps)} of memory.${plan.output.format === "webp" ? " Saving it as WebP takes a while; JPEG (Image file) saves several times faster." : ""}`);
   }
   if (!(isNum(plan.output.quality) && plan.output.quality > 0 && plan.output.quality <= 1)) err(null, "output.quality", `output.quality is ${plan.output.quality}; it should be a number above 0, up to 1.`);
-  if (plan.output.format !== "webp") warn(null, "output.format", `output.format "${plan.output.format}" isn't supported yet; the map is saved as WebP.`);
+  if (!["auto", "webp", "jpeg"].includes(plan.output.format)) warn(null, "output.format", `output.format "${plan.output.format}" isn't one AtlasScribe saves; it should be "auto", "webp" or "jpeg". It's saved as WebP.`);
   if (raw.output?.dressing !== undefined && typeof raw.output.dressing !== "boolean") warn(null, "output.dressing", `output.dressing should be true or false; it's left off.`);
-  else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style !== "illustrated") warn(null, "output.dressing", `Map dressing is drawn only in the illustrated style; this map is ${plan.style}.`);
+  else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style === "textured") warn(null, "output.dressing", `Map dressing is drawn only in the illustrated and ink styles; this map is ${plan.style}.`);
   for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing"].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
+
+  // A plan so big it takes minutes to lay out (C2): said before it's drawn, with how long, as near as can be told
+  const plots = estimatePlots(plan);
+  if (plots > BIG_PLOTS) warn(null, "size", `This plan has about ${(Math.round(plots / 1000) * 1000).toLocaleString()} plots to build on: laying it out takes about ${minutesFor(plots)}, and painting it longer. A smaller map, fewer districts or fewer feet a square make it quicker.`);
 
   // Ids: present, simple, unique
   const seen = new Map();
@@ -97,6 +103,7 @@ export function checkPlan(raw) {
     else seen.set(f.id, f);
     checkFeature(f, where, raw.features?.[i] ?? {}, { err, warn, w, h });
     // (a rise or a hollow is drawn on a battle map only: a settlement map's squares are too big for one)
+    if (f?.type === "place" && plan.kind !== "region") warn(f.id ?? null, "type", `"${where}" is a place, which only a region map draws; it's left off this map.`);
     if (f?.type === "height" && plan.kind !== "battle") warn(f.id ?? null, "type", `"${where}" is a rise or hollow, which only a battle map draws; it's left off this map.`);
   });
 
@@ -232,7 +239,7 @@ export function checkPlan(raw) {
     if (f?.type !== "label" || !f.of) continue;
     const owner = plan.features.find((g) => g?.id === f.of);
     if (!owner) warn(f.id, "of", `Label "${f.id}" names "${f.of}", but there's no feature with that id, so it isn't shown.`);
-    else if (owner.type !== "district" && owner.type !== "area" && owner.type !== "landmark") warn(f.id, "of", `Label "${f.id}" names "${f.of}", a ${owner.type}; only districts, areas and landmarks can carry their name, so it isn't shown.`);
+    else if (owner.type !== "district" && owner.type !== "area" && owner.type !== "landmark" && owner.type !== "place") warn(f.id, "of", `Label "${f.id}" names "${f.of}", a ${owner.type}; only districts, areas, landmarks and places can carry their name, so it isn't shown.`);
   }
 
   // The scene it's published to
@@ -350,6 +357,41 @@ function checkField(id, field, where, name, spec, v, { err, warn }, fallback = "
 function isPath(p) {
   return Array.isArray(p) && p.length >= 2 && p.every(isPoint);
 }
+
+/** Past this many plots a plan's checker warns how long it will take (C2). */
+export const BIG_PLOTS = 15000;
+/** Plots a square at 25 ft a square, by a district's profile (measured on Quick Start's maps), and the time a plot takes. */
+const PLOTS_PER_SQUARE = { city: 0.25, town: 0.14, village: 0.07, hamlet: 0.04 };
+const MS_PER_PLOT = 3;
+
+/** About how many plots a plan's districts hold: their area in square feet, by their profiles. */
+export function estimatePlots(plan) {
+  const k = ((Number(plan?.size?.ftPerSquare) || 25) / 25) ** 2;
+  let n = 0;
+  for (const f of plan?.features ?? []) {
+    if (f?.type !== "district") continue;
+    let poly = [];
+    try { poly = shapeToPolygon(f.shape) ?? []; } catch { poly = []; }
+    // (cut to the map and a margin, as the layout fills a district reaching far past it)
+    const [W, H] = plan?.size?.squares ?? [Infinity, Infinity];
+    if (Number.isFinite(W) && Number.isFinite(H)) for (const [axis, lim, keep] of [[0, -8, (v) => v >= -8], [0, W + 8, (v) => v <= W + 8], [1, -8, (v) => v >= -8], [1, H + 8, (v) => v <= H + 8]]) {
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i], q = poly[(i + 1) % poly.length], pin = keep(p[axis]), qin = keep(q[axis]);
+        if (pin) out.push(p);
+        if (pin !== qin) { const t = (lim - p[axis]) / (q[axis] - p[axis]); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+      }
+      poly = out;
+    }
+    let a = 0;
+    for (let i = 0; i < poly.length; i++) { const [x0, y0] = poly[i], [x1, y1] = poly[(i + 1) % poly.length]; a += x0 * y1 - x1 * y0; }
+    n += (Math.abs(a) / 2) * k * (PLOTS_PER_SQUARE[OLD_PROFILE_OF(f.profile)] ?? PLOTS_PER_SQUARE.village);
+  }
+  return Math.round(n);
+}
+const OLD_PROFILE_OF = (p) => ({ roadside: "hamlet", core: "city" })[p] ?? p;
+/** A layout's time in words for a number of plots. */
+const minutesFor = (plots) => { const m = (plots * MS_PER_PLOT) / 60000; return m < 1.5 ? "a minute" : `${Math.round(m)} minutes`; };
 
 /** The smallest a shape may be across, in squares (its area at least this squared). */
 const MIN_SIZE = 0.1;

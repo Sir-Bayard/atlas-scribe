@@ -59,7 +59,7 @@ export function farmsAndFields(ctx) {
     };
     const used = new Set();
     // Which wedges stay rough grass: in farmland one (when there are three or more), in mixed country about half (but
-    // never all), in woodland most
+    // never all), in woodland nearly all (a clearing's field now and then)
     const rough = choices.surroundings === "farmland" ? (withSplits.length >= 3 ? r.int(withSplits.length) : -1) : -1;
     const keepAtLeast = choices.surroundings === "mixed" ? r.int(withSplits.length) : -1;
     withSplits.forEach((l, i) => {
@@ -67,7 +67,7 @@ export function farmsAndFields(ctx) {
       const a = l.a, b = i + 1 < withSplits.length ? m.a : m.a + 2 * Math.PI;
       const keep = r.next(), reach = r.range(12, 22), small = r.range(8, 14);
       // Not every stretch: some stay rough grass, so the fields don't ring the village
-      const wanted = choices.surroundings === "farmland" ? i !== rough : choices.surroundings === "mixed" ? keep < 0.5 || i === keepAtLeast : keep < 0.25;
+      const wanted = choices.surroundings === "farmland" ? i !== rough : choices.surroundings === "mixed" ? keep < 0.5 || i === keepAtLeast : choices.surroundings === "woodland" ? keep < 0.1 : keep < 0.25;
       if (!wanted) return;
       // Farmland runs to the map's edge; otherwise the fields stop a ragged way out from the village
       const R = choices.surroundings === "farmland" ? Math.hypot(W, H) : extent + (choices.surroundings === "mixed" ? reach : small);

@@ -133,6 +133,7 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
       </header>
       <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
       <div class="as-pv-tools">
+        ${f.type === "place" && ["city", "town", "village", "hamlet", "castle"].includes(f.class) ? `<button type="button" data-action="asPlaceMap" data-id="${esc(id)}"${labelAttr("A new plan of this place, made by Quick Start at its size, with its name")} ${working ? "disabled" : ""}><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> Make its map</button>` : ""}
         ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip-text="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall in</button>` : ""}
         <button type="button" data-action="asDelete" data-id="${esc(id)}" class="as-danger" data-tooltip-text="Take it out of the plan (Undo brings it back)" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Delete</button>
       </div>
@@ -261,8 +262,9 @@ export function howText(tool, points) {
 }
 
 /** The drawing palette: a button per tool, the one in use lit, with how to use it and Finish and Cancel. */
-export function paletteHTML(tool, { points = 0, working = false } = {}) {
-  const groups = [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Ground", ["rise", "hollow"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]], ["Lights and story props", ["campfire", "brazier", "torch", "lamppost", "cairn", "standing-stone", "sledge"]]];
+export function paletteHTML(tool, { points = 0, working = false, kind = "settlement" } = {}) {
+  // (a region's tools: places, its ground, roads and water; a battle map adds caves and dungeons to its ground)
+  const groups = kind === "region" ? [["Places", ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"]], ["Land", ["woods", "fields", "hills", "mountains", "marsh"]], ["Lines", ["highway", "road", "track"]], ["Water", ["river", "stream", "lake", "sea"]], ["Points", ["label"]]] : [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Ground", kind === "battle" ? ["rise", "hollow", "cave", "dungeon"] : ["rise", "hollow"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]], ["Lights and story props", ["campfire", "brazier", "torch", "lamppost", "cairn", "standing-stone", "sledge"]]];
   const by = new Map(TOOLS.map((t) => [t.id, t]));
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">

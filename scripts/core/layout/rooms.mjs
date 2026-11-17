@@ -410,13 +410,14 @@ const KEEP_FLOORS = new Set(["keep"]), TOWER_USES = new Set(["watch", "tower"]);
 
 /**
  * How many floors a building has above its ground floor, and whether it has a cellar, by its use and inside floor (a
- * square squares; r its own random stream): an inn of some size a guest floor and a cellar; a mansion or palace a
+ * square squares; r its own random stream): an inn a guest floor and a cellar (but the smallest); a mansion or palace a
  * floor of bedrooms and a cellar; a keep two floors and a cellar; a tower two floors; now and then a floor above a
  * big shop, workshop or house (and a cellar under a big house).
  */
 export function floorsFor(use, a, r) {
   const u = use ?? "house";
-  if (u === "inn") return { up: a >= 60 ? 1 : 0, cellar: true };
+  // (an inn on a street, small on its plot, still has its guest floor over the common room and kitchen)
+  if (u === "inn") return { up: a >= 24 ? 1 : 0, cellar: true };
   if (u === "mansion" || u === "palace") return { up: 1, cellar: true };
   if (u === "guildhall") return { up: 1, cellar: false };
   if (KEEP_FLOORS.has(u)) return { up: 2, cellar: true };

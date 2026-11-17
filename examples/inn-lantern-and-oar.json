@@ -1,0 +1,832 @@
+{
+ "atlasScribe": 1,
+ "id": "lantern-and-oar",
+ "name": "The Lantern and Oar",
+ "kind": "battle",
+ "seed": 512,
+ "season": "summer",
+ "size": {
+  "squares": [
+   45,
+   34
+  ],
+  "ftPerSquare": 5
+ },
+ "features": [
+  {
+   "id": "road",
+   "type": "road",
+   "class": "highway",
+   "surface": "dirt",
+   "width": 20,
+   "path": [
+    [
+     -2,
+     22.44
+    ],
+    [
+     7.8,
+     21.91
+    ],
+    [
+     17.6,
+     22.52
+    ],
+    [
+     27.4,
+     22.66
+    ],
+    [
+     37.2,
+     22.91
+    ],
+    [
+     47,
+     22.44
+    ]
+   ]
+  },
+  {
+   "id": "inn",
+   "type": "building",
+   "use": "inn",
+   "roof": "thatch",
+   "rot": 0.79,
+   "name": "The Lantern and Oar",
+   "shape": [
+    [
+     11.84,
+     7.54
+    ],
+    [
+     25.84,
+     7.54
+    ],
+    [
+     25.84,
+     15.54
+    ],
+    [
+     11.84,
+     15.54
+    ]
+   ]
+  },
+  {
+   "id": "inn-out1",
+   "type": "building",
+   "use": "stable",
+   "roof": "thatch",
+   "rot": 0.79,
+   "shape": [
+    [
+     28.82,
+     9.73
+    ],
+    [
+     35.82,
+     9.73
+    ],
+    [
+     35.82,
+     15.73
+    ],
+    [
+     28.82,
+     15.73
+    ]
+   ]
+  },
+  {
+   "id": "inn-prop1",
+   "type": "prop",
+   "class": "wagon",
+   "at": [
+    28.57,
+    17.92
+   ],
+   "rot": 14
+  },
+  {
+   "id": "inn-prop2",
+   "type": "prop",
+   "class": "barrel",
+   "at": [
+    9.81,
+    16.49
+   ],
+   "rot": 16
+  },
+  {
+   "id": "inn-prop3",
+   "type": "prop",
+   "class": "barrel",
+   "at": [
+    31.59,
+    17.97
+   ],
+   "rot": -12
+  },
+  {
+   "id": "inn-prop4",
+   "type": "prop",
+   "class": "well",
+   "at": [
+    14.5,
+    16.69
+   ],
+   "rot": -8
+  },
+  {
+   "id": "stream",
+   "type": "water",
+   "class": "stream",
+   "path": [
+    [
+     -2,
+     30.53
+    ],
+    [
+     7.8,
+     31.71
+    ],
+    [
+     17.6,
+     29.94
+    ],
+    [
+     27.4,
+     29.43
+    ],
+    [
+     37.2,
+     29.78
+    ],
+    [
+     47,
+     30.53
+    ]
+   ]
+  },
+  {
+   "id": "copse-1",
+   "type": "area",
+   "class": "woods",
+   "density": "open",
+   "shape": [
+    [
+     42.06,
+     0.49
+    ],
+    [
+     40.16,
+     2.44
+    ],
+    [
+     38.63,
+     4.01
+    ],
+    [
+     36.18,
+     4.52
+    ],
+    [
+     33.91,
+     3.09
+    ],
+    [
+     32.9,
+     0.49
+    ],
+    [
+     34.32,
+     -1.8
+    ],
+    [
+     36.17,
+     -3.53
+    ],
+    [
+     38.59,
+     -2.9
+    ],
+    [
+     40.36,
+     -1.6
+    ]
+   ]
+  },
+  {
+   "id": "copse-2",
+   "type": "area",
+   "class": "woods",
+   "density": "open",
+   "shape": [
+    [
+     11.15,
+     0.3
+    ],
+    [
+     11.09,
+     3.64
+    ],
+    [
+     8,
+     4.95
+    ],
+    [
+     5.12,
+     4.5
+    ],
+    [
+     1.98,
+     3.57
+    ],
+    [
+     0.46,
+     0.3
+    ],
+    [
+     1.58,
+     -3.27
+    ],
+    [
+     4.88,
+     -4.65
+    ],
+    [
+     8.23,
+     -5.05
+    ],
+    [
+     11.02,
+     -2.99
+    ]
+   ]
+  },
+  {
+   "id": "copse-3",
+   "type": "area",
+   "class": "woods",
+   "density": "open",
+   "shape": [
+    [
+     4.17,
+     9.05
+    ],
+    [
+     3.66,
+     12.79
+    ],
+    [
+     0.07,
+     13.86
+    ],
+    [
+     -3.5,
+     15.23
+    ],
+    [
+     -6.44,
+     12.64
+    ],
+    [
+     -6.73,
+     9.05
+    ],
+    [
+     -6.64,
+     5.31
+    ],
+    [
+     -3.52,
+     2.81
+    ],
+    [
+     0.01,
+     4.42
+    ],
+    [
+     3.45,
+     5.46
+    ]
+   ]
+  },
+  {
+   "id": "litter-1",
+   "type": "prop",
+   "class": "branch",
+   "at": [
+    43.87,
+    11.93
+   ],
+   "rot": 200
+  },
+  {
+   "id": "litter-2",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    29.29,
+    5.36
+   ],
+   "rot": 163
+  },
+  {
+   "id": "litter-3",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    8.4,
+    18.04
+   ],
+   "rot": 179
+  },
+  {
+   "id": "litter-4",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    1.05,
+    17.31
+   ],
+   "rot": 1
+  },
+  {
+   "id": "litter-5",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    3.67,
+    15.02
+   ],
+   "rot": 256
+  },
+  {
+   "id": "litter-6",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    41.28,
+    7.12
+   ],
+   "rot": 49
+  },
+  {
+   "id": "litter-7",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    31.96,
+    4.81
+   ],
+   "rot": 286
+  },
+  {
+   "id": "litter-8",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    43.94,
+    3.14
+   ],
+   "rot": 350
+  },
+  {
+   "id": "litter-9",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    7.26,
+    28.04
+   ],
+   "rot": 23
+  },
+  {
+   "id": "litter-10",
+   "type": "prop",
+   "class": "branch",
+   "at": [
+    43.93,
+    1.32
+   ],
+   "rot": 337
+  },
+  {
+   "id": "litter-11",
+   "type": "prop",
+   "class": "branch",
+   "at": [
+    4.91,
+    17.32
+   ],
+   "rot": 140
+  },
+  {
+   "id": "litter-12",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    41.34,
+    12.71
+   ],
+   "rot": 41
+  },
+  {
+   "id": "litter-13",
+   "type": "prop",
+   "class": "branch",
+   "at": [
+    26.6,
+    1.92
+   ],
+   "rot": 330
+  },
+  {
+   "id": "litter-14",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    42.05,
+    17.01
+   ],
+   "rot": 74
+  },
+  {
+   "id": "litter-15",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    2.67,
+    25.78
+   ],
+   "rot": 117
+  },
+  {
+   "id": "litter-16",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    5.53,
+    12.86
+   ],
+   "rot": 298
+  },
+  {
+   "id": "litter-17",
+   "type": "prop",
+   "class": "log",
+   "at": [
+    12.81,
+    26.11
+   ],
+   "rot": 348
+  },
+  {
+   "id": "litter-18",
+   "type": "prop",
+   "class": "stump",
+   "at": [
+    43.65,
+    16.27
+   ],
+   "rot": 2
+  },
+  {
+   "id": "rocks-1",
+   "type": "prop",
+   "class": "boulder",
+   "at": [
+    30.64,
+    2.01
+   ],
+   "rot": 48
+  },
+  {
+   "id": "rocks-2",
+   "type": "prop",
+   "class": "rock",
+   "at": [
+    40.84,
+    16.31
+   ],
+   "rot": 31
+  },
+  {
+   "id": "rocks-3",
+   "type": "prop",
+   "class": "boulder",
+   "at": [
+    38.58,
+    19.39
+   ],
+   "rot": 200
+  },
+  {
+   "id": "rocks-4",
+   "type": "prop",
+   "class": "rock",
+   "at": [
+    22.26,
+    26.28
+   ],
+   "rot": 16
+  },
+  {
+   "id": "rocks-5",
+   "type": "prop",
+   "class": "rock",
+   "at": [
+    28.74,
+    3.23
+   ],
+   "rot": 233
+  },
+  {
+   "id": "brush-1",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    33.26,
+    5.28
+   ],
+   "rot": 102
+  },
+  {
+   "id": "brush-2",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    2.74,
+    27.97
+   ],
+   "rot": 174
+  },
+  {
+   "id": "brush-3",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    42.7,
+    19.08
+   ],
+   "rot": 41
+  },
+  {
+   "id": "brush-4",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    32.12,
+    2.62
+   ],
+   "rot": 344
+  },
+  {
+   "id": "brush-5",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    6,
+    8.17
+   ],
+   "rot": 257
+  },
+  {
+   "id": "brush-6",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    40.04,
+    17.92
+   ],
+   "rot": 128
+  },
+  {
+   "id": "brush-7",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    32.7,
+    26.44
+   ],
+   "rot": 303
+  },
+  {
+   "id": "brush-8",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    26.41,
+    26.47
+   ],
+   "rot": 239
+  },
+  {
+   "id": "brush-9",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    7.34,
+    13.54
+   ],
+   "rot": 258
+  },
+  {
+   "id": "brush-10",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    15.78,
+    26.89
+   ],
+   "rot": 7
+  },
+  {
+   "id": "brush-11",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    39.25,
+    10.37
+   ],
+   "rot": 175
+  },
+  {
+   "id": "brush-12",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    6.44,
+    9.85
+   ],
+   "rot": 216
+  },
+  {
+   "id": "brush-13",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    43.01,
+    8.34
+   ],
+   "rot": 311
+  },
+  {
+   "id": "brush-14",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    38.18,
+    7.8
+   ],
+   "rot": 226
+  },
+  {
+   "id": "brush-15",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    39.63,
+    26.56
+   ],
+   "rot": 322
+  },
+  {
+   "id": "brush-16",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    24.79,
+    1.05
+   ],
+   "rot": 6
+  },
+  {
+   "id": "brush-17",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    43.88,
+    26.07
+   ],
+   "rot": 49
+  },
+  {
+   "id": "brush-18",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    6.05,
+    16.19
+   ],
+   "rot": 338
+  },
+  {
+   "id": "brush-19",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    4.97,
+    27.82
+   ],
+   "rot": 265
+  },
+  {
+   "id": "brush-20",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    37.97,
+    26.27
+   ],
+   "rot": 343
+  },
+  {
+   "id": "brush-21",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    39.52,
+    14.84
+   ],
+   "rot": 81
+  },
+  {
+   "id": "brush-22",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    7.27,
+    7.45
+   ],
+   "rot": 329
+  },
+  {
+   "id": "brush-23",
+   "type": "prop",
+   "class": "fern",
+   "at": [
+    42.84,
+    4
+   ],
+   "rot": 343
+  },
+  {
+   "id": "brush-24",
+   "type": "prop",
+   "class": "bush",
+   "at": [
+    10.06,
+    27.94
+   ],
+   "rot": 140
+  }
+ ],
+ "brief": {
+  "site": "roadside",
+  "size": "medium",
+  "season": "summer",
+  "time": "day",
+  "weather": "season",
+  "ground": "open",
+  "features": [
+   "road",
+   "stream"
+  ],
+  "trees": "open",
+  "litter": "some",
+  "rocks": "few",
+  "brush": "some",
+  "building": {
+   "use": "inn",
+   "size": "medium",
+   "rooms": "",
+   "name": "The Lantern and Oar",
+   "floors": null,
+   "cellar": null,
+   "upstairs": "",
+   "cellarRooms": ""
+  },
+  "street": {
+   "place": "village",
+   "quarter": "homes"
+  },
+  "camp": {
+   "kind": "campsite",
+   "tents": null
+  },
+  "castle": {
+   "towers": "open"
+  },
+  "name": "",
+  "seed": 512
+ },
+ "output": {
+  "pxPerSquare": 100,
+  "scene": {
+   "name": "The Lantern and Oar",
+   "time": "day"
+  }
+ }
+}

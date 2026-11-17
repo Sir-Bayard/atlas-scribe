@@ -214,7 +214,9 @@ export function accessLanes(plan) {
   const out = [];
   for (const f of plan.features) {
     const farm = f.type === "area" && f.class === "farmstead";
-    const other = (f.type === "area" && (f.class === "yard" || f.class === "park" || f.class === "cemetery")) || f.type === "square";
+    // (and a watermill or windmill out in the country: a faint track to it from the road)
+    const mill = f.type === "building" && (f.use === "watermill" || f.use === "windmill");
+    const other = (f.type === "area" && (f.class === "yard" || f.class === "park" || f.class === "cemetery")) || f.type === "square" || mill;
     if (!farm && !other) continue;
     const pts = poly(f);
     if (pts.length < 3) continue;
@@ -223,6 +225,8 @@ export function accessLanes(plan) {
     const ponds = walls.filter((x) => x.water);
     let c = insidePoint(pts);
     if (!farm && districts.some((d) => pointInPolygon(c, d))) continue; // the district's streets reach it
+    // (a mill in a yard or farm of its own is reached by that one's lane)
+    if (mill && plan.features.some((g) => g.type === "area" && (g.class === "yard" || g.class === "farmstead") && pointInPolygon(c, poly(g)))) continue;
     if (!farm && farms.some((x) => pts.some((q) => distanceToPath(q, x.ring) < 1) || x.ring.some((q) => distanceToPath(q, ring) < 1))) continue; // a farm's yard: the farm's lane serves it
     // Already on a road: one runs through it or along it (a park's paths meet a road whose side averages within 2.5
     // squares of a side of it, as fillPark finds them)
@@ -274,7 +278,9 @@ export function accessLanes(plan) {
     if (!first) continue;
     const cap = first.d + Math.max(3, first.d / 3); // no lane rather than a long way around
     if (cap > list.at(-1).d) list = within(cap);
-    const best = list.find((x) => x.d >= first.d && x.d <= cap && !behind(x) && !wet(x.st.from, x.q) && !blocked(x.st.from, x.q));
+    // (a mill's track may cross its own race or a stream by a plank: only water wider than a square stops it)
+    const wetHere = mill ? (a, b) => waters.some((w) => w.half > 0.5 && (w.path.some((q, i) => i && crosses(a, b, w.path[i - 1], q)) || segmentNearPath(a, b, w.path, w.half))) : wet;
+    const best = list.find((x) => x.d >= first.d && x.d <= cap && !behind(x) && !wetHere(x.st.from, x.q) && !blocked(x.st.from, x.q));
     if (!best) continue;
     const { st, q } = best;
     const dir = [(q[0] - st.from[0]) / best.d, (q[1] - st.from[1]) / best.d];

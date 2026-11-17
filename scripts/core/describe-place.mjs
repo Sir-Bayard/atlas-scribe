@@ -3,7 +3,7 @@
  * fixed set of words with no AI, shown as chips the GM can take out. "A walled port city with a cathedral, a citadel
  * and no slums" reads as a city on a sea coast, a cathedral at its center, a citadel, and no poor quarter. Pure.
  */
-import { QUICK_LABELS, QUARTERS, CENTERS } from "./quick.mjs";
+import { QUICK_LABELS, QUARTERS, CENTERS, QUICK_HIGH_LABELS } from "./quick.mjs";
 
 /** Words for each choice (lowercase; a word's plural is matched too). */
 const WORDS = {
@@ -16,6 +16,8 @@ const WORDS = {
   river: { island: ["island"], loop: ["loop", "looping", "oxbow"], meeting: ["two rivers", "confluence", "rivers meeting", "meeting rivers"], meander: ["winding", "bending", "meandering"] },
   shape: { compact: ["compact", "round", "circular"], lobed: ["lobed", "uneven", "irregular"], promontory: ["promontory", "peninsula", "headland", "cape"], shore: ["along the shore", "along the river", "strung out", "long and thin"], cliff: ["cliff", "cliffs", "escarpment", "clifftop", "bluff"] },
 };
+/** High ground along an edge (a village's or town's). */
+const HIGH_WORDS = { hills: ["hills", "hilly", "hillside", "foothills", "high ground"], mountains: ["mountains", "mountain", "mountainous", "peaks"] };
 /** A village's or town's buildings and places. */
 const HAS_WORDS = { temple: ["temple", "church", "chapel", "shrine"], inn: ["inn", "tavern", "pub", "alehouse"], smithy: ["smithy", "blacksmith", "forge", "smith"], cemetery: ["cemetery", "graveyard", "churchyard", "burial ground"], watermill: ["watermill", "water mill"], windmill: ["windmill", "wind mill"], walled: ["walled", "walls", "wall", "palisade", "stockade", "fortified", "fortifications"] };
 /** A city's quarters. */
@@ -39,7 +41,7 @@ const MAX_TEXT = 2000;
 
 /**
  * Reads a description. Returns { choices, chips, skipped, unknown }: choices, only what it found (size, season,
- * water, roads, surroundings, center, river, shape, name, has: { ... }, quarters: [...] when one is left out,
+ * water, roads, surroundings, center, river, shape, high, name, has: { ... }, quarters: [...] when one is left out,
  * outside: { ... }); chips, what it understood, each { key, value, label }; skipped, what it read but couldn't use
  * for the size ({ label, why }); unknown, the words it didn't know. opts.size, a size chosen elsewhere (in the form),
  * is the size it reads for in place of the one it says; opts.water, the water chosen there, says what "a mill" is when
@@ -164,6 +166,15 @@ export function readPlace(text = "", opts = {}) {
     if (k === "river" && choices.water && choices.water !== "river") { skipped.push({ label: v, why: "A river's form needs a river" }); continue; }
     choices[k] = v;
     chip(k, v, QUICK_LABELS[k][v]);
+  }
+
+  // High ground: mountains over hills when both are said; "no hills" says none
+  {
+    const hh = hits(HIGH_WORDS).filter((x) => !inName(x));
+    mark(Object.values(HIGH_WORDS).flat());
+    const v = hh.some((x) => !x.no && x.value === "mountains") ? "mountains" : hh.some((x) => !x.no) ? "hills" : hh.length ? "none" : null;
+    if (v && city && v !== "none") skipped.push({ label: v, why: "High ground along an edge is a village's or town's" });
+    else if (v && !city) { choices.high = v; chip("high", v, v === "none" ? "No high ground" : QUICK_HIGH_LABELS[v]); }
   }
 
   if (city) {

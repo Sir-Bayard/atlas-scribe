@@ -8,6 +8,8 @@
  */
 import { fallbackColor } from "../../core/roles.mjs";
 import { roofFacets, outlineOf } from "../roofs.mjs";
+import { paintRelief } from "../relief.mjs";
+import { paintRiverbed } from "../riverbed.mjs";
 import { wayDirectionAt, paintRows, tangentBand } from "./textured.mjs";
 import { edgeSpan, shiftRight, resample } from "../../core/layout/terrain.mjs";
 
@@ -49,7 +51,22 @@ export function paint(ctx) {
     else if (t > 0.7) dot(x, y, r * 0.7, dark);
   }
 
+  // Caves and dungeons: the rock dark, the floor carved out of it (earth, or a dungeon's flagstones), its walls inked,
+  // a door a bar across its corridor, rubble and wear as specks
+  const ringPath = (pts) => pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+  for (const rk of items("rock")) {
+    g.beginPath(); ringPath(rk.ring); g.closePath();
+    for (const h of rk.holes ?? []) { ringPath(h); g.closePath(); }
+    g.fillStyle = "rgb(58,54,50)"; g.fill("evenodd");
+    g.beginPath(); for (const h of rk.holes ?? []) { ringPath(h); g.closePath(); }
+    g.fillStyle = rk.style === "dungeon" ? "rgb(150,146,138)" : "rgb(132,112,86)"; g.fill("evenodd");
+  }
+  for (const w of items("rockwall")) { g.beginPath(); ringPath(w.path); g.strokeStyle = "rgb(30,28,26)"; g.lineWidth = Math.max(1, pp * 0.06); g.stroke(); }
+  for (const d of items("door")) { g.beginPath(); g.moveTo(X(d.a[0]), Y(d.a[1])); g.lineTo(X(d.b[0]), Y(d.b[1])); g.strokeStyle = "rgb(120,82,48)"; g.lineWidth = Math.max(2, pp * 0.18); g.stroke(); }
+  for (const w of items("wear")) dot(w.x, w.y, 0.08 * (w.s ?? 1), w.class === "moss" ? "rgb(86,112,62)" : w.class === "puddle" ? "rgb(70,90,104)" : "rgb(70,62,54)");
+
   // Surfaces: trodden ground, fields, yards, crofts, gardens, parks
+  paintRelief(g, L.items, { X, Y, pp, near: (b) => b[2] >= x0 - 1 && b[3] >= y0 - 1 && b[0] <= x0 + W / pp + 1 && b[1] <= y0 + H / pp + 1, colors: { ink: "rgb(70,60,48)", light: "rgb(250,246,236)", shade: "rgb(60,52,44)", stone: "rgb(170,164,154)", stoneInk: "rgba(60,54,46,0.8)", water: "rgb(150,186,196)", waterInk: "rgba(60,90,100,0.8)", reed: "rgb(80,96,60)", marsh: "rgba(120,150,120,0.4)" } });
   progress(0.2, "Yards and gardens");
   const trodden = col(`surface.trodden.${s}`);
   // A quarter's own ground: paving, dirt or lawns (under the trodden ground, fields, yards and parks on it)
@@ -79,9 +96,10 @@ export function paint(ctx) {
     fillPoly(pk.poly, winter ? mix(base, [200, 210, 220], 0.25) : mix(base, [120, 170, 70], 0.3)); // a green shows as a green
     stroke([...pk.poly, pk.poly[0]], 0.04, winter ? "rgba(120,130,140,0.5)" : "rgba(70,100,50,0.5)");
     for (const w of pk.paths ?? []) stroke(w.path, w.width, winter ? mix(trodden, [150, 142, 132], 0.3) : mix(col(`surface.${w.surface}.${s}`), [255, 255, 255], 0.1));
-    if (pk.basin) {
+    if (pk.basin?.poly) { stroke([...pk.basin.poly, pk.basin.poly[0]], 0.24, col(`stone.rough.${s}`)); fillPoly(pk.basin.poly, col(winter ? "water.ice" : "water.pond")); }
+    else if (pk.basin) {
       const { at, radius } = pk.basin;
-      dot(at[0], at[1], radius + 0.12, col(`stone.rough.${s}`));
+      if (pk.basin.rim !== false) dot(at[0], at[1], radius + 0.12, col(`stone.rough.${s}`));
       dot(at[0], at[1], radius, col(winter ? "water.ice" : "water.pond"));
     }
   }
@@ -119,7 +137,7 @@ export function paint(ctx) {
   const boundColor = { fence: "rgba(110,84,58,0.7)", wall: "rgba(110,106,100,0.8)", hedge: "rgba(60,85,45,0.8)", clipped: "rgb(44,74,36)", balk: winter ? "rgba(150,160,170,0.45)" : "rgba(118,140,78,0.75)" };
   const boundWidth = { hedge: 0.08, balk: 0.12, clipped: 0.16 };
   for (const b of items("boundary")) stroke(b.path, boundWidth[b.class] ?? 0.04, boundColor[b.class] ?? boundColor.fence);
-  for (const w of items("wall").filter((w) => !w.thickness)) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
+  for (const w of items("wall").filter((w) => !w.thickness && w.class !== "watergate")) stroke(w.path, 0.13, mix(col(`stone.rough.${s}`), [60, 60, 60], 0.2), 1.5);
   // Height on a battle map: each level's ground lighter the higher it stands and darker the lower, then each edge as
   // a band toward its low side (a cliff in its rock's color, a bank in earth, a slope as a faint shade), the top of
   // a cliff or bank drawn hard
@@ -204,6 +222,7 @@ export function paint(ctx) {
     // Lighter in the shallows
     g.save(); poly(b.poly); g.clip(); stroke(b.ring, b.class === "sea" ? 2 : 1, mix(col(b.frozen ? "water.ice" : `water.${b.class}`), [255, 255, 255], b.frozen ? 0.25 : 0.15)); g.restore();
   }
+  paintRiverbed(g, L.items, { X, Y, pp, near: (b) => b[2] >= x0 - 1 && b[3] >= y0 - 1 && b[0] <= x0 + W / pp + 1 && b[1] <= y0 + H / pp + 1, colors: { bar: mix(col(`water.river`), [236, 226, 196], 0.55), land: base, bank: mix(col(`stone.rough.${s}`), [255, 255, 255], 0.1), ink: "rgba(60,90,100,0.8)" } });
   for (const p of items("lily")) dot(p.x, p.y, p.s * 0.35, "rgb(86,122,62)");
   for (const c of items("crossing")) {
     const a = (c.angle * Math.PI) / 180, half = (c.length ?? 2) / 2;
@@ -234,6 +253,14 @@ export function paint(ctx) {
 
   // Town walls and palisades: a shadow, the wall, its walk along the top and battlements along its outer face (the
   // towers are buildings, drawn with the roofs)
+  // A water gate's grille across the river, over the water: a dark bar with its uprights
+  for (const w of items("wall").filter((w) => w.class === "watergate" && w.path?.length >= 2)) {
+    const [a, b] = [w.path[0], w.path.at(-1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / L, (b[0] - a[0]) / L];
+    g.save(); g.strokeStyle = "rgba(40,36,32,0.85)"; g.lineWidth = Math.max(1.5, pp * 0.1); g.lineCap = "butt";
+    g.beginPath(); g.moveTo(X(a[0]), Y(a[1])); g.lineTo(X(b[0]), Y(b[1]));
+    for (let t = 0.2; t < L; t += 0.4) { const p = [a[0] + ((b[0] - a[0]) * t) / L, a[1] + ((b[1] - a[1]) * t) / L]; g.moveTo(X(p[0] - n[0] * 0.12), Y(p[1] - n[1] * 0.12)); g.lineTo(X(p[0] + n[0] * 0.12), Y(p[1] + n[1] * 0.12)); }
+    g.stroke(); g.restore();
+  }
   for (const w of items("wall").filter((w) => w.thickness)) {
     const T = w.thickness;
     const sh = 0.35 + 0.3 * (w.tall ?? 0); // as a building's

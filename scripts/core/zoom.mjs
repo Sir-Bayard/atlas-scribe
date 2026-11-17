@@ -14,6 +14,16 @@ import { PROP_SQUARES, OUTPUT_LIMITS } from "./plan.mjs";
 /** The zooms offered: battle squares for each overview square's worth of ground, as a share of true size. */
 export const ZOOMS = [1, 1.5, 2];
 export const DEFAULT_ZOOM = 2;
+/** Whether a path crosses a polygon's edge. */
+function pathMeets(path, poly) {
+  for (let i = 1; i < path.length; i++) for (let j = 0; j < poly.length; j++) {
+    const [a, b] = [path[i - 1], path[i]], [c, d] = [poly[j], poly[(j + 1) % poly.length]];
+    const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+    if (o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b)) return true;
+  }
+  return false;
+}
+
 /** How far past the rectangle, in battle squares, what's cut to it still reaches (so nothing stops at the map's edge). */
 const REACH = 4;
 
@@ -99,6 +109,10 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
   // (whether a cut piece of a line comes onto the map: its middle within half its width of the rectangle)
   const reaches = (piece, half) => clipPath(piece, [x0 - half, y0 - half, x1 + half, y1 + half]).length > 0;
   const cut = (poly) => shapes(intersect([poly], [boxPoly])).filter((s) => worth(s.outer) && shapes(intersect([s.outer], [inner])).some((q) => area(q.outer) * E * E >= 0.01));
+  // (high ground cut to a much wider box, so a slope's cut edges lie far off the battle map and its contours
+  // don't ring a false top in its middle)
+  const wide = (x1 - x0 + y1 - y0) / 2;
+  const cutWide = (poly) => shapes(intersect([poly], [[[x0 - wide, y0 - wide], [x1 + wide, y0 - wide], [x1 + wide, y1 + wide], [x0 - wide, y1 + wide]]])).filter((s) => shapes(intersect([s.outer], [inner])).some((q) => area(q.outer) * E * E >= 0.01));
   const planFeature = new Map((plan?.features ?? []).map((f) => [f.id, f]));
 
   // Streets, roads and lanes, the overview's own and its districts' (faint field tracks left out), at their widths in feet
@@ -159,10 +173,14 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
     if (c.at[0] < box[0] || c.at[0] > box[2] || c.at[1] < box[1] || c.at[1] > box[3]) continue;
     features.push({ id: idFor(c.id), type: "crossing", class: ["bridge", "footbridge", "ford"].includes(c.class) ? c.class : "bridge", at: P(c.at) });
   }
-  // The plan's own woods, parks, cemeteries and yards, cut to the rectangle; its trees and props where they stand
+  // The plan's own woods, parks, cemeteries, yards, hills and marshes, cut to the rectangle; its trees and props where
+  // they stand
   for (const f of plan?.features ?? []) {
-    if (f.type === "area" && ["woods", "park", "cemetery", "yard", "trodden"].includes(f.class) && f.shape) {
-      for (const s of cut(shapeToPolygon(f.shape, f.rot ?? 0))) features.push({ ...structuredClone(f), id: idFor(f.id), shape: s.outer.map(P), rot: 0, ...(Number.isFinite(f.trees) ? { trees: Math.round(f.trees * Math.min(1, area(s.outer) / Math.max(1e-6, area(shapeToPolygon(f.shape, f.rot ?? 0))))) } : {}) });
+    if (f.type === "area" && ["woods", "park", "cemetery", "yard", "trodden", "hills", "mountains", "marsh"].includes(f.class) && f.shape) {
+      // (a park keeps the design the overview gave it: its walks, center, beds, edging and trees, or its green's feature)
+      const d = f.class === "park" ? items.find((i) => i.kind === "surface" && i.class === "park" && i.id === f.id)?.design : null;
+      const kept = d ? Object.fromEntries(Object.entries({ layout: d.layout, center: d.center, beds: d.beds, edging: d.edging, planting: d.trees, feature: d.feature }).filter(([k, v]) => v && f[k] == null)) : {};
+      for (const s of (f.class === "hills" || f.class === "mountains" ? cutWide : cut)(shapeToPolygon(f.shape, f.rot ?? 0))) features.push({ ...structuredClone(f), ...kept, id: idFor(f.id), shape: s.outer.map(P), rot: 0, ...(Number.isFinite(f.trees) ? { trees: Math.round(f.trees * Math.min(1, area(s.outer) / Math.max(1e-6, area(shapeToPolygon(f.shape, f.rot ?? 0))))) } : {}) });
     } else if ((f.type === "tree" || f.type === "prop") && Array.isArray(f.at) && f.at[0] >= x0 && f.at[0] <= x1 && f.at[1] >= y0 && f.at[1] <= y1) {
       features.push({ ...structuredClone(f), id: idFor(f.id), at: P(f.at) });
     }
@@ -203,10 +221,17 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
   for (const what of notYet) notes.push(`A battle map doesn't draw ${what} yet, so the ${what.slice(0, -1)} here is left off.`);
   // Districts cut to the rectangle, kind, character and roofs kept, filled again at battle size; their streets and
   // notable buildings come from the overview, so they lay none of their own
+  // (a district that no street of the overview reaches inside the area builds no houses of its own there: it keeps
+  // the overview's, below)
+  // (every way of the overview's that comes into the area but quays: a district builds plots along its tracks and
+  // paths too)
+  const streetsIn = items.filter((i) => i.kind === "way" && !i.faint && Array.isArray(i.path) && i.path.length >= 2 && i.class !== "quay").flatMap((w) => clipPath(w.path, box).filter((q) => reaches(q, (w.width ?? 1) / 2)));
+  const streetless = new Set();
   for (const d of items.filter((i) => i.kind === "district" && Array.isArray(i.poly))) {
     const src = planFeature.get(d.from);
     if (!src) continue;
     const pieces = cut(d.poly);
+    if (pieces.length && !pieces.some((s) => streetsIn.some((q) => q.some((pt) => pointInPolygon(pt, s.outer)) || pathMeets(q, s.outer)))) streetless.add(d.from);
     pieces.forEach((s) => {
       const f = structuredClone(src);
       for (const k of ["shape", "rot", "seed", "anchorAt", "spacing", "axis"]) delete f[k];
@@ -229,17 +254,17 @@ export function zoomPlan(plan, layout, rect, { zoom = DEFAULT_ZOOM, id = null, n
   for (const [key, parts] of groups) {
     const planned = planFeature.has(key);
     const notable = planned || /\/h-(anchor|shrine|watch)\d+$/.test(key) || parts.some((b) => USE_INFO[b.use]?.notable);
-    if (!notable) continue;
+    // (an ordinary house is kept only in a district no street reaches here, as the overview built it)
+    const kept = !notable && parts.some((b) => streetless.has(b.from));
+    if (!notable && !kept) continue;
     if (!parts.some((b) => polygonsOverlap(footOf(b), boxPoly))) continue;
     // (one that fronted a street still fronts it: streets keep their true width while everything else grows, so it's
     // moved up to each street it fronted; a centerpiece stays with its grounds)
-    const [dx, dy] = /\/h-anchor\d+$/.test(key) ? [0, 0] : frontShift(parts.map(footOf), fronts, (E - ft / 5) / E);
+    const [dx, dy] = kept || /\/h-anchor\d+$/.test(key) ? [0, 0] : frontShift(parts.map(footOf), fronts, (E - ft / 5) / E);
     const moved = dx || dy ? parts.map((b) => ({ ...b, cx: b.cx + dx, cy: b.cy + dy, ...(Array.isArray(b.poly) ? { poly: b.poly.map(([x, y]) => [x + dx, y + dy]) } : {}) })) : parts;
     features.push({ id: idFor(key.replace(/^.*\//, "") || "building"), type: "landmark", buildings: moved.map((b) => scaled(b, P, E)) });
   }
   if (!features.some((f) => f.type === "district")) notes.push("No district reaches into this area, so no houses will be built there.");
-  // (a district's houses front its streets, all of them the overview's: with none in the area, none are built)
-  else if (!features.some((f) => f.type === "road" && f.class !== "track" && f.class !== "path")) notes.push("No street runs through this area, so no houses will be built along streets there.");
   const out = {
     atlasScribe: 1,
     id: id ?? `${plan?.id ?? "map"}-battle-${hash128(JSON.stringify([x0, y0, x1, y1, zoom]))[0].toString(36).slice(0, 4)}`,

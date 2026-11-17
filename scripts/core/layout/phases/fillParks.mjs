@@ -21,11 +21,18 @@ export function fillParks(ctx) {
       park.surface.paths = park.surface.paths.flatMap((w) => dryPieces(w.path, (q) => wet(q[0], q[1], w.width / 2)).map((path) => ({ ...w, path })));
       park.trees = park.trees.filter((t) => !wet(t.x, t.y, 0.3));
       park.beds = park.beds.filter((b) => !wet(b.cx, b.cy, Math.hypot(b.w, b.d) / 2));
+      park.props = park.props.filter((q) => !wet(q.x, q.y, q.size / 2));
+      park.walls = park.walls.filter((w) => !w.some((q) => wet(q[0], q[1])));
       if (park.surface.basin && wet(park.surface.basin.at[0], park.surface.basin.at[1], park.surface.basin.radius)) park.surface.basin = null;
     }
-    items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin });
+    items.push({ kind: "surface", id: f.id, from: f.id, class: "park", poly: park.surface.poly, style: park.surface.style, paths: park.surface.paths, basin: park.surface.basin, design: park.design });
     park.trees.forEach((t, k) => items.push({ kind: "tree", id: `${f.id}/t${k + 1}`, from: f.id, x: t.x, y: t.y, species: "bare", size: null, s: t.s, rot: t.rot, variant: t.variant }));
     park.beds.forEach((garden, k) => items.push({ kind: "surface", id: `${f.id}/g${k + 1}`, from: f.id, class: "garden", garden }));
+    // What stands on it (a well, maypole or cross on a green; a fountain, statue or sundial in a garden), and low walls
+    // around a garden's beds
+    park.props.forEach((q) => items.push({ kind: "prop", id: `${f.id}/${q.class}`, from: f.id, class: q.class, x: q.x, y: q.y, rot: q.rot, variant: q.variant, scale: q.size / (PROP_SQUARES[q.class] ?? 0.5) }));
+    // (a low stone wall, 3 ft: on a battle map stone with Foundry walls that stop walkers but not sight, as a plan's own)
+    park.walls.forEach((path, k) => items.push({ kind: "wall", id: `${f.id}/w${k + 1}`, from: f.id, class: "stone", path, height: 3 / sq }));
     // Clipped hedges around the beds: small bushes close together
     park.hedges.forEach((path, k) => {
       const before = items.length;

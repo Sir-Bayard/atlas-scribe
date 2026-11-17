@@ -6,7 +6,7 @@ import { anchorFor, layAnchor } from "../anchors.mjs";
 import { battleBack } from "../battle.mjs";
 import { bbox, distanceToPath, pathTouchesPolygon, pointInPolygon, shapeToPolygon } from "../../geom.mjs";
 import { buildOnLots } from "../../lots/build.mjs";
-import { centroid, shapes } from "../../lots/poly.mjs";
+import { centroid, intersect, shapes, signedArea } from "../../lots/poly.mjs";
 import { districtGates, gateSpacing, streetsFor, typeOf } from "../../streets/index.mjs";
 import { hash128, rng } from "../../rng.mjs";
 import { lookOf } from "../../character.mjs";
@@ -17,6 +17,9 @@ import { poissonInPolygon } from "../../scatter.mjs";
 import { seedOf } from "../../seeds.mjs";
 import { sharedEdges } from "../../streets/borders.mjs";
 
+/** How far past the map's edge a district is filled, in squares. */
+const MAP_MARGIN = 8;
+
 /**
  * Districts: generated streets first (each district's own, meeting its neighbors' at gates on shared edges),
  * then houses along every road, street and lane that runs into it
@@ -26,7 +29,20 @@ export function fillDistricts(ctx) {
   progress(0.4, "Districts");
   // (a district whose shape makes no polygon is left out: the checker warns of it)
   const dfeats = plan.features.filter((f) => f.type === "district" && shapeToPolygon(f.shape).length >= 3); ctx.dfeats = dfeats;
-  const dlist = dfeats.map((d) => ({ id: d.id, poly: shapeToPolygon(d.shape), ...gateSpacing(d, sq) })); ctx.dlist = dlist;
+  // (a district reaching well past the map is cut to the map and a margin first: what it would build out there is never
+  // seen, and only slows the fill)
+  // (only one with most of its ground off the map is cut: one that only runs a little past it lays out as it always
+  // has; and none whose part on the map would come in two or more sizable pieces, which one outline can't hold)
+  const onMap = (poly) => {
+    const [x0, y0, x1, y1] = bbox(poly), m = MAP_MARGIN;
+    if (x0 >= -m && y0 >= -m && x1 <= W + m && y1 <= H + m) return poly;
+    const cut = intersect([poly], [[[-m, -m], [W + m, -m], [W + m, H + m], [-m, H + m]]]).filter((p) => signedArea(p) !== 0);
+    const sizes = cut.map((p) => Math.abs(signedArea(p))).sort((a, b) => b - a), whole = Math.abs(signedArea(poly));
+    if (!sizes.length || sizes[0] > whole * 0.5 || (sizes[1] ?? 0) > sizes[0] * 0.1) return poly;
+    const big = cut.reduce((a, b) => (!a || Math.abs(signedArea(b)) > Math.abs(signedArea(a)) ? b : a), null);
+    return big && big.length >= 3 ? big : poly;
+  };
+  const dlist = dfeats.map((d) => ({ id: d.id, poly: onMap(shapeToPolygon(d.shape)), ...gateSpacing(d, sq) })); ctx.dlist = dlist;
   const waterAt = (x, y) => space.water.some((w) => nearWater([x, y], w));
   const gates = districtGates(dlist, { roads: ways, inWater: (x, y) => waterAt(x, y) || inWallBand(x, y), seed: plan.seed });
   const radials = plan.features.filter((f) => f.type === "square" && f.radial).map((f) => {

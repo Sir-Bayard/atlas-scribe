@@ -80,6 +80,8 @@ export const TYPES = {
       shore: { ...oneOf(SHORES, null), only: BODIES, fallback: "picked from its seed" },
       frozen: { kind: "boolean", default: false, byClass: { pond: null, lake: null } }, // a pond or lake left unset freezes in winter
       straight: bool(false), // drawn straight between its points (a canal, a stone basin); else it curves smoothly through them
+      shallows: { ...bool(false), only: RUNNING }, // gravel bars in the shallows on the inside of its bends
+      islands: num(0, { min: 0, max: 6, integer: true, only: RUNNING }), // small islands where it runs wide and straight (settlement maps)
       // On a battle map: how far below its banks its bed lies, how its banks come down, and their rock
       depth: num(null, { unit: "ft", min: 0, max: 60, byClass: { stream: 5, river: 10, canal: 5 }, only: RUNNING }),
       banks: { ...oneOf(["bank", "cliff", "slope"], "bank"), only: RUNNING },
@@ -192,7 +194,7 @@ export const TYPES = {
   },
   area: {
     geometry: "shape",
-    classes: ["yard", "farmstead", "woods", "trodden", "fields", "park", "cemetery"],
+    classes: ["yard", "farmstead", "woods", "trodden", "fields", "park", "cemetery", "cave", "dungeon", "mountains", "hills", "marsh"],
     fields: {
       name: str(), // what the window and the outlines call it; else its id
       surface: { ...oneOf(SURFACES, null), only: ["yard"] },
@@ -201,7 +203,19 @@ export const TYPES = {
       trees: num(null, { min: 0, max: 20000, integer: true, only: ["woods"] }),
       density: { ...oneOf(["sparse", "open", "thick", "dense"], null), only: ["woods"], fallback: "it's drawn as thick" }, // a wood's: how thick its trees stand (thick if left out); a tree count wins
       mix: { kind: "object", default: null, only: ["woods"] }, // a wood's species shares, { bare: 0.15 } (the rest are firs)
+      cleared: { ...bool(false), only: ["woods"] }, // a wood thinned toward the town: scattered trees and stumps near it, thick far from it
       style: { ...oneOf(["green", "formal"], null), only: ["park"] }, // a park's: a village green (the default) or a formal garden
+      feature: { ...oneOf(["pond", "well", "maypole", "cross", "none"], null), only: ["park"], fallback: "its seed picks one, or none" }, // a green's: what stands on it
+      layout: { ...oneOf(["quartered", "saltire", "goose-foot", "concentric", "canal", "compartments"], null), only: ["park"], fallback: "its seed picks one" }, // a formal garden's walks
+      center: { ...oneOf(["basin", "fountain", "statue", "sundial", "rond-point"], null), only: ["park"], fallback: "its seed picks one" }, // a formal garden's middle
+      beds: { ...oneOf(["lawn", "parterre", "kitchen", "orchard"], null), only: ["park"], fallback: "its seed picks one" }, // a formal garden's beds
+      edging: { ...oneOf(["hedge", "wall", "none"], null), only: ["park"], fallback: "its seed picks one" }, // around a formal garden's beds
+      planting: { ...oneOf(["avenue", "quincunx", "bosquets", "none"], null), only: ["park"], fallback: "its seed picks one" }, // a formal garden's trees
+      // A cave or dungeon (on a battle map): rock with its open ground carved out
+      openness: { ...oneOf(["tight", "medium", "open"], "medium"), only: ["cave"] }, // how much of a cave is open ground
+      corridors: { ...oneOf(["narrow", "wide"], "narrow"), only: ["dungeon"] }, // a dungeon's corridors: one square wide or two
+      doors: { ...oneOf(["none", "some", "all"], "some"), only: ["dungeon"] }, // doors where corridors meet rooms
+      wear: { ...oneOf(["some", "none"], "some"), only: ["cave", "dungeon"] }, // cracks, rubble, moss and puddles on the floor
       system: { ...oneOf(["patchwork", "strips"], null), only: ["fields"] }, // a fields area's: enclosed fields or open strips; else picked from its seed
       fieldSize: num(null, { unit: "ft", min: 50, max: 5000, only: ["fields"] }), // a fields area's: about how big a field (patchwork) or furlong (strips) is
       border: { ...oneOf(["hedge", "drystone", "none"], null), only: ["fields", "cemetery"], fallback: "its seed picks one" }, // a fields area's or a cemetery's: what bounds it; else picked from its seed
@@ -230,12 +244,18 @@ export const TYPES = {
       climbDC: { ...num(null, { min: 1, max: 60, integer: true }), only: ["cliff"], fallback: "15, natural rock's" },
     },
   },
+  place: {
+    // A place on a region map (kind "region"): its marker and name; its own map is made from it
+    geometry: "point",
+    classes: ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"],
+    fields: { name: str(), seed: num(null, { min: 1, integer: true }) },
+  },
   prop: {
     geometry: "point",
     // (campfire, fire pit, brazier, torch and lamp post: lights on a battle map, each lit where it stands)
     // (cairn, standing stone, sledge, tracks and ribbon: what tells a place's story on a battle map; tracks are
     // footprints in snow, drawn in winter only)
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll", "cairn", "standing-stone", "sledge", "tracks", "ribbon"],
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "maypole", "sundial", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll", "cairn", "standing-stone", "sledge", "tracks", "ribbon"],
     // (variant: which of its art's pieces, else from the seed: a soldiers' camp's tents all one cloth)
     fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }), variant: num(null, { min: 0, max: 999, integer: true }) },
   },
@@ -267,7 +287,7 @@ export const isConifer = (species) => typeof species === "string" && CONIFERS.in
 export const PROP_SIZE = { tracks: 0.6, ribbon: 0.7, "standing-stone": 1.2, cairn: 2.2 };
 
 /** How wide a prop is drawn, in squares, when the plan gives it no size (a prop's size, in feet, sets it). */
-export const PROP_SQUARES = { tent: 0.6, bedroll: 0.3, well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };
+export const PROP_SQUARES = { maypole: 0.6, sundial: 0.4, tent: 0.6, bedroll: 0.3, well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };
 
 /** A label's text height in squares, by its size word. */
 export const LABEL_SIZES = { small: 0.6, normal: 0.7, large: 0.86, huge: 1 };
@@ -311,7 +331,7 @@ export const NOT_DRAWN_YET = { area: [] };
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];
 /** Styles: illustrated (drawn, no art: settlements' maps), textured (Forgotten Adventures art: for battle maps). */
-export const STYLES = ["illustrated", "textured"];
+export const STYLES = ["illustrated", "textured", "ink"];
 
 /** Limits on the image: Foundry's smallest grid, the largest WebP side, and the size some graphics cards stop at. */
 export const OUTPUT_LIMITS = { minPxPerSquare: 20, maxSide: 16383, warnSide: 8192 };
@@ -349,8 +369,9 @@ export function readPlan(input) {
   }
 }
 
-/** A field's default for a feature of a given class. */
+/** A field's default for a feature of a given class (none for a class the field isn't for). */
 export function fieldDefault(spec, cls) {
+  if (Array.isArray(spec.only) && cls != null && !spec.only.includes(cls)) return null;
   if (spec.byClass && cls in spec.byClass) return spec.byClass[cls];
   return spec.default ?? null;
 }
@@ -362,19 +383,19 @@ export function fieldDefault(spec, cls) {
 export function normalize(plan) {
   const p = structuredClone(isObj(plan) ? plan : {});
   for (const [k, v] of Object.entries(DEFAULTS)) p[k] ??= v;
-  p.style ??= p.kind === "battle" ? "textured" : "illustrated"; // (a settlement drawn, a battle map in its art)
+  p.style ??= p.kind === "battle" ? "textured" : p.kind === "region" ? "region" : "illustrated"; // (a settlement drawn, a battle map in its art)
   p.atlasScribe ??= PLAN_VERSION;
   // Containers of the wrong kind are replaced (the checker reports them), so nothing downstream trips on them
   if (!isObj(p.size)) p.size = {};
   if (!Array.isArray(p.size.squares)) p.size.squares = [50, 50];
-  p.size.ftPerSquare ??= p.kind === "battle" ? 5 : 25;
+  p.size.ftPerSquare ??= p.kind === "battle" ? 5 : p.kind === "region" ? 2640 : 25;
   p.features = (Array.isArray(p.features) ? p.features : []).map((f) => normalizeFeature(isObj(f) ? f : {}));
   if (!isObj(p.seeds)) p.seeds = {};
   if (!Array.isArray(p.locked)) p.locked = [];
   if (!isObj(p.art)) p.art = {};
   if (!isObj(p.output)) p.output = {};
   p.output.pxPerSquare ??= 50;
-  p.output.format ??= "webp";
+  p.output.format ??= "auto";
   p.output.quality ??= 0.86;
   p.output.dressing ??= false; // a frame, compass rose, scale bar and the map's name, painted on (illustrated style)
   if (!isObj(p.output.scene)) p.output.scene = {};

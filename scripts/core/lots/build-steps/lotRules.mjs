@@ -6,6 +6,9 @@ import { gardenShare as gardenShareOf } from "../../character.mjs";
 import { lotTypeOf } from "../index.mjs";
 import { pointInPolygon, polygonsOverlap } from "../../geom.mjs";
 
+/** The longest a row house's part may be, in its depths. */
+const ROW_LONGEST = 4;
+
 /**
  * In the plot, clear of anything it was cut around and of every street (points along each side too, since a street
  * may bend at a house). The ways' segments sit in a grid so each test looks only at nearby streets (a way with a
@@ -14,10 +17,11 @@ import { pointInPolygon, polygonsOverlap } from "../../geom.mjs";
 export function lotRules(ctx) {
   const { blocked, district, ftPerSquare, r, ways } = ctx;
   const exact = finitePaths(ways.map((w) => w.path)) && ways.every((w) => Number.isFinite(w.width));
-  const grid = exact ? new SegGrid(ways.map((w) => w.path)) : null;
-  const maxHalf = ways.reduce((m, w) => Math.max(m, w.width / 2), 0);
+  // (each way's segments padded by its own half width and a little, so a lookup is by the point alone: one very wide
+  // road doesn't widen every lookup)
+  const grid = exact ? new SegGrid(ways.map((w) => w.path), { pad: (p) => ways[p].width / 2 + 0.11 }) : null;
   const clearAt = grid
-    ? (x, y) => { for (const k of grid.near(x, y, maxHalf)) if (!(grid.dist(x, y, k) >= ways[grid.segPath[k]].width / 2 - 0.005)) return false; return true; }
+    ? (x, y) => { for (const k of grid.near(x, y, 0)) if (!(grid.dist(x, y, k) >= ways[grid.segPath[k]].width / 2 - 0.005)) return false; return true; }
     : (x, y) => ways.every((w) => distToPath([x, y], w.path) >= w.width / 2 - 0.005);
   const clearOfWays = (pts) => pts.every((p, i) => {
     const q = pts[(i + 1) % pts.length];
@@ -25,7 +29,7 @@ export function lotRules(ctx) {
   });
   /** True when the point is within 0.1 of a way's edge line. */
   const onWayEdge = grid
-    ? (mid) => { let hit = false; grid.eachNear(mid[0], mid[1], maxHalf + 0.1, (p, d) => { if (Math.abs(d - ways[p].width / 2) < 0.1) hit = true; }); return hit; }
+    ? (mid) => { let hit = false; grid.eachNear(mid[0], mid[1], 0, (p, d) => { if (Math.abs(d - ways[p].width / 2) < 0.1) hit = true; }); return hit; }
     : (mid) => ways.some((w) => Math.abs(distToPath(mid, w.path) - w.width / 2) < 0.1); ctx.onWayEdge = onWayEdge;
   // Battle maps: buildings a square apart, so there's always room to walk between two; each keeps half a square off
   // its plot's sides and back (roomOf), and a shed or stable a square off what else is on its plot (clearHere)
@@ -65,13 +69,29 @@ export function lotRules(ctx) {
     // (thin fingers and sharp wedges, where a plot's cut met its neighbor's at a slant, trimmed off: a footprint no
     // narrower anywhere than a few feet)
     const firm = (p) => { const q = big(intersect(offset(offset([p], -sq(3)), sq(3)), [p])); return q && area(q) > area(p) * 0.8 ? tidy(q) : tidy(p); };
+    // (a part at most ROW_LONGEST times as long as it's deep: past that, the stretch of it holding the most is kept, and
+    // the rest of the plot, a sharp corner's tip, is left a yard)
+    const capped = (poly, e, q) => {
+      // (by the part's mean depth, which a wedge's narrowing makes less than d)
+      const proj = poly.map((p) => p[0] * e[0] + p[1] * e[1]), lo = Math.min(...proj), L = Math.max(...proj) - lo;
+      const most = ROW_LONGEST * Math.min(d, area(poly) / (L || 1));
+      if (L <= most) return poly;
+      // (the band anchored across the part itself: it reaches only 99 squares either side of its anchor)
+      const mq = poly.reduce((s, p) => s + p[0] * q[0] + p[1] * q[1], 0) / poly.length, at = [q[0] * mq, q[1] * mq];
+      let best = null;
+      for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+        const s0 = lo + (L - most) * t, piece = big(intersect([poly], [band(at, q, e, s0, s0 + most)]));
+        if (piece && (!best || area(piece) > area(best))) best = piece;
+      }
+      return best ? firm(best) : poly;
+    };
     const cut = band([mx, my], [ux, uy], [nx, ny], -1, d);
     const front = big(intersect([lot.poly], [cut]));
     const least = sq(12) * sq(12);
     if (!front || area(front) < least || area(front) < 0.55 * lot.frontage * d) return [];
     // (a plot may hold a hole: a named building, square or yard kept clear inside it; a row never covers one)
     const clear = (p) => !blocked.some((b) => b.length >= 3 && polygonsOverlap(p, b));
-    const parts = [{ poly: firm(front), rot: deg(ux, uy), depth: d }];
+    const parts = [{ poly: capped(firm(front), [ux, uy], [nx, ny]), rot: deg(ux, uy), depth: d }];
     if (!clear(parts[0].poly)) return [];
     let rest = difference([lot.poly], [cut]);
     for (let k = 0; k < 2; k++) {
@@ -103,7 +123,7 @@ export function lotRules(ctx) {
       const along = band(a, e, q, -1, d);
       const strip = big(intersect([piece], [along]));
       if (!strip || area(strip) < least || area(strip) < 0.5 * L * d) break;
-      const part = firm(strip);
+      const part = capped(firm(strip), e, q);
       if (!clear(part)) break;
       parts.push({ poly: part, rot: deg(e[0], e[1]), depth: d });
       rest = difference(rest, [along]);

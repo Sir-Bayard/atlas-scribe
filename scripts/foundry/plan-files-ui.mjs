@@ -6,22 +6,24 @@
 import { battleTabHTML, wireBattleTab, briefFromForm } from "./quick-battle.mjs";
 import { settlementTabHTML, wireSettlementTab } from "./quick-settlement.mjs";
 import { windowKeys } from "../kit/keyboard.mjs";
-import { esc } from "./util.mjs";
+import { REGION, REGION_LABELS } from "../core/quick-region.mjs";
+import { esc, note } from "./util.mjs";
 
 const Dialog = () => foundry.applications.api.DialogV2;
 
 /**
- * Quick Start: two tabs, a settlement or a battle map, each described in words or chosen, and a name and seed for
+ * Quick Start: three tabs, a settlement, a battle map or a region, each described in words or chosen, and a name and seed for
  * both. tab: the tab shown first; seed: the seed offered; onTab(tab) when the GM switches. Resolves to the settlement's
- * options ({ ..., name, seed }), or { battle: brief }, or null.
+ * options ({ ..., name, seed }), or { battle: brief }, or { region: options }, or null.
  */
 export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }) {
   const tabButton = (id, label) => `<button type="button" role="tab" id="as-qs-tab-${id}" aria-controls="as-qs-panel-${id}" data-qs-tab="${id}">${label}</button>`;
   const content = `<div class="atlas-scribe as-quick">
       <input type="hidden" name="tab" value="${tab}">
-      <div class="as-qs-tabs" role="tablist" aria-label="What to make">${tabButton("settlement", "Settlement")}${tabButton("battle", "Battle map")}</div>
+      <div class="as-qs-tabs" role="tablist" aria-label="What to make">${tabButton("settlement", "Settlement")}${tabButton("battle", "Battle map")}${tabButton("region", "Region")}</div>
       ${settlementTabHTML()}
       ${battleTabHTML()}
+      ${regionTabHTML()}
       <div class="as-qs-two">
         <div class="form-group"><label for="as-qs-name">Name</label><input type="text" id="as-qs-name" name="name" placeholder="Made up if empty"></div>
         <div class="form-group"><label for="as-qs-seed">Seed</label><input type="number" id="as-qs-seed" name="seed" value="${seed}" min="1" step="1"></div>
@@ -58,6 +60,7 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
     buttons: [
       { action: "make", label: "Make the plan", icon: "fa-solid fa-wand-magic-sparkles", default: true, callback: (event, button) => {
         const { name, seed: s } = button.form.elements;
+        if (button.form.elements.tab.value === "region") return { region: { ...Object.fromEntries(Object.keys(REGION).map((k) => [k, button.form.elements[`r-${k}`]?.value])), name: name.value, seed: Number(s.value) || seed } };
         if (button.form.elements.tab.value !== "battle") { settlementTab?.flush(); return { ...settlementTab?.options(), name: name.value, seed: s.value }; }
         battleTab?.flush();
         return { battle: briefFromForm(button.form, Number(button.form.elements.seed.value) || seed) };
@@ -67,6 +70,15 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
     rejectClose: false,
   });
   return chosen && chosen !== "cancel" ? chosen : null;
+}
+
+/** The Region tab: a stretch of country many miles across, with its places, roads, rivers and high ground. */
+function regionTabHTML() {
+  const select = (k, label) => `<div class="form-group"><label for="as-qr-${k}">${label}</label><select id="as-qr-${k}" name="r-${k}">${REGION[k].map((v) => `<option value="${v}">${esc(REGION_LABELS[k][v])}</option>`).join("")}</select></div>`;
+  return `<section class="as-qs-region" data-tab="region" role="tabpanel" id="as-qs-panel-region" aria-labelledby="as-qs-tab-region" hidden>
+      <p class="hint">Towns, villages, castles and ruins with their roads, rivers, woods and mountains. Each place's own map is made from it.</p>
+      <div class="as-qs-two">${select("size", "Size")}${select("coast", "Coast")}${select("mountains", "Mountains")}${select("woods", "Woods")}${select("places", "Places")}${select("season", "Season")}</div>
+    </section>`;
 }
 
 /** Open: the saved plans in a list. plans: listPlans()'s; folder: where they are. Resolves to the plan picked, or null. */
@@ -91,8 +103,8 @@ export async function importDialog() {
   const text = await Dialog().wait({
     window: { title: "AtlasScribe: Import a plan", icon: "fa-solid fa-file-import" },
     content: `<div class="atlas-scribe as-import">
-        <div class="form-group stacked"><label for="as-import-text">Paste a plan (JSON, or text with a mapplan block)</label><textarea id="as-import-text" name="text" rows="10"></textarea></div>
-        <div class="form-group"><label for="as-import-file">Or a file</label><input type="file" id="as-import-file" name="file" accept=".json,.md,.txt"></div>
+        <div class="form-group stacked"><label for="as-import-text">Paste a plan (JSON, or text with a mapplan block), a watabou export or a Universal VTT file</label><textarea id="as-import-text" name="text" rows="10"></textarea></div>
+        <div class="form-group"><label for="as-import-file">Or a file</label><input type="file" id="as-import-file" name="file" accept=".json,.md,.txt,.dd2vtt,.uvtt,.df2vtt"></div>
       </div>`,
     buttons: [
       { action: "import", label: "Import", icon: "fa-solid fa-file-import", default: true, callback: async (event, button) => {
@@ -124,6 +136,20 @@ export function confirmDraft(name, at) {
     content: `<p>${esc(name)} had changes that weren't saved (${esc(when)}). Bring them back?</p>`,
     yes: { label: "Bring them back" },
     no: { label: "Drop them" },
+    rejectClose: false,
+  });
+}
+
+/** The "as built" summary in a box to read and copy (text: Markdown). */
+export function summaryDialog(text) {
+  return Dialog().wait({
+    window: { title: "AtlasScribe: summary", icon: "fa-solid fa-list-ul" },
+    position: { width: 560 },
+    content: `<div class="atlas-scribe as-summary"><div class="form-group stacked"><label for="as-summary-text">What the map holds, in Markdown</label><textarea id="as-summary-text" name="text" rows="18" readonly>${esc(text)}</textarea></div></div>`,
+    buttons: [
+      { action: "copy", label: "Copy", icon: "fa-solid fa-copy", default: true, callback: async () => { await game.clipboard.copyPlainText(text); note.info("AtlasScribe: summary copied"); return "copy"; } },
+      { action: "close", label: "Close" },
+    ],
     rejectClose: false,
   });
 }

@@ -85,6 +85,16 @@ export function tidyUp(ctx) {
       if (dropped) notes.push({ level: "info", id: null, message: `${dropped === 1 ? "A rock, log or bush" : `${dropped} rocks, logs and bushes`} of the plan's lay inside buildings and ${dropped === 1 ? "was" : "were"} left out.` });
     }
     battleYards(items, W, H);
+    // (the logs, rocks and brush scattered before a building's approach path was laid, kept off it: each by its reach)
+    {
+      const paths = items.filter((i) => i.kind === "way" && i.approach);
+      const REACH = { log: 1.2, boulder: 0.7, rock: 0.5, stump: 0.5, branch: 0.6, roots: 0.5, bush: 0.5, fern: 0.4, leaves: 0.4 };
+      if (paths.length) for (let k = items.length - 1; k >= 0; k--) {
+        const i = items[k];
+        if (i.kind !== "prop" || !i.wild || !(i.class in REACH)) continue;
+        if (paths.some((w) => distanceToPath([i.x, i.y], w.path) < (w.width ?? 1) / 2 + REACH[i.class])) items.splice(k, 1);
+      }
+    }
     buildingInteriors(items, plan.seed, notes);
     // (the words it doesn't know in a building's Upstairs rooms and Cellar rooms too)
     for (const b of items.filter((i) => i.kind === "building" && (i.upstairs || i.cellarRooms) && (i.main || i.id === i.from))) for (const [field, what] of [["upstairs", "upstairs rooms"], ["cellarRooms", "cellar rooms"]]) {

@@ -73,6 +73,8 @@ export function cityWater(ctx) {
     ctx.form = made.form;
   }
   ctx.river = ctx.rivers[0] ?? null;
+  // (a city's rivers run between quays and walls: shallows on their bends only, no islands)
+  for (const rv of ctx.rivers) rv.shallows = true;
   features.push(...ctx.rivers);
   // The rivers as bands nothing is built in (half their widest plus a bank), each stretch buffered and joined so a
   // bend never folds a band over itself, and a disc around a mouth where it flares into the sea

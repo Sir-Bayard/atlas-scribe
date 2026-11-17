@@ -28,9 +28,10 @@ export const WILD_SCALE = { fern: 0.95, log: 0.88, stump: 0.52, rock: 0.75, boul
 
 /**
  * Fills one woods area at battle size. area: the plan feature; r: its random stream; free(x, y, rad): whether a spot
- * is clear; season. Returns the items made (trees and props) and notes.
+ * is clear; season; cleared (layout/cleared.mjs, clearing): the wood thinned toward the town. Returns the items made
+ * (trees and props) and notes.
  */
-export function battleWoods({ area, r, free, season, keepOut = () => false }) {
+export function battleWoods({ area, r, free, season, keepOut = () => false, cleared = null }) {
   const poly = shapeToPolygon(area.shape, area.rot ?? 0);
   if (poly.length < 3 || !(polyArea(poly) > 0)) return { items: [], notes: [] };
   const kind = ["sparse", "open", "thick", "dense"].includes(area.density) ? area.density : "thick";
@@ -45,10 +46,14 @@ export function battleWoods({ area, r, free, season, keepOut = () => false }) {
   // (as many points as the wood can hold, up to settlement woods' cap, so a big wood has no bare patch)
   const pts = poissonInPolygon(poly, spacing, r.fork("points"), { max: 20000 });
   const leafy = area.mix?.bare ?? (winter ? 0.3 : 0.55);
-  let n = 0;
+  // (a cleared wood's own stream, so a wood not cleared lays the same trees as ever)
+  const cu = r.fork("cleared");
+  let n = 0, felled = 0;
   for (const [x, y] of pts) {
     const bare = tr.next() < leafy, u = tr.next(), rot = tr.next() * 360, variant = tr.int(8), size = tr.pick(["large", "large", "medium"]);
+    const ck = cleared ? [cu.next(), cu.next()] : null; // (drawn for every point, so one tree taken moves no other)
     if (open(x, y) || keepOut(x, y, 1) || !free(x, y, 0.6)) continue;
+    if (cleared && !cleared.keep(x, y, ck[0])) { const f = cleared.felled(++felled, x, y, ck[1]); if (f) items.push(f); continue; }
     n++;
     items.push(bare
       ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.5 + u * 0.5, rot, variant, wild: true }
@@ -57,7 +62,7 @@ export function battleWoods({ area, r, free, season, keepOut = () => false }) {
   // The ground between: each kind from its own stream, so one kind changing moves no other
   const a = polyArea(poly);
   // (what stands on the ground so far, so no two pieces lie on each other: { x, y, r })
-  const taken = items.filter((i) => i.kind === "tree").map((t) => ({ x: t.x, y: t.y, r: 0.4 }));
+  const taken = items.filter((i) => i.kind === "tree" || i.felled).map((t) => ({ x: t.x, y: t.y, r: t.felled ? 0.7 : 0.4 }));
   const clash = (x, y, rad) => taken.some((t) => Math.hypot(t.x - x, t.y - y) < t.r + rad);
   const per = (c) => Math.round((a / 100) * WILD.per100[c] * (kind === "sparse" ? 0.6 : 1));
   // Rocks in groups of three: a boulder and two smaller stones beside it (first, as the biggest)

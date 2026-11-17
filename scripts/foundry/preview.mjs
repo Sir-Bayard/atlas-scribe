@@ -6,6 +6,7 @@
 import { rerollable, rerollPlan, setLocked } from "../core/seeds.mjs";
 import { shapeToPolygon, pointInPolygon, distanceToPath } from "../core/geom.mjs";
 import { normalize, LABEL_SIZES } from "../core/plan.mjs";
+import { estimatePlots, BIG_PLOTS } from "../core/check.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
@@ -21,7 +22,8 @@ import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
 import { esc, note, FP, MOD, labelAttr } from "./util.mjs";
 import { overlaySVG, draftSVG, battleBoxSVG, underStyle } from "./overlay.mjs";
-import { quickDialog, openDialog, importDialog, confirmSaveOver, confirmDrop, confirmDraft } from "./plan-files-ui.mjs";
+import { regionPlan } from "../core/quick-region.mjs";
+import { quickDialog, openDialog, importDialog, confirmSaveOver, confirmDrop, confirmDraft, summaryDialog } from "./plan-files-ui.mjs";
 import { rememberWindow } from "../kit/window-memory.mjs";
 import { keyboardWindow } from "../kit/keyboard.mjs";
 import { storage } from "../kit/storage.mjs";
@@ -82,6 +84,7 @@ export class AtlasScribeApp extends Base {
       asPick: AtlasScribeApp.#onPick,
       asEverything: AtlasScribeApp.#onEverything,
       asFiles: AtlasScribeApp.#onFiles,
+      asSummary: AtlasScribeApp.#onSummary,
       asRedraw: AtlasScribeApp.#onRedraw,
       asCopy: AtlasScribeApp.#onCopy,
       asOutlines: AtlasScribeApp.#onOutlines,
@@ -93,6 +96,7 @@ export class AtlasScribeApp extends Base {
       asReset: AtlasScribeApp.#onReset,
       asDelete: AtlasScribeApp.#onDelete,
       asWallIn: AtlasScribeApp.#onWallIn,
+      asPlaceMap: AtlasScribeApp.#onPlaceMap,
       asPlan: AtlasScribeApp.#onPlan,
       asPin: AtlasScribeApp.#onPin,
       asUnder: AtlasScribeApp.#onUnder,
@@ -196,7 +200,8 @@ export class AtlasScribeApp extends Base {
       }
       return null;
     }
-    if (!this.#result && !this.#drawing && !this.#publishing) return this.#draw(); // after a scene is made, if painting
+    // (after a scene is made, if painting; a big plan still waits for Draw it)
+    if (!this.#result && !this.#drawing && !this.#publishing && estimatePlots(this.#plan) <= BIG_PLOTS) return this.#draw();
     return this.#result;
   }
 
@@ -237,6 +242,13 @@ export class AtlasScribeApp extends Base {
     this.#view = null;
     this.#sceneNotes = null;
     this.#keepDraft();
+    // (a plan that takes minutes to lay out waits for the word: Draw it)
+    const plots = estimatePlots(plan);
+    if (plots > BIG_PLOTS) {
+      this.#error = `This plan is big: about ${(Math.round(plots / 1000) * 1000).toLocaleString()} plots, a minute or more to draw.`;
+      await this.render({ force: true });
+      return null;
+    }
     return this.#draw();
   }
 
@@ -368,7 +380,7 @@ export class AtlasScribeApp extends Base {
   /** Bridges, fords and props: points that can be clicked, [{ id, type, at }]. A bridge is where it was drawn (moved onto its road). */
   #points() {
     const drawn = new Map((this.#result?.crossings ?? []).map((c) => [c.id, c.at]));
-    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop") && Array.isArray(f.at))
+    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop" || f?.type === "place") && Array.isArray(f.at))
       .map((f) => ({ id: f.id, type: f.type, at: drawn.get(f.id) ?? f.at }));
   }
 
@@ -464,17 +476,18 @@ export class AtlasScribeApp extends Base {
           <button type="button" data-action="asPlan" aria-label="Plan settings" data-tooltip-text="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
           <button type="button" data-action="asArt" data-tooltip-text="Art: folders, art you choose, filename rules" aria-label="Art"><i class="fa-solid fa-images"></i></button>
           <button type="button" data-action="asFiles"${labelAttr("Files: each plan's maps and backups")}><i class="fa-solid fa-folder-tree" aria-hidden="true"></i></button>
+          <button type="button" data-action="asSummary"${labelAttr("Summary: what the map holds, to copy into your notes")} ${this.#plan && !this.#working ? "" : "disabled"}><i class="fa-solid fa-list-ul" aria-hidden="true"></i></button>
         </div>
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asDraw" class="${this.#palette ? "as-on" : ""}" data-tooltip-text="Draw something new: a district, area, square, building, road, river, wall, bridge, prop or label" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-pen"></i> Draw</button>
-          ${this.#plan?.kind !== "battle" ? `<button type="button" data-action="asBattle" class="${this.#tool?.id === "battle" ? "as-on" : ""}" data-tooltip-text="Pick an area of this map to make a battle map of: its streets, water and notable buildings where they are here, its houses built again at battle size" ${this.#working || !this.#result ? "disabled" : ""}><i class="fa-solid fa-chess-board"></i> Battle map</button>` : ""}
+          ${this.#plan?.kind !== "battle" && this.#plan?.kind !== "region" ? `<button type="button" data-action="asBattle" class="${this.#tool?.id === "battle" ? "as-on" : ""}" data-tooltip-text="Pick an area of this map to make a battle map of: its streets, water and notable buildings where they are here, its houses built again at battle size" ${this.#working || !this.#result ? "disabled" : ""}><i class="fa-solid fa-chess-board"></i> Battle map</button>` : ""}
           <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll all</button>
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip-text="Back to the plan before the last change (Ctrl+Z)"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Undo</button>
           <button type="button" data-action="asRedo" ${this.#future.length && !this.#working ? "" : "disabled"} data-tooltip-text="The change Undo took back (Ctrl+Y)"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Redo</button>
         </div>
         ${this.#tool?.id === "battle" ? battleHTML(this.#battleState())
-          : this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working })
+          : this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working, kind: this.#plan?.kind ?? "settlement" })
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
@@ -1628,14 +1641,47 @@ export class AtlasScribeApp extends Base {
   /** Which Quick Start tab was used last (settlement or battle), shown first next time. */
   #quickTab = "settlement";
 
+  /**
+   * A region's place made a map of its own: a city, town, village or hamlet by Quick Start at its size, a castle by the
+   * battle map's Castle site, named as the place and seeded from the region and the place, so it comes out the same.
+   */
+  static async #onPlaceMap(event, target) {
+    const f = featureOf(this.#plan, target.dataset.id);
+    if (!f || this.#working || !(await this.#mayDiscard())) return;
+    const seed = Number(f.seed) || 1 + (Math.abs([...`${this.#plan.seed}:${f.id}`].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)) % 999999);
+    const before = this.#plan;
+    if (!(await this.#mayReplace(before))) return;
+    try {
+      const made = f.class === "castle" ? briefPlan({ site: "castle", seed, name: f.name ?? "" }) : this.#host.quick({ size: f.class, seed, ...(f.name ? { name: f.name } : {}), season: this.#plan.season });
+      await this.show(made.plan);
+      for (const n of made.notes ?? []) note.info(n);
+    } catch (e) {
+      note.error(e.message);
+    }
+  }
+
   /** Quick Start: a few choices in a dialog, then a new plan in the window (not saved until Save). */
   static async #onQuick() {
     if (this.#working || !(await this.#mayDiscard())) return;
     const before = this.#plan;
     const { LABELS } = this.#host.quickChoices;
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
-    const chosen = await quickDialog({ tab: this.#quickTab === "battle" ? "battle" : "settlement", seed, onTab: (t) => { this.#quickTab = t; } });
+    const chosen = await quickDialog({ tab: ["battle", "region"].includes(this.#quickTab) ? this.#quickTab : "settlement", seed, onTab: (t) => { this.#quickTab = t; } });
     if (!chosen) return;
+    // A region: its plan into the window
+    if (chosen.region) {
+      if (!(await this.#mayReplace(before))) return;
+      try {
+        const opts = { ...chosen.region };
+        if (!opts.name?.trim()) delete opts.name;
+        const { plan, notes } = regionPlan(opts);
+        await this.show(plan);
+        for (const n of notes) note.info(n);
+      } catch (e) {
+        note.error(e.message);
+      }
+      return;
+    }
     // A battle map: its plan from the brief, into the window (not saved until Save)
     if (chosen.battle) {
       if (!(await this.#mayReplace(before))) return;
@@ -1704,14 +1750,21 @@ export class AtlasScribeApp extends Base {
     const before = this.#plan;
     const text = await importDialog();
     if (!text) return;
-    const checked = this.#host.check(text);
+    // (a plan, a watabou export or a Universal VTT file, its image put under the sketch)
+    let imported;
+    try {
+      imported = await this.#host.importPlan(text);
+    } catch (e) {
+      return note.error(e.message);
+    }
+    const checked = this.#host.check(imported.plan);
     if (!checked.plan) return note.error(checked.problems[0]?.message ?? "AtlasScribe: that isn't a plan.");
     const errors = checked.problems.filter((p) => p.level === "error");
     if (errors.length) return note.error(`AtlasScribe: the plan has ${errors.length} error(s): ${errors.map((e) => e.message).join(" ")}`, { permanent: true });
     if (!(await this.#mayReplace(before))) return;
-    const { plan } = this.#host.read(text);
+    for (const n of imported.notes ?? []) note.info(`AtlasScribe: ${n}`);
     try {
-      await this.show(plan);
+      await this.show(imported.plan);
     } catch (e) {
       note.error(e.message);
     }
@@ -1877,6 +1930,16 @@ export class AtlasScribeApp extends Base {
 
   static #onFiles() {
     this.#host.openFiles?.().catch?.((e) => note.error(e.message));
+  }
+
+  /** The "as built" summary of the plan in the window, to read and copy. */
+  static async #onSummary() {
+    if (!this.#plan) return;
+    try {
+      await summaryDialog(await this.#host.summary(this.plan));
+    } catch (e) {
+      note.error(e.message);
+    }
   }
 
   /** Draws the plan again after a draw was stopped before any picture came. */

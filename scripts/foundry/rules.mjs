@@ -2,9 +2,8 @@
  * Game rules on a battle map: the adapter for the world's game system. AtlasScribe itself uses only Foundry's own
  * region behaviors (movement costs over banks, slopes and water; change level on stairs; a roof's surface), which any
  * system reads. An adapter adds what one system's rules understand, from the plain words in core/rules.mjs.
- * Pathfinder Second Edition's (rules/pf2e.mjs) comes with the module; another module can add one (registerRules, or
- * the "atlas-scribe.rules" hook at setup). The D&D 5e adapter (rules/dnd5e.mjs) is held back until it's checked in a
- * live world, so 5e gets Foundry's own rules.
+ * Pathfinder Second Edition's (rules/pf2e.mjs) and D&D Fifth Edition's (rules/dnd5e.mjs) come with the module;
+ * another module can add one (registerRules, or the "atlas-scribe.rules" hook at setup).
  *
  * An adapter is an object; every part is optional, and a part left out keeps Foundry's own:
  * - id, label: its name.
@@ -20,6 +19,7 @@
  *   the ground's heights is made with them in it, and a jump over a cliff's edge is left in the air where it drops.
  */
 import { pf2e } from "./rules/pf2e.mjs";
+import { dnd5e } from "./rules/dnd5e.mjs";
 import { MOD } from "./util.mjs";
 
 const SETTING = "gameRules";
@@ -28,7 +28,7 @@ const SETTING = "gameRules";
 export const CORE = Object.freeze({ id: "core", label: "Foundry's own" });
 
 /** The adapters by game system id. */
-const adapters = new Map([["pf2e", pf2e]]);
+const adapters = new Map([["pf2e", pf2e], ["dnd5e", dnd5e]]);
 
 /** Adds (or replaces) the adapter for a game system. Returns true when it was taken. */
 export function registerRules(systemId, adapter) {
@@ -41,7 +41,7 @@ export function registerRules(systemId, adapter) {
 export function registerRulesSetting() {
   game.settings.register(MOD, SETTING, {
     name: "Battle map rules",
-    hint: "The rules a battle map's regions follow. The game system's: PF2e's environments and climb checks, or another system's when a module adds it (any other system keeps Foundry's own). Foundry's own: only the movement costs and level changes every system reads. Takes effect when a scene is made or updated.",
+    hint: "The rules a battle map's regions follow. The game system's: PF2e's environments and climb checks, D&D 5e's difficult terrain, floors and falling, or another system's when a module adds it (any other system keeps Foundry's own). Foundry's own: only the movement costs and level changes every system reads. Takes effect when a scene is made or updated.",
     scope: "world",
     config: true,
     type: String,

@@ -39,7 +39,8 @@ import { terrainOf, edgeSpan, shiftRight, resample, iceShelves } from "./terrain
 import { battleWoods, rockfall, openRocks, WILD_PROPS, WILD_SCALE } from "./wild.mjs";
 import { buildingInteriors, parseRooms, ROOM } from "./rooms.mjs";
 import { lightsOf, mistOf, LIGHT_PROPS } from "./lights.mjs";
-import { readPlan, fixedFeatures, battleHeights, millsAndPlacing, spaceGrids, quays, townWalls, squares, boatsAndCranes, parksAndFarms, fillDistricts, fieldSystems, countryLanes, fillParks, wildTracks, woodsAndRocks, tidyUp, finishLayout } from "./phases/index.mjs";
+import { layoutRegion } from "./region.mjs";
+import { readPlan, fixedFeatures, battleHeights, millsAndPlacing, spaceGrids, quays, townWalls, squares, boatsAndCranes, parksAndFarms, fillDistricts, fieldSystems, countryLanes, fillParks, wildTracks, woodsAndRocks, tidyUp, finishLayout, underground, riverbeds } from "./phases/index.mjs";
 
 export const LAYOUT_VERSION = 9;
 
@@ -197,10 +198,13 @@ export function trimAtBuildings(streets, feet, ftPerSquare = 5) {
 export const PARAPET = { out: 0.24, rail: 0.07, wing: 1.6, wingTurn: 35 };
 
 export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
+  // (a region map has its own: places as markers, at a scale of miles)
+  if (rawPlan?.kind === "region") return layoutRegion(normalize(rawPlan), { onProgress });
   const ctx = { rawPlan, onProgress, cache };
   readPlan(ctx);
   fixedFeatures(ctx);
   battleHeights(ctx);
+  underground(ctx);
   millsAndPlacing(ctx);
   spaceGrids(ctx);
   quays(ctx);
@@ -214,6 +218,7 @@ export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   fillParks(ctx);
   wildTracks(ctx);
   woodsAndRocks(ctx);
+  riverbeds(ctx);
   tidyUp(ctx);
   return finishLayout(ctx);
 }

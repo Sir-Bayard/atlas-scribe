@@ -5,6 +5,9 @@
  */
 import { WorkerClient } from "./foundry/worker-client.mjs";
 import { upload, freeName, freeDir, ensureDir } from "./foundry/files.mjs";
+import { asBuilt, changesBetween, digestOf } from "./core/summary.mjs";
+import { importAny } from "./core/import.mjs";
+import { toUVTT } from "./core/uvtt.mjs";
 import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
 import { checkPlan } from "./core/check.mjs";
@@ -23,7 +26,8 @@ import { registerHeight } from "./foundry/height.mjs";
 import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
 import { MOD, note } from "./foundry/util.mjs";
 
-const worker = new WorkerClient();
+// (on the page instead when the Render in a worker setting is off: a browser or host where workers fail)
+const worker = new WorkerClient({ inPage: () => { try { return game.settings.get(MOD, "renderInWorker") === false; } catch { return false; } } });
 
 /** The job running now: { canceled }, or null. */
 let job = null;
@@ -54,6 +58,16 @@ function outputFolder() {
   const set = String(game.settings.get(MOD, "outputFolder") ?? "").trim().replace(/^\/+|\/+$/g, "");
   return set || `worlds/${game.world.id}/${MOD}`;
 }
+
+/** A folder setting under the Data folder, or (left empty) its folder in the output folder. */
+function folderSetting(key, under) {
+  const set = String(setting(key, "") ?? "").trim().replace(/^\/+|\/+$/g, "");
+  return set || `${outputFolder()}/${under}`;
+}
+/** A plan's id as a file name. */
+const safeId = (id) => String(id).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "plan";
+const backupFolder = () => folderSetting("backupFolder", "backups");
+const cacheFolder = () => folderSetting("cacheFolder", "cache");
 
 function requireGM() {
   if (!game.user.isGM) throw new Error("AtlasScribe: only a GM can do that");
@@ -91,10 +105,10 @@ function planOrThrow(input) {
   return checked;
 }
 
-/** { path, width, height, thumb?, overheads?, furniture?, mist?, levels? } for an image: from render's result, or measured from its file. */
+/** { path, width, height, thumb?, overheads?, furniture?, mist?, levels?, parts? } for an image: from render's result, or measured from its file. */
 async function imageInfo(image) {
   if (image && typeof image === "object" && image.path && image.width && image.height)
-    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null, levels: Array.isArray(image.levels) ? image.levels : null };
+    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null, levels: Array.isArray(image.levels) ? image.levels : null, parts: Array.isArray(image.parts) && image.parts.length ? image.parts : null };
   const path = typeof image === "string" ? image : image?.path;
   if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
   const res = await fetch(new URL(path, window.location.href));
@@ -103,6 +117,27 @@ async function imageInfo(image) {
   const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, furniture: null, mist: null, levels: null };
   bmp.close();
   return info;
+}
+
+/**
+ * A checked plan laid out as the one job, on a progress bar of its own (what: what the bar says it's doing); then(got,
+ * check), when given, runs in the same job on the layout. Returns then's result, or { layout, roles }.
+ */
+async function layOutAlone(plan, what, then = null) {
+  return exclusive(async (check) => {
+    const title = `AtlasScribe: ${what} ${plan.name ?? plan.id ?? "map"}`;
+    const bar = progressBar(title);
+    try {
+      const got = await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(0.9 * p, l) });
+      check();
+      const out = then ? await then(got, check) : got;
+      bar.done(`${title}: done`);
+      return out;
+    } catch (e) {
+      bar.done(e.canceled ? `${title}: canceled` : `${title}: failed (${e.message})`);
+      throw e;
+    }
+  });
 }
 
 /** Publishes a checked plan's image, with its own progress bar. */
@@ -126,7 +161,7 @@ async function publishChecked(plan, image, { scene, force }, check) {
       }
     }
     check();
-    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), layout, sceneId: scene, force, backups: backupSetting(), check, onProgress: (p, l) => bar.update(from + (1 - from) * p, l) });
+    const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), layout, sceneId: scene, force, backups: backupSetting(), backupFolder: backupFolder(), batch: setting("batchTag", "").trim() || null, check, onProgress: (p, l) => bar.update(from + (1 - from) * p, l) });
     if (lost) res.warnings.push(lost);
     bar.done(`${title}: ${res.created ? "created the scene" : "updated the scene"}${res.backup ? ` (backup: ${res.backup})` : ""}`);
     return res;
@@ -251,10 +286,31 @@ const api = {
     return app;
   },
 
+  /**
+   * What AtlasScribe made with a batch tag (the Batch tag setting's, else a plan's id): each scene marked with it, or
+   * holding documents marked with it, and how many of each kind. Returns [{ id, name, scene: true when the scene itself
+   * is marked, documents: { Tile: n, Wall: n, ... } }].
+   */
+  batch(tag) {
+    requireGM();
+    if (typeof tag !== "string" || !tag) throw new Error("AtlasScribe: batch(tag) needs the tag, a plan's id or the Batch tag setting's word");
+    const marked = (d) => d?.flags?.[MOD]?.batch === tag;
+    const out = [];
+    for (const sc of game.scenes) {
+      const documents = {};
+      for (const [type, coll] of [["Tile", sc.tiles], ["Wall", sc.walls], ["AmbientLight", sc.lights], ["Region", sc.regions], ["Drawing", sc.drawings], ["Level", sc.levels], ["AmbientSound", sc.sounds]]) {
+        const n = coll?.filter?.(marked).length ?? 0;
+        if (n) documents[type] = n;
+      }
+      if (marked(sc) || Object.keys(documents).length) out.push({ id: sc.id, name: sc.name, scene: marked(sc), documents });
+    }
+    return out;
+  },
+
   /** Opens the Files window (GM only): each saved plan's maps and backups, their sizes, and which a scene uses. */
   async openFiles() {
     requireGM();
-    return filesWindow.open({ folder: outputFolder(), plansDir: plansDir() });
+    return filesWindow.open({ folder: outputFolder(), plansDir: plansDir(), backupDir: backupFolder() });
   },
 
   /**
@@ -361,7 +417,7 @@ const api = {
         const { art, scale, missing, notes, from } = drawn?.all ? { art: {}, scale: {}, missing: [], notes: [], from: { folders: 0, nexus: 0 } } : await resolveArt(roles, (p, l) => bar.update(0.05 + 0.15 * p, l), { drawn: battle, check });
         check();
         // (the worker keeps the layout it made, so it isn't copied back to it; a worker started since gets it sent)
-        const paintIt = (which) => worker.run("paint", { ...which, art, scale, quality: plan.output.quality, drawn }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
+        const paintIt = (which) => worker.run("paint", { ...which, art, scale, quality: plan.output.quality, format: plan.output.format, drawn, partSide: largestImage() }, { onProgress: (p, l) => bar.update(0.2 + 0.75 * p, l) });
         const img = await paintIt({ layoutId }).catch((e) => (/no layout/.test(e.message) ? paintIt({ layout }) : Promise.reject(e)));
         // (a file that failed: left out from now on if it's still there, else looked for again next time)
         let broken = [];
@@ -373,20 +429,39 @@ const api = {
         if (img.overBudget?.length) notes.push(`${img.overBudget.length === 1 ? "An art file was" : `${img.overBudget.length} art files were`} left out: all the art together came to more than a map can hold in memory`);
         if (broken.length) notes.push(`${broken.length === 1 ? "An art file" : `${broken.length} art files`} couldn't be loaded and ${broken.length === 1 ? "was" : "were"} left out: ${broken.slice(0, 5).join(", ")}${broken.length > 5 ? ", ..." : ""}`);
         check();
-        let path = null, overheads = [], levels = [];
+        let path = null, overheads = [], levels = [], parts = [];
         if (save) {
           bar.update(0.97, "Saving");
           const dir = `${outputFolder()}/maps`;
           // (dated, so the Files window can tell maps apart; with another GM on, their own too, so two renders of the
           // same plan at once never pick the same name)
           const gms = game.users?.filter?.((u) => u.isGM && u.active).length ?? 1;
-          const name = await freeName(dir, `${plan.id ?? "map"}-${stamp()}${gms > 1 ? `-${game.user.id.slice(0, 4)}` : ""}`, "webp");
+          const name = await freeName(dir, `${plan.id ?? "map"}-${stamp()}${gms > 1 ? `-${game.user.id.slice(0, 4)}` : ""}`, img.blob?.type === "image/jpeg" ? "jpg" : "webp");
           path = await upload(dir, name, img.blob);
+          // A map bigger than the Largest image setting: its parts too, beside it in a folder named after it, for the
+          // scene to show as tiles
+          // (parts that fail to save are left off, said so: the scene then shows the whole map)
+          if (img.parts?.length) {
+            try {
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.(webp|jpg)$/, "")}-parts`)}`;
+              await ensureDir(sub);
+              const ext = img.blob?.type === "image/jpeg" ? "jpg" : "webp";
+              for (const [k, q] of img.parts.entries()) {
+                check();
+                bar.update(0.97, "Saving the map's parts");
+                parts.push({ path: await upload(sub, `part-${k + 1}.${ext}`, q.blob, { ready: true }), x: q.x, y: q.y, width: q.width, height: q.height });
+              }
+            } catch (e) {
+              if (e?.canceled) throw e;
+              parts = [];
+              notes.push(`The map's parts couldn't be saved (${e.message}), so its scene shows the whole map`);
+            }
+          }
           // A battle map's roofs and crowns go beside the map in a folder named after it (never one already there);
           // on a failure the error says where the map was saved
           if (img.overheads?.length) {
             try {
-              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-overhead`)}`;
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.(webp|jpg)$/, "")}-overhead`)}`;
               await ensureDir(sub);
               for (const [k, o] of img.overheads.entries()) {
                 check();
@@ -403,7 +478,7 @@ const api = {
           // at them
           if (img.drawnFiles?.length) {
             try {
-              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-drawn`)}`;
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.(webp|jpg)$/, "")}-drawn`)}`;
               await ensureDir(sub);
               const saved = new Map();
               for (const f of img.drawnFiles) { check(); saved.set(`drawn:${f.name}`, await upload(sub, f.name, f.blob, { ready: true })); }
@@ -417,7 +492,7 @@ const api = {
           // as the roofs are), for publish to make the scene's levels of
           if (img.levels?.length) {
             try {
-              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.webp$/, "")}-levels`)}`;
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.(webp|jpg)$/, "")}-levels`)}`;
               await ensureDir(sub);
               for (const l of img.levels) {
                 check();
@@ -430,15 +505,29 @@ const api = {
             }
           }
         }
+        // What changed since this plan's last saved map, from the digest kept in the cache folder (and this one kept)
+        let changed = [];
+        if (save && plan.id) {
+          try {
+            const digest = digestOf(layout), file = `${safeId(plan.id)}.json`;
+            const before = await fetch(`${cacheFolder()}/${file}`, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+            const names = Object.fromEntries(plan.features.filter((f) => f.name).map((f) => [f.id, f.name]));
+            changed = changesBetween(before, digest, { names });
+            await upload(cacheFolder(), file, new Blob([JSON.stringify(digest)], { type: "application/json" }));
+          } catch (e) {
+            console.warn(`${MOD} | couldn't keep what this map holds for next time: ${e.message}`); // (never at the cost of the map)
+          }
+        }
         const ms = Math.round(performance.now() - t0);
         bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
         result = {
-          path, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
+          path, parts, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           drawn: drawn ? drawn.look : null, // (a battle map's: what has no art is drawn, in this look)
           artFrom: from, // (how many roles each source filled: { folders, nexus })
-          notes: [...layout.notes.map((n) => n.message), ...notes],
+          notes: [...layout.notes.map((n) => n.message), ...notes, ...(changed.length ? [`Since this plan's last map: ${changed.join("; ")}`] : [])],
           artNotes: notes, // why art is missing (a folder that couldn't be read, say)
+          changed, // what changed since this plan's last saved map, in short lines (empty for the first)
           warnings: checked.problems.filter((p) => p.level === "warning").map((p) => p.message),
         };
         Object.defineProperty(result, "thumb", { value: img.thumb ?? null, enumerable: false }); // for publish
@@ -462,6 +551,115 @@ const api = {
   },
 
   /**
+   * A plan from what an import reads (GM only): an AtlasScribe plan, a watabou city or village export (JSON), or a
+   * Universal VTT file (.dd2vtt, .uvtt), whose image is saved in the output folder's imports and put under the sketch.
+   * opts: name, and for watabou ftPerUnit, ftPerSquare, flipY, buildings. Returns { plan, notes, from }.
+   */
+  async importPlan(input, opts = {}) {
+    requireGM();
+    // (a seed of its own unless given, so two imports never share a plan id, map names or a cache)
+    const got = importAny(input, { seed: 1 + Math.floor(Math.random() * 999999), ...opts });
+    if (!got.plan) throw new Error(`AtlasScribe: ${got.error}`);
+    let plan = got.plan;
+    // (checked before its image is saved, so a plan that can't be used leaves no file behind)
+    const checked = api.checkPlan(plan);
+    if (!checked.ok) throw new Error(`AtlasScribe: the imported plan has errors: ${checked.problems.filter((p) => p.level === "error").map((p) => p.message).join(" ")}`);
+    if (got.image) {
+      const bytes = Uint8Array.from(atob(got.image.base64), (c) => c.charCodeAt(0));
+      const ext = got.image.type === "image/png" ? "png" : got.image.type === "image/jpeg" ? "jpg" : "webp";
+      const dir = `${outputFolder()}/imports`;
+      const path = await upload(dir, await freeName(dir, plan.id, ext), new Blob([bytes], { type: got.image.type }));
+      const [W, H] = plan.size.squares;
+      plan = { ...plan, underlay: { path, rect: got.image.rect ?? [0, 0, W, H], opacity: 0.6 } };
+    }
+    return { plan, notes: got.notes ?? [], from: got.from };
+  },
+
+  /**
+   * A scene as a Universal VTT file, for other VTTs and map makers (GM only): its map image, walls, doors and lights.
+   * scene: a scene, its id or name; download: true saves it as a .dd2vtt file. Returns the file's object.
+   */
+  async exportUVTT(scene, { download = false } = {}) {
+    requireGM();
+    const sc = typeof scene === "string" ? game.scenes.get(scene) ?? game.scenes.getName(scene) : scene;
+    if (!sc) throw new Error("AtlasScribe: there's no such scene");
+    const src = sc.getFlag(MOD, "image") ?? sc.levels?.contents?.[0]?.background?.src ?? sc.background?.src;
+    if (!src) throw new Error(`AtlasScribe: "${sc.name}" has no map image to export`);
+    const res = await fetch(src);
+    if (!res.ok) throw new Error(`AtlasScribe: couldn't load "${sc.name}"'s map image (${res.status})`);
+    // (as PNG, which every program that reads these files takes)
+    const bmp = await createImageBitmap(await res.blob());
+    const cv = new OffscreenCanvas(bmp.width, bmp.height);
+    cv.getContext("2d").drawImage(bmp, 0, 0);
+    bmp.close?.();
+    const blob = await cv.convertToBlob({ type: "image/png" });
+    // (as base64, read by the browser in one go: a big map's image is tens of megabytes)
+    const base64 = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:[^,]*,/, "")); fr.onerror = () => no(fr.error); fr.readAsDataURL(blob); });
+    const ground = (sc.initialLevel ?? sc.levels?.contents?.[0])?.id ?? null;
+    const onGround = (d) => !ground || !(d.levels?.size ?? d.levels?.length) || [...d.levels].includes(ground);
+    const { sceneX, sceneY } = sc.dimensions;
+    const pps = sc.grid.size, size = [Math.round(sc.dimensions.sceneWidth / pps), Math.round(sc.dimensions.sceneHeight / pps)];
+    const out = toUVTT({
+      size, pps, origin: [sceneX, sceneY], ftPerSquare: sc.grid.distance ?? 5, image: base64,
+      // (the ground floor's only, the format having one; a secret door as the wall it looks like)
+      walls: sc.walls.filter(onGround).map((w) => ({ c: w.c, door: w.door === CONST.WALL_DOOR_TYPES.SECRET ? 0 : w.door, sight: w.sight, move: w.move })),
+      lights: sc.lights.filter(onGround).map((l) => ({ x: l.x, y: l.y, config: l.config })),
+    });
+    if (download) foundry.utils.saveDataToFile(JSON.stringify(out), "application/json", `${sc.name.replace(/[^\w .-]+/g, "_")}.dd2vtt`);
+    return out;
+  },
+
+  /**
+   * A plan laid out, with no painting (GM only): returns { layout, roles, notes }, roles the art roles its style needs
+   * and notes the layout's own (what couldn't be placed, say).
+   */
+  async build(input) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    const checked = planOrThrow(plan);
+    const { layout, roles } = await layOutAlone(checked.plan, "laying out");
+    return { layout, roles, notes: layout.notes.map((n) => n.message) };
+  },
+
+  /**
+   * The art a plan (or a list of roles) would be painted with (GM only): { art: { role: [url, ...] }, missing: [role],
+   * notes, from: { folders, nexus } }. With FA Nexus active it may download what it needs, as a render would.
+   */
+  async art(input) {
+    requireGM();
+    const find = async (roles, check = () => {}) => { const { art, missing, notes, from } = await resolveArt(roles, () => {}, { check }); return { art, missing, notes, from }; };
+    if (Array.isArray(input)) return exclusive((check) => find(input.filter((r) => typeof r === "string"), check));
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    return layOutAlone(planOrThrow(plan).plan, "finding the art for", ({ roles }, check) => find(roles, check));
+  },
+
+  /**
+   * The "as built" summary of a plan, or of the plan a scene was made from ({ scene: id or name }), in Markdown: its
+   * size, districts and what each holds, roads, water, walls, squares, parks and landmarks (GM only).
+   */
+  async summary(input) {
+    requireGM();
+    let plan = null, sceneName = null;
+    if (input && typeof input === "object" && "scene" in input && !input.features) {
+      const sc = game.scenes.get(input.scene) ?? game.scenes.getName(input.scene);
+      const id = sc?.getFlag(MOD, "plan");
+      if (!id) throw new Error(`AtlasScribe: "${input.scene}" isn't a scene AtlasScribe made`);
+      plan = await loadPlan(`${plansDir()}/${fileFor(id)}`).catch(() => {
+        throw new Error(`AtlasScribe: the plan ${fileFor(id)} that "${sc.name}" was made from isn't in ${plansDir()}`);
+      });
+      sceneName = sc.name;
+    } else {
+      const read = readPlan(input);
+      if (!read.plan) throw new Error(`AtlasScribe: ${read.error}`);
+      plan = read.plan;
+    }
+    const checked = planOrThrow(plan);
+    return layOutAlone(checked.plan, "summing up", ({ layout }) => asBuilt(normalize(plan), layout, { scene: sceneName }));
+  },
+
+  /**
    * Makes a rendered map into a scene (see foundry/publish.mjs): the image, the plan's grid and scene settings, a
    * thumbnail, the labels, and on a battle map its tiles, walls, regions, lights and levels. image: render's result
    * or a path. scene: a scene to update (only one AtlasScribe made, unless force; backed up first). Returns publish's
@@ -479,6 +677,7 @@ const plansDir = () => `${outputFolder()}/plans`;
 const host = {
   check: (input) => api.checkPlan(input),
   read: (input) => readPlan(input),
+  importPlan: (input) => api.importPlan(input),
   quick: (options) => quickPlan(options),
   quickChoices: { QUICK, LABELS: QUICK_LABELS, ANY: QUICK_ANY },
   folder: plansDir,
@@ -502,6 +701,7 @@ const host = {
   cancel: () => api.cancel(),
   openArt: () => api.openArt(),
   openFiles: () => api.openFiles(),
+  summary: (plan) => api.summary(plan),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
     try {
@@ -520,6 +720,24 @@ const runPreview = (p) => exclusive(async () => {
   return worker.run("preview", { plan: checked.plan, px: previewPx });
 });
 
+/** A setting's value, or dflt when it can't be read (before init, say). */
+function setting(key, dflt) {
+  try {
+    return game.settings.get(MOD, key) ?? dflt;
+  } catch {
+    return dflt;
+  }
+}
+
+/** The Largest image setting, in px (16384 when unset or unreadable: no map is split). */
+function largestImage() {
+  try {
+    return Number(game.settings.get(MOD, "largestImage")) || 16384;
+  } catch {
+    return 16384;
+  }
+}
+
 function theWindow() {
   theApp ??= new AtlasScribeApp({ run: runPreview, host });
   return theApp;
@@ -529,6 +747,22 @@ Hooks.once("init", () => {
   game.settings.register(MOD, "outputFolder", {
     name: "Output folder",
     hint: "Where AtlasScribe saves plans, maps, thumbnails and scene backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+  });
+  game.settings.register(MOD, "backupFolder", {
+    name: "Backup folder",
+    hint: "Where scene backups go, under the Data folder. Leave empty for the backups folder in the output folder.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+  });
+  game.settings.register(MOD, "cacheFolder", {
+    name: "Cache folder",
+    hint: "Where AtlasScribe keeps what it remembers between renders (what each plan's last map held, to say what changed). Leave empty for the cache folder in the output folder.",
     scope: "world",
     config: true,
     type: String,
@@ -557,6 +791,23 @@ Hooks.once("init", () => {
     type: ArtMenu,
     restricted: true,
   });
+  game.settings.register(MOD, "artNexus", {
+    name: "Art from FA Nexus",
+    hint: "Let AtlasScribe ask FA Nexus (when it's active) for the Forgotten Adventures files your art folders lack, downloading them as needed. Off: only your art folders are used.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+  game.settings.register(MOD, "artOrder", {
+    name: "Art order",
+    hint: "When a folder's own art (its manifest or a filename rule) and a Forgotten Adventures file both fit a role, which is used. Art you chose by hand in the Art window always comes first.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: { yours: "Your folders' own art first", fa: "Forgotten Adventures first" },
+    default: "yours",
+  });
   game.settings.register(MOD, "battleZoom", {
     name: "Battle map zoom",
     hint: "How big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight. The Battle map tool in the AtlasScribe window changes it too.",
@@ -583,6 +834,31 @@ Hooks.once("init", () => {
     type: Boolean,
     default: false,
   });
+  game.settings.register(MOD, "batchTag", {
+    name: "Batch tag",
+    hint: "A word every scene, tile, wall, light and region AtlasScribe makes is marked with, so a script can find them (api.batch). Leave empty to mark each with its plan's id.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+  });
+  game.settings.register(MOD, "largestImage", {
+    name: "Largest image",
+    hint: "A map wider or taller than this is also saved in parts, and its scene shows them as tiles: for graphics cards that can't show a big scene background.",
+    scope: "world",
+    config: true,
+    type: Number,
+    choices: { 16384: "16384 px (most graphics cards)", 8192: "8192 px", 4096: "4096 px" },
+    default: 16384,
+  });
+  game.settings.register(MOD, "renderInWorker", {
+    name: "Render in a worker",
+    hint: "Lay out and paint maps off Foundry's page, so it never freezes. Turn off only if maps fail to render in your browser; the page then pauses while a map is made.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
   registerHeight();
   registerRulesSetting();
 });
@@ -596,6 +872,12 @@ Hooks.on("getSceneContextOptions", (app, options) => {
     icon: `<i class="fa-solid fa-map"></i>`,
     condition: (li) => !!sceneOf(li)?.getFlag(MOD, "plan"),
     callback: (li) => api.openPlan(sceneOf(li)).catch((e) => note.error(e.message)),
+  });
+  options.push({
+    name: "Export as Universal VTT",
+    icon: `<i class="fa-solid fa-file-export"></i>`,
+    condition: (li) => !!sceneOf(li)?.getFlag(MOD, "image"),
+    callback: (li) => api.exportUVTT(sceneOf(li), { download: true }).catch((e) => note.error(e.message)),
   });
 });
 

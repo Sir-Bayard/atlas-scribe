@@ -1,6 +1,6 @@
 // One step of building on a district's plots (lots/build.mjs, buildOnLots): ctx holds what the steps share.
 import { USE_INFO } from "../../uses.mjs";
-import { distToSeg, joinBounds, mergeCollinear, partCorners } from "../build.mjs";
+import { cleanRing, distToSeg, joinBounds, mergeCollinear, partCorners } from "../build.mjs";
 import { pointInPolygon } from "../../geom.mjs";
 
 /**
@@ -49,5 +49,7 @@ export function yardsAndFences(ctx) {
   }
   // Neighbors' fences on the same line become one fence (their pieces overlap with staggered ends otherwise)
   out.bounds = joinBounds(mergeCollinear(out.bounds));
+  // Each building's outline cleaned once, where it's made: no corner twice, no spike
+  for (const h of [...out.houses, ...out.outbuildings]) if (Array.isArray(h.building?.shape)) h.building.shape = cleanRing(h.building.shape);
   return out;
 }

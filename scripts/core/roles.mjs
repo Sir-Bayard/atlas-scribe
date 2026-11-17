@@ -59,6 +59,8 @@ const COLORS = {
   "prop.ship": "#6b4f36",
   "prop.sail": "#e6dfcc",
   "prop.cross": "#a39d92",
+  "prop.maypole": "#9a7a52",
+  "prop.sundial": "#a8a298",
   "prop.waterwheel": "#6b4f36",
   "prop.reeds": "#6d6440",
   "prop.lily": "#4f7a3a",

@@ -20,8 +20,10 @@ const WORDS = {
   size: { small: ["small", "tiny", "little", "cramped"], medium: ["medium", "medium-sized", "mid-sized", "modest"], large: ["large", "big", "huge", "vast", "wide", "sprawling", "spacious", "grand"] },
   towers: { roofed: ["roofed towers", "roofed tower", "tower roofs", "conical roofs", "cone roofs", "pointed roofs", "spires", "spire"], open: ["battlements", "crenellated", "crenelated", "crenellations", "open towers", "open tower"] },
 };
-/** Words that name the site: a wilderness, a camp, a street or a castle. */
-const SITE_WORDS = { wilderness: ["wilderness", "wild", "wilds"], camp: ["camp", "encampment", "bivouac", "tents", "tent"], street: ["street", "streets", "quarter", "square"], castle: ["castle", "fort", "fortress", "stronghold", "citadel", "bailey", "curtain wall", "ramparts", "rampart"] };
+/** Words that name the site: a wilderness, a camp, a street, a castle, a cave or a dungeon. */
+/** Words for what's underground that can also be part of a building or a castle. */
+const UNDER_PARTS = ["vault", "crypt", "undercroft", "lair", "grotto"];
+const SITE_WORDS = { wilderness: ["wilderness", "wild", "wilds"], camp: ["camp", "encampment", "bivouac", "tents", "tent"], street: ["street", "streets", "quarter", "square"], castle: ["castle", "fort", "fortress", "stronghold", "citadel", "bailey", "curtain wall", "ramparts", "rampart"], cave: ["cave", "caves", "cavern", "caverns", "grotto", "lair"], dungeon: ["dungeon", "dungeons", "crypt", "catacomb", "catacombs", "vault", "undercroft"] };
 /** A castle's size from its own word, when no size is said: a fort small, a fortress or great castle large. */
 const CASTLE_SIZE_WORDS = { small: ["fort", "small castle"], large: ["fortress", "great castle", "great fortress", "citadel"] };
 /** Scattered things, and how much. */
@@ -63,8 +65,9 @@ export function readDescription(text = "") {
   /** Every place a phrase occurs: [{ at, end }]. */
   // (words inside a quoted name aren't read as anything else: "The Night Market" isn't night)
   const find = (p) => [...lower.matchAll(pattern(p))].map((m) => ({ at: m.index, end: m.index + m[0].length })).filter((m) => !inName(m));
-  // (a size said of a road or water, "a wide road", "a big river", isn't the map's or the building's)
-  const ofWay = (m) => /^\s+(?:dirt\s+|stone\s+|old\s+)?(?:road|roads|street|streets|lane|track|path|highway|river|stream|creek|brook|pond|lake)\b/.test(lower.slice(m.end, m.end + 24));
+  // (a size said of a road, water or a dungeon's passages, "a wide road", "a big river", "wide corridors", isn't the
+  // map's or the building's)
+  const ofWay = (m) => /^\s+(?:dirt\s+|stone\s+|old\s+)?(?:road|roads|street|streets|lane|track|path|highway|river|stream|creek|brook|pond|lake|corridor|corridors|passage|passages|tunnel|tunnels)\b/.test(lower.slice(m.end, m.end + 24));
   /** The first value of a group whose words occur, marking them read; null if none. */
   const first = (group) => {
     let best = null;
@@ -120,7 +123,12 @@ export function readDescription(text = "") {
   const streetWords = mentions(SITE_WORDS.street);
   // (a castle's words make a castle, whatever else is said: its towers, yard and keep are its own)
   const castle = mentions(SITE_WORDS.castle);
-  if (castle) { brief.site = "castle"; mark(SITE_WORDS.castle); }
+  // (a cave or dungeon is underground: its words win, as a castle's do; but a vault, a crypt, an undercroft or a lair
+  // can be part of a building or castle said, "an inn with a wine vault", so those make one only on their own)
+  const below = (words) => mentions(words.filter((w) => !UNDER_PARTS.includes(w))) || (!use && !castle && mentions(words.filter((w) => UNDER_PARTS.includes(w))));
+  if (below(SITE_WORDS.dungeon)) { brief.site = "dungeon"; mark(SITE_WORDS.dungeon); }
+  else if (below(SITE_WORDS.cave)) { brief.site = "cave"; mark(SITE_WORDS.cave); }
+  else if (castle) { brief.site = "castle"; mark(SITE_WORDS.castle); }
   else if (camp) { brief.site = "camp"; mark(SITE_WORDS.camp); }
   else if (streetWords || (place && !use)) { brief.site = "street"; mark(SITE_WORDS.street); }
   // (a wilderness said outright wins over a building word: a wilderness map has no building)
@@ -129,8 +137,14 @@ export function readDescription(text = "") {
   for (const k of ["season", "time", "weather", "ground"]) { const v = first(WORDS[k]); if (v) brief[k] = v; }
   if (!brief.site && (brief.ground || mentions(Object.values(WORDS.features).flat()))) brief.site = "wilderness";
   if (brief.site) chip("site", brief.site, BRIEF_LABELS.site[brief.site]);
+  // (a cave's open ground, a dungeon's corridors, from their own words)
+  if (brief.site === "cave") {
+    const o = mentions(["tight", "cramped", "narrow", "twisting"]) ? "tight" : mentions(["wide", "vast", "huge", "open caverns", "wide open", "great caverns"]) ? "open" : null;
+    if (o) { brief.underground = { ...(brief.underground ?? {}), openness: o }; mark(["tight", "cramped", "narrow", "twisting", "wide", "vast", "huge", "open caverns", "wide open", "great caverns"]); chip("underground.openness", o, BRIEF_LABELS.openness[o]); }
+  }
+  if (brief.site === "dungeon" && mentions(["wide corridors", "wide halls", "broad corridors"])) { brief.underground = { ...(brief.underground ?? {}), corridors: "wide" }; mark(["wide corridors", "wide halls", "broad corridors", "corridors", "halls"]); chip("underground.corridors", "wide", BRIEF_LABELS.corridors.wide); }
   const skipped = [];
-  if (place && brief.site !== "street") skipped.push({ label: place, why: brief.site === "camp" ? "A camp stands in the country" : brief.site === "castle" ? "A castle stands on its own" : "A building by a road stands on its own: pick Village or town street for a street" });
+  if (place && brief.site !== "street") skipped.push({ label: place, why: brief.site === "camp" ? "A camp stands in the country" : brief.site === "castle" ? "A castle stands on its own" : brief.site === "cave" || brief.site === "dungeon" ? "It's underground" : "A building by a road stands on its own: pick Village or town street for a street" });
   if (brief.weather === "snow" && !brief.season) brief.season = "winter";
 
   // Size: of the building when there is one ("a wide open tavern area", "a big inn"), else of the map

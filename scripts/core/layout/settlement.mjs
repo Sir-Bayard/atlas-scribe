@@ -56,9 +56,9 @@ export function fillFarmstead({ area, r, free, addBuilding, items }) {
  * Woods: groves of trees whose crowns touch. Trees are spread by Poisson-disk sampling (Bridson 2007) where a noise
  * is high enough, its threshold set so the area holds about the number asked for (else one per 2.4 square squares).
  * Points are laid out before anything else is checked, so another district's things can remove trees but never move
- * the rest. mix gives each species' share.
+ * the rest. mix gives each species' share. cleared (layout/cleared.mjs, clearing): the wood thinned toward the town.
  */
-export function fillWoods({ area, r, free, items, winter = false }) {
+export function fillWoods({ area, r, free, items, winter = false, cleared = null }) {
   if (area.trees === 0) return []; // a wood with no trees asked for: open ground
   const poly = shapeToPolygon(area.shape, area.rot ?? 0);
   if (poly.length < 3) return [];
@@ -66,7 +66,7 @@ export function fillWoods({ area, r, free, items, winter = false }) {
   if (!(a > 0)) return [];
   // Sparse, open and dense woods each have their own character (a tree count, or thick, the groves below)
   const counted = Number.isFinite(area.trees) && area.trees > 0;
-  if (!counted && (area.density === "sparse" || area.density === "open" || area.density === "dense")) return fillCharacter({ area, poly, r, free, items, winter });
+  if (!counted && (area.density === "sparse" || area.density === "open" || area.density === "dense")) return fillCharacter({ area, poly, r, free, items, winter, cleared });
   // A tree count, else the density (trees a square square) times the area: so a wood redrawn bigger keeps its look
   const want = Math.min(MAX_TRIES, Number.isFinite(area.trees) && area.trees > 0 ? area.trees : a * WOOD_DENSITY.thick);
   const spacing = 0.85; // squares between trees in a grove: crowns overlap a little
@@ -91,10 +91,14 @@ export function fillWoods({ area, r, free, items, winter = false }) {
   // Big enough to read as canopies (the smallest fir art reads as specks at map scale); the leafy share by season
   const bareShare = area.mix?.bare ?? leafyShare("thick", winter);
   const sizes = ["large", "medium", "medium"];
-  let n = 0;
+  // (a cleared wood's own stream, so a wood not cleared lays the same trees as ever)
+  const cu = r.fork("cleared");
+  let n = 0, felled = 0;
   for (const [x, y] of pts) {
     const bare = tr.next() < bareShare, size = tr.pick(sizes), u = tr.next(), rot = tr.next() * 360, variant = tr.int(8);
+    const ck = cleared ? [cu.next(), cu.next()] : null; // (drawn for every point, so one tree taken moves no other)
     if (!free(x, y, 0.3)) continue;
+    if (cleared && !cleared.keep(x, y, ck[0])) { const f = cleared.felled(++felled, x, y, ck[1]); if (f) items.push(f); continue; }
     n++;
     items.push(bare
       ? { kind: "tree", id: `${area.id}/t${n}`, from: area.id, x, y, species: "bare", size: null, s: 0.7 + u * 0.3, rot, variant }
@@ -111,7 +115,7 @@ export function fillWoods({ area, r, free, items, winter = false }) {
  * Points are laid out before checking for anything else, as in the groves, so other features remove trees without
  * moving the rest.
  */
-function fillCharacter({ area, poly, r, free, items, winter }) {
+function fillCharacter({ area, poly, r, free, items, winter, cleared }) {
   const kind = area.density;
   const spacing = kind === "sparse" ? 3.2 : kind === "open" ? 1.9 : 0.78;
   let keep = () => true;
@@ -147,10 +151,14 @@ function fillCharacter({ area, poly, r, free, items, winter }) {
   const tr = r.fork("trees");
   const bareShare = area.mix?.bare ?? leafyShare(kind, winter);
   const sizes = kind === "open" ? ["large", "large", "medium"] : ["large", "medium", "medium"];
-  let n = 0;
+  // (a cleared wood's own stream, so a wood not cleared lays the same trees as ever)
+  const cu = r.fork("cleared");
+  let n = 0, felled = 0;
   for (const [x, y] of pts) {
     const bare = tr.next() < bareShare, size = tr.pick(sizes), u = tr.next(), rot = tr.next() * 360, variant = tr.int(8);
+    const ck = cleared ? [cu.next(), cu.next()] : null; // (drawn for every point, so one tree taken moves no other)
     if (!free(x, y, 0.3)) continue;
+    if (cleared && !cleared.keep(x, y, ck[0])) { const f = cleared.felled(++felled, x, y, ck[1]); if (f) items.push(f); continue; }
     n++;
     // Open woodland's trees are big, spreading ones; sparse ground's smaller
     const leafy = kind === "open" ? 0.8 + u * 0.3 : kind === "sparse" ? 0.55 + u * 0.3 : 0.65 + u * 0.3;
@@ -177,8 +185,8 @@ function polyArea(poly) {
   return Math.abs(s / 2);
 }
 
-/** A hedgerow: small bushes every step squares along the wall's path. */
-export function hedgeBushes({ wall, r, items, step = 0.4, scale = [0.7, 0.3] }) {
+/** A hedgerow: small bushes every step squares along the wall's path; free(x, y, rad), when given, leaves out those on something. */
+export function hedgeBushes({ wall, r, items, step = 0.4, scale = [0.7, 0.3], free = null }) {
   const pts = wall.path;
   let n = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -186,7 +194,9 @@ export function hedgeBushes({ wall, r, items, step = 0.4, scale = [0.7, 0.3] }) 
     const l = Math.hypot(bx - ax, by - ay);
     for (let t = 0; t < l; t += step) {
       n++;
-      items.push({ kind: "prop", id: `${wall.id}/b${n}`, from: wall.from ?? wall.id, class: "bush", x: ax + ((bx - ax) * t) / l + (r.next() - 0.5) * 0.15, y: ay + ((by - ay) * t) / l + (r.next() - 0.5) * 0.15, scale: scale[0] + r.next() * scale[1], rot: r.next() * 360, variant: r.int(8) });
+      const b = { kind: "prop", id: `${wall.id}/b${n}`, from: wall.from ?? wall.id, class: "bush", x: ax + ((bx - ax) * t) / l + (r.next() - 0.5) * 0.15, y: ay + ((by - ay) * t) / l + (r.next() - 0.5) * 0.15, scale: scale[0] + r.next() * scale[1], rot: r.next() * 360, variant: r.int(8) };
+      // (a bush where a building or anything else already stands is left out; the rest stay where they are)
+      if (!free || free(b.x, b.y, 0.2)) items.push(b);
     }
   }
 }
@@ -199,15 +209,16 @@ export function groundPatches(r, W, H) {
 
 /**
  * A park by its style. "green" (the default): open grass, big trees in groups around its edge and a few in the open,
- * trodden paths from where the roads meet it to near its middle. "formal": a garden square to its rot, gravel paths
- * around and across it, a round basin, four hedged beds and avenues of trees. Clipped to the area. Returns { surface:
- * { poly, style, paths, basin }, trees, beds, hedges }. Squares; ftPerSquare for widths in feet.
+ * trodden paths from where the roads meet it to near its middle, and now and then a pond, a well, a maypole or a
+ * market cross. "formal": a garden square to its rot, built from parts its seed picks (FORMAL): a layout of gravel
+ * walks, a center, beds, their edging and trees. Clipped to the area. Returns { surface: { poly, style, paths, basin },
+ * trees, beds, hedges, walls, props, design }. Squares; ftPerSquare for widths in feet.
  */
 export function fillPark({ area, r, roads = [], ftPerSquare }) {
   const sq = (ft) => ft / ftPerSquare;
   const poly = shapeToPolygon(area.shape, area.rot ?? 0);
   const style = area.style === "formal" ? "formal" : "green";
-  const out = { surface: { poly, style, paths: [], basin: null }, trees: [], beds: [], hedges: [] };
+  const out = { surface: { poly, style, paths: [], basin: null }, trees: [], beds: [], hedges: [], walls: [], props: [], design: null };
   if (poly.length < 3) return out;
   const inside = (p) => pointInPolygon(p, poly);
   const edgeDist = (p) => Math.min(...poly.map((q, i) => distSeg(p, q, poly[(i + 1) % poly.length])));
@@ -283,16 +294,40 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
       const tt = r.fork("tree", x.toFixed(2), y.toFixed(2));
       out.trees.push({ x, y, s: 0.6 + tt.next() * 0.25, rot: tt.next() * 360, variant: tt.int(8) });
     }
+    // Now and then something on it (its own fork, so it moves nothing else): a pond off the paths, or a well, a
+    // maypole or a market cross where they meet; the trees keep off it
+    const fr = r.fork("feature");
+    const roll = fr.next(), what = GREEN_FEATURES.includes(area.feature) ? area.feature : (roll < 0.15 ? "pond" : roll < 0.3 ? "well" : roll < 0.45 ? "maypole" : roll < 0.6 ? "cross" : "none");
+    out.design = { feature: what };
+    if (what === "pond") {
+      const rad = Math.min(bx1 - bx0, by1 - by0) * fr.range(0.1, 0.16);
+      for (let t = 0; t < 30; t++) {
+        const p = [bx0 + fr.next() * (bx1 - bx0), by0 + fr.next() * (by1 - by0)];
+        if (!inside(p) || edgeDist(p) < rad + 0.8 || nearPath(p, rad + 0.3)) continue;
+        out.surface.basin = { at: p, radius: rad, rim: false };
+        break;
+      }
+      if (out.surface.basin) { const { at, radius } = out.surface.basin; out.trees = out.trees.filter((t) => Math.hypot(t.x - at[0], t.y - at[1]) > radius + 0.6); }
+    } else if (what !== "none" && inside(hubIn)) {
+      // (its size in feet, never too small to see on an overview: a well 8 ft, a maypole's ring of ribbons 18, a cross 10)
+      const size = Math.max(0.35, sq({ well: 8, maypole: 18, cross: 10 }[what]));
+      out.props.push({ class: what, x: hubIn[0], y: hubIn[1], rot: fr.next() * 360, variant: fr.int(8), size });
+      out.trees = out.trees.filter((t) => Math.hypot(t.x - hubIn[0], t.y - hubIn[1]) > size * (what === "maypole" ? 1.2 : 0.8) + 0.8);
+    }
     return out;
   }
 
-  // Formal: laid out in the area's own frame (turned by rot), then turned back and clipped to the shape
+  // Formal: laid out in the area's own frame (turned by rot), then turned back and clipped to the shape. Each part from
+  // its own fork, so a plan's choice of one part leaves the others as they were
   const rot = area.rot ?? 0;
   const local = poly.map((p) => rotateAbout(p, c, -rot));
   const [x0, y0, x1, y1] = bbox(local);
   const W = x1 - x0, H = y1 - y0;
   const along = W >= H; // the long walk runs along the longer side
   const back = (p) => rotateAbout(p, c, rot);
+  const pick = (part) => { const list = FORMAL[part], given = area[part === "trees" ? "planting" : part]; return list.includes(given) ? given : list[r.fork("design", part).int(list.length)]; };
+  const design = { layout: pick("layout"), center: pick("center"), beds: pick("beds"), edging: pick("edging"), trees: pick("trees") };
+  out.design = design;
   const pw = sq(8), m = Math.min(W, H) * 0.08 + pw / 2;
   const clipLine = (pts) => {
     // The parts of a straight-segment path that lie inside the shape, finely sampled
@@ -308,38 +343,135 @@ export function fillPark({ area, r, roads = [], ftPerSquare }) {
     }
     return runs.filter((q) => q.length >= 2);
   };
-  const addPath = (pts) => { for (const run of clipLine(pts.map(back))) out.surface.paths.push({ path: run, width: pw, surface: "gravel" }); };
+  const walks = []; // in the local frame: [[x, y], ...] polylines, for beds and trees to keep off
+  const addPath = (pts, width = pw) => { walks.push({ pts, width }); for (const run of clipLine(pts.map(back))) out.surface.paths.push({ path: run, width, surface: "gravel" }); };
+  const ring = (cx, cy, rad, n = 24) => Array.from({ length: n + 1 }, (_, k) => [cx + rad * Math.cos((2 * Math.PI * k) / n), cy + rad * Math.sin((2 * Math.PI * k) / n)]);
   const lx0 = x0 + m, lx1 = x1 - m, ly0 = y0 + m, ly1 = y1 - m, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-  addPath([[lx0, ly0], [lx1, ly0], [lx1, ly1], [lx0, ly1], [lx0, ly0]]); // the walk round
-  addPath([[x0, my], [x1, my]]); // the cross walks, out to the edge
-  addPath([[mx, y0], [mx, y1]]);
   const br = Math.min(W, H) * 0.12;
-  if (inside(back([mx, my]))) out.surface.basin = { at: back([mx, my]), radius: br };
-  // Four beds between the walks, each hedged
-  const g = pw / 2 + 0.25, gi = Math.max(g, br * 0.72 + 0.3); // the inner sides stand back from the basin
-  for (const [ax, ay, bx2, by2] of [[lx0 + g, ly0 + g, mx - gi, my - gi], [mx + gi, ly0 + g, lx1 - g, my - gi], [lx0 + g, my + gi, mx - gi, ly1 - g], [mx + gi, my + gi, lx1 - g, ly1 - g]]) {
-    if (bx2 - ax < 0.6 || by2 - ay < 0.6) continue;
-    const corners = [[ax, ay], [bx2, ay], [bx2, by2], [ax, by2]].map(back);
-    if (!corners.every(inside)) continue;
-    const bc = back([(ax + bx2) / 2, (ay + by2) / 2]);
-    out.beds.push({ cx: bc[0], cy: bc[1], w: bx2 - ax, d: by2 - ay, rot, strip: true });
-    out.hedges.push([...corners, corners[0]]);
+  addPath([[lx0, ly0], [lx1, ly0], [lx1, ly1], [lx0, ly1], [lx0, ly0]]); // the walk round
+  const canal = design.layout === "canal";
+  // The walks inside it
+  if (design.layout === "quartered" || design.layout === "concentric") {
+    addPath([[x0, my], [x1, my]]);
+    addPath([[mx, y0], [mx, y1]]);
   }
-  // Avenues: trees either side of the long walk, clear of the basin
-  const step = 1.3, off = pw / 2 + 0.55;
-  if (along) {
-    for (let x = lx0 + step / 2; x <= lx1; x += step) for (const s of [-1, 1]) {
-      const p = back([x, my + s * off]);
-      if (Math.abs(x - mx) > br + 0.8 && inside(p) && edgeDist(p) > 0.3) tree(p[0], p[1], 0.42 + tr.next() * 0.08);
+  if (design.layout === "concentric") {
+    const k = 0.55, ix0 = mx - ((lx1 - lx0) / 2) * k, ix1 = mx + ((lx1 - lx0) / 2) * k, iy0 = my - ((ly1 - ly0) / 2) * k, iy1 = my + ((ly1 - ly0) / 2) * k;
+    addPath([[ix0, iy0], [ix1, iy0], [ix1, iy1], [ix0, iy1], [ix0, iy0]], pw * 0.8);
+  }
+  if (design.layout === "saltire") {
+    addPath([[lx0, ly0], [lx1, ly1]]);
+    addPath([[lx1, ly0], [lx0, ly1]]);
+  }
+  if (design.layout === "goose-foot") {
+    // (three walks fanning from the middle of one short side, the middle one on the long axis)
+    const [o, far] = along ? [[x0, my], lx1] : [[mx, y0], ly1];
+    if (along) for (const dy of [ly0 + (ly1 - ly0) * 0.15, my, ly1 - (ly1 - ly0) * 0.15]) addPath([o, [far, dy]]);
+    else for (const dx of [lx0 + (lx1 - lx0) * 0.15, mx, lx1 - (lx1 - lx0) * 0.15]) addPath([o, [dx, far]]);
+  }
+  if (design.layout === "compartments") {
+    // (six or nine beds in a grid of walks)
+    const cols = along ? 3 : 2 + r.fork("design", "grid").int(2), rows = along ? 2 + r.fork("design", "grid").int(2) : 3;
+    for (let i = 1; i < cols; i++) { const x = lx0 + ((lx1 - lx0) * i) / cols; addPath([[x, ly0], [x, ly1]], pw * 0.8); }
+    for (let j = 1; j < rows; j++) { const y = ly0 + ((ly1 - ly0) * j) / rows; addPath([[lx0, y], [lx1, y]], pw * 0.8); }
+  }
+  if (canal) {
+    // (a long canal on the long axis, a walk either side)
+    const cw = Math.max(0.6, Math.min(W, H) * 0.14), cl = (along ? lx1 - lx0 : ly1 - ly0) * 0.7;
+    const rect = along ? [[mx - cl / 2, my - cw / 2], [mx + cl / 2, my - cw / 2], [mx + cl / 2, my + cw / 2], [mx - cl / 2, my + cw / 2]] : [[mx - cw / 2, my - cl / 2], [mx + cw / 2, my - cl / 2], [mx + cw / 2, my + cl / 2], [mx - cw / 2, my + cl / 2]];
+    const worldRect = rect.map(back);
+    if (worldRect.every(inside)) out.surface.basin = { at: back([mx, my]), radius: cw / 2, poly: worldRect };
+    const off = cw / 2 + pw / 2 + 0.15;
+    if (along) for (const s2 of [-1, 1]) addPath([[lx0, my + s2 * off], [lx1, my + s2 * off]], pw * 0.8);
+    else for (const s2 of [-1, 1]) addPath([[mx + s2 * off, ly0], [mx + s2 * off, ly1]], pw * 0.8);
+  }
+  // The center (the canal is its own)
+  let keepR = 0; // how far beds and trees keep from the middle
+  if (!canal && inside(back([mx, my]))) {
+    const at = back([mx, my]);
+    if (design.center === "basin") { out.surface.basin = { at, radius: br }; keepR = br; }
+    else if (design.center === "rond-point") { addPath(ring(mx, my, br * 0.9), pw * 0.8); out.props.push({ class: "statue", x: at[0], y: at[1], rot: rot + 90, variant: r.fork("design", "statue").int(8), size: Math.max(0.35, sq(8)) }); keepR = br * 0.9 + pw / 2; }
+    else {
+      const size = { fountain: Math.max(0.8, br * 1.6), statue: Math.max(0.35, sq(8)), sundial: Math.max(0.3, sq(5)) }[design.center];
+      addPath(ring(mx, my, size * 0.5 + 0.35), pw * 0.7);
+      out.props.push({ class: design.center, x: at[0], y: at[1], rot: rot + 90, variant: r.fork("design", "center").int(8), size });
+      keepR = size * 0.5 + 0.35 + pw / 2;
     }
-  } else {
-    for (let y = ly0 + step / 2; y <= ly1; y += step) for (const s of [-1, 1]) {
-      const p = back([mx + s * off, y]);
-      if (Math.abs(y - my) > br + 0.8 && inside(p) && edgeDist(p) > 0.3) tree(p[0], p[1], 0.42 + tr.next() * 0.08);
+  }
+  // The beds: the ground between the walks, found on a grid in the local frame (clear of every walk and the center)
+  const clearOfWalks = (p, pad) => walks.every((w) => w.pts.every((q, i) => !i || distSeg(p, w.pts[i - 1], q) >= w.width / 2 + pad)) && Math.hypot(p[0] - mx, p[1] - my) >= keepR + pad && (!out.surface.basin?.poly || !pointInPolygon(back(p), out.surface.basin.poly));
+  const cell = 0.5, open = [];
+  for (let x = lx0 + cell / 2; x < lx1; x += cell) for (let y = ly0 + cell / 2; y < ly1; y += cell) if (clearOfWalks([x, y], 0.3) && inside(back([x, y])) && edgeDist(back([x, y])) > 0.3) open.push([x, y]);
+  // (the open cells grouped into rectangles: each run of open cells across, grown downward while the run stays open)
+  const key = (p) => `${Math.round(p[0] / cell)}:${Math.round(p[1] / cell)}`, free = new Set(open.map(key));
+  const beds = [];
+  for (const p of open) {
+    if (!free.has(key(p))) continue;
+    let wx = 1; while (free.has(key([p[0] + wx * cell, p[1]]))) wx++;
+    let hy = 1; while ([...Array(wx).keys()].every((i) => free.has(key([p[0] + i * cell, p[1] + hy * cell])))) hy++;
+    for (let i = 0; i < wx; i++) for (let j = 0; j < hy; j++) free.delete(key([p[0] + i * cell, p[1] + j * cell]));
+    if (wx * hy >= 4 && wx >= 2 && hy >= 2) beds.push({ x0: p[0] - cell / 2, y0: p[1] - cell / 2, x1: p[0] + (wx - 0.5) * cell, y1: p[1] + (hy - 0.5) * cell });
+  }
+  const trees = design.trees, edging = design.edging;
+  for (const [k, b] of beds.entries()) {
+    const w = b.x1 - b.x0, d = b.y1 - b.y0, corners = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]].map(back);
+    const bc = back([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]);
+    if (design.beds === "parterre") out.beds.push({ cx: bc[0], cy: bc[1], w: w * 0.86, d: d * 0.86, rot, strip: true, knot: true });
+    else if (design.beds === "kitchen") {
+      // (two or three long beds across it, a path's width apart)
+      const n = Math.max(1, Math.min(3, Math.floor(d / 1.1)));
+      for (let i = 0; i < n; i++) { const y = b.y0 + (d * (i + 0.5)) / n, q = back([(b.x0 + b.x1) / 2, y]); out.beds.push({ cx: q[0], cy: q[1], w: w * 0.86, d: (d / n) * 0.6, rot, strip: true }); }
+    } else if (design.beds === "orchard") {
+      // (fruit trees in rows)
+      const tr2 = r.fork("orchard", k);
+      for (let x = b.x0 + 0.6; x <= b.x1 - 0.5; x += 1.2) for (let y = b.y0 + 0.6; y <= b.y1 - 0.5; y += 1.2) { const q = back([x, y]); tree(q[0], q[1], 0.34 + tr2.next() * 0.06); }
+    }
+    if (edging === "hedge") out.hedges.push([...corners, corners[0]]);
+    else if (edging === "wall") out.walls.push([...corners, corners[0]]);
+  }
+  // Trees: an avenue either side of the long walk, a quincunx over the lawns, or clumps (bosquets) in the far beds
+  if (trees === "avenue") {
+    const step = 1.3, off = pw / 2 + 0.55;
+    if (along) {
+      for (let x = lx0 + step / 2; x <= lx1; x += step) for (const s2 of [-1, 1]) {
+        const p = back([x, my + s2 * off]);
+        if (Math.abs(x - mx) > keepR + 0.8 && inside(p) && edgeDist(p) > 0.3 && clearOfWalks([x, my + s2 * off], 0.2)) tree(p[0], p[1], 0.42 + tr.next() * 0.08);
+      }
+    } else {
+      for (let y = ly0 + step / 2; y <= ly1; y += step) for (const s2 of [-1, 1]) {
+        const p = back([mx + s2 * off, y]);
+        if (Math.abs(y - my) > keepR + 0.8 && inside(p) && edgeDist(p) > 0.3 && clearOfWalks([mx + s2 * off, y], 0.2)) tree(p[0], p[1], 0.42 + tr.next() * 0.08);
+      }
+    }
+  } else if (trees === "quincunx" && design.beds !== "orchard") {
+    // (a tree at each corner of a square and one in its middle, repeated over the open ground at the edge)
+    for (let x = x0 + 0.8, i = 0; x < x1; x += 1.6, i++) for (let y = y0 + 0.8 + (i % 2) * 0.8; y < y1; y += 1.6) {
+      const p = back([x, y]);
+      if (inside(p) && edgeDist(p) > 0.4 && clearOfWalks([x, y], 0.35) && !beds.some((b) => x > b.x0 - 0.2 && x < b.x1 + 0.2 && y > b.y0 - 0.2 && y < b.y1 + 0.2)) tree(p[0], p[1], 0.38 + tr.next() * 0.06);
+    }
+  } else if (trees === "bosquets" && design.beds !== "orchard") {
+    // (the beds farthest from the middle filled with a clump of trees instead)
+    const far = beds.map((b) => ({ b, d: Math.hypot((b.x0 + b.x1) / 2 - mx, (b.y0 + b.y1) / 2 - my) })).sort((a, b2) => b2.d - a.d).slice(0, Math.max(1, Math.floor(beds.length / 3)));
+    const bt = r.fork("bosquets");
+    for (const { b } of far) for (let x = b.x0 + 0.45; x <= b.x1 - 0.4; x += 0.8) for (let y = b.y0 + 0.45; y <= b.y1 - 0.4; y += 0.8) {
+      const q = back([x + (bt.next() - 0.5) * 0.3, y + (bt.next() - 0.5) * 0.3]);
+      if (inside(q)) tree(q[0], q[1], 0.36 + bt.next() * 0.1);
     }
   }
   return out;
 }
+
+/** What a green may have on it. */
+export const GREEN_FEATURES = ["pond", "well", "maypole", "cross", "none"];
+
+/** A formal garden's parts, one of each picked by the park's seed (or set by the plan's area: trees as its planting). */
+export const FORMAL = {
+  layout: ["quartered", "saltire", "goose-foot", "concentric", "canal", "compartments"],
+  center: ["basin", "fountain", "statue", "sundial", "rond-point"],
+  beds: ["lawn", "parterre", "kitchen", "orchard"],
+  edging: ["hedge", "wall", "none"],
+  trees: ["avenue", "quincunx", "bosquets", "none"],
+};
 
 function distSeg([x, y], [ax, ay], [bx, by]) {
   const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;

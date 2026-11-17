@@ -1,0 +1,1678 @@
+{
+ "atlasScribe": 1,
+ "id": "kestrelmouth-3907",
+ "name": "Kestrelmouth",
+ "kind": "settlement",
+ "size": {
+  "squares": [
+   150,
+   116
+  ],
+  "ftPerSquare": 25
+ },
+ "season": "autumn",
+ "sun": "high-south",
+ "seed": 3907,
+ "ground": "grass",
+ "features": [
+  {
+   "type": "road",
+   "class": "highway",
+   "surface": "cobble",
+   "path": [
+    [
+     75.4,
+     49.2
+    ],
+    [
+     71.8,
+     62.5
+    ],
+    [
+     67.7,
+     75.6
+    ],
+    [
+     63.4,
+     91.7
+    ],
+    [
+     60.5,
+     100.8
+    ],
+    [
+     57.9,
+     110
+    ],
+    [
+     57.2,
+     116
+    ]
+   ],
+   "id": "gate-road-1"
+  },
+  {
+   "id": "wall-street",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     80.8,
+     90.5
+    ],
+    [
+     78.6,
+     91.5
+    ],
+    [
+     59.5,
+     86.2
+    ],
+    [
+     52.5,
+     78.6
+    ],
+    [
+     51.7,
+     77.4
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-1",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     84.5,
+     42.4
+    ],
+    [
+     85.9,
+     44.3
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-2",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     85.9,
+     44.3
+    ],
+    [
+     81.4,
+     60.1
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-3",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     81.4,
+     60.1
+    ],
+    [
+     65.5,
+     56.2
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-4",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     65.5,
+     56.2
+    ],
+    [
+     68.9,
+     39.3
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-5",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     69.7,
+     39
+    ],
+    [
+     84.5,
+     42.4
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-6",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     65.5,
+     56.2
+    ],
+    [
+     62.1,
+     58.3
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-7",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     62.1,
+     58.3
+    ],
+    [
+     54.3,
+     56.1
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-8",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     54.3,
+     56.1
+    ],
+    [
+     54.5,
+     41.4
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-9",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     54.5,
+     41.4
+    ],
+    [
+     61,
+     37.8
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-10",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     61,
+     37.8
+    ],
+    [
+     68.9,
+     39.3
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-11",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     54.3,
+     56.1
+    ],
+    [
+     44.7,
+     59.5
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-12",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     44.2,
+     39.2
+    ],
+    [
+     54.5,
+     41.4
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-13",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     62.1,
+     58.3
+    ],
+    [
+     63.2,
+     72.5
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-14",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     63.2,
+     72.5
+    ],
+    [
+     54.3,
+     80.6
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-15",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     76.4,
+     73.6
+    ],
+    [
+     81.4,
+     85.9
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-16",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     63.2,
+     72.5
+    ],
+    [
+     76.4,
+     73.6
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-17",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     76.4,
+     73.6
+    ],
+    [
+     82.3,
+     62.4
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-18",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     82.3,
+     62.4
+    ],
+    [
+     101.2,
+     68.7
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-19",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     106.9,
+     46.4
+    ],
+    [
+     85.9,
+     44.3
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-20",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     84.5,
+     42.4
+    ],
+    [
+     90.1,
+     17.5
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-21",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     82.3,
+     62.4
+    ],
+    [
+     81.4,
+     60.1
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-22",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     61,
+     37.8
+    ],
+    [
+     54.7,
+     22.9
+    ]
+   ]
+  },
+  {
+   "id": "ward-street-23",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "straight": true,
+   "path": [
+    [
+     73.2,
+     15.5
+    ],
+    [
+     69.7,
+     39
+    ]
+   ]
+  },
+  {
+   "id": "sea",
+   "type": "water",
+   "class": "sea",
+   "shape": [
+    [
+     150,
+     114.2
+    ],
+    [
+     147.9,
+     113.7
+    ],
+    [
+     142.2,
+     111.7
+    ],
+    [
+     136.4,
+     109.9
+    ],
+    [
+     131,
+     107.1
+    ],
+    [
+     124.8,
+     106.9
+    ],
+    [
+     118.8,
+     106.1
+    ],
+    [
+     113,
+     104.6
+    ],
+    [
+     107.2,
+     103.1
+    ],
+    [
+     101.5,
+     101.4
+    ],
+    [
+     95.9,
+     98.7
+    ],
+    [
+     90.2,
+     97.1
+    ],
+    [
+     84.2,
+     96.2
+    ],
+    [
+     80.5,
+     94.3
+    ],
+    [
+     80.7,
+     92
+    ],
+    [
+     81.1,
+     87.9
+    ],
+    [
+     82.7,
+     84.3
+    ],
+    [
+     87.8,
+     83.3
+    ],
+    [
+     92.7,
+     79.1
+    ],
+    [
+     97.4,
+     75.5
+    ],
+    [
+     101,
+     70.7
+    ],
+    [
+     102.9,
+     65.1
+    ],
+    [
+     104.7,
+     59.9
+    ],
+    [
+     106.7,
+     54.8
+    ],
+    [
+     107.8,
+     49.2
+    ],
+    [
+     107.1,
+     43.7
+    ],
+    [
+     107.6,
+     37.5
+    ],
+    [
+     105,
+     32.2
+    ],
+    [
+     101.9,
+     27
+    ],
+    [
+     97.9,
+     22.5
+    ],
+    [
+     93.5,
+     17.9
+    ],
+    [
+     87.4,
+     16.3
+    ],
+    [
+     81.5,
+     14.7
+    ],
+    [
+     75.4,
+     14.5
+    ],
+    [
+     69.5,
+     15.7
+    ],
+    [
+     64.2,
+     18.4
+    ],
+    [
+     58.9,
+     20.7
+    ],
+    [
+     53.3,
+     22.9
+    ],
+    [
+     49.1,
+     27.2
+    ],
+    [
+     46.1,
+     32.3
+    ],
+    [
+     44.2,
+     37.9
+    ],
+    [
+     41.7,
+     43.3
+    ],
+    [
+     43.1,
+     49.2
+    ],
+    [
+     43.9,
+     54.8
+    ],
+    [
+     44.3,
+     60.6
+    ],
+    [
+     47.7,
+     65.3
+    ],
+    [
+     49.6,
+     70.9
+    ],
+    [
+     53.3,
+     74.6
+    ],
+    [
+     50.7,
+     77.9
+    ],
+    [
+     51.4,
+     82.2
+    ],
+    [
+     48.7,
+     85.1
+    ],
+    [
+     43.8,
+     84.9
+    ],
+    [
+     37.6,
+     84.5
+    ],
+    [
+     31.8,
+     83.1
+    ],
+    [
+     26.4,
+     80.2
+    ],
+    [
+     20.3,
+     79.6
+    ],
+    [
+     14.3,
+     78.8
+    ],
+    [
+     8.5,
+     77.3
+    ],
+    [
+     2.8,
+     75.4
+    ],
+    [
+     0,
+     74.5
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     150,
+     0
+    ]
+   ]
+  },
+  {
+   "id": "quay",
+   "type": "dock",
+   "class": "quay",
+   "path": [
+    [
+     81,
+     89.3
+    ],
+    [
+     81.1,
+     87.9
+    ],
+    [
+     82.7,
+     84.3
+    ],
+    [
+     87.8,
+     83.3
+    ],
+    [
+     92.7,
+     79.1
+    ],
+    [
+     97.4,
+     75.5
+    ],
+    [
+     101,
+     70.7
+    ],
+    [
+     104.7,
+     59.9
+    ],
+    [
+     106.7,
+     54.8
+    ],
+    [
+     107.8,
+     49.2
+    ],
+    [
+     107.1,
+     43.7
+    ],
+    [
+     107.6,
+     37.5
+    ],
+    [
+     105,
+     32.2
+    ],
+    [
+     101.9,
+     27
+    ],
+    [
+     97.9,
+     22.5
+    ],
+    [
+     93.5,
+     17.9
+    ],
+    [
+     81.5,
+     14.7
+    ],
+    [
+     75.4,
+     14.5
+    ],
+    [
+     69.5,
+     15.7
+    ],
+    [
+     64.2,
+     18.4
+    ],
+    [
+     58.9,
+     20.7
+    ],
+    [
+     53.3,
+     22.9
+    ],
+    [
+     49.1,
+     27.2
+    ],
+    [
+     46.1,
+     32.3
+    ],
+    [
+     44.2,
+     37.9
+    ],
+    [
+     41.7,
+     43.3
+    ],
+    [
+     43.1,
+     49.2
+    ],
+    [
+     43.9,
+     54.8
+    ],
+    [
+     44.3,
+     60.6
+    ],
+    [
+     47.7,
+     65.3
+    ],
+    [
+     49.6,
+     70.9
+    ],
+    [
+     53.3,
+     74.6
+    ],
+    [
+     52.1,
+     76.1
+    ]
+   ]
+  },
+  {
+   "id": "pier-1",
+   "type": "dock",
+   "class": "pier",
+   "path": [
+    [
+     97.7,
+     75.1
+    ],
+    [
+     101.4,
+     77.9
+    ]
+   ]
+  },
+  {
+   "id": "pier-2",
+   "type": "dock",
+   "class": "pier",
+   "path": [
+    [
+     103.8,
+     30.2
+    ],
+    [
+     109.7,
+     26.7
+    ]
+   ]
+  },
+  {
+   "id": "pier-3",
+   "type": "dock",
+   "class": "pier",
+   "path": [
+    [
+     63.3,
+     18.8
+    ],
+    [
+     61.7,
+     15
+    ]
+   ]
+  },
+  {
+   "id": "pier-4",
+   "type": "dock",
+   "class": "pier",
+   "path": [
+    [
+     44,
+     56.3
+    ],
+    [
+     39,
+     56.6
+    ]
+   ]
+  },
+  {
+   "id": "square",
+   "type": "square",
+   "shape": {
+    "circle": [
+     75.41,
+     49.24,
+     4
+    ]
+   },
+   "surface": "tiles",
+   "market": true,
+   "name": "The market square"
+  },
+  {
+   "id": "town-wall",
+   "type": "wall",
+   "class": "town",
+   "path": [
+    [
+     113,
+     47.2
+    ],
+    [
+     108.8,
+     67.5
+    ],
+    [
+     105.2,
+     73
+    ],
+    [
+     89.8,
+     88
+    ],
+    [
+     78.7,
+     93
+    ],
+    [
+     58.7,
+     87.5
+    ],
+    [
+     51.4,
+     79.5
+    ],
+    [
+     38.5,
+     61
+    ],
+    [
+     35.9,
+     45.1
+    ],
+    [
+     37.3,
+     35.3
+    ],
+    [
+     51.2,
+     18.8
+    ],
+    [
+     56.3,
+     13.6
+    ],
+    [
+     71,
+     10
+    ],
+    [
+     89.5,
+     11.4
+    ],
+    [
+     102.5,
+     16.9
+    ],
+    [
+     112.5,
+     36
+    ],
+    [
+     113,
+     47.2
+    ]
+   ],
+   "straight": true,
+   "outside": "ditch"
+  },
+  {
+   "id": "citadel-wall",
+   "type": "wall",
+   "class": "town",
+   "path": [
+    [
+     59.6,
+     60.3
+    ],
+    [
+     60.5,
+     71.4
+    ],
+    [
+     57.4,
+     74.2
+    ],
+    [
+     52.3,
+     69.2
+    ],
+    [
+     50.5,
+     63.9
+    ],
+    [
+     48.4,
+     61
+    ],
+    [
+     54.4,
+     58.9
+    ],
+    [
+     59.6,
+     60.3
+    ]
+   ],
+   "straight": true,
+   "outside": "none",
+   "towers": "roofed"
+  },
+  {
+   "id": "citadel-gate",
+   "type": "road",
+   "class": "street",
+   "surface": "cobble",
+   "path": [
+    [
+     62.6,
+     65.2
+    ],
+    [
+     55.6,
+     65.6
+    ]
+   ]
+  },
+  {
+   "id": "ward-1",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     81.4,
+     15.2
+    ],
+    [
+     87.3,
+     16.8
+    ],
+    [
+     90.1,
+     17.5
+    ],
+    [
+     84.5,
+     42.4
+    ],
+    [
+     69.7,
+     39
+    ],
+    [
+     73.2,
+     15.5
+    ],
+    [
+     75.4,
+     15
+    ]
+   ],
+   "character": "nobles",
+   "name": "High Ward"
+  },
+  {
+   "id": "ward-2",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     93.2,
+     18.3
+    ],
+    [
+     97.5,
+     22.8
+    ],
+    [
+     101.5,
+     27.3
+    ],
+    [
+     104.6,
+     32.4
+    ],
+    [
+     107.1,
+     37.6
+    ],
+    [
+     106.6,
+     43.7
+    ],
+    [
+     106.9,
+     46.4
+    ],
+    [
+     85.9,
+     44.3
+    ],
+    [
+     84.5,
+     42.4
+    ],
+    [
+     90.1,
+     17.5
+    ]
+   ],
+   "character": "docks",
+   "name": "Harbor Ward"
+  },
+  {
+   "id": "ward-3",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     106.9,
+     46.4
+    ],
+    [
+     107.3,
+     49.2
+    ],
+    [
+     106.2,
+     54.7
+    ],
+    [
+     104.2,
+     59.7
+    ],
+    [
+     102.4,
+     64.9
+    ],
+    [
+     101.2,
+     68.7
+    ],
+    [
+     82.3,
+     62.4
+    ],
+    [
+     81.4,
+     60.1
+    ],
+    [
+     85.9,
+     44.3
+    ]
+   ],
+   "name": "East Ward"
+  },
+  {
+   "id": "ward-4",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     84.5,
+     42.4
+    ],
+    [
+     85.9,
+     44.3
+    ],
+    [
+     81.4,
+     60.1
+    ],
+    [
+     65.5,
+     56.2
+    ],
+    [
+     68.9,
+     39.3
+    ],
+    [
+     69.7,
+     39
+    ]
+   ],
+   "character": "market",
+   "name": "Market Ward"
+  },
+  {
+   "id": "ward-5",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     101.2,
+     68.7
+    ],
+    [
+     100.6,
+     70.5
+    ],
+    [
+     97,
+     75.1
+    ],
+    [
+     92.4,
+     78.7
+    ],
+    [
+     87.6,
+     82.8
+    ],
+    [
+     82.3,
+     83.9
+    ],
+    [
+     81.4,
+     85.9
+    ],
+    [
+     76.4,
+     73.6
+    ],
+    [
+     82.3,
+     62.4
+    ]
+   ],
+   "character": "poor",
+   "name": "Low Ward"
+  },
+  {
+   "id": "ward-6",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     76.4,
+     73.6
+    ],
+    [
+     81.4,
+     85.9
+    ],
+    [
+     80.6,
+     87.8
+    ],
+    [
+     80.3,
+     90.7
+    ],
+    [
+     78.6,
+     91.5
+    ],
+    [
+     59.5,
+     86.2
+    ],
+    [
+     54.3,
+     80.6
+    ],
+    [
+     63.2,
+     72.5
+    ]
+   ],
+   "character": "crafts",
+   "name": "Craft Ward"
+  },
+  {
+   "id": "ward-7",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     81.4,
+     60.1
+    ],
+    [
+     82.3,
+     62.4
+    ],
+    [
+     76.4,
+     73.6
+    ],
+    [
+     63.2,
+     72.5
+    ],
+    [
+     62.1,
+     58.3
+    ],
+    [
+     65.5,
+     56.2
+    ]
+   ],
+   "character": "temple",
+   "name": "Temple Ward"
+  },
+  {
+   "id": "ward-8",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     62.1,
+     58.3
+    ],
+    [
+     63.2,
+     72.5
+    ],
+    [
+     54.3,
+     80.6
+    ],
+    [
+     52.5,
+     78.6
+    ],
+    [
+     51.7,
+     77.4
+    ],
+    [
+     54,
+     74.6
+    ],
+    [
+     50,
+     70.6
+    ],
+    [
+     48.1,
+     65.1
+    ],
+    [
+     44.8,
+     60.4
+    ],
+    [
+     44.7,
+     59.5
+    ],
+    [
+     54.3,
+     56.1
+    ]
+   ],
+   "character": "garrison",
+   "name": "The Citadel"
+  },
+  {
+   "id": "ward-9",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     54.5,
+     41.4
+    ],
+    [
+     54.3,
+     56.1
+    ],
+    [
+     44.7,
+     59.5
+    ],
+    [
+     44.4,
+     54.7
+    ],
+    [
+     43.6,
+     49.1
+    ],
+    [
+     42.2,
+     43.4
+    ],
+    [
+     44.2,
+     39.2
+    ]
+   ],
+   "name": "West Ward"
+  },
+  {
+   "id": "ward-10",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     68.9,
+     39.3
+    ],
+    [
+     65.5,
+     56.2
+    ],
+    [
+     62.1,
+     58.3
+    ],
+    [
+     54.3,
+     56.1
+    ],
+    [
+     54.5,
+     41.4
+    ],
+    [
+     61,
+     37.8
+    ]
+   ],
+   "character": "merchants",
+   "name": "Merchant Ward"
+  },
+  {
+   "id": "ward-11",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     61,
+     37.8
+    ],
+    [
+     54.5,
+     41.4
+    ],
+    [
+     44.2,
+     39.2
+    ],
+    [
+     44.7,
+     38.1
+    ],
+    [
+     46.6,
+     32.5
+    ],
+    [
+     49.5,
+     27.5
+    ],
+    [
+     53.6,
+     23.3
+    ],
+    [
+     54.7,
+     22.9
+    ]
+   ],
+   "name": "Northwest Ward"
+  },
+  {
+   "id": "ward-12",
+   "type": "district",
+   "profile": "city",
+   "shape": [
+    [
+     69.7,
+     39
+    ],
+    [
+     68.9,
+     39.3
+    ],
+    [
+     61,
+     37.8
+    ],
+    [
+     54.7,
+     22.9
+    ],
+    [
+     59.1,
+     21.2
+    ],
+    [
+     64.4,
+     18.9
+    ],
+    [
+     69.7,
+     16.2
+    ],
+    [
+     73.2,
+     15.5
+    ]
+   ],
+   "character": "nobles",
+   "name": "High Ward II"
+  },
+  {
+   "id": "ward-1-garden",
+   "type": "area",
+   "class": "park",
+   "style": "formal",
+   "name": "High Gardens",
+   "rot": 98,
+   "shape": {
+    "rect": [
+     75.7,
+     21.3,
+     84.1,
+     26.8
+    ]
+   }
+  },
+  {
+   "id": "ward-10-green",
+   "type": "area",
+   "class": "park",
+   "style": "green",
+   "name": "Merchant Green",
+   "rot": 101,
+   "shape": {
+    "rect": [
+     60.1,
+     41.6,
+     65.1,
+     45.6
+    ]
+   }
+  },
+  {
+   "id": "ward-12-garden",
+   "type": "area",
+   "class": "park",
+   "style": "formal",
+   "name": "High Gardens",
+   "rot": 98,
+   "shape": {
+    "rect": [
+     62.2,
+     24.7,
+     69.3,
+     29.4
+    ]
+   }
+  },
+  {
+   "id": "cemetery-1",
+   "type": "area",
+   "class": "cemetery",
+   "name": "South Burial Ground",
+   "shape": [
+    [
+     64.2,
+     95
+    ],
+    [
+     61.1,
+     105
+    ],
+    [
+     70.8,
+     108.1
+    ],
+    [
+     74,
+     98.1
+    ]
+   ]
+  },
+  {
+   "id": "cemetery-2",
+   "type": "area",
+   "class": "cemetery",
+   "name": "South Burial Ground II",
+   "shape": [
+    [
+     60.2,
+     95.1
+    ],
+    [
+     56.8,
+     107.4
+    ],
+    [
+     48.8,
+     105.1
+    ],
+    [
+     52.3,
+     92.8
+    ]
+   ]
+  },
+  {
+   "id": "name",
+   "type": "label",
+   "text": "Kestrelmouth",
+   "at": [
+    75.4,
+    7
+   ],
+   "show": "gm",
+   "size": "huge"
+  }
+ ],
+ "output": {
+  "pxPerSquare": 40,
+  "dressing": true,
+  "scene": {
+   "name": "Kestrelmouth",
+   "weather": null
+  }
+ }
+}

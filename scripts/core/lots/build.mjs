@@ -109,6 +109,24 @@ export function partCorners(b) {
 }
 
 /**
+ * An outline with repeated corners (closer than a hundredth of a square) and spikes (out to a point and straight back,
+ * its two neighbors the same) taken out; the outline as given when that would leave fewer than three corners.
+ */
+export function cleanRing(poly) {
+  if (!Array.isArray(poly) || poly.length < 3) return poly;
+  let pts = poly.slice();
+  const same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.01;
+  for (let changed = true; changed && pts.length > 3;) {
+    changed = false;
+    for (let k = 0; k < pts.length && pts.length > 3; k++) {
+      const a = pts[(k + pts.length - 1) % pts.length], p = pts[k], c = pts[(k + 1) % pts.length];
+      if (same(p, c) || same(a, c)) { pts.splice(k, 1); changed = true; k--; }
+    }
+  }
+  return pts.length >= 3 ? pts : poly;
+}
+
+/**
  * A footprint cleaned up for drawing: no repeated corners, no corner in a straight edge, and no spike (a corner
  * sharper than 25 degrees, where a plot's cut met its neighbor's at a slant). Unchanged if that leaves too little.
  */

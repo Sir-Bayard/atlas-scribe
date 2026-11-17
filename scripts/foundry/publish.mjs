@@ -32,7 +32,11 @@ const FONT = { min: 8, max: 256 };
 /** Scenes backed up this session (for the backup setting's "first update of a session"). */
 const backedUp = new Set();
 
-export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, backups = "every", check = () => {}, onProgress = () => {} }) {
+export async function publish({ plan, image, width, height, folder, layout = null, sceneId = null, force = false, backups = "every", backupFolder = null, batch = null, check = () => {}, onProgress = () => {} }) {
+  // (everything made carries the batch tag, the plan's id unless the Batch tag setting or the caller names one, so a
+  // script can find what one publish made: api.batch)
+  const tagOf = String(batch || plan.id || "");
+  const tagAll = (list) => list.map((d) => ({ ...d, flags: { ...(d.flags ?? {}), [MOD]: { ...(d.flags?.[MOD] ?? {}), batch: tagOf } } }));
   const warnings = [];
   const opts = plan.output.scene;
   const R = rulesInUse();
@@ -49,7 +53,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     if (wanted) {
       onProgress(0.1, "Backing up the scene");
       const json = JSON.stringify(scene.toObject(), null, 1);
-      const dir = `${folder}/backups`;
+      const dir = backupFolder ?? `${folder}/backups`;
       backup = await upload(dir, await freeName(dir, `${scene.name}-${stamp()}`, "json"), new Blob([json], { type: "application/json" }));
       backedUp.add(sceneId);
     }
@@ -84,13 +88,14 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     width, height,
     padding: opts.padding,
     thumb,
-    grid: { type: CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, distance: plan.size.ftPerSquare, units: "ft", alpha: opts.gridAlpha },
+    // (a region measured in miles)
+    grid: { type: CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, ...(plan.kind === "region" ? { distance: Number((plan.size.ftPerSquare / 5280).toPrecision(3)), units: "mi" } : { distance: plan.size.ftPerSquare, units: "ft" }), alpha: opts.gridAlpha },
     tokenVision: opts.tokenVision,
     fog: { mode: opts.fog ? CONST.FOG_EXPLORATION_MODES.INDIVIDUAL : CONST.FOG_EXPLORATION_MODES.DISABLED },
     environment,
     weather,
     navigation: opts.navigation,
-    flags: { [MOD]: { plan: plan.id ?? null, image: image.path, version: game.modules.get(MOD)?.version ?? null, built: Date.now(), time: time ? opts.time : null } },
+    flags: { [MOD]: { batch: tagOf, plan: plan.id ?? null, image: image.path, version: game.modules.get(MOD)?.version ?? null, built: Date.now(), time: time ? opts.time : null } },
   };
 
   onProgress(0.5, sceneId ? "Updating the scene" : "Creating the scene");
@@ -98,6 +103,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // that top only on a level with none or the one it set before (flag levelTop), and takes it off for a settlement
   // map
   const reach = battle ? { elevation: { bottom: 0, top: ROOF_HEIGHT.low } } : {};
+  // (a map saved in parts shows them as tiles over an empty ground: no background)
+  const groundSrc = Array.isArray(image.parts) && image.parts.length ? null : image.path;
   let scene, created = false;
   if (sceneId) {
     scene = sceneById(sceneId);
@@ -111,15 +118,15 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       const now = level.elevation?.top ?? null, ours = now !== null && now === wasTop;
       if (battle && (now === null || ours)) top = ROOF_HEIGHT.low;
       else if (!battle && ours) top = null;
-      await scene.updateEmbeddedDocuments("Level", [{ _id: level.id, background: { src: image.path }, ...(top !== undefined ? { "elevation.top": top } : {}) }]);
+      await scene.updateEmbeddedDocuments("Level", [{ _id: level.id, background: { src: groundSrc }, ...(top !== undefined ? { "elevation.top": top } : {}) }]);
     } else {
-      await scene.createEmbeddedDocuments("Level", [{ name: "Ground", background: { src: image.path }, ...reach }]);
+      await scene.createEmbeddedDocuments("Level", tagAll([{ name: "Ground", background: { src: groundSrc }, ...reach }]));
       if (battle) top = ROOF_HEIGHT.low;
     }
     if (top !== undefined) await sceneById(sceneId).update({ [`flags.${MOD}.levelTop`]: top });
   } else {
     if (battle) data.flags[MOD].levelTop = ROOF_HEIGHT.low;
-    scene = await Scene.create({ ...data, _id: id, name: freeSceneName(opts.name), levels: [{ name: "Ground", background: { src: image.path }, ...reach }] }, { keepId: true });
+    scene = await Scene.create({ ...data, _id: id, name: freeSceneName(opts.name), levels: tagAll([{ name: "Ground", background: { src: groundSrc }, ...reach }]) }, { keepId: true });
     if (!scene) throw new Error("AtlasScribe: Foundry didn't create the scene");
     sceneId = scene.id;
     created = true;
@@ -130,13 +137,13 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   let levelOf = null;
   if (!battle) {
     // (a settlement map over what was a battle map with floors: its floors' levels come out)
-    try { await syncLevels(sceneId, [], image.path); } catch (e) { warnings.push(`The old floors' levels couldn't be taken out (${e.message}).`); }
+    try { await syncLevels(sceneId, [], groundSrc); } catch (e) { warnings.push(`The old floors' levels couldn't be taken out (${e.message}).`); }
   } else {
     try {
       onProgress(0.8, "Placing the floors");
       // (a castle's 20 ft level is its wall walk as well as its buildings' floors at that height)
       const walk = layout?.items?.some((i) => i.kind === "wall" && i.curtain);
-      levelOf = await syncLevels(sceneId, image.levels, image.path, walk ? { 2: "Wall walk" } : {});
+      levelOf = await syncLevels(sceneId, image.levels, groundSrc, walk ? { 2: "Wall walk" } : {}, tagAll);
       // (a map given by its path brings no floor images: a scene without its floors' levels gets only the ground's)
       if (!levelOf && !Array.isArray(image.levels) && layout?.items?.some((i) => i.kind === "stairs")) warnings.push("This battle map's floors above and below the ground weren't made: they come only with a map rendered for the scene, so only the ground's walls, furniture and lights were placed.");
     } catch (e) {
@@ -158,7 +165,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   scene = sceneById(sceneId);
   const old = scene.drawings.filter((d) => isObj(d.flags?.[MOD]) && "batch" in d.flags[MOD]).map((d) => d.id);
   const labels = (await labelDrawings(plan, sceneById(sceneId), warnings, layout)).map((d) => (levelOf?.get(0) ? { ...d, levels: [levelOf.get(0)] } : d));
-  if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", labels);
+  if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", tagAll(labels));
   if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
 
   /**
@@ -179,18 +186,36 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   onProgress(0.9, "Placing the title");
   // (an old one comes out only when a new one went in, or the map no longer has one; never on a failure)
   const oldTitles = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "title" in t.flags[MOD]).map((t) => t.id);
-  const wanted = plan.style === "illustrated" && plan.output.dressing === true && typeof plan.name === "string" && plan.name.trim() !== "";
+  const wanted = (plan.style === "illustrated" || plan.style === "ink") && plan.output.dressing === true && typeof plan.name === "string" && plan.name.trim() !== "";
   let title = false;
   if (wanted && !layout) warnings.push("The map's name wasn't made into a tile (the map couldn't be laid out again); the scene keeps the one it had.");
   else {
     try {
       const data = wanted ? await titleTile(plan, layout, sceneById(sceneId), sceneId, folder) : null;
-      if (data) { await sceneById(sceneId).createEmbeddedDocuments("Tile", [data]); title = true; }
+      if (data) { await sceneById(sceneId).createEmbeddedDocuments("Tile", tagAll([data])); title = true; }
       if ((title || !wanted) && oldTitles.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldTitles);
     } catch (e) {
       warnings.push(`The map's name couldn't be made into a tile (${e.message}).`);
     }
   }
+
+  // A map saved in parts: each a tile on the ground, under everything, new ones in before the old ones come out
+  const oldParts = sceneById(sceneId).tiles.filter((t) => t.flags?.[MOD]?.kind === "part").map((t) => t.id);
+  let parts = 0;
+  if (groundSrc === null) {
+    try {
+      const { sceneX, sceneY } = sceneById(sceneId).dimensions;
+      const tiles = image.parts.map((q, k) => onFloor({
+        texture: { src: q.path }, x: Math.round(sceneX + q.x + q.width / 2), y: Math.round(sceneY + q.y + q.height / 2), width: q.width, height: q.height,
+        elevation: 0, sort: -100000 + k, locked: true, flags: { [MOD]: { built: plan.id ?? null, kind: "part" } },
+      })).filter(Boolean);
+      await createAll(sceneId, "Tile", tagAll(tiles));
+      parts = tiles.length;
+      if (oldParts.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldParts);
+    } catch (e) {
+      warnings.push(`The map's parts couldn't be placed as tiles (${e.message}).`);
+    }
+  } else if (oldParts.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldParts).catch((e) => warnings.push(`The last map's parts couldn't be taken out (${e.message}); delete them from the Tiles controls.`));
 
   // A battle map's roofs and tree crowns as tiles over the map, new ones in before AtlasScribe's old ones come out; a
   // map given by its path alone has none, so the scene keeps those it had
@@ -204,7 +229,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       // (a roof or a tree's crown over the ground and every floor above, not the cellars below)
       const above = levelOf ? [...levelOf.keys()].filter((f) => f >= 0) : null;
       const tiles = image.overheads.map((o) => onFloor({ ...overheadTile(o, sceneX, sceneY, plan.id ?? null), ...(above ? { _floors: above } : {}) })).filter(Boolean);
-      if (tiles.length) await sceneById(sceneId).createEmbeddedDocuments("Tile", tiles);
+      if (tiles.length) await sceneById(sceneId).createEmbeddedDocuments("Tile", tagAll(tiles));
       overheads = tiles.length;
       placed = true;
       if (oldOver.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldOver);
@@ -222,7 +247,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     try {
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
       const tiles = image.mist.map((m) => onFloor(mistTile(m, sceneX, sceneY, plan.id ?? null))).filter(Boolean);
-      await createAll(sceneId, "Tile", tiles);
+      await createAll(sceneId, "Tile", tagAll(tiles));
       mist = tiles.length;
       placed = true;
       for (let k = 0; k < oldMist.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldMist.slice(k, k + BATCH));
@@ -245,7 +270,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       onProgress(0.96, "Placing the furniture");
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
       const tiles = image.furniture.map((f) => onFloor({ ...furnitureTile(f, sceneX, sceneY, plan.id ?? null), _floor: f.floor ?? 0 })).filter(Boolean);
-      await createAll(sceneId, "Tile", tiles);
+      await createAll(sceneId, "Tile", tagAll(tiles));
       furniture = tiles.length;
       placed = true;
       for (let k = 0; k < oldFurn.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldFurn.slice(k, k + BATCH));
@@ -276,7 +301,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       try {
         const data = battle ? make().map(onFloor).filter(Boolean) : [];
         const old = mine(type === "Wall" ? sceneById(sceneId).walls : type === "AmbientLight" ? sceneById(sceneId).lights : sceneById(sceneId).regions, kinds);
-        await createAll(sceneId, type, data);
+        await createAll(sceneId, type, tagAll(data));
         count(data.length);
         placed = true;
         for (let k = 0; k < old.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, old.slice(k, k + BATCH));
@@ -288,7 +313,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, overheads, furniture, mist, walls, roofs, heights, lights, stairs, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, furniture, mist, walls, roofs, heights, lights, stairs, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
 }
 
 /**
@@ -506,8 +531,19 @@ export function battleWalls(layout, sceneX, sceneY, pps, plan) {
   }
   for (const f of layout.items.filter((i) => i.kind === "boundary" && i.class === "fence" && Array.isArray(i.path)))
     for (let k = 1; k < f.path.length; k++) out.push({ ...fenceOnly, c: c(f.path[k - 1], f.path[k]), flags: flags("fence") });
-  for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "stone" && Array.isArray(i.path) && !(i.thickness > 0.6)))
-    for (let k = 1; k < w.path.length; k++) out.push({ ...fenceOnly, c: c(w.path[k - 1], w.path[k]), flags: flags("low-wall") });
+  // (a stone wall taller than a person blocks sight as a building's wall does: an imported map's walls, say)
+  for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "stone" && Array.isArray(i.path) && !(i.thickness > 0.6))) {
+    const tall = (w.height ?? 0) * dist >= 8;
+    for (let k = 1; k < w.path.length; k++) out.push(tall ? { c: c(w.path[k - 1], w.path[k]), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, flags: flags("wall") } : { ...fenceOnly, c: c(w.path[k - 1], w.path[k]), flags: flags("low-wall") });
+  }
+  // (a water gate's grille: nothing passes it, but it's seen through)
+  for (const w of layout.items.filter((i) => i.kind === "wall" && i.class === "watergate" && Array.isArray(i.path)))
+    for (let k = 1; k < w.path.length; k++) out.push({ ...fenceOnly, c: c(w.path[k - 1], w.path[k]), flags: flags("water-gate") });
+  // A cave's or dungeon's rock walls (nothing passes or sees through), and a dungeon's doors
+  for (const w of layout.items.filter((i) => i.kind === "rockwall" && Array.isArray(i.path)))
+    for (let k = 1; k < w.path.length; k++) out.push({ c: c(w.path[k - 1], w.path[k]), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, flags: flags("rock-wall") });
+  for (const d of layout.items.filter((i) => i.kind === "door" && Array.isArray(i.a) && Array.isArray(i.b)))
+    out.push({ c: c(d.a, d.b), move: M.NORMAL, sight: S.NORMAL, light: S.NORMAL, sound: S.NORMAL, door: D.DOOR, doorSound: "woodHeavy", animation: swing(CORE_DOORS[1]), flags: flags("door", doorGrid(0.3)) });
   for (const y of layout.items.filter((i) => i.kind === "surface" && i.class === "backyard")) {
     const f3 = layout.items.find((i) => i.id === y.id + "-f3"), f4 = layout.items.find((i) => i.id === y.id + "-f4");
     if (f3 && f4) out.push({ ...fenceOnly, c: c(f3.path.at(-1), f4.path[0]), door: D.DOOR, doorSound: "woodBasic",
@@ -618,9 +654,9 @@ export function battleStairs(layout, sceneX, sceneY, pps, plan) {
  * map given by its path (the scene's floors are kept). A floor above sees down to the floors below; a cellar sees
  * nothing else. Returns a Map of floor to level id (0 the ground), or null when there are no floors but the ground.
  */
-async function syncLevels(sceneId, wanted, groundPath, names = {}) {
+async function syncLevels(sceneId, wanted, groundPath, names = {}, tagAll = (list) => list) {
   let scene = sceneById(sceneId);
-  const ground = scene.levels.find((l) => l.background?.src === groundPath) ?? scene.initialLevel ?? scene.levels.contents[0];
+  const ground = (groundPath ? scene.levels.find((l) => l.background?.src === groundPath) : null) ?? scene.initialLevel ?? scene.levels.contents[0];
   if (!ground) return null;
   const ours = scene.levels.filter((l) => l.id !== ground.id && Number.isInteger(l.flags?.[MOD]?.floor) && l.flags[MOD].floor !== 0);
   const map = new Map([[0, ground.id]]);
@@ -644,7 +680,7 @@ async function syncLevels(sceneId, wanted, groundPath, names = {}) {
     else make.push(data);
   }
   if (change.length) await scene.updateEmbeddedDocuments("Level", change);
-  if (make.length) await scene.createEmbeddedDocuments("Level", make);
+  if (make.length) await scene.createEmbeddedDocuments("Level", tagAll(make));
   scene = sceneById(sceneId);
   for (const l of scene.levels) {
     const f = l.flags?.[MOD]?.floor;
