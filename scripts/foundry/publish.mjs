@@ -26,8 +26,8 @@ const FONT = { min: 8, max: 256 };
  * plan: a normalized plan. image: the rendered map's path, width, height and thumb (a Blob). folder: the output
  * folder. layout: the map's layout (none: no notable-building labels or battle documents). sceneId: a scene to update
  * (one AtlasScribe didn't make is refused unless force). check(): throws once the job is canceled; called before
- * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, mist, walls,
- * roofs, heights, lights, stairs, levels, rules, ruled, warnings }, counts of what was placed.
+ * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, props, mist,
+ * walls, roofs, heights, lights, stairs, zones, levels, rules, ruled, warnings }, counts of what was placed.
  */
 /** Scenes backed up this session (for the backup setting's "first update of a session"). */
 const backedUp = new Set();
@@ -81,9 +81,10 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   // back the plain tint and dim global light it replaced, kept as the scene's flag time)
   const time = TIMES[opts.time] ?? null;
   const hadTime = sceneId ? (sceneById(sceneId)?.getFlag(MOD, "time") ?? null) : null;
+  // (the global light reaches all the way into the darkness, so a moonlit night's dim light holds at its darkness)
   const environment = time
-    ? { darknessLevel: time.darkness, globalLight: { enabled: time.global, bright: time.bright }, base: time.base ?? BASE_TINT }
-    : { darknessLevel: opts.darkness, globalLight: { enabled: opts.globalLight, ...(hadTime ? { bright: false } : {}) }, ...(hadTime ? { base: BASE_TINT } : {}) };
+    ? { darknessLevel: time.darkness, globalLight: { enabled: time.global, bright: time.bright, color: time.color ?? null, darkness: { min: 0, max: 1 } }, base: time.base ?? BASE_TINT, dark: time.dark ?? DARK_TINT }
+    : { darknessLevel: opts.darkness, globalLight: { enabled: opts.globalLight, ...(hadTime ? { bright: false, color: null, darkness: { min: 0, max: 1 } } : {}) }, ...(hadTime ? { base: BASE_TINT, dark: DARK_TINT } : {}) };
   const data = {
     width, height,
     padding: opts.padding,
@@ -258,31 +259,42 @@ export async function publish({ plan, image, width, height, folder, layout = nul
 
   // A battle map's furniture, a tile a piece for the GM to move: new in, then the old out; a map given by its path,
   // or whose furniture art wasn't found at all, keeps those it had
-  let furniture = 0;
-  const oldFurn = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "furniture" in t.flags[MOD]).map((t) => t.id);
+  let furniture = 0, props = 0;
+  const ours = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "furniture" in t.flags[MOD]);
+  const oldFurn = ours.map((t) => t.id);
   const pieces = (layout?.items ?? []).filter((i) => i.kind === "interior").flatMap((i) => i.furniture ?? []).filter((f) => FURNITURE[f.f] && !FURNITURE[f.f].drawn).length
     + (layout?.items ?? []).filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f]).length;
-  if (Array.isArray(image.furniture) && pieces && !image.furniture.length) warnings.push(`None of the furniture's art was found, so no furniture was placed${oldFurn.length ? " and the last map's was kept" : ""}.`);
-  else if (Array.isArray(image.furniture)) {
-    if (image.furniture.length < pieces) warnings.push(`${pieces - image.furniture.length} of the ${pieces} pieces of furniture had no art and were left out.`);
+  // (a battle map's movable props come with its furniture and are counted apart from it; when none of the furniture's
+  // art was found, the last map's furniture is kept and only the props are replaced)
+  const furnFound = Array.isArray(image.furniture) ? image.furniture.filter((f) => !f.prop).length : 0;
+  const keepFurn = Array.isArray(image.furniture) && pieces > 0 && !furnFound;
+  if (keepFurn) warnings.push(`None of the furniture's art was found, so no furniture was placed${ours.some((t) => !t.flags[MOD].prop) ? " and the last map's was kept" : ""}.`);
+  if (keepFurn && !image.furniture.length) {
+    // (no furniture and no props: the last map's props still go, so a map that paints them doesn't show them twice)
+    const out = ours.filter((t) => t.flags[MOD].prop).map((t) => t.id);
+    try { for (let k = 0; k < out.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", out.slice(k, k + BATCH)); } catch (e) { warnings.push(`The last map's props couldn't all be taken out (${e.message}); delete them from the Tiles controls.`); }
+  } else if (Array.isArray(image.furniture)) {
+    if (!keepFurn && furnFound < pieces) warnings.push(`${pieces - furnFound} of the ${pieces} pieces of furniture had no art and were left out.`);
+    const out = keepFurn ? ours.filter((t) => t.flags[MOD].prop).map((t) => t.id) : oldFurn;
     let placed = false;
     try {
       onProgress(0.96, "Placing the furniture");
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
       const tiles = image.furniture.map((f) => onFloor({ ...furnitureTile(f, sceneX, sceneY, plan.id ?? null), _floor: f.floor ?? 0 })).filter(Boolean);
       await createAll(sceneId, "Tile", tagAll(tiles));
-      furniture = tiles.length;
+      furniture = tiles.filter((t) => !t.flags[MOD].prop).length;
+      props = tiles.length - furniture;
       placed = true;
-      for (let k = 0; k < oldFurn.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldFurn.slice(k, k + BATCH));
+      for (let k = 0; k < out.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", out.slice(k, k + BATCH));
     } catch (e) {
       warnings.push(placed ? `The last map's furniture couldn't all be taken out (${e.message}); delete AtlasScribe's old pieces from the Tiles controls.` : `The furniture couldn't all be placed (${e.message}).`);
     }
-  } else if (oldFurn.length) warnings.push("The furniture was left as it was: it comes only with a map rendered for the scene.");
+  } else if (!Array.isArray(image.furniture) && oldFurn.length) warnings.push("The furniture was left as it was: it comes only with a map rendered for the scene.");
 
   // A battle map's walls, doors and windows, fences and low walls (movement only), a roof region over each building,
   // and its ground, banks, cliffs and water (height.mjs): new ones in, then the old out (a settlement map just takes
   // them out)
-  let walls = 0, roofs = 0, heights = 0, lights = 0, stairs = 0, ruled = 0;
+  let walls = 0, roofs = 0, heights = 0, lights = 0, stairs = 0, ruled = 0, zones = 0;
   if (layout) {
     const { sceneX, sceneY } = sceneById(sceneId).dimensions;
     const pps = plan.output.pxPerSquare;
@@ -291,7 +303,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     const isHeight = (k) => HEIGHT_KINDS.includes(k);
     for (const [type, make, what, kinds, count] of [
       ["Wall", () => battleWalls(layout, sceneX, sceneY, pps, plan.id ?? null).map((w) => (typeof R.wall === "function" ? R.wall(w) ?? w : w)), "walls and doors", null, (n) => (walls = n)],
-      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs" && k !== "rules", (n) => (roofs = n)],
+      ["Region", () => battleRoofs(layout, sceneX, sceneY, pps, plan.id ?? null), "roofs' surfaces and indoors", (k) => !isHeight(k) && k !== "stairs" && k !== "rules" && k !== "zone", (n) => (roofs = n)],
+      ["Region", () => planZones(layout, sceneX, sceneY, pps, plan.id ?? null), "the plan's own regions", (k) => k === "zone", (n) => (zones = n)],
       ["Region", () => battleHeights(layout, sceneX, sceneY, pps, plan.id ?? null, R), "ground and water regions", isHeight, (n) => (heights = n)],
       ["Region", () => rulesRegions(regionsAdapter(), { plan, layout, levels: levelOf, sceneX, sceneY, pps }), `${regionsAdapter()?.label ?? regionsAdapter()?.id ?? R.label ?? R.id} regions`, (k) => k === "rules", (n) => (ruled = n)],
       ["Region", () => (levelOf ? battleStairs(layout, sceneX, sceneY, pps, plan.id ?? null).filter((r) => r._floors.filter((f) => levelOf.has(f)).length > 1) : []), "stairs between floors", (k) => k === "stairs", (n) => (stairs = n)],
@@ -313,7 +326,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, furniture, mist, walls, roofs, heights, lights, stairs, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, furniture, props, mist, walls, roofs, heights, lights, stairs, zones, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
 }
 
 /**
@@ -386,7 +399,8 @@ function overheadTile(o, sceneX, sceneY, plan) {
 
 /**
  * A piece of furniture's tile: its art from the art folder (where FA Nexus saved it), on the ground under tokens and
- * roofs, a rug under the rest; left unlocked, for the GM to move.
+ * roofs, a rug under the rest; left unlocked, for the GM to move. A movable prop's (f.prop) stands at the height of
+ * the ground under it.
  */
 function furnitureTile(f, sceneX, sceneY, plan) {
   return {
@@ -395,9 +409,9 @@ function furnitureTile(f, sceneX, sceneY, plan) {
     width: Math.round(f.width), height: Math.round(f.height), rotation: Math.round((f.rotation ?? 0) * 100) / 100,
     // (on its floor: a floor's height up for each above the ground, one down in a cellar; stairs locked, their region
     // being where they are)
-    elevation: (f.floor ?? 0) * FLOOR_FT, sort: FURNITURE[f.f]?.floor ? 0 : FURNITURE[f.f]?.on ? 2 : 1,
+    elevation: f.prop ? Math.round(f.elevation ?? 0) : (f.floor ?? 0) * FLOOR_FT, sort: f.prop ? 1 : FURNITURE[f.f]?.floor ? 0 : FURNITURE[f.f]?.on ? 2 : 1,
     ...(f.lock ? { locked: true } : {}),
-    flags: { [MOD]: { furniture: plan, piece: f.f } },
+    flags: { [MOD]: { furniture: plan, piece: f.f, ...(f.prop ? { prop: true } : {}) } },
   };
 }
 /**
@@ -418,23 +432,28 @@ function mistTile(m, sceneX, sceneY, plan) {
 
 /**
  * The times of day a plan can give (output.scene.time): the scene's darkness, whether outdoor light is on and bright
- * or dim, and its tint. A lantern, torch or lamp post is lit from LIT_FROM darkness on.
+ * or dim, and its tint (base by day, dark for the darkness). A night is moonlit: dim light everywhere, under a blue
+ * darkness, so what lies outside a fire's light can still be seen; a dark night has no moon. A lantern, torch or lamp
+ * post is lit from LIT_FROM darkness on.
  */
 export const TIMES = {
   day: { darkness: 0, global: true, bright: true },
   dawn: { darkness: 0.45, global: true, bright: false, base: { hue: 0.07, intensity: 0.35, luminosity: 0, saturation: 0.15, shadows: 0 } },
   dusk: { darkness: 0.6, global: true, bright: false },
-  night: { darkness: 0.9, global: false, bright: false },
+  night: { darkness: 0.8, global: true, bright: false, dark: { hue: 0.6, intensity: 0.55, luminosity: -0.15, saturation: 0, shadows: 0 }, color: "#9fb8e6" },
+  dark: { darkness: 0.95, global: false, bright: false },
 };
 const BASE_TINT = { hue: 0, intensity: 0, luminosity: 0, saturation: 0, shadows: 0 };
+/** The darkness's own tint when a time gives none: Foundry's default, a cool dark blue. */
+const DARK_TINT = { hue: 0.7138888888888889, intensity: 0, luminosity: -0.25, saturation: 0, shadows: 0 };
 
 /**
  * A battle layout's lights as AmbientLight data (layout/lights.mjs): each at its place and the ground's elevation
  * there, stopped by walls, its numbers from LIGHTS (feet), a lantern's, torch's or lamp post's lit only from LIT_FROM.
  */
 export function battleLights(layout, sceneX, sceneY, pps, plan) {
-  return layout.items.filter((i) => i.kind === "light" && LIGHTS[i.class]).map((l) => {
-    const L = LIGHTS[l.class];
+  return layout.items.filter((i) => i.kind === "light" && (LIGHTS[i.class] || i.own)).map((l) => {
+    const L = l.own ? ownLight(l.own) : LIGHTS[l.class];
     return {
       x: Math.round(sceneX + l.at[0] * pps), y: Math.round(sceneY + l.at[1] * pps),
       elevation: Math.max(l.elevation ?? 0, 0),
@@ -443,6 +462,50 @@ export function battleLights(layout, sceneX, sceneY, pps, plan) {
       locked: true,
       flags: { [MOD]: { built: plan, kind: "light", light: l.class } },
       ...(l.floor ? { _floor: l.floor } : {}),
+    };
+  });
+}
+
+/** A plan's own light (a light feature) in LIGHTS' terms: its radii, color and flicker as the plan gives them. */
+function ownLight(o) {
+  const animation = o.animation && o.animation !== "none" ? { type: o.animation, speed: 2, intensity: 2 } : { type: null, speed: 5, intensity: 5 };
+  const color = typeof o.color === "string" && /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : "#ffc56b";
+  return { bright: Math.max(0, o.bright ?? 10), dim: Math.max(o.bright ?? 10, o.dim ?? 20), color, alpha: o.alpha ?? 0.5, animation, dark: !!o.dark };
+}
+
+/** Each kind of a plan's own region: its color in the Regions controls, its name when it has none, and a walker's cost. */
+export const ZONES = {
+  difficult: { color: "#c9a227", name: "Difficult terrain", cost: 2 },
+  greater: { color: "#b5651d", name: "Greater difficult terrain", cost: 3 },
+  hazard: { color: "#c0392b", name: "Hazard" },
+  cover: { color: "#2e86c1", name: "Cover" },
+  squeeze: { color: "#8e44ad", name: "Squeeze", cost: 2 },
+  note: { color: "#7f8c8d", name: "Note" },
+};
+
+/**
+ * A battle layout's own regions (the plan's region features) as Region data: each named, colored by its kind, a
+ * walkers' cost where its kind slows them (Modify Movement Cost), and its note shown when a token enters it (Display
+ * Scrolling Text), so the GM sees what it is at the table.
+ */
+export function planZones(layout, sceneX, sceneY, pps, plan) {
+  const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
+  const keys = Object.keys(CONFIG.RegionBehavior?.dataModels?.modifyMovementCost?.schema?.fields?.difficulties?.fields ?? {});
+  const canSay = !!CONFIG.RegionBehavior?.dataModels?.displayScrollingText;
+  return layout.items.filter((i) => i.kind === "zone" && ZONES[i.class]).map((z) => {
+    const Z = ZONES[z.class], name = z.name || Z.name, text = String(z.note || name).slice(0, 200);
+    const behaviors = [];
+    if (Z.cost && keys.length) behaviors.push({ type: "modifyMovementCost", name: "Walking cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? Z.cost : 1])) } });
+    // (shown to the GM only, as a token moves in: Foundry 14's event and its Gamemaster visibility, 0)
+    if (canSay) behaviors.push({ type: "displayScrollingText", name: "Note", system: { events: ["tokenAnimateIn"], text, color: Z.color, visibility: 0, once: false } });
+    return {
+      name, color: Z.color,
+      shapes: [{ type: "polygon", points: pts(z.poly), hole: false }],
+      visibility: CONST.REGION_VISIBILITY.LAYER,
+      behaviors,
+      locked: true,
+      flags: { [MOD]: { built: plan, kind: "zone", zone: z.class, note: z.note ?? "" } },
+      _floor: 0,
     };
   });
 }

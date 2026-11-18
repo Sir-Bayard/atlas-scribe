@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.1.0
+
+Battle maps that read better and do more, from rebuilding a hand-made scene from a plan: sunken roads, height edges that show, moonlit nights, your own lights and regions, props you can move, and a way to see a scene without opening it.
+
+**Height**
+- Sunken roads: a road's Sunken setting (feet) cuts it below the ground with a bank or cliff each side and a region in the cut; its floor follows the rises and hollows it runs through, and a stream crossing it runs under the road. Quick Start's Sunken road feature, and "a sunken road" or "a holloway" in the Describe box.
+- Cliff and bank faces are painted in tiers with a shadow at the foot, over the roads that meet them, so a 10 ft drop reads at a glance. In winter a cliff's rock shows through the snow.
+- Rises and hollows of one height that touch are one piece of ground, with no edge between them.
+- A stretch of a rise's or hollow's edge can be another kind: `edges: [{ from, to, edge }]` in a plan, by its corners (a slope in a cliff for a ramp or a breach). Reshaping keeps each stretch on its corners.
+
+**The scene**
+- Night is moonlit: a blue darkness with enough light to see by, fires and lamps warm against it. Dark night (a new Time of day, "moonless" or "pitch dark" in the Describe box) is the near-black night of 1.0.
+- Lights of your own: the Light tool, with bright and dim reach, color, strength, flicker, and lit only in the dark.
+- Regions of your own: Difficult and Greater difficult terrain and Squeeze cost movement; Hazard, Cover and Note are named and colored. Each can carry a note the GM sees when a token enters.
+
+**Props**
+- Carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals are tiles the GM can move, turn and resize, replaced on an Update as furniture is. Turning off the Movable props on battle maps setting (on by default) paints them into the map instead.
+- Horses, mules and oxen, and a Picket line tool: a rope from stake to stake.
+- Trails: footprints, hoofprints, paw prints or wheel ruts along a path you draw.
+- A prop's Size is its whole length in feet along its longest side (a wagon's with its shafts), and at a Turn of 0 a cart, wagon, boat, bedroll or animal runs down the map, a wagon's shafts and an animal's head to the south (a sledge lies across it). Ribbons are bolder and tracks bigger.
+- Winter hedges read as hedges: a snowy ridge with a shadow.
+
+**Checks and the window**
+- The plan check warns when a cart, wagon, tent, animal or other movable prop sits on a rise's or hollow's bank or cliff or on a sunken road's bank (a walkable slope is fine), or reaches into a building, and about a sunken street or a sunken road off a battle map, a light, region, trail or picket line off a battle map, a light whose dim reach is under its bright, and a region whose outline crosses itself.
+- The summary lists a plan's regions with their notes, its lights, trails and picket lines.
+
+**For scripts**
+- `snapshot(scene, { side, tokens, lighting, save })`: a picture of a scene without viewing it, its lighting AtlasScribe's own approximation of Foundry's.
+- `planOf(scene)` and `savePlan(plan, { file })`: publishing keeps the plan a scene was made from in the plans folder, under its id.
+- `publish` also gives the counts `props` and `zones`.
+
+**Maps that change**
+- Battle maps with cliffs, banks, hedges in winter, tracks or ribbons draw differently, and a battle map's carts, barrels, tents and the rest come out of the map image as tiles (unless the setting is off).
+- Quick Start's roadside wagon or cart lies along the building's front, clear of its walls and door.
+- A scene set at night is now moonlit, an existing one too when it's updated; set Dark night for the old look.
+
+**Known limits**
+- Drawn animals are simple shapes: Forgotten Adventures has no animal map art for them yet.
+- A wagon is a tile only, with no walls. A snapshot's lighting is close to Foundry's, not the same.
+- Export as Universal VTT carries the map image, which has no movable props or furniture.
+- Settlement maps' river banks and quays are unchanged: the new faces are for battle maps.
+
 ## 1.0.0
 
 Everything that was left, in one release: new kinds of map (caves, dungeons, regions), imports from other tools, new terrain, the window's files and keyboard, and every open item from the 0.9.0 review. Plans made before still open and work, but the same plan and seed may now draw differently in places (listed under Maps that change).

@@ -237,6 +237,7 @@
     "edge.bank.mossy.winter": ["Arctic_Snow_Cliff_C1_Path.webp", "Arctic_Snow_Cliff_C2_Path.webp"],
     "edge.slope.winter": ["Arctic_Snow_Elevation_B1_Path.webp", "Arctic_Snow_Elevation_B2_Path.webp"],
     "edge.ice.winter": ["Arctic_Snow_Ice_Cliff_A1_Path.webp", "Arctic_Snow_Ice_Cliff_A2_Path.webp"],
+    "strip.rope": ["Rope_01_Path_A1.webp", "Rope_02_Path_A1.webp"],
     "surface.bed.winter": ["Rocky_Snow_A1_01.jpg", "Rocky_Snow_B1_01.jpg"],
     "ground.snow.disturbed": ["Snow_Disturbed_A1_01.jpg"],
     "surface.flagstone.winter": ["Large_Flagstone_B_Snowy.webp"],

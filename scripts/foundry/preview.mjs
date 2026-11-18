@@ -324,9 +324,9 @@ export class AtlasScribeApp extends Base {
   #paths() {
     const plan = normalize(this.#plan);
     const sq = plan.size.ftPerSquare || 25;
-    return plan.features.filter((f) => (f.type === "road" || f.type === "water" || f.type === "wall" || f.type === "dock") && Array.isArray(f.path) && f.path.length >= 2)
+    return plan.features.filter((f) => ["road", "water", "wall", "dock", "trail", "tether"].includes(f.type) && Array.isArray(f.path) && f.path.length >= 2)
       // (a cliff along the middle of its face, as wide as the face, so it's picked anywhere on it)
-      .map((f) => (f.type === "wall" && f.class === "cliff" ? { id: f.id, type: f.type, pts: offsetLine(f.path, (lowSign(f.side) * cliffWidth(f.height, sq)) / 2), half: cliffWidth(f.height, sq) / 2 } : { id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2 }));
+      .map((f) => (f.type === "wall" && f.class === "cliff" ? { id: f.id, type: f.type, pts: offsetLine(f.path, (lowSign(f.side) * cliffWidth(f.height, sq)) / 2), half: cliffWidth(f.height, sq) / 2 } : { id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : f.type === "trail" || f.type === "tether" ? 0.3 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2 }));
   }
 
   /**
@@ -345,6 +345,7 @@ export class AtlasScribeApp extends Base {
       if (f.type === "square") add(f.id, f.type, f.shape);
       else if (f.type === "building") add(f.id, f.type, f.shape, f.rot ?? 0);
       else if (f.type === "landmark") for (const b of f.buildings ?? []) add(f.id, "landmark", b.shape, b.rot ?? 0);
+      else if (f.type === "region") add(f.id, f.type, f.shape, f.rot ?? 0);
     }
     return out;
   }
@@ -380,7 +381,7 @@ export class AtlasScribeApp extends Base {
   /** Bridges, fords and props: points that can be clicked, [{ id, type, at }]. A bridge is where it was drawn (moved onto its road). */
   #points() {
     const drawn = new Map((this.#result?.crossings ?? []).map((c) => [c.id, c.at]));
-    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop" || f?.type === "place") && Array.isArray(f.at))
+    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop" || f?.type === "place" || f?.type === "light") && Array.isArray(f.at))
       .map((f) => ({ id: f.id, type: f.type, at: drawn.get(f.id) ?? f.at }));
   }
 
@@ -523,7 +524,7 @@ export class AtlasScribeApp extends Base {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(row(f.id, f.name ?? f.text ?? f.id, kind, rolls.get(f.id) ?? null));
     }
-    const TITLES = { district: "Districts", area: "Areas", height: "Rises and hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries" };
+    const TITLES = { district: "Districts", area: "Areas", height: "Rises and hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket lines" };
     return [...groups].map(([g, list]) => `<li class="as-pv-group" role="presentation"><strong>${esc(TITLES[g] ?? g)}</strong></li>${list.join("")}`).join("");
   }
 

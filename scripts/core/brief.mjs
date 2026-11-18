@@ -21,10 +21,10 @@ export const BRIEF = {
   site: ["wilderness", "roadside", "street", "camp", "castle", "cave", "dungeon"],
   size: ["medium", "small", "large"],
   season: ["summer", "spring", "autumn", "winter"],
-  time: ["day", "dawn", "dusk", "night"],
+  time: ["day", "dawn", "dusk", "night", "dark"],
   weather: ["season", "none", "rain", "fog", "snow"],
   ground: ["forest", "clearing", "open", "hills"],
-  features: ["road", "stream", "pond", "cliff", "rise", "hollow"],
+  features: ["road", "sunken", "stream", "pond", "cliff", "rise", "hollow"],
   trees: ["open", "none", "sparse", "thick", "dense"],
   litter: ["some", "none", "few", "lots"],
   rocks: ["few", "none", "some", "lots"],
@@ -49,10 +49,10 @@ export const BRIEF_LABELS = {
   doors: { some: "Some", none: "None", all: "Every one" },
   size: { small: "Small (30 by 24)", medium: "Medium (45 by 34)", large: "Large (60 by 45)" },
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
-  time: { day: "Day", dawn: "Dawn", dusk: "Dusk", night: "Night" },
+  time: { day: "Day", dawn: "Dawn", dusk: "Dusk", night: "Night (moonlit)", dark: "Dark night" },
   weather: { season: "Season's own", none: "None", rain: "Rain", fog: "Fog", snow: "Snow" },
   ground: { forest: "Forest", clearing: "Clearing", open: "Open", hills: "Hills" },
-  features: { road: "Road", stream: "Stream", pond: "Pond", cliff: "Cliff", rise: "Rise", hollow: "Hollow" },
+  features: { road: "Road", sunken: "Sunken road", stream: "Stream", pond: "Pond", cliff: "Cliff", rise: "Rise", hollow: "Hollow" },
   trees: { none: "None", sparse: "Sparse", open: "Open", thick: "Thick", dense: "Dense" },
   litter: { none: "None", few: "A few", some: "Some", lots: "Lots" },
   rocks: { none: "None", few: "A few", some: "Some", lots: "Lots" },
@@ -73,11 +73,14 @@ export const BRIEF_LABELS = {
  * it, with why.
  */
 export const SITE_LACKS = {
-  castle: { pond: "A castle's walls and yard leave no room for a pond", cliff: "A castle's walls and yard leave no room for a cliff" },
-  street: { rise: "A street's houses leave no room for a rise", hollow: "A street's houses leave no room for a hollow" },
-  cave: Object.fromEntries(["road", "stream", "pond", "cliff", "rise", "hollow"].map((f) => [f, "Underground, in solid rock"])),
-  dungeon: Object.fromEntries(["road", "stream", "pond", "cliff", "rise", "hollow"].map((f) => [f, "Underground, in solid rock"])),
+  castle: { pond: "A castle's walls and yard leave no room for a pond", cliff: "A castle's walls and yard leave no room for a cliff", sunken: "A castle's gate road runs at the ground's level" },
+  street: { rise: "A street's houses leave no room for a rise", hollow: "A street's houses leave no room for a hollow", sunken: "A street's houses front it at the ground's level" },
+  roadside: { sunken: "Its building fronts the road at the ground's level" },
+  cave: Object.fromEntries(["road", "sunken", "stream", "pond", "cliff", "rise", "hollow"].map((f) => [f, "Underground, in solid rock"])),
+  dungeon: Object.fromEntries(["road", "sunken", "stream", "pond", "cliff", "rise", "hollow"].map((f) => [f, "Underground, in solid rock"])),
 };
+/** A sunken road's depth, in feet. */
+const SUNKEN_FT = 10;
 /** The map in squares, by size. */
 export const BRIEF_SIZES = { small: [30, 24], medium: [45, 34], large: [60, 45] };
 
@@ -222,11 +225,13 @@ export function briefPlan(input = {}) {
   // (a roadside's road low enough for its building behind it, and for a cliff above that when one's asked for)
   const roadsideY = () => { const dep = BUILDINGS[b.building.use].dims[b.building.size][1]; return Math.min(H - 2.5, Math.max(H * 0.66, (has("cliff") ? 1 + 3.5 + 4.5 : 1) + dep + 3.5 + 2 + 1.4)); };
   const roadY = b.site === "roadside" ? roadsideY() : b.site === "camp" ? Math.min(H - 3, Math.max(H * 0.5, campTop + 2 * campDims(b, W, H).span + 4.5 + r.range(0, 2))) : H * r.range(0.42, 0.6);
-  if (has("road") && b.site !== "street" && b.site !== "castle") {
+  // (a sunken road is a road in a cut ten feet deep, its faces either side kept clear too)
+  const sunken = has("sunken") && !SITE_LACKS[b.site]?.sunken;
+  if ((has("road") || sunken) && b.site !== "street" && b.site !== "castle") {
     const cls = b.site === "roadside" ? "highway" : "track";
     road = { path: wander(r, roadY, W, 1.4), cls, width: cls === "highway" ? 20 : 10 };
-    features.push({ id: "road", type: "road", class: cls, surface: "dirt", width: road.width, path: road.path.map(pt) });
-    taken.push({ path: road.path, half: road.width / 10 + 0.8 });
+    features.push({ id: "road", type: "road", class: cls, surface: "dirt", width: road.width, path: road.path.map(pt), ...(sunken ? { sunken: SUNKEN_FT } : {}) });
+    taken.push({ path: road.path, half: road.width / 10 + 0.8 + (sunken ? 1 : 0) });
   }
 
   r = base.fork("site");
@@ -492,15 +497,15 @@ function roadside(b, r, W, H, road, features, taken) {
   for (const [k, cls] of (PROPS[b.building.use] ?? []).entries()) {
     // (in front, between the buildings and the road, clear of the middle of the front where the door and its path are,
     // and of each other)
-    // (a wagon or a cart, about 4 squares long with its shafts and 2 wide, turned near the front's line: its middle 2
+    // (a wagon or a cart, 3 to 6 squares long with its shafts as its art draws it, lying along the front: its middle 2
     // squares out from the walls at the least, and as far from the road and the rest)
     const big = cls === "wagon" || cls === "cart", out = big ? [-dep / 2 - 3, -dep / 2 - 2] : [-dep / 2 - 2.5, -dep / 2 - 1];
     for (let t = 0; t < 30; t++) {
       const along = r.range(-len / 2 - 4, len / 2 + 6), p = add(c, add(mul(u, along), mul(n, r.range(out[0], out[1]))));
-      if (Math.abs(along) < 2.5 || (road && nearPath(p, road.path) < road.width / 10 + (big ? 2 : 1)) || placed.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < (big || q.big ? 2.6 : 1.6))) continue;
+      if (Math.abs(along) < (big ? 4.5 : 2.5) || (road && nearPath(p, road.path) < road.width / 10 + (big ? 2 : 1)) || placed.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < (big || q.big ? 2.6 : 1.6))) continue;
       p.big = big;
       placed.push(p);
-      features.push({ id: `${id}-prop${k + 1}`, type: "prop", class: cls, at: pt(p), rot: Math.round(rot + r.range(-25, 25)) });
+      features.push({ id: `${id}-prop${k + 1}`, type: "prop", class: cls, at: pt(p), rot: Math.round(rot + (big ? 90 : 0) + r.range(-25, 25)) });
       break;
     }
   }

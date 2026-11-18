@@ -9,10 +9,10 @@ import { BRIEF_LABELS, SITE_LACKS } from "./brief.mjs";
 /** Words for each choice (single words or phrases, lowercase; a word's plural and -y forms are matched too). */
 const WORDS = {
   season: { spring: ["spring", "springtime"], summer: ["summer", "summertime"], autumn: ["autumn", "fall", "autumnal"], winter: ["winter", "wintry", "wintertime"] },
-  time: { day: ["by day", "day", "daytime", "daylight", "noon", "midday", "afternoon", "morning"], dawn: ["dawn", "sunrise", "daybreak"], dusk: ["dusk", "sunset", "twilight", "evening", "nightfall"], night: ["night", "nighttime", "midnight"] },
+  time: { day: ["by day", "day", "daytime", "daylight", "noon", "midday", "afternoon", "morning"], dawn: ["dawn", "sunrise", "daybreak"], dusk: ["dusk", "sunset", "twilight", "evening", "nightfall"], night: ["night", "nighttime", "midnight", "moonlit", "moonlight"], dark: ["dark night", "moonless", "pitch dark", "pitch black", "starless"] },
   weather: { rain: ["rain", "rainy", "raining", "storm", "stormy", "downpour", "drizzle"], fog: ["fog", "foggy", "mist", "misty"], snow: ["snow", "snowing", "snowy", "blizzard", "snowfall"], none: ["clear"] },
   ground: { forest: ["forest", "woods", "woodland", "wooded", "jungle"], clearing: ["clearing", "glade"], open: ["open ground", "open country", "field", "fields", "meadow", "meadows", "plain", "plains", "grassland", "countryside"], hills: ["hills", "hilly", "hillside", "hilltop"] },
-  features: { road: ["road", "path", "track", "trail", "highway", "lane", "roadside"], stream: ["stream", "creek", "brook", "river"], pond: ["pond", "lake", "pool"], cliff: ["cliff", "cliffs", "cliffside", "ledge", "bluff", "escarpment", "precipice"], rise: ["rise", "hill", "knoll", "mound", "hillock", "ridge"], hollow: ["hollow", "dip", "ravine", "gully", "depression", "sinkhole", "pit"] },
+  features: { road: ["road", "path", "track", "trail", "highway", "lane", "roadside"], sunken: ["sunken road", "sunken lane", "sunken track", "sunken path", "sunken way", "holloway"], stream: ["stream", "creek", "brook", "river"], pond: ["pond", "lake", "pool"], cliff: ["cliff", "cliffs", "cliffside", "ledge", "bluff", "escarpment", "precipice"], rise: ["rise", "hill", "knoll", "mound", "hillock", "ridge"], hollow: ["hollow", "dip", "ravine", "gully", "depression", "sinkhole", "pit"] },
   use: { inn: ["inn", "tavern", "alehouse", "roadhouse", "pub"], farmstead: ["farm", "farmstead", "farmhouse", "homestead"], shrine: ["shrine", "chapel", "temple"], smithy: ["smithy", "forge", "blacksmith", "smith"], watchtower: ["watchtower", "tower", "outpost", "lookout"] },
   place: { hamlet: ["hamlet"], village: ["village"], town: ["town"], city: ["city"] },
   quarter: { market: ["market", "marketplace", "bazaar"], merchants: ["merchants", "merchant"], crafts: ["crafts", "craftsmen", "artisans", "workshops"], docks: ["docks", "harbor", "wharf", "waterfront", "port"], nobles: ["nobles", "noble", "rich", "wealthy", "estates"], temple: ["temple", "temples", "cathedral"], poor: ["poor", "slum", "slums", "squalid"], garrison: ["garrison", "barracks"] },
@@ -137,6 +137,8 @@ export function readDescription(text = "") {
   else if (mentions(SITE_WORDS.wilderness)) { brief.site = "wilderness"; mark(SITE_WORDS.wilderness); }
   else if (use) brief.site = "roadside";
   for (const k of ["season", "time", "weather", "ground"]) { const v = first(WORDS[k]); if (v) brief[k] = v; }
+  // ("a camp at night, pitch dark": a dark night's words, said anywhere, make the night a dark one)
+  if (brief.time === "night" && WORDS.time.dark.some((w) => find(w).length)) brief.time = "dark";
   if (!brief.site && (brief.ground || mentions(Object.values(WORDS.features).flat()))) brief.site = "wilderness";
   if (brief.site) chip("site", brief.site, BRIEF_LABELS.site[brief.site]);
   // (a cave's open ground, a dungeon's corridors, from their own words)

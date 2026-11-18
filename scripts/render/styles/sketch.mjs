@@ -410,6 +410,20 @@ export function paint(ctx) {
     }
     g.globalAlpha = 1;
   }
+  // A plan's own regions, tinted by their kind with a dashed outline, and its own lights, a yellow mark with its dim
+  // light's reach (the published scene's regions and lights; the map's image shows neither)
+  const ZONE = { difficult: "rgb(201,162,39)", greater: "rgb(181,101,29)", hazard: "rgb(192,57,43)", cover: "rgb(46,134,193)", squeeze: "rgb(142,68,173)", note: "rgb(127,140,141)" };
+  for (const z of items("zone")) {
+    const c = ZONE[z.class] ?? ZONE.note;
+    g.globalAlpha = 0.18; fillPoly(z.poly, c); g.globalAlpha = 1;
+    g.save(); g.setLineDash([pp * 0.25, pp * 0.15]); g.beginPath(); ringPath(z.poly); g.closePath(); g.strokeStyle = c; g.lineWidth = Math.max(1, pp * 0.06); g.stroke(); g.restore();
+  }
+  for (const t of items("trail")) { g.save(); g.setLineDash([pp * 0.12, pp * 0.22]); stroke(t.path, 0.12, winter ? "rgb(96,118,146)" : "rgb(70,52,34)"); g.restore(); }
+  for (const l of items("light").filter((l) => l.own && Array.isArray(l.at))) {
+    const reach = (l.own.dim ?? 20) / (L.size?.ftPerSquare ?? 5);
+    g.globalAlpha = 0.12; dot(l.at[0], l.at[1], reach, l.own.color ?? "rgb(255,197,107)"); g.globalAlpha = 1;
+    dot(l.at[0], l.at[1], 0.18, "rgb(255,214,90)");
+  }
   progress(1, "Done");
 }
 

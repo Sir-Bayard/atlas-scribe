@@ -96,7 +96,8 @@ export function fixedFeatures(ctx) {
       const variant = r.int(8);
       // (a wild one, a rock or a stump, at its own size when the plan gives one, else at the size the woods give theirs;
       // anything else scaled to its size)
-      const sized = WILD_PROPS.includes(f.class) ? (size !== null ? { size } : { scale: WILD_SCALE[f.class] ?? 0.8 }) : size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45) } : PROP_SIZE[f.class] ? { size: PROP_SIZE[f.class] } : {};
+      // (a size the plan gives is the whole thing's length, along its longest side: a wagon's with its shafts)
+      const sized = WILD_PROPS.includes(f.class) ? (size !== null ? { size } : { scale: WILD_SCALE[f.class] ?? 0.8 }) : size !== null ? { scale: size / (PROP_SQUARES[f.class] ?? 0.45), long: true } : PROP_SIZE[f.class] ? { size: PROP_SIZE[f.class] } : {};
       items.push({ kind: "prop", id: f.id, from: f.id, class: f.class, x, y, rot: f.rot ?? 0, variant: Number.isInteger(f.variant) ? f.variant : variant, ...sized });
     }
   }

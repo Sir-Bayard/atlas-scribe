@@ -66,6 +66,9 @@ export const TYPES = {
       surface: oneOf(SURFACES, "dirt"),
       ruts: bool(false),
       straight: bool(false), // drawn straight between its points; else it curves smoothly through them
+      // (on a battle map: the road runs in a cut this many feet below the ground either side, a holloway or sunken
+      // lane, its banks a cliff past 5 ft; its faces lie outside its width)
+      sunken: num(null, { unit: "ft", min: 1, max: 60 }),
     },
   },
   water: {
@@ -101,6 +104,10 @@ export const TYPES = {
       name: str(),
       height: num(10, { unit: "ft", min: -60, max: 60 }),
       edge: { ...oneOf(["cliff", "bank", "slope"], null), fallback: "a bank for 5 ft or less, else a cliff" },
+      // (stretches of its outline with an edge of their own: [{ from, to, edge }], from and to its outline's point
+      // numbers counted from 0, running from one to the other in the outline's own order; a collapse, ramp or breach
+      // in a cliff, say)
+      edges: { kind: "stretches", values: ["cliff", "bank", "slope"], default: null },
       rock: { ...oneOf(["earthy", "slate", "mossy"], null), fallback: "picked from its seed" },
       // (the Climb DC of its edge where it's a cliff; else natural rock's, or a cut or built face's when straight)
       climbDC: { ...num(null, { min: 1, max: 60, integer: true }), fallback: "15, or 20 with sharp corners (a cut or built face)" },
@@ -244,6 +251,39 @@ export const TYPES = {
       climbDC: { ...num(null, { min: 1, max: 60, integer: true }), only: ["cliff"], fallback: "15, natural rock's" },
     },
   },
+  tether: {
+    // On a battle map: a picket line along its path, a rope between stakes, where horses, mules or oxen are tied
+    geometry: "path",
+    fields: {},
+  },
+  trail: {
+    // On a battle map: a trail of prints along its path, from where it starts to where it ends (feet, hooves, paws or
+    // a cart's wheels), in any season: a clue the players can follow
+    geometry: "path",
+    classes: ["foot", "hoof", "paw", "wheel"],
+    fields: {},
+  },
+  light: {
+    // On a battle map: a light of the plan's own (a lantern on a post, a window's glow, a magic light), placed with the
+    // scene. bright and dim are its radii in feet; lit only after dark when dark is true
+    geometry: "point",
+    fields: {
+      bright: num(10, { unit: "ft", min: 0, max: 300 }),
+      dim: num(20, { unit: "ft", min: 0, max: 300 }),
+      color: str("#ffc56b"),
+      alpha: num(0.5, { min: 0, max: 1 }),
+      animation: oneOf(["none", "torch", "flame", "pulse", "wave", "fog"], "none"),
+      dark: bool(false),
+    },
+  },
+  region: {
+    // On a battle map: a region of the plan's own, set on the scene. difficult and greater: walking there costs twice
+    // or three times as much; hazard, cover, squeeze and note: a marked region whose note is shown when a token enters
+    // (the GM decides what it does)
+    geometry: "shape",
+    classes: ["difficult", "greater", "hazard", "cover", "squeeze", "note"],
+    fields: { name: str(), note: str(""), rot: num(0, { unit: "deg" }) },
+  },
   place: {
     // A place on a region map (kind "region"): its marker and name; its own map is made from it
     geometry: "point",
@@ -255,8 +295,11 @@ export const TYPES = {
     // (campfire, fire pit, brazier, torch and lamp post: lights on a battle map, each lit where it stands)
     // (cairn, standing stone, sledge, tracks and ribbon: what tells a place's story on a battle map; tracks are
     // footprints in snow, drawn in winter only)
-    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "maypole", "sundial", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll", "cairn", "standing-stone", "sledge", "tracks", "ribbon"],
+    classes: ["tree", "bush", "cart", "wagon", "well", "barrel", "crate", "statue", "fountain", "cross", "maypole", "sundial", "boat", "ship", "crane", "fern", "log", "stump", "rock", "boulder", "branch", "roots", "leaves", "campfire", "firepit", "brazier", "torch", "lamp-post", "tent", "bedroll", "cairn", "standing-stone", "sledge", "tracks", "ribbon", "horse", "mule", "ox"],
     // (variant: which of its art's pieces, else from the seed: a soldiers' camp's tents all one cloth)
+    // (rot: degrees clockwise from how its art is drawn: at 0 a cart, wagon, boat, bedroll or animal runs down the map,
+    // a wagon's shafts and an animal's head to the south, and a sledge lies across it; size: its length in feet along its longest side, a wagon's with its shafts, a tree's crown
+    // across, a rock's or stump's width)
     fields: { rot: num(0, { unit: "deg" }), species: { ...str(null), only: ["tree"] }, size: num(null, { unit: "ft", min: 0, max: 500 }), variant: num(null, { min: 0, max: 999, integer: true }) },
   },
   label: {
@@ -284,7 +327,7 @@ export const CONIFERS = ["conifer", "fir", "pine", "spruce", "cedar", "larch", "
 export const isConifer = (species) => typeof species === "string" && CONIFERS.includes(species.trim().toLowerCase());
 
 /** How wide a battle map draws a prop the plan gives no size, in squares, where its art's own size is too big for it. */
-export const PROP_SIZE = { tracks: 0.6, ribbon: 0.7, "standing-stone": 1.2, cairn: 2.2 };
+export const PROP_SIZE = { tracks: 0.9, ribbon: 1.1, "standing-stone": 1.2, cairn: 2.2, horse: 1.1, mule: 0.9, ox: 1.3 };
 
 /** How wide a prop is drawn, in squares, when the plan gives it no size (a prop's size, in feet, sets it). */
 export const PROP_SQUARES = { maypole: 0.6, sundial: 0.4, tent: 0.6, bedroll: 0.3, well: 0.45, cart: 0.45, wagon: 0.6, barrel: 0.45, crate: 0.45, statue: 0.45, stall: 0.4, "stall-long": 0.4, sails: 2.4, waterwheel: 0.25, boat: 0.2, ship: 0.8, cross: 0.5, fountain: 0.45 };
@@ -304,7 +347,7 @@ export const SCENE = {
   globalLight: bool(true),
   // The time of day (a battle map's): sets the scene's darkness, its light outdoors and its tint in place of darkness
   // and globalLight, and which lights are lit (TIMES in publish.mjs). Left out, those two settings are used
-  time: oneOf(["day", "dawn", "dusk", "night"], null),
+  time: oneOf(["day", "dawn", "dusk", "night", "dark"], null),
   tokenVision: bool(false),
   fog: bool(false),
   weather: str(null),

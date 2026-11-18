@@ -85,7 +85,7 @@ export function heightRegions(layout) {
   levels.forEach((L, order) => {
     const polys = withHoles(clip(L.rings));
     if (!polys.length) return;
-    const what = L.bed ? `${L.waterClass === "river" ? "River" : L.waterClass === "canal" ? "Canal" : "Stream"} bed` : L.name ?? (L.elevation < 0 ? "Hollow" : "Rise");
+    const what = L.bed ? `${L.waterClass === "river" ? "River" : L.waterClass === "canal" ? "Canal" : "Stream"} bed` : L.cut ? "Sunken road" : L.name ?? (L.elevation < 0 ? "Hollow" : "Rise");
     out.push({ kind: "ground", name: `${what} (${L.elevation} ft)`, polys, elevation: L.elevation, order, over: false });
   });
   // A bridge's deck: ground at its banks' height, over the bed it spans (a footbridge's as a road bridge's)

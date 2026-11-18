@@ -398,7 +398,8 @@ function windowStrip(L) {
  * slate or ice.
  */
 function bankStrip(L, r, kind, season, part = "bank") {
-  const c = cv(T, PX), g = c.getContext("2d"), y0 = 30, h = 140;
+  // (a cliff's top is only its lip: a narrow edge of rock under the grass or snow that overhangs it)
+  const c = cv(T, PX), g = c.getContext("2d"), y0 = 30, h = part === "top" ? 44 : 140;
   const rocky = kind === "slate" || part === "face" || part === "foot", icy = kind === "ice";
   const [d, l] = icy ? ["#a9c9d6", "#e6f2f6"] : rocky ? L.rock : L.dirt;
   if (part === "foot") {
@@ -901,9 +902,18 @@ function cairn(L, r, [cw, ch] = [1, 2]) {
 function sledge(L, r) {
   return sprite(3, 1, (g, w, h) => { g.fillStyle = L.ink ?? L.woodDark; g.fillRect(w * 0.06, h * 0.22, w * 0.88, h * 0.06); g.fillRect(w * 0.06, h * 0.72, w * 0.88, h * 0.06); finish(g, L, roundRect(g, w * 0.14, h * 0.25, w * 0.72, h * 0.5, 4), L.wood[1]); });
 }
-/** A ribbon: a strip of cloth knotted on (1 by 1). */
+/** A ribbon: a strip of red cloth knotted on, its two tails trailing (1 by 1), bold enough to read as a clue. */
 function ribbon(L, r) {
-  return sprite(1, 1, (g, w) => { g.strokeStyle = clothOf(L, r); g.lineWidth = w * 0.06; g.lineCap = "round"; g.beginPath(); g.moveTo(w * 0.3, w * 0.3); g.quadraticCurveTo(w * 0.6, w * 0.4, w * 0.5, w * 0.7); g.stroke(); });
+  return sprite(1, 1, (g, w) => {
+    const red = L.ink ? "#c4302b" : "#b3121f", dark = "#5a0a10";
+    g.lineCap = "round";
+    for (const [x1, y1, x2, y2, bend] of [[0.42, 0.36, 0.3, 0.86, -0.12], [0.5, 0.36, 0.66, 0.84, 0.14]]) {
+      g.strokeStyle = dark; g.lineWidth = w * 0.16; g.beginPath(); g.moveTo(w * x1, w * y1); g.quadraticCurveTo(w * (x1 + bend), w * 0.62, w * x2, w * y2); g.stroke();
+      g.strokeStyle = red; g.lineWidth = w * 0.12; g.beginPath(); g.moveTo(w * x1, w * y1); g.quadraticCurveTo(w * (x1 + bend), w * 0.62, w * x2, w * y2); g.stroke();
+    }
+    // (the knot)
+    g.fillStyle = red; g.strokeStyle = dark; g.lineWidth = w * 0.025; g.beginPath(); g.ellipse(w * 0.46, w * 0.33, w * 0.1, w * 0.07, r() * 0.6, 0, 7); g.fill(); g.stroke();
+  });
 }
 /** Cattails: a clump of reeds with brown heads (1 by 1). */
 function reeds(L, r, season) {
@@ -921,6 +931,44 @@ function ice(L, r, kind) {
     const pts = []; for (let i = 0; i < 7; i++) { const a = (i / 7) * 2 * Math.PI; pts.push([w / 2 + Math.cos(a) * w * r.range(0.22, 0.38), w / 2 + Math.sin(a) * w * r.range(0.22, 0.38)]); }
     finish(g, L, () => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }, kind === "floe" ? "#f2f6f8" : "#bcdbe6", { lw: 0.6 });
   });
+}
+/**
+ * A horse, mule or ox seen from above, standing, its head to the south (at rot 0, as a wagon's shafts): its body, neck
+ * and head, ears, mane or horns, and tail, in a coat picked from its variant (1 by 2; an ox's broader).
+ */
+function animal(L, r, kind) {
+  const COATS = { horse: ["#6b4226", "#8a5a2b", "#2e2420", "#9a9a94", "#c9b38a"], mule: ["#6e5a48", "#4f4238", "#857262"], ox: ["#a07850", "#d8c8a8", "#5a3e2a", "#3a2e26"] };
+  const coat = COATS[kind][Math.floor(r() * COATS[kind].length)], dark = rgb(mix(hex(coat), [0, 0, 0], 0.45)), light = rgb(mix(hex(coat), [255, 255, 255], 0.18));
+  const broad = kind === "ox" ? 1.18 : kind === "mule" ? 0.9 : 1;
+  return sprite(1, 2, (g, w, h) => {
+    const cx = w / 2, bw = w * 0.3 * broad, bodyTop = h * 0.2, bodyBot = h * 0.66;
+    // (the tail, behind)
+    g.strokeStyle = kind === "horse" ? dark : coat; g.lineWidth = w * (kind === "horse" ? 0.08 : 0.04); g.lineCap = "round";
+    g.beginPath(); g.moveTo(cx, bodyTop + h * 0.02); g.quadraticCurveTo(cx + w * 0.06 * (r() - 0.5), bodyTop - h * 0.06, cx + w * 0.05 * (r() - 0.5), bodyTop - h * 0.12); g.stroke();
+    if (kind !== "horse") { g.fillStyle = dark; g.beginPath(); g.arc(cx, bodyTop - h * 0.12, w * 0.04, 0, 7); g.fill(); }
+    // (the body: a barrel between the haunches and the shoulders)
+    finish(g, L, () => { g.beginPath(); g.ellipse(cx, (bodyTop + bodyBot) / 2, bw, (bodyBot - bodyTop) / 2, 0, 0, 7); }, coat);
+    g.fillStyle = light; g.globalAlpha = 0.35; g.beginPath(); g.ellipse(cx - bw * 0.25, (bodyTop + bodyBot) / 2, bw * 0.4, (bodyBot - bodyTop) / 2.6, 0, 0, 7); g.fill(); g.globalAlpha = 1;
+    // (the neck and head, reaching south)
+    const nw = w * (kind === "ox" ? 0.2 : 0.14), headY = h * (kind === "ox" ? 0.8 : 0.86);
+    finish(g, L, () => { g.beginPath(); g.moveTo(cx - nw, bodyBot - h * 0.04); g.lineTo(cx + nw, bodyBot - h * 0.04); g.lineTo(cx + nw * 0.8, headY - h * 0.04); g.lineTo(cx - nw * 0.8, headY - h * 0.04); g.closePath(); }, coat, { shadow: false });
+    finish(g, L, () => { g.beginPath(); g.ellipse(cx, headY, w * (kind === "ox" ? 0.15 : 0.1), h * (kind === "ox" ? 0.07 : 0.085), 0, 0, 7); }, coat);
+    g.fillStyle = dark; g.beginPath(); g.ellipse(cx, headY + h * (kind === "ox" ? 0.05 : 0.065), w * 0.07, h * 0.025, 0, 0, 7); g.fill();
+    // (a horse's mane down its neck; a mule's long ears; an ox's horns)
+    if (kind === "horse") { g.strokeStyle = dark; g.lineWidth = w * 0.05; g.beginPath(); g.moveTo(cx, bodyBot - h * 0.05); g.lineTo(cx, headY - h * 0.05); g.stroke(); }
+    const ear = kind === "mule" ? 0.09 : 0.045;
+    g.fillStyle = dark;
+    for (const sd of [-1, 1]) { g.beginPath(); g.ellipse(cx + sd * w * 0.08, headY - h * 0.07, w * 0.025, h * ear / 2, sd * 0.5, 0, 7); g.fill(); }
+    if (kind === "ox") { g.strokeStyle = "#e8e0cc"; g.lineWidth = w * 0.04; for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(cx + sd * w * 0.1, headY - h * 0.04); g.quadraticCurveTo(cx + sd * w * 0.26, headY - h * 0.05, cx + sd * w * 0.24, headY - h * 0.1); g.stroke(); } }
+  });
+}
+/** A picket line's rope: a twisted strand along the strip (a path's band). */
+function rope(L, r) {
+  const c = cv(T, PX), g = c.getContext("2d"), y = PX / 2;
+  g.strokeStyle = L.ink ? "#7a5a36" : "#8a6a42"; g.lineWidth = 9; g.beginPath(); g.moveTo(0, y); g.lineTo(T, y); g.stroke();
+  g.strokeStyle = "rgba(40,28,16,0.6)"; g.lineWidth = 2;
+  for (let x = 0; x < T; x += 8) { g.beginPath(); g.moveTo(x, y - 4); g.lineTo(x + 6, y + 4); g.stroke(); }
+  return c;
 }
 /** Footprints in snow: two rows of prints going up (1 by 1). */
 function tracks(L, r) {
@@ -1034,6 +1082,7 @@ function drawOne(role, variant, look) {
   if (name === "overlay.snow") return snowPatches(L, r);
   if (name === "overlay.frost") return frost(L, r, false);
   if (name === "overlay.ice") return frost(L, r, true);
+  if (a === "strip" && b === "rope") return rope(L, r);
   if (a === "strip") return winterStrip(L, r, b === "track" ? "wheel" : b === "ice" ? "cracked" : c);
   if (a === "smoke") return smoke(L, r, b);
   if (name === "shadow.half") return halfShadow();
@@ -1080,6 +1129,7 @@ function drawOne(role, variant, look) {
     if (b === "stump") return stump(L, r, w ? 1 : 4); if (b === "fern") return fern(L, r, s);
     if (b === "branch") return litter(L, r, b, s, [1, 2]); if (b === "roots") return litter(L, r, b, s, [3, 3]); if (b === "leaves") return litter(L, r, b, s, [2, 2]);
     if (b === "barrel") return barrel(L, r); if (b === "crate") return crate(L, r); if (b === "well") return well(L, r);
+    if (b === "horse" || b === "mule" || b === "ox") return animal(L, r, b);
     if (b === "wagon") return wagon(L, r, 3, 6); if (b === "cart") return wagon(L, r, 2, 3); if (b === "hay") return hay(L, r, 2, 1);
     if (b === "tent") return tent(L, r); if (b === "bedroll") return bedroll(L, r); if (b === "fountain") return fountain(L, r); if (b === "statue") return statue(L, r);
     if (b === "stall") return stall(L, r, 2); if (b === "stall-long") return stall(L, r, 3); if (b === "sails") return sails(L, r); if (b === "waterwheel") return waterwheel(L, r);

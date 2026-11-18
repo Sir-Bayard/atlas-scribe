@@ -37,6 +37,7 @@ export const FIELD_TEXT = {
   "road.surface": { label: "Surface", names: { dirt: "dirt", slush: "slush", snow: "snow", trodden: "trodden earth", cobble: "cobbles", gravel: "gravel", grass: "grass", mud: "mud", flagstone: "flagstones", setts: "square setts", herringbone: "herringbone brick", brick: "brick", tiles: "stone tiles" } },
   "road.ruts": { label: "Cart ruts", help: "Two worn ruts along the middle" },
   "road.straight": { label: "Straight", help: "Straight lines between its points instead of a smooth curve through them" },
+  "road.sunken": { label: "Sunken", help: "On a battle map: how many feet below the ground either side it runs, in a cut with a bank each side (a cliff past 5 ft)", auto: "at the ground's level", more: true },
 
   "water.width": { label: "Width", help: "How wide it is at its first point, in feet" },
   "water.endWidth": { label: "End width", help: "How wide it is at its last point, in feet: it widens or narrows smoothly along the way", auto: "the same all along" },
@@ -134,6 +135,17 @@ export const FIELD_TEXT = {
 
   "height.height": { label: "Height", help: "In feet: how far its ground stands above the ground around it (below zero, a hollow). A token's elevation follows it on the scene" },
   "height.edge": { label: "Edge", names: { cliff: "a cliff", bank: "a steep bank", slope: "a walkable slope" }, help: "How its edge comes down. A cliff stops walkers (they climb, leap or fly); a bank or slope slows them", auto: "a bank for 5 ft or less, else a cliff" },
+  "height.edges": { hidden: true },
+  "region.class": { names: { difficult: "difficult terrain", greater: "greater difficult terrain", hazard: "a hazard", cover: "cover", squeeze: "a squeeze", note: "a note" } },
+  "trail.class": { names: { foot: "footprints", hoof: "hoofprints", paw: "paw prints", wheel: "wheel ruts" } },
+  "light.bright": { label: "Bright light", help: "How far its bright light reaches, in feet" },
+  "light.dim": { label: "Dim light", help: "How far its dim light reaches, in feet (at least as far as its bright light)" },
+  "light.color": { label: "Color", kind: "color", help: "Its light's color, like #ffc56b (a lantern's warm yellow)" },
+  "light.alpha": { label: "Color strength", help: "How strongly its color tints what it lights, 0 to 1", more: true },
+  "light.animation": { label: "Flicker", names: { none: "none", torch: "a torch's", flame: "a fire's", pulse: "a slow pulse", wave: "a wave", fog: "drifting fog" } },
+  "light.dark": { label: "Lit after dark", help: "Lit only from dusk on (a lamp's); else always lit" },
+  "region.note": { label: "Note", help: "Shown to the GM when a token moves into it: what it is and what it does (\"Squeezing between the wagons\")" },
+  "region.rot": { label: "Turned", help: "Degrees clockwise", more: true },
   "height.rock": { label: "Rock", names: { earthy: "earthy brown stone", slate: "gray slate", mossy: "mossy stone" }, auto: "picked from its seed" },
   "height.climbDC": { label: "Climb DC", help: "Where its edge is a cliff: the DC of the check to climb it, shown when a walker is stopped at it", auto: "15, or 20 with sharp corners (a cut or built face)", more: true },
   "height.rot": { label: "Turned", help: "Degrees clockwise; a turned rise can't be reshaped by its corners yet", more: true },
@@ -151,9 +163,9 @@ export const FIELD_TEXT = {
   "wall.rock": { label: "Rock", names: { earthy: "earthy brown stone", slate: "gray slate" }, auto: "picked from its seed" },
   "wall.climbDC": { label: "Climb DC", help: "On a battle map: the DC of the check to climb the cliff, shown when a walker is stopped at it", auto: "15, natural rock's" },
 
-  "prop.rot": { label: "Turned", help: "Degrees clockwise", notFor: ["tree"] }, // a tree is turned at random
+  "prop.rot": { label: "Turned", help: "Degrees clockwise. At 0 a cart, wagon, boat, bedroll or animal runs down the map (a wagon's shafts and an animal's head to the south); a sledge lies across it", notFor: ["tree"] }, // a tree is turned at random
   "prop.species": { label: "Tree", kind: "enum", values: ["conifer", "bare"], names: { conifer: "fir", bare: "leafy" }, auto: "leafy" },
-  "prop.size": { label: "Size", help: "How wide it is, in feet (a tree's crown); else the usual size", more: true },
+  "prop.size": { label: "Size", help: "Its length in feet along its longest side (a wagon's with its shafts; a tree's crown across); else the usual size", more: true },
   "prop.variant": { label: "Look", help: "Which of its pictures it's drawn with, counting from 0 (a tent's cloth, say); else one picked from its seed", auto: "picked from its seed", more: true },
 
   "label.text": { label: "Text" },
@@ -185,7 +197,7 @@ export const PLAN_FIELDS = [
   { path: "output.scene.labelFont", label: "Label font", kind: "font", more: true, help: "Every label's font, unless a label sets its own" },
   { path: "output.scene.name", label: "Scene name", kind: "string", group: "scene" },
   { path: "output.scene.weather", label: "Weather", kind: "string", group: "scene", help: "A Foundry weather effect (snow, rain, fog...), or none; left empty, a battle map in winter snows" },
-  { path: "output.scene.time", label: "Time of day", kind: "enum", values: ["day", "dawn", "dusk", "night"], group: "scene", help: "Sets the scene's darkness and light (in place of Darkness and Global light) and lights the lanterns and lamps after dark" },
+  { path: "output.scene.time", label: "Time of day", kind: "enum", values: ["day", "dawn", "dusk", "night", "dark"], names: { day: "day", dawn: "dawn", dusk: "dusk", night: "night, moonlit", dark: "a dark night" }, group: "scene", help: "Sets the scene's darkness and light (in place of Darkness and Global light) and lights the lanterns and lamps after dark. A night is moonlit (dim light everywhere); a dark night has no moon" },
   { path: "output.scene.darkness", label: "Darkness", kind: "number", min: 0, max: 1, group: "scene" },
   { path: "output.scene.globalLight", label: "Global light", kind: "boolean", group: "scene" },
   { path: "output.scene.tokenVision", label: "Token vision", kind: "boolean", group: "scene" },
@@ -215,11 +227,14 @@ export function fieldsOf(plan, id) {
   const cls = t.classes ? (t.classes.includes(f.class) ? f.class : t.classes[0]) : undefined;
   // Water drawn along a path is a stream, river or canal; drawn as a shape, a pond, lake or sea
   const kinds = f.type === "water" ? t.classes.filter((c) => (Array.isArray(f.path) ? RUNNING : BODIES).includes(c)) : t.classes;
-  if (t.classes) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0] });
+  // (a kind's words where it has them: a region's "squeeze" is "a squeeze")
+  const kindNames = textOf(f.type, "class").names;
+  if (t.classes) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0], ...(kindNames ? { names: kindNames } : {}) });
   // Water drawn as a shape (a pond, a lake) has no width and nothing to straighten
   const shaped = f.type === "water" && !Array.isArray(f.path);
   for (const [name, spec] of Object.entries(t.fields)) {
     if (spec.only && !spec.only.includes(cls)) continue;
+    if (spec.kind === "stretches") continue; // (a height's edge stretches are set in the plan, by its outline's points)
     const base = textOf(f.type, name), txt = base.byClass?.[cls] ? { ...base, ...base.byClass[cls] } : base; // (a class's own words, a cliff's side, say)
     if (txt.hidden || txt.notFor?.includes(cls)) continue;
     // (a centerpiece only where the district's character has one, and not in a hamlet)

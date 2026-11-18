@@ -23,7 +23,7 @@ function clean(pts) {
 }
 
 /** The types whose paths can be reshaped. */
-const PATHS = new Set(["road", "water", "wall", "dock"]);
+const PATHS = new Set(["road", "water", "wall", "dock", "trail", "tether"]);
 
 /**
  * A feature's shape as handles see it: { kind: "poly", pts } | { kind: "path", pts } | { kind: "circle", c, r } |
@@ -36,7 +36,9 @@ export function editableShape(f) {
     for (const p of f.path) if (Array.isArray(p) && (!pts.length || !near(pts[pts.length - 1], p))) pts.push([p[0], p[1]]);
     return pts.length >= 2 ? { kind: "path", pts } : null;
   }
-  if (!rerollable(f) || (Number(f.rot) || 0) !== 0) return null;
+  // (a district, area, height or body of water; or a plan's own region, which has no seed but is reshaped the same)
+  const region = isObj(f) && f.type === "region" && typeof f.id === "string";
+  if (!(rerollable(f) || region) || (Number(f.rot) || 0) !== 0) return null;
   const s = f.shape;
   if (Array.isArray(s)) {
     const pts = clean(s);
@@ -82,7 +84,7 @@ const polys = (plan) => (plan?.features ?? []).map((f) => ({ f, e: editableShape
  */
 export function familyOf(f) {
   if (Array.isArray(f?.path)) return f.type === "wall" && f.class === "cliff" ? "cliff" : f.type;
-  return f?.type === "water" ? "body" : f?.type === "height" ? "height" : "shape";
+  return f?.type === "water" ? "body" : f?.type === "height" ? "height" : f?.type === "region" ? "region" : "shape";
 }
 
 /** The other shapes' corners at the same place as this corner: [{ id, i }]. */
@@ -126,10 +128,14 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
   const at = exact ? [to[0], to[1]] : [round(to[0]), round(to[1])];
   if (kind === "corner") {
     const where = [{ id, i }, ...partners];
-    return refitAfter(plan, where.map((w) => w.id), withPoints(plan, [...new Set(where.map((w) => w.id))], (pts, fid) => {
+    const ids = [...new Set(where.map((w) => w.id))];
+    const next = withPoints(plan, ids, (pts, fid) => {
       for (const w of where) if (w.id === fid) pts[w.i] = [...at];
       return pts;
-    }));
+    });
+    // (a corner dropped onto its neighbor becomes one corner: a height's stretches follow)
+    keepStretches(plan, next, ids);
+    return refitAfter(plan, where.map((w) => w.id), next);
   }
   if (kind === "mid") {
     const me = polys(plan).find((x) => x.f.id === id);
@@ -147,6 +153,7 @@ export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = f
     const next = withPoints(plan, [...sides.keys()], (pts, fid) => { pts.splice(sides.get(fid) + 1, 0, [...at]); return pts; });
     // A river's width at each point gets one for the new point too: halfway between its neighbors'
     keepWidths(plan, next, [...sides.keys()], (w, fid) => { const j = sides.get(fid); w.splice(j + 1, 0, (w[j] + w[j + 1]) / 2); });
+    keepStretches(plan, next, [...sides.keys()]);
     return refitAfter(plan, [...sides.keys()], next);
   }
   const out = structuredClone(plan);
@@ -179,7 +186,33 @@ export function removeCorner(plan, id, i) {
   };
   const next = withPoints(plan, [...where.keys()], (pts, fid) => (pts.length > (isPath(fid) ? 2 : 3) ? take(pts, where.get(fid)) : null));
   keepWidths(plan, next, [...where.keys()], (w, fid) => w.splice(where.get(fid), 1)); // a river's width there goes with it
+  keepStretches(plan, next, [...where.keys()]);
   return refitAfter(plan, [...where.keys()], next);
+}
+
+/**
+ * A height's edge stretches (its edges field, by its outline's point numbers) kept in step when its outline gained or
+ * lost one corner between before and after (the window's add, remove, or a corner dropped onto its neighbor): past a
+ * new corner the numbers move on one; past a taken one they move back one, and a stretch ending on the taken corner
+ * ends on the corner before it. A stretch whose ends come to one point is dropped. Changes after in place.
+ */
+function keepStretches(before, after, ids) {
+  for (const f of after.features) {
+    if (!isObj(f) || f.type !== "height" || !ids.includes(f.id) || !Array.isArray(f.edges)) continue;
+    const was = before.features.find((x) => isObj(x) && x.id === f.id)?.shape;
+    if (!Array.isArray(was) || !Array.isArray(f.shape)) continue;
+    const n0 = was.length, n1 = f.shape.length;
+    if (Math.abs(n1 - n0) !== 1) continue;
+    const same = (p, q) => p && q && p[0] === q[0] && p[1] === q[1];
+    // (the first place the outlines part: the new corner, or the taken one)
+    let j = 0;
+    while (j < Math.min(n0, n1) && same(was[j], f.shape[j])) j++;
+    // (corner 0 dropped onto the last corner: the outline then starts at the last, and every other keeps its number)
+    const wrapped = n1 < n0 && j === 0 && same(was[n0 - 1], f.shape[0]);
+    const renumber = wrapped ? (k) => (k === n0 - 1 ? 0 : k) : n1 > n0 ? (k) => (k >= j ? k + 1 : k) : (k) => (k < j ? k : k > j ? k - 1 : (j - 1 + n1) % n1);
+    f.edges = f.edges.map((x) => (isObj(x) && Number.isInteger(x.from) && Number.isInteger(x.to) ? { ...x, from: renumber(x.from), to: renumber(x.to) } : x)).filter((x) => !isObj(x) || x.from !== x.to);
+    if (!f.edges.length) delete f.edges;
+  }
 }
 
 /**

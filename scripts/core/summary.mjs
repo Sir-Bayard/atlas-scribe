@@ -81,6 +81,7 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
     }
   }
   // The rest of the plan's features by type
+  const battleOnly = plan.kind === "battle" ? feats : [];
   const groups = [
     ["Places", feats.filter((f) => f.type === "place")],
     ["Roads", feats.filter((f) => f.type === "road")],
@@ -89,11 +90,19 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
     ["Squares", feats.filter((f) => f.type === "square")],
     [region ? "Woods, hills and mountains" : "Parks, woods and fields", feats.filter((f) => f.type === "area")],
     ["Buildings and landmarks", feats.filter((f) => f.type === "building" || f.type === "landmark")],
+    // (a battle map's own: a settlement map leaves them off)
+    ["Regions", battleOnly.filter((f) => f.type === "region")],
+    ["Lights", battleOnly.filter((f) => f.type === "light")],
+    ["Trails and picket lines", battleOnly.filter((f) => f.type === "trail" || f.type === "tether")],
   ].filter(([, l]) => l.length);
+  // (a region's and a trail's kind in words; a region's note and a light's reach after it)
+  const KIND_WORDS = { difficult: "difficult terrain", greater: "greater difficult terrain", foot: "footprints", hoof: "hoofprints", paw: "paw prints", wheel: "wheel ruts" };
   for (const [title, list] of groups) {
     out.push("", `## ${title}`, "");
     for (const f of list) {
-      const what = f.class ?? f.use ?? f.type;
+      if (f.type === "region") { out.push(`- ${named(f)} (${KIND_WORDS[f.class] ?? f.class ?? "note"})${f.note ? `: ${f.note}` : ""}`); continue; }
+      if (f.type === "light") { const bright = f.bright ?? 10; out.push(`- ${named(f)}: ${bright} ft bright, ${Math.max(bright, f.dim ?? 20)} ft dim${f.dark ? ", lit after dark" : ""}`); continue; }
+      const what = f.type === "tether" ? "picket line" : KIND_WORDS[f.class] ?? f.class ?? f.use ?? f.type;
       const walls = f.type === "wall" ? layout?.notes?.find((n) => n.id === f.id && /towers?/.test(n.message))?.message.replace(/^"[^"]*": /, "") : null;
       out.push(`- ${named(f)}${what && what !== named(f) ? ` (${what})` : ""}${walls ? `: ${walls}` : ""}`);
     }

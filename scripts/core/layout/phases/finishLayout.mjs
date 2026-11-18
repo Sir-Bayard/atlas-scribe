@@ -5,6 +5,10 @@ import { characterOf } from "../../character.mjs";
 import { groundPatches } from "../settlement.mjs";
 import { rng } from "../../rng.mjs";
 import { seasonOf } from "../../roles.mjs";
+import { levelAt } from "../../height.mjs";
+import { shapeToPolygon } from "../../geom.mjs";
+
+const isPoint = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
 
 /** The ground under everything, a battle map's lights and mist, and the layout put together. */
 export function finishLayout(ctx) {
@@ -20,6 +24,17 @@ export function finishLayout(ctx) {
   if (battle) {
     items.push(...lightsOf(items, plan.seed, { size: plan.size?.squares }));
     items.push(...mistOf(items, plan.seed, { fog: plan.output?.scene?.weather === "fog" }));
+    // (the plan's own lights, each at the ground's height where it stands, and its own regions)
+    for (const f of plan.features.filter((x) => x.type === "light" && isPoint(x.at))) {
+      items.push({ kind: "light", id: f.id, from: f.id, class: "plan", at: [...f.at], elevation: levelAt(items, f.at), own: { bright: f.bright, dim: f.dim, color: f.color, alpha: f.alpha, animation: f.animation, dark: !!f.dark } });
+    }
+    for (const f of plan.features.filter((x) => (x.type === "trail" || x.type === "tether") && Array.isArray(x.path) && x.path.length >= 2 && x.path.every(isPoint))) {
+      items.push({ kind: f.type, id: f.id, from: f.id, ...(f.type === "trail" ? { class: f.class } : {}), path: f.path.map((p) => [...p]) });
+    }
+    for (const f of plan.features.filter((x) => x.type === "region" && x.shape)) {
+      const poly = shapeToPolygon(f.shape, f.rot ?? 0);
+      if (poly.length >= 3) items.push({ kind: "zone", id: f.id, from: f.id, class: f.class, poly, name: f.name ?? null, note: f.note ?? "" });
+    }
   } else if (lit.length) notes.push({ level: "info", id: lit[0].from ?? lit[0].id, message: `Campfires, braziers, torches and lamp posts are drawn on battle maps only; ${lit.length === 1 ? "this one is" : `these ${lit.length} are`} left off.` });
   if (lit.length) for (let k = items.length - 1; k >= 0; k--) if (lit.includes(items[k])) items.splice(k, 1);
 

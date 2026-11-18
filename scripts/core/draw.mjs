@@ -64,6 +64,21 @@ export const TOOLS = [
   { id: "brazier", label: "Brazier", icon: "fa-fire-burner", geometry: "point", make: { type: "prop", class: "brazier" } },
   { id: "torch", label: "Torch", icon: "fa-fire-flame-simple", geometry: "point", make: { type: "prop", class: "torch" } },
   { id: "lamppost", label: "Lamp post", icon: "fa-lightbulb", geometry: "point", base: "lamp", make: { type: "prop", class: "lamp-post" } },
+  { id: "tether", label: "Picket line", icon: "fa-grip-lines-vertical", geometry: "path", make: { type: "tether" } },
+  { id: "horse", label: "Horse", icon: "fa-horse", geometry: "point", make: { type: "prop", class: "horse" } },
+  { id: "mule", label: "Mule", icon: "fa-horse-head", geometry: "point", make: { type: "prop", class: "mule" } },
+  { id: "ox", label: "Ox", icon: "fa-cow", geometry: "point", make: { type: "prop", class: "ox" } },
+  { id: "footprints", label: "Footprints", icon: "fa-shoe-prints", geometry: "path", make: { type: "trail", class: "foot" } },
+  { id: "hoofprints", label: "Hoofprints", icon: "fa-horse", geometry: "path", make: { type: "trail", class: "hoof" } },
+  { id: "pawprints", label: "Paw prints", icon: "fa-paw", geometry: "path", make: { type: "trail", class: "paw" } },
+  { id: "ruts", label: "Wheel ruts", icon: "fa-grip-lines", geometry: "path", make: { type: "trail", class: "wheel" } },
+  { id: "light", label: "Light", icon: "fa-sun", geometry: "point", make: { type: "light" } },
+  { id: "difficult", label: "Difficult terrain", icon: "fa-person-hiking", geometry: "shape", make: { type: "region", class: "difficult" } },
+  { id: "greater", label: "Greater difficult", icon: "fa-hill-rockslide", geometry: "shape", make: { type: "region", class: "greater" } },
+  { id: "hazard", label: "Hazard", icon: "fa-triangle-exclamation", geometry: "shape", make: { type: "region", class: "hazard" } },
+  { id: "cover", label: "Cover", icon: "fa-shield-halved", geometry: "shape", make: { type: "region", class: "cover" } },
+  { id: "squeeze", label: "Squeeze", icon: "fa-compress", geometry: "shape", make: { type: "region", class: "squeeze" } },
+  { id: "note", label: "Note", icon: "fa-note-sticky", geometry: "shape", make: { type: "region", class: "note" } },
   { id: "crane", label: "Crane", icon: "fa-person-digging", geometry: "point", make: { type: "prop", class: "crane" } },
   { id: "cairn", label: "Cairn", icon: "fa-cubes-stacked", geometry: "point", make: { type: "prop", class: "cairn" } },
   { id: "standing-stone", label: "Standing stone", icon: "fa-grip-lines-vertical", geometry: "point", make: { type: "prop", class: "standing-stone" } },
@@ -364,7 +379,7 @@ export function addFeature(plan, toolId, { points = [], box = null } = {}) {
     f.shape = shape;
   }
   next.features.push(f);
-  const problem = (SHAPED.has(f.type) || f.type === "water" || f.type === "height") && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
+  const problem = (SHAPED.has(f.type) || f.type === "water" || f.type === "height" || f.type === "region") && Array.isArray(f.shape) ? shapeProblem({ features: [{ ...f, type: f.type === "square" ? "area" : f.type }] }, id) : null;
   if (problem) return { error: problem };
   if (SHAPED.has(f.type) && f.type !== "square") shareSides(next, id);
   const crossings = addCrossings(next, f);

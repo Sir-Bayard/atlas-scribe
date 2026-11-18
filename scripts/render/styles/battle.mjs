@@ -44,24 +44,35 @@ const ART_PX = 200;
  * show first (lift: how far brightness moves the edge; gain: how sharp the edge is).
  * - ground: the map's ground patches (second, third), broad shade, and in winter rocky snow, also on a rise's top
  * - winter: drifts along the top of banks and cliffs, thin snow at their foot, a cap of snow on low walls and
- *   parapets, and frost overlays (one per cell squares, at chance)
+ *   parapets, frost overlays (one per cell squares, at chance), and a hedge's ridge of snow (ridge wide, at snow) and
+ *   its shadow (shadowWidth, at shadow, shadowOffset out toward the sun's shadow), runs broken at gaps over gap squares,
+ *   its bushes drawn bush times their size
  * - way: a trodden way in winter: disturbed snow, a trail down its middle, wheel tracks, footprints every step
  *   squares
  * - ice: along a stream: the shelves' shadow on the open water, the ice and snow over them, a ledge of ice at their
  *   edge (edgeWidth), and floes, chunks and foam drifting in the channel
  * - rise: a rise's or hollow's bank lit as a slope (dark facing away from the sun, light toward it), reach past its
  *   foot
+ * - drop: a cliff's or bank's own look, as hand-built maps stack it: its face lit by the sun (face: dark, light), a
+ *   shadow on the low ground all along its foot in bands fading outward, each laid over the last (foot: alphas, reach
+ *   in squares a band for each ten feet of drop, most in all)
  * - quarter: an unpaved quarter's own ground in ragged patches
  * - deadEnd: past a paved street that stops short: trodden ground tapering to a point reach squares on (or perHalf of
  *   its half width, if longer; tip wide there), bare earth (bare of its width) down the middle, ragged by noise
  * - props: a prop's drop shadow (a boulder's longer) and a soft contact shadow under it (ao, aoSize)
+ * - tether: a picket line's stakes, every so many squares, their radius
+ * - trail: a plan's trail of prints: their color in snow and in mud, alpha, a print's size and how far to each side of
+ *   the line, the step between prints by kind (squares), and a cart's ruts (gauge apart, rut wide)
  */
 export const BLEND = {
   ground: { second: { alpha: 0.5, scale: 10, cut: 0.25, soft: 0.2 }, third: { alpha: 0.6, scale: 7, cut: 0.45, soft: 0.15 }, rocky: { alpha: 0.8, scale: 6, cut: 0.32, soft: 0.22, lift: 0.9, gain: 1.6 }, shade: { alpha: 0.14, scale: 13, cut: 0.1, soft: 0.5 }, rise: { alpha: 0.45, scale: 3, cut: 0.05, soft: 0.4, lift: 0.9, gain: 1.6 } },
-  winter: { drift: 0.9, thin: 0.75, cap: { alpha: 0.85, width: 0.24, variant: 0, scale: 0.9, cut: -0.15, soft: 0.45 }, frost: { alpha: 0.75, cell: 3.2, chance: 0.32, size: [0.5, 0.9] } },
+  winter: { drift: 0.9, thin: 0.75, cap: { alpha: 0.85, width: 0.24, variant: 0, scale: 0.9, cut: -0.15, soft: 0.45 }, frost: { alpha: 0.75, cell: 3.2, chance: 0.32, size: [0.5, 0.9] }, hedge: { ridge: 0.7, snow: 0.8, shadowWidth: 0.95, shadow: 0.32, shadowOffset: 0.35, gap: 1.2, bush: 1.25 } },
   way: { snow: 0.9, edge: 0.18, trail: 0.85, wheel: 0.9, tracks: { alpha: 0.8, step: 1.7, size: 0.62 } },
   props: { alpha: 0.42, blur: 0.08, offset: 0.12, boulder: 0.22, ao: 0.28, aoSize: 0.7 },
+  tether: { every: 2.5, stake: 0.09 },
+  trail: { snow: "rgb(96,118,146)", mud: "rgb(54,40,26)", alpha: 0.6, size: 0.42, side: 0.12, step: { foot: 0.55, hoof: 0.8, paw: 0.45 }, gauge: 0.95, rut: 0.13 },
   rise: { dark: 0.5, light: 0.45, reach: 0.4 },
+  drop: { face: { dark: 0.38, light: 0.3 }, foot: { alphas: [0.34, 0.22, 0.12], reach: 0.5, most: 1.8 } },
   quarter: { alpha: 0.6, scale: 4, cut: 0.05, soft: 0.3, lift: 0.8, gain: 1.5 },
   deadEnd: { reach: 2.6, perHalf: 2.2, tip: 0.35, blur: 0.35, alpha: 0.85, bare: 0.75, rag: 0.7, cut: -0.45 },
   ice: { shadow: { width: 0.4, blur: 0.14, alpha: 0.5 }, cracked: 0.55, snow: 0.6, edge: 0.95, edgeWidth: 0.5, drift: { step: 1.3, chance: 0.5, floe: 0.85, icechunk: 0.55, foam: 0.75, foamAlpha: 0.85 } },
@@ -190,6 +201,35 @@ const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class 
  * A battle map's furniture, each piece a tile over the map so a GM can move it: [{ role, variant, piece }], rugs
  * first.
  */
+/**
+ * The props a battle map can place as tiles of their own, for the GM to move, turn, resize or take away (the world's
+ * Movable props setting): what's carried, driven or led. Rocks, stumps, logs, wells, statues, tracks and fires stay
+ * painted, as part of the ground.
+ */
+export const MOVABLE_PROPS = new Set(["cart", "wagon", "sledge", "boat", "barrel", "crate", "bedroll", "tent", "horse", "mule", "ox"]);
+
+/**
+ * A prop's size in squares, [across, along], from its art: the plan's or layout's own size, else its class's usual
+ * size scaled, else its art's own (a size the plan gave is its length along its longest side). bushScale: a winter
+ * hedge's bushes drawn bigger.
+ */
+export function propSize(p, im, bushScale = 1) {
+  const bush = p.class === "bush";
+  let w = Number.isFinite(p.size) ? p.size : bush ? (p.scale ?? 0.5) * bushScale : p.scale != null ? (PROP_SQUARES[p.class] ?? 0.45) * p.scale : im.width / ART_PX;
+  let h = (w * im.height) / im.width;
+  if (p.long && h > w) [w, h] = [(w * w) / h, w];
+  return [w, h];
+}
+
+/**
+ * A battle layout's movable props (MOVABLE_PROPS), each as a role and variant to place as a tile, with the elevation of
+ * the ground it stands on: [{ role, variant, piece, elevation }].
+ */
+export function movables(layout) {
+  const s = layout.season ?? "summer";
+  return layout.items.filter((i) => i.kind === "prop" && MOVABLE_PROPS.has(i.class) && !i.wild && Number.isFinite(i.x)).map((p) => ({ role: propRole(p.class, s), variant: p.variant ?? 0, piece: p, elevation: levelAt(layout.items, [p.x, p.y]) }));
+}
+
 export function furniture(layout) {
   const out = [];
   for (const it of layout.items.filter((i) => i.kind === "interior")) for (const p of it.furniture ?? []) if (FURNITURE[p.f] && !FURNITURE[p.f].drawn) out.push({ role: `furn.${p.f}`, variant: p.variant ?? 0, piece: it.floor ? { ...p, floor: it.floor } : p });
@@ -272,8 +312,12 @@ export function rolesFor(layout) {
       if (i.style === "cliff") { roles.add(`edge.face.${i.rock}.${s}`); roles.add(`edge.top.${i.rock}.${s}`); roles.add(`edge.foot.${i.rock}`); }
       if (i.style === "bank") roles.add(bankRole(i.rock, s));
       if (s === "winter" && i.style !== "slope") { roles.add("strip.snow.drift"); roles.add("strip.snow.thin"); }
+      // (a winter drop's lower tiers, bare of snow)
+      if (s === "winter" && i.style === "cliff") roles.add(`edge.face.${i.rock}.autumn`);
+      if (s === "winter" && i.style === "bank") roles.add(bankRole(i.rock, "autumn"));
     }
     if (i.kind === "tree" && i.wild && s !== "winter") roles.add(`ground.forest.${s}`);
+    if (i.kind === "tether") roles.add("strip.rope");
     if (i.kind === "prop" && i.class === "fountain") roles.add(s === "winter" ? "water.ice" : "water.pond");
     if (i.kind === "surface" && i.class === "park" && i.basin) roles.add(s === "winter" ? "water.ice" : "water.pond");
     if (i.kind === "rock") { roles.add("stone.rough.summer"); roles.add(i.style === "cave" ? "surface.dirt.summer" : "floor.stone"); }
@@ -846,7 +890,8 @@ function waterPass(brush) {
   const footOf = (e) => edgeSpan(e.shore ? { drop: e.shore, style: e.style } : e);
   const wob = makeNoise(L.seed ?? 1, "battle-edge", { scale: 3, octaves: 2 });
   const tierPath = (e, d, k) => {
-    const pts = resample(e.path, 0.5), calm = e.style === "bank" && tiersOf(e.shore ?? e.drop, e.style) > 2;
+    // (a closed edge runs a little past where it began, so its strip doesn't break at the joint)
+    const pts = resample(e.closed && e.path.length > 3 ? [...e.path, ...e.path.slice(1, 3)] : e.path, 0.5), calm = e.style === "bank" && tiersOf(e.shore ?? e.drop, e.style) > 2;
     return pts.map((p, i) => {
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], Ln = Math.hypot(dx, dy) || 1;
       // (a tall bank's tiers wander less, so they don't open gaps)
@@ -856,12 +901,13 @@ function waterPass(brush) {
   };
   /**
    * A drop's face lit by the sun: each stretch shaded as its downhill side turns from the sun and lightened as it
-   * turns toward it, over span squares down from its line, so which way the ground falls reads at a glance.
+   * turns toward it, over span squares down from its line, so which way the ground falls reads at a glance. part:
+   * "dark" or "light" for one half only (the light is a soft-light blend, which needs the map under it).
    */
-  const lightFace = (e, span, dark, light) => {
+  const lightFace = (e, span, dark, light, part = "both") => {
     const pts = resample(e.path, 0.5), far = shiftRight(pts, span);
     const bb = boxAround([bboxOf(pts), bboxOf(far)], 0.5);
-    soft((k) => {
+    if (part !== "light") soft((k) => {
       for (let i = 1; i < pts.length; i++) {
         const dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], Ln = Math.hypot(dx, dy) || 1;
         const down = [-dy / Ln, dx / Ln], away = (down[0] * SHADOW[0] + down[1] * SHADOW[1]) / Math.hypot(...SHADOW);
@@ -871,7 +917,7 @@ function waterPass(brush) {
       }
       k.globalAlpha = 1;
     }, "rgb(14,20,34)", { blur: 0.6, alpha: dark, box: bb });
-    soft((k) => {
+    if (part !== "dark") soft((k) => {
       for (let i = 1; i < pts.length; i++) {
         const dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], Ln = Math.hypot(dx, dy) || 1;
         const down = [-dy / Ln, dx / Ln], toward = -(down[0] * SHADOW[0] + down[1] * SHADOW[1]) / Math.hypot(...SHADOW);
@@ -883,14 +929,17 @@ function waterPass(brush) {
     }, "rgb(255,248,210)", { blur: 0.6, alpha: light, op: "soft-light", box: bb });
   };
   // (a rise's or hollow's bank, not a stream's: its face lit and shaded as a slope's, under its art)
-  for (const e of edges.filter((x) => x.style === "bank" && !x.bed)) lightFace(e, edgeSpan(e) + BLEND.rise.reach, BLEND.rise.dark, BLEND.rise.light);
-  for (const e of edges.filter((x) => x.style === "slope")) {
+  // (a drop of the ground itself, not of a stream's bed or a fall, is drawn after the ways: see dropsPass)
+  const onLand = (e) => !e.bed && !e.fall && !e.pool;
+  const slopeFace = (e, part = "both") => {
     // (shaded as its downhill side turns from the sun, a little lighter facing it)
-    lightFace(e, edgeSpan(e), Math.min(0.75, 0.42 * tiersOf(e.drop)), 0.4);
+    lightFace(e, edgeSpan(e), Math.min(0.75, 0.42 * tiersOf(e.drop)), 0.4, part);
+    if (part === "light") return;
     // (the brow: longer grass a little down from the top; in winter a soft ridge of snow)
     const grass = art(s === "winter" ? "edge.slope.winter" : "edge.grass", 0);
     if (grass) { g.save(); g.globalAlpha = s === "winter" ? 0.8 : 0.55; stripPath(grass, tierPath(e, 0.35, 1)); g.restore(); }
-  }
+  };
+  for (const e of edges.filter((x) => x.style === "slope" && !onLand(x))) slopeFace(e);
   // (where a stream's bed steps down, banks and shadows are kept off its water, which falls there as white water)
   const waterOf = new Map(items("water").filter((w) => Array.isArray(w.path)).map((w) => [w.id, w]));
   const fallWater = (e, by = 0.05) => { const w = e.fall ? waterOf.get(e.water) : null; return w ? waterBand(w, by) : null; };
@@ -908,11 +957,27 @@ function waterPass(brush) {
       k.globalAlpha = 1;
     }, "rgb(14,20,34)", { blur: 0.45, alpha: 0.32, box: boxAround([bboxOf(pts), bboxOf(far)], 0.6) });
   };
+  /**
+   * The shadow on the low ground all along a cliff's or bank's foot, whichever way the sun is: bands fading outward,
+   * wider the higher the drop, so the drop reads at a glance as hand-built maps stack shadow strips under a cliff.
+   */
+  const footShadow = (e) => {
+    const { alphas, reach, most } = BLEND.drop.foot, span = footOf(e), wide = Math.min(most, (Math.abs(e.drop) / 10) * reach * alphas.length);
+    const pts = resample(e.path, 0.5), bb = boxAround([bboxOf(pts)], span + wide + 0.6);
+    alphas.forEach((a, i) => {
+      const from = span - 0.05, to = span + (wide * (i + 1)) / alphas.length, near = shiftRight(pts, from), far = shiftRight(pts, to);
+      soft((k) => { poly(k, [...near, ...[...far].reverse()]); k.fill(); }, "rgb(10,14,24)", { blur: 0.2 + 0.15 * i, alpha: a, box: bb });
+    });
+  };
   const drawEdge = (e) => {
     // (a fall into a pool is drawn, off its water, as the pool's whole shore, so the shore runs unbroken)
     const n = tiersOf(e.fall && e.shore ? e.shore : e.drop, e.style), cliff = e.style === "cliff";
     const face = cliff ? art(`edge.face.${e.rock}.${s}`, 0) : art(bankRole(e.rock, s), 0);
     const face2 = cliff ? art(`edge.face.${e.rock}.${s}`, 1) ?? face : art(bankRole(e.rock, s), 1) ?? face;
+    // (in winter snow lies on the drop's top, its lip and drift; the face below shows its bare rock or earth, which is
+    // what lets a drop read against snow)
+    const bareOf = (v) => (s !== "winter" ? null : cliff ? art(`edge.face.${e.rock}.autumn`, v) : art(bankRole(e.rock, "autumn"), v));
+    const bare = bareOf(0), bare2 = bareOf(1) ?? bare;
     // (the rubble at the foot, under everything)
     const footArt = cliff ? art(`edge.foot.${e.rock}`, 0) : null;
     if (footArt) stripPath(footArt, tierPath(e, 0.25 + (n - 1) * TERRAIN.step + 0.4, n + 1));
@@ -937,7 +1002,10 @@ function waterPass(brush) {
       if (cliff) soft((kk) => stroke(kk, tierPath(e, d + 0.3, k), 0.42, "butt"), "rgb(14,20,34)", { blur: 0.16, alpha: Math.min(0.75, 0.32 + 0.22 * (k / n)), box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
       // (lighter between many tiers, where the lines would stack up)
       else if (k < n) soft((kk) => stroke(kk, tierPath(e, d + half - 0.04, k), 0.22, "butt"), "rgb(14,20,34)", { blur: 0.1, alpha: n > 2 ? 0.28 : 0.5, box: boxAround([bboxOf(e.path)], edgeSpan(e) + 1) });
-      const im = k % 2 ? face : face2;
+      // (a cliff's face bare all the way up; a bank's tiers below its top bare, its top snowy, a one-tier bank's
+      // bare under a drift)
+      const bareHere = bare && (cliff || k > 1 || n === 1);
+      const im = bareHere ? (k % 2 ? bare : bare2) : k % 2 ? face : face2;
       if (im) stripPath(im, tierPath(e, d, k), k * 0.37, !cliff && BANK_FLIP);
       else fill((kk) => stroke(kk, tierPath(e, d, k), 0.5, "butt"), cliff ? "rgb(110,100,88)" : "rgb(96,84,60)");
     }
@@ -947,6 +1015,11 @@ function waterPass(brush) {
     if (lip) stripPath(lip, tierPath(e, -0.05, 0), 0.21);
     // (in winter, a drift along the top and thin snow along the foot, only for a stream's bed and a cliff: on a
     // rise's bank a drift reads as a second rim)
+    // (a one-tier bank of the ground, its face bare in winter, gets a lighter drift along its top)
+    if (s === "winter" && !e.fall && !cliff && !e.bed && n === 1) {
+      const drift = art("strip.snow.drift", 0);
+      if (drift) { g.save(); g.globalAlpha = BLEND.winter.drift * 0.6; stripPath(drift, tierPath(e, -0.3, 0), 0.13); g.restore(); }
+    }
     if (s === "winter" && !e.fall && (cliff || e.bed)) {
       const drift = art("strip.snow.drift", 0), thin = cliff ? art("strip.snow.thin", 0) : null;
       if (drift) { g.save(); g.globalAlpha = BLEND.winter.drift; stripPath(drift, tierPath(e, -0.42, 0), 0.13); g.restore(); }
@@ -955,8 +1028,32 @@ function waterPass(brush) {
   };
   // (a pool's edges, its shore and its falls, drawn as one unbroken rim, its stream's channel cut through it softly)
   const plain = edges.filter((x) => x.style !== "slope" && !x.pool);
-  for (const e of plain) shadeEdge(e);
-  for (const e of plain) drawEdge(e);
+  const wet = plain.filter((x) => !onLand(x));
+  for (const e of wet) shadeEdge(e);
+  for (const e of wet) drawEdge(e);
+  /**
+   * The ground's own drops, drawn by dropsPass after the ways so a way in a cut runs under its faces: each rise's or
+   * hollow's bank lit as a slope, slopes shaded, then for cliffs and banks their sun shadow, the shadow all along
+   * their foot, their faces, and a cliff's face lit by the sun. On: the canvas to draw on. part: "layer" for all but
+   * the sunlit halves (drawn on a clear layer), "light" for those (a soft-light blend, drawn on the map itself).
+   */
+  const land = edges.filter(onLand);
+  const drops = (on, part) => {
+    const g0 = g;
+    g = brush.setG(on);
+    try {
+      const half = part === "light" ? "light" : "dark";
+      for (const e of land.filter((x) => x.style === "bank")) lightFace(e, edgeSpan(e) + BLEND.rise.reach, BLEND.rise.dark, BLEND.rise.light, half);
+      for (const e of land.filter((x) => x.style === "slope")) slopeFace(e, half);
+      const hard = land.filter((x) => x.style !== "slope");
+      if (part !== "light") {
+        for (const e of hard) shadeEdge(e);
+        for (const e of hard) footShadow(e);
+        for (const e of hard) drawEdge(e);
+      }
+      for (const e of hard.filter((x) => x.style === "cliff")) lightFace(e, edgeSpan(e), BLEND.drop.face.dark, BLEND.drop.face.light, half);
+    } finally { g = brush.setG(g0); }
+  };
   for (const Lv of levels.filter((x) => x.within && meets(boxAround(x.rings.map(bboxOf), 0), 3))) {
     const w = waterOf.get(Lv.water);
     const rims = Lv.rings.map((r) => {
@@ -991,7 +1088,74 @@ function waterPass(brush) {
     soft((kk) => stroke(kk, tierPath(e, 0.12, 2), 0.3, "butt"), "rgb(232,240,240)", { blur: 0.07, alpha: 0.8, noise: noiseMask("battle-fall", 0.3, -0.05, 0.45), box });
     g.restore();
   }
-  Object.assign(brush, { plain });
+  Object.assign(brush, { plain, drops: land.length ? { edges: land, draw: drops } : null });
+}
+
+/**
+ * 4b. The ground's own drops (rises, hollows, ledges, a cut), after the ways so a way down a cut runs under its faces
+ * and shadows. Drawn on a layer of their own; where a way crosses a drop (not along it) the layer is cleared across
+ * the way's width, so the way reads as climbing it.
+ */
+function dropsPass(brush) {
+  const { H, W, X, Y, items, pp, progress } = brush;
+  const D = brush.drops;
+  if (!D) return;
+  progress(0.3, "Rises and cuts");
+  // (where a way crosses a drop steeply enough to be going up or down it: along it, the way is in the cut; ways and
+  // drops whose boxes don't meet are passed over)
+  const box = (path, add) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const [x, y] of path) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } return [x0 - add, y0 - add, x1 + add, y1 + add]; };
+  const hit = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+  const ways = items("way").filter((w) => Array.isArray(w.path) && w.path.length >= 2 && !w.faint).map((w) => ({ w, bb: box(w.path, (w.width ?? 1) / 2) }));
+  const quads = [];
+  for (const e of D.edges) {
+    const eb = box(e.path, 0.1);
+    for (const { w, bb } of ways) {
+      if (!hit(bb, eb)) continue;
+      for (const c of crossingsOf(w.path, e.path)) {
+        if (c.sin < 0.55) continue;
+        const half = (w.width ?? 1) / 2 + 0.15, reach = edgeSpan(e) + Math.min(1.8, (Math.abs(e.drop) / 10) * 1.5) + 0.6;
+        const [ux, uy] = c.dir, nx = -uy, ny = ux, at = (a, b) => [X(c.at[0] + ux * a + nx * b), Y(c.at[1] + uy * a + ny * b)];
+        quads.push([at(-reach, -half), at(reach, -half), at(reach, half), at(-reach, half)]);
+      }
+    }
+  }
+  const trace = (k, q) => q.forEach(([x, y], i) => (i ? k.lineTo(x, y) : k.moveTo(x, y)));
+  const layer = new OffscreenCanvas(W, H), lg = layer.getContext("2d");
+  D.draw(lg, "layer");
+  if (quads.length) {
+    lg.save(); lg.globalCompositeOperation = "destination-out"; lg.filter = `blur(${0.15 * pp}px)`; lg.fillStyle = "#000";
+    for (const q of quads) { lg.beginPath(); trace(lg, q); lg.closePath(); lg.fill(); }
+    lg.restore();
+  }
+  brush.g.drawImage(layer, 0, 0);
+  layer.width = layer.height = 1;
+  // (the sunlit halves on the map itself, kept off the crossings: the whole map less the crossings joined into one
+  // shape, even-odd, so two that overlap don't clip each other back in)
+  const g = brush.g;
+  g.save();
+  if (quads.length) { g.beginPath(); g.rect(0, 0, W, H); for (const q of union(quads)) { trace(g, q); g.closePath(); } g.clip("evenodd"); }
+  D.draw(g, "light");
+  g.restore();
+}
+
+/**
+ * Where path a crosses path b: [{ at, dir: a's unit direction there, sin: the sine of the angle between them }].
+ */
+function crossingsOf(a, b) {
+  const out = [];
+  for (let i = 1; i < a.length; i++) {
+    const [x1, y1] = a[i - 1], [x2, y2] = a[i];
+    for (let j = 1; j < b.length; j++) {
+      const [x3, y3] = b[j - 1], [x4, y4] = b[j];
+      const den = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / den, u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / den;
+      if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+      const la = Math.hypot(x2 - x1, y2 - y1) || 1, lb = Math.hypot(x4 - x3, y4 - y3) || 1;
+      out.push({ at: [x1 + t * (x2 - x1), y1 + t * (y2 - y1)], dir: [(x2 - x1) / la, (y2 - y1) / la], sin: Math.abs(den) / (la * lb) });
+    }
+  }
+  return out;
 }
 
 /**
@@ -1411,9 +1575,68 @@ function buildingsPass(brush) {
  * 10. Props on the ground and tree shadows (each tree's own art, dark, to the northwest)
  */
 function propsPass(brush) {
-  const { X, Y, art, boxAround, clipNear, feet, hashHere, items, levels, meets, pp, progress, s, soft, ways, wx1, wy1, x0, y0 } = brush;
+  const { X, Y, art, boxAround, clipNear, feet, hashHere, items, levels, meets, pp, progress, s, soft, stripPath, stroke, ways, wx1, wy1, x0, y0 } = brush;
   const g = brush.g;
   progress(0.75, "Props and trees");
+  // (a hedge's bushes, by the hedge they line: their ids are the hedge's plus /b and a count, in order along it)
+  const hedges = new Map();
+  for (const p of items("prop").filter((p) => p.class === "bush" && /\/b\d+$/.test(p.id ?? ""))) {
+    const key = p.id.replace(/\/b\d+$/, "");
+    if (!hedges.has(key)) hedges.set(key, []);
+    hedges.get(key).push(p);
+  }
+  if (s === "winter") {
+    // A winter hedge: bare twigs read as dots on snow, so each hedge stands on a ridge of snow caught in it, with its
+    // shadow beside it, under its bushes (runs broken where its bushes were left out)
+    const H = BLEND.winter.hedge;
+    for (const bushes of hedges.values()) {
+      if (bushes.length < 3) continue;
+      const n = (p) => Number(p.id.match(/\/b(\d+)$/)[1]);
+      const sorted = [...bushes].sort((a, b) => n(a) - n(b)), runs = [];
+      for (const p of sorted) { const last = runs.at(-1)?.at(-1); if (last && Math.hypot(p.x - last[0], p.y - last[1]) < H.gap) runs.at(-1).push([p.x, p.y]); else runs.push([[p.x, p.y]]); }
+      for (const run of runs.filter((r) => r.length >= 2)) {
+        const box = boxAround([[Math.min(...run.map((q) => q[0])), Math.min(...run.map((q) => q[1])), Math.max(...run.map((q) => q[0])), Math.max(...run.map((q) => q[1]))]], 1.2);
+        if (!meets(box, 0)) continue;
+        const shade = run.map(([x, y]) => [x + SHADOW[0] * H.shadowOffset, y + SHADOW[1] * H.shadowOffset]);
+        soft((k) => stroke(k, shade, H.shadowWidth), "rgb(14,20,34)", { blur: 0.25, alpha: H.shadow, box });
+        soft((k) => stroke(k, run, H.ridge), "rgb(244,247,250)", { blur: 0.12, alpha: H.snow, box });
+      }
+    }
+  }
+  const inHedge = new Set([...hedges.values()].filter((b) => b.length >= 3).flat());
+  // A plan's picket lines: the rope from stake to stake (FA's rope art, else drawn), a stake at each end and every few
+  // squares between, under the animals tied to it
+  for (const t of items("tether")) {
+    const rope = art("strip.rope", 0);
+    if (rope) stripPath(rope, resample(t.path, 0.25));
+    else soft((k) => stroke(k, t.path, 0.07), "rgb(132,100,62)", { blur: 0.01, box: boxAround([[Math.min(...t.path.map((q) => q[0])), Math.min(...t.path.map((q) => q[1])), Math.max(...t.path.map((q) => q[0])), Math.max(...t.path.map((q) => q[1]))]], 1) });
+    const stakes = resample(t.path, BLEND.tether.every);
+    for (const q of [...stakes, t.path.at(-1)]) {
+      g.save(); g.shadowColor = "rgba(16,24,40,0.45)"; g.shadowBlur = pp * 0.05; g.shadowOffsetX = SHADOW[0] * pp * 0.06; g.shadowOffsetY = SHADOW[1] * pp * 0.06;
+      g.fillStyle = "rgb(92,66,40)"; g.beginPath(); g.arc(X(q[0]), Y(q[1]), BLEND.tether.stake * pp, 0, 2 * Math.PI); g.fill(); g.restore();
+    }
+  }
+  // A plan's trails: prints every step along each, turned along it, pressed into snow or mud; a cart's two ruts
+  const TR = BLEND.trail, ink = s === "winter" ? TR.snow : TR.mud;
+  for (const t of items("trail")) {
+    if (!meets(boxAround([[Math.min(...t.path.map((q) => q[0])), Math.min(...t.path.map((q) => q[1])), Math.max(...t.path.map((q) => q[0])), Math.max(...t.path.map((q) => q[1]))]], 1), 0)) continue;
+    if (t.class === "wheel") {
+      for (const side of [-TR.gauge / 2, TR.gauge / 2]) soft((k) => stroke(k, shiftRight(resample(t.path, 0.25), side), TR.rut), ink, { blur: 0.04, alpha: TR.alpha, box: boxAround([[Math.min(...t.path.map((q) => q[0])), Math.min(...t.path.map((q) => q[1])), Math.max(...t.path.map((q) => q[0])), Math.max(...t.path.map((q) => q[1]))]], 1) });
+      continue;
+    }
+    const step = TR.step[t.class] ?? 0.55, pts = resample(t.path, step / 2);
+    g.save(); g.globalAlpha = TR.alpha; g.fillStyle = ink;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = Math.atan2(pts[i + 1][1] - pts[i - 1][1], pts[i + 1][0] - pts[i - 1][0]) + Math.PI / 2, side = (i % 2 ? 1 : -1) * TR.side;
+      g.save(); g.translate(X(pts[i][0] + Math.cos(a - Math.PI / 2) * side), Y(pts[i][1] + Math.sin(a - Math.PI / 2) * side)); g.rotate(a);
+      const u = TR.size * pp;
+      if (t.class === "hoof") { g.beginPath(); g.arc(0, 0, u * 0.5, Math.PI * 0.15, Math.PI * 0.85, true); g.lineWidth = u * 0.22; g.strokeStyle = ink; g.stroke(); }
+      else if (t.class === "paw") { g.beginPath(); g.ellipse(0, u * 0.15, u * 0.26, u * 0.22, 0, 0, 7); g.fill(); for (const dx of [-0.3, -0.1, 0.1, 0.3]) { g.beginPath(); g.ellipse(dx * u, -u * 0.25 - Math.abs(dx) * u * -0.2, u * 0.09, u * 0.11, 0, 0, 7); g.fill(); } }
+      else { g.beginPath(); g.ellipse(0, 0, u * 0.2, u * 0.36, 0, 0, 7); g.fill(); }
+      g.restore();
+    }
+    g.restore();
+  }
   // (wild props, a plan's own fern, log or rock too, at their art's own size)
   const isWild = (p) => p.wild || WILD_CLASSES.has(p.class);
   const P = BLEND.props;
@@ -1427,14 +1650,16 @@ function propsPass(brush) {
   };
   const placed = [];
   // (a windmill's sails go on its roof's tile: paintOverhead)
-  for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain" && p.class !== "sails")) {
+  // (with the Movable props setting on, what's carried, driven or led is a tile of its own: movables, painter.mjs)
+  const asTiles = !!brush.ctx?.movable;
+  for (const p of items("prop").filter((p) => p.class !== "grave" && p.class !== "fountain" && p.class !== "sails" && !(asTiles && MOVABLE_PROPS.has(p.class) && !p.wild))) {
     const bush = p.class === "bush", wildOne = isWild(p) && !bush;
     const im = art(bush ? bushRole(s) : propRole(p.class, s), p.variant);
     if (!im) continue;
     // (a prop sized by the layout or the plan; else at its art's true size)
     let w, h;
     if (wildOne) [w, h] = wildSize(p, im);
-    else { w = Number.isFinite(p.size) ? p.size : bush ? p.scale ?? 0.5 : p.scale != null ? (PROP_SQUARES[p.class] ?? 0.45) * p.scale : im.width / ART_PX; h = (w * im.height) / im.width; }
+    else [w, h] = propSize(p, im, s === "winter" && inHedge.has(p) ? BLEND.winter.hedge.bush : 1);
     if (!meets([p.x, p.y, p.x, p.y], Math.max(w, h) / 2 + 0.5)) continue;
     placed.push({ p, im, w, h, wildOne, flat: FLAT_PROPS.has(p.class) });
   }
@@ -1547,7 +1772,7 @@ function farmsAndDocksPass(brush) {
   }
 }
 
-const PASSES = [groundPass, undergroundPass, reliefPass, wornPass, waterPass, farmsAndDocksPass, waysPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
+const PASSES = [groundPass, undergroundPass, reliefPass, wornPass, waterPass, farmsAndDocksPass, waysPass, dropsPass, squaresPass, gardensPass, yardsPass, fountainsPass, buildingsPass, propsPass, gradePass];
 
 
 /**

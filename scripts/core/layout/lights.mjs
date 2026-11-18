@@ -303,17 +303,18 @@ export function mistOf(items, seed, { fog = false } = {}) {
     if (!w) continue;
     along(w.path, step).forEach(({ p }, k) => add(L.id, [p[0] + r.range(-0.6, 0.6), p[1] + r.range(-0.6, 0.6)], k + 1));
   }
-  // Over each pool, and in each hollow (not one a pool fills): a few across it
+  // Over each pool, and in each hollow (not one a pool fills, nor a sunken road's cut): a few across each of its pieces
   const filled = new Set(items.filter((i) => i.kind === "level" && i.within).map((i) => i.within));
-  for (const L of items.filter((i) => i.kind === "level" && ((i.bed && i.within) || (!i.bed && i.elevation < 0 && !filled.has(i.id))))) {
-    const ring = L.rings?.[0];
-    if (!ring?.length) continue;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  for (const L of items.filter((i) => i.kind === "level" && !i.cut && ((i.bed && i.within) || (!i.bed && i.elevation < 0 && !filled.has(i.id))))) {
+    const inside = (q) => (L.rings ?? []).filter((r) => r.length >= 3 && pointInPolygon(q, r)).length % 2 === 1;
     let k = 0;
-    for (let y = y0 + step / 2; y < y1; y += step) for (let x = x0 + step / 2; x < x1; x += step) {
-      const q = [x + r.range(-1, 1), y + r.range(-1, 1)];
-      if (pointInPolygon(q, ring)) add(L.id, q, ++k + 100);
+    for (const ring of (L.rings ?? []).filter((r) => r.length >= 3)) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of ring) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      for (let y = y0 + step / 2; y < y1; y += step) for (let x = x0 + step / 2; x < x1; x += step) {
+        const q = [x + r.range(-1, 1), y + r.range(-1, 1)];
+        if (pointInPolygon(q, ring) && inside(q)) add(L.id, q, ++k + 100);
+      }
     }
   }
   return out;

@@ -5,13 +5,14 @@
  */
 import { underlayOf } from "./underlay.mjs";
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize, okJoin, okCut, okChimney } from "./plan.mjs";
-import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath, segmentsIntersect } from "./geom.mjs";
+import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath, segmentsIntersect, pointInPolygon } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
 import { cliffOf, runsOnFace } from "./cliffs.mjs";
 import { isTownWall, isClosed, wallReach, towerReach } from "./layout/walls.mjs";
 import { parseRooms, ROOM } from "./layout/rooms.mjs";
 import { waterEntries, nearWater, okWidths, bodyOf, RUNNING, BODIES } from "./water.mjs";
 import { offset, intersect, area as polyArea } from "./lots/poly.mjs";
+import { edgeSpan, heightGround, TERRAIN } from "./layout/terrain.mjs";
 
 /** How much two polygons overlap, in square squares (sides lying on one line don't count, whatever the rounding). */
 function overlapArea(a, b) {
@@ -23,6 +24,14 @@ const isPoint = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNu
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 /** A road's width in feet when the plan leaves it out (as plan.mjs defaults it). */
 const ROAD_WIDTH_FT = { highway: 30, street: 20, lane: 15, track: 10, path: 5 };
+/**
+ * A battle map's movable props' length in feet as their art draws them when the plan gives no size, and how wide each
+ * is for its length: to tell when one sits on a height's edge or in a building. A sledge lies across the map at a turn
+ * of 0, the rest along it.
+ */
+const PROP_FT = { wagon: 30, cart: 15, sledge: 15, boat: 20, tent: 15, bedroll: 10, horse: 11, mule: 9, ox: 13, barrel: 5, crate: 5 };
+const PROP_WIDE = { wagon: 0.5, cart: 0.67, sledge: 0.33, boat: 0.25, tent: 1, bedroll: 0.5, horse: 0.5, mule: 0.5, ox: 0.5, barrel: 1, crate: 1 };
+const ACROSS = new Set(["sledge"]);
 /** The plan's cliffs with a usable line. */
 const cliffsOf = (plan) => plan.features.filter((f) => f.type === "wall" && f.class === "cliff" && Array.isArray(f.path) && f.path.length >= 2 && f.path.every(isPoint));
 
@@ -106,6 +115,11 @@ export function checkPlan(raw) {
     // (a rise or a hollow is drawn on a battle map only: a settlement map's squares are too big for one)
     if (f?.type === "place" && plan.kind !== "region") warn(f.id ?? null, "type", `"${where}" is a place, which only a region map draws; it's left off this map.`);
     if (f?.type === "height" && plan.kind !== "battle") warn(f.id ?? null, "type", `"${where}" is a rise or hollow, which only a battle map draws; it's left off this map.`);
+    if ((f?.type === "light" || f?.type === "region" || f?.type === "trail" || f?.type === "tether") && plan.kind !== "battle") warn(f.id ?? null, "type", `"${where}" is a ${f.type}, which only a battle map places; it's left off this map.`);
+    if (f?.type === "light" && typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id ?? null, "color", `"${where}": color "${f.color}" should be a color like #ffc56b; a lantern's warm yellow will be used.`);
+    if (f?.type === "light" && Number.isFinite(f.bright) && Number.isFinite(f.dim) && f.dim < f.bright) warn(f.id ?? null, "dim", `"${where}": its dim light (${f.dim} ft) is less than its bright light (${f.bright} ft); it will reach as far as its bright light.`);
+    if (f?.type === "road" && f.sunken != null && f.class === "street") warn(f.id ?? null, "sunken", `"${where}" is a street, whose houses front it at the ground's level, so it isn't sunken; make it a lane, track or road to sink it.`);
+    else if (f?.type === "road" && f.sunken != null && plan.kind !== "battle") warn(f.id ?? null, "sunken", `"${where}" is sunken, which only a battle map draws; it's drawn at the ground's level here.`);
   });
 
   // Districts: a known profile, and a way in: a road into it, or a street from a neighboring district through a gate
@@ -192,7 +206,7 @@ export function checkPlan(raw) {
   }
 
   // Districts and areas drawn as a list of points that cross themselves (a closing point equal to the first is fine)
-  for (const f of plan.features.filter((f) => (f.type === "district" || f.type === "area") && Array.isArray(f.shape) && f.shape.every(isPoint))) {
+  for (const f of plan.features.filter((f) => (f.type === "district" || f.type === "area" || f.type === "region") && Array.isArray(f.shape) && f.shape.every(isPoint))) {
     const pts = f.shape.filter((p, k) => !(k === f.shape.length - 1 && k > 0 && p[0] === f.shape[0][0] && p[1] === f.shape[0][1]));
     if (pts.length >= 3 && polygonCrossesItself(pts)) warn(f.id, "shape", `"${f.id}"'s outline crosses itself or repeats a corner, so what's inside it is unclear. Give its corners in order around the edge.`);
   }
@@ -226,6 +240,60 @@ export function checkPlan(raw) {
       if (a.id === b.id) continue; // parts of one landmark may touch
       if (b.box[1] > a.box[3] || b.box[3] < a.box[1]) continue;
       if (polygonsOverlap(a.poly, b.poly)) warn(a.id, "shape", `"${a.id}" overlaps "${b.id}".`);
+    }
+  }
+
+  // A battle map's props on a height's edge (a rise's or hollow's face, a sunken road's banks: a tile stands at one
+  // height, and art on a face looks dropped there) or reaching into a building, each as a line along its length
+  // turned by its rot, half its width either side. A face lies on an edge's low side, as wide as the layout draws it
+  // (edgeSpan); a walkable slope is left alone.
+  if (plan.kind === "battle") {
+    const sq = isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare > 0 ? plan.size.ftPerSquare : 5;
+    // (the ground the layout makes of the rises and hollows: touching ones of one height joined, each side with its own
+    // edge where a stretch gives one)
+    let ground = [];
+    try { ground = heightGround(plan); } catch { ground = []; }
+    const rises = ground.map((G) => ({ id: G.f.id, h: G.h, style: G.style, styles: G.styles, rings: G.rings.filter((r) => r.length >= 3), low: G.h >= 0 ? 1 : -1 })).filter((G) => G.rings.length);
+    const cuts = plan.features.filter((f) => f.type === "road" && f.class !== "street" && isNum(f.sunken) && f.sunken > 0 && Array.isArray(f.path) && f.path.length >= 2 && f.path.every(isPoint)).map((f) => {
+      const style = f.sunken <= TERRAIN.tier ? "bank" : "cliff";
+      return { id: f.id, path: f.path, half: (isNum(f.width) ? f.width : ROAD_WIDTH_FT[f.class] ?? 10) / sq / 2, span: edgeSpan({ drop: f.sunken, style }) + 0.05 };
+    });
+    const houses = fps;
+    // (an interval [a, b] widened by w meeting the open band (lo, hi))
+    const meets = (a, b, w, lo, hi) => a - w < hi && b + w > lo;
+    for (const f of plan.features.filter((f) => f.type === "prop" && isPoint(f.at) && ((isNum(f.size) && f.size > 0) || f.class in PROP_FT))) {
+      const len = (isNum(f.size) && f.size > 0 ? f.size : PROP_FT[f.class]) / sq, half = (len * (PROP_WIDE[f.class] ?? 0.4)) / 2;
+      const a = (((isNum(f.rot) ? f.rot : 0) + (ACROSS.has(f.class) ? 90 : 0)) * Math.PI) / 180, u = [-Math.sin(a), Math.cos(a)];
+      const pts = [-0.5, -0.25, 0, 0.25, 0.5].map((k) => [f.at[0] + u[0] * len * k, f.at[1] + u[1] * len * k]);
+      const name = `The ${f.class} "${f.id}"`;
+      // (each point's distance past the ground's outline toward its low side, negative on the high side, with the edge
+      // of the side it's nearest; a point by a walkable slope doesn't count)
+      const onFace = (G) => {
+        const ds = [];
+        for (const p of pts) {
+          let best = Infinity, style = G.style, inside = 0;
+          G.rings.forEach((ring, k) => {
+            if (pointInPolygon(p, ring)) inside++;
+            for (let i = 0; i < ring.length; i++) {
+              const d = distanceToPath(p, [ring[i], ring[(i + 1) % ring.length]]);
+              if (d < best) { best = d; style = G.styles?.[k]?.[i] ?? G.style; }
+            }
+          });
+          if (style === "slope") continue;
+          ds.push({ d: (inside % 2 ? -best : best) * G.low, span: edgeSpan({ drop: G.h, style }), style });
+        }
+        const hit = ds.find((x) => x.d > -half && x.d < x.span + half) ?? (ds.some((x) => x.d <= 0) && ds.some((x) => x.d >= x.span) ? ds[0] : null);
+        return hit ? { id: G.id, style: hit.style } : null;
+      };
+      let h = null;
+      for (const G of rises) if ((h = onFace(G))) break;
+      if (h) warn(f.id, "at", `${name} sits on the edge of "${h.id}", partly on its ${h.style === "bank" ? "bank" : "cliff"}. Move it onto the ground above or below.`);
+      else {
+        const c = cuts.find((r) => { const d = pts.map((p) => distanceToPath(p, r.path)); return meets(Math.min(...d), Math.max(...d), half, r.half, r.half + r.span); });
+        if (c) warn(f.id, "at", `${name} sits on the bank of the sunken road "${c.id}". Move it into the road or onto the ground beside it.`);
+      }
+      const b = houses.find((r) => pts.some((p) => pointInPolygon(p, r.poly)));
+      if (b) warn(f.id, "at", `${name} reaches into "${b.id}": it's too long for where it stands. Move it clear, turn it, or make it shorter.`);
     }
   }
 
@@ -318,6 +386,12 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
     if (Array.isArray(spec.only) && t.classes?.includes(f.class) && !spec.only.includes(f.class) && raw[name] !== undefined && raw[name] !== null)
       warn(f.id, name, `"${where}": ${name} does nothing on a ${f.type} of class ${f.class}, so it's ignored.`);
   }
+  // (a height's stretches count its outline's points: only an outline given as points has them, and each must exist)
+  if (f.type === "height" && Array.isArray(f.edges) && f.edges.length) {
+    const n = Array.isArray(f.shape) && f.shape.every(isPoint) ? f.shape.length : 0;
+    if (!n) warn(f.id, "edges", `"${where}": its edges stretches count the outline's points, and its outline isn't given as points; they're left out.`);
+    else for (const x of f.edges) if (isObj(x) && (x.from >= n || x.to >= n)) warn(f.id, "edges", `"${where}": a stretch from point ${x.from} to ${x.to} names a point its outline doesn't have (it has ${n}, numbered 0 to ${n - 1}); that stretch is left out.`);
+  }
   if (f.type === "label" && !String(f.text ?? "").trim() && !f.of) warn(f.id, "text", `Label "${where}" has no text.`);
   if (f.type === "label" && typeof f.font === "string" && f.font.trim() && !/^[\p{L}\p{N} _.-]+$/u.test(f.font.trim())) warn(f.id, "font", `Label "${where}": the font "${f.font}" isn't a plain font name; the plan's will be used.`);
   if (f.type === "label" && typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id, "color", `Label "${where}": color "${f.color}" should be a color like #13202e; the plan's will be used.`);
@@ -353,6 +427,10 @@ function checkField(id, field, where, name, spec, v, { err, warn }, fallback = "
   else if (spec.kind === "list") {
     if (!Array.isArray(v)) err(id, field, `${where}: ${name} should be a list, like ["${spec.values[0]}", "${spec.values[1]}"].`);
     else for (const x of v) if (!spec.values.includes(x)) warn(id, field, `${where}: ${name} has "${x}", which AtlasScribe doesn't know (${spec.values.join(", ")}); it's left out.`);
+  } else if (spec.kind === "stretches") {
+    const bad = !Array.isArray(v) || v.some((x) => !isObj(x) || !Number.isInteger(x.from) || !Number.isInteger(x.to) || x.from < 0 || x.to < 0);
+    if (bad) err(id, field, `${where}: ${name} should be a list like [{ "from": 3, "to": 5, "edge": "slope" }], from and to the outline's point numbers (from 0).`);
+    else for (const x of v) if (!spec.values.includes(x.edge)) warn(id, field, `${where}: ${name} has an edge "${x.edge}" that AtlasScribe doesn't know (${spec.values.join(", ")}); that stretch keeps the shape's own edge.`);
   } else if (spec.kind === "enum" && !spec.values.includes(v))
     warn(id, field, `${where}: ${name} "${v}" isn't one AtlasScribe knows (${spec.values.join(", ")}); ${spec.fallback ?? fallback}.`);
 }

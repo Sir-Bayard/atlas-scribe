@@ -25,6 +25,7 @@ import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
 import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
 import { MOD, note } from "./foundry/util.mjs";
+import { drawScene, SNAPSHOT } from "./foundry/snapshot.mjs";
 
 // (on the page instead when the Render in a worker setting is off: a browser or host where workers fail)
 const worker = new WorkerClient({ inPage: () => { try { return game.settings.get(MOD, "renderInWorker") === false; } catch { return false; } } });
@@ -37,10 +38,10 @@ let theApp = null;
 /** The longer side of the preview picture, in pixels. */
 let previewPx = 1600;
 
-/** A battle map's drawn art, from the world settings: { look: "painted" or "inked", all }. */
+/** A battle map's drawn art and its movable props, from the world settings: { look: "painted" or "inked", all, movable }. */
 function drawnSetting() {
   const get = (k, d) => { try { return game.settings.get(MOD, k); } catch { return d; } };
-  return { look: get("drawnLook", "painted") === "inked" ? "inked" : "painted", all: !!get("drawnAll", false) };
+  return { look: get("drawnLook", "painted") === "inked" ? "inked" : "painted", all: !!get("drawnAll", false), movable: get("movableProps", true) !== false };
 }
 
 /** When a scene is backed up before an update: "every" update, the first in a "session", or "never". */
@@ -96,6 +97,9 @@ async function exclusive(fn) {
 }
 
 /** Checks a plan and throws, in plain words, if it has errors. Returns { plan (normalized), problems }. */
+/** JSON with every object's keys sorted, to tell whether two plans are the same. */
+const sortedJSON = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
+
 function planOrThrow(input) {
   const checked = api.checkPlan(input);
   if (!checked.ok) {
@@ -141,7 +145,7 @@ async function layOutAlone(plan, what, then = null) {
 }
 
 /** Publishes a checked plan's image, with its own progress bar. */
-async function publishChecked(plan, image, { scene, force }, check) {
+async function publishChecked(plan, image, { scene, force, raw = null }, check) {
   if (scene && !game.scenes.get(scene)) throw new Error(`AtlasScribe: there's no scene with the id ${scene}`);
   const img = await imageInfo(image);
   const title = `AtlasScribe: publishing ${plan.output.scene.name}`;
@@ -163,6 +167,18 @@ async function publishChecked(plan, image, { scene, force }, check) {
     check();
     const res = await publish({ plan, image: img, width: img.width, height: img.height, folder: outputFolder(), layout, sceneId: scene, force, backups: backupSetting(), backupFolder: backupFolder(), batch: setting("batchTag", "").trim() || null, check, onProgress: (p, l) => bar.update(from + (1 - from) * p, l) });
     if (lost) res.warnings.push(lost);
+    // (the plan the scene was made from, as written, kept under its id so Open scene's plan and planOf find it; a
+    // file already there with another version of it is never written over: the window saves first, and a script
+    // saves with savePlan)
+    const keep = plan.id ? { ...(raw && typeof raw === "object" ? raw : plan), id: plan.id } : null;
+    if (keep) {
+      try {
+        const file = fileFor(keep.id), path = `${plansDir()}/${file}`;
+        if (!(await planExists(plansDir(), file))) res.plan = await savePlan(plansDir(), keep, file);
+        else if (sortedJSON(await loadPlan(path).catch(() => null)) === sortedJSON(keep)) res.plan = path;
+        else res.warnings.push(`The plan file ${file} holds another version of this plan, so it was kept as it was: save the plan from the window (or with api.savePlan) to keep this one with the scene.`);
+      } catch (e) { res.warnings.push(`The plan wasn't kept with the scene (${e.message}); save it from the window to open it again later.`); }
+    }
     bar.done(`${title}: ${res.created ? "created the scene" : "updated the scene"}${res.backup ? ` (backup: ${res.backup})` : ""}`);
     return res;
   } catch (e) {
@@ -539,7 +555,7 @@ const api = {
       }
       if (andPublish) {
         try {
-          result.scene = await publishChecked(plan, result, { scene, force }, check);
+          result.scene = await publishChecked(plan, result, { scene, force, raw: readPlan(input).plan ?? null }, check);
           result.warnings.push(...result.scene.warnings);
         } catch (e) {
           e.result = result; // the map was saved; say where
@@ -660,6 +676,53 @@ const api = {
   },
 
   /**
+   * A picture of a scene without viewing it (foundry/snapshot.mjs): its background, tiles and tokens under its
+   * darkness and lights as AtlasScribe draws them (close to Foundry's lighting, not the same). scene: a scene, its id
+   * or its name. side: the longest side in pixels (default SNAPSHOT.side); tokens, lighting: whether they're drawn;
+   * save: false returns the picture as a data URL instead of saving it to <output>/snapshots. GM only. Returns
+   * { path or url, width, height }.
+   */
+  async snapshot(scene, { side = SNAPSHOT.side, tokens = true, lighting = true, save = true } = {}) {
+    requireGM();
+    const sc = typeof scene === "string" ? game.scenes.get(scene) ?? game.scenes.getName(scene) : scene;
+    if (!sc?.dimensions) throw new Error(`AtlasScribe: there's no scene ${typeof scene === "string" ? `"${scene}"` : "like that"}`);
+    const { canvas, width, height } = await drawScene(sc, { side, tokens, lighting });
+    try {
+      if (!save) return { url: canvas.toDataURL("image/webp", 0.85), width, height };
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.88));
+      if (!blob) throw new Error("AtlasScribe: the snapshot couldn't be encoded");
+      const dir = `${outputFolder()}/snapshots`;
+      const path = await upload(dir, await freeName(dir, `${String(sc.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "scene"}-${stamp()}`, "webp"), blob);
+      return { path, width, height };
+    } finally { canvas.width = canvas.height = 1; }
+  },
+
+  /**
+   * The plan a scene was made from (scene: a scene, its id or its name), as publishing kept it under the plan's id in
+   * the plans folder. Throws when the scene isn't AtlasScribe's or its plan isn't there.
+   */
+  async planOf(scene) {
+    requireGM();
+    const sc = typeof scene === "string" ? game.scenes.get(scene) ?? game.scenes.getName(scene) : scene;
+    const id = sc?.getFlag?.(MOD, "plan");
+    if (!id) throw new Error(`AtlasScribe: ${sc ? `"${sc.name}" wasn't made by AtlasScribe from a plan with an id` : "there's no such scene"}`);
+    return loadPlan(`${plansDir()}/${fileFor(id)}`).catch(() => {
+      throw new Error(`AtlasScribe: the plan ${fileFor(id)} that "${sc.name}" was made from isn't in ${plansDir()}`);
+    });
+  },
+
+  /**
+   * Saves a plan in the plans folder, under its id unless file names another (GM only). The plan is checked first
+   * and saved as given. Returns the saved file's path.
+   */
+  async savePlan(input, { file = null } = {}) {
+    requireGM();
+    const { plan } = planOrThrow(input);
+    const raw = readPlan(input).plan ?? plan;
+    return savePlan(plansDir(), raw, file ? fileFor(String(file).replace(/\.json$/i, "")) : fileFor(raw.id));
+  },
+
+  /**
    * Makes a rendered map into a scene (see foundry/publish.mjs): the image, the plan's grid and scene settings, a
    * thumbnail, the labels, and on a battle map its tiles, walls, regions, lights and levels. image: render's result
    * or a path. scene: a scene to update (only one AtlasScribe made, unless force; backed up first). Returns publish's
@@ -668,7 +731,7 @@ const api = {
   async publish(input, { image, scene = null, force = false } = {}) {
     requireGM();
     const { plan } = planOrThrow(input);
-    return exclusive((check) => publishChecked(plan, image, { scene, force }, check));
+    return exclusive((check) => publishChecked(plan, image, { scene, force, raw: readPlan(input).plan ?? null }, check));
   }
 };
 
@@ -833,6 +896,14 @@ Hooks.once("init", () => {
     config: true,
     type: Boolean,
     default: false,
+  });
+  game.settings.register(MOD, "movableProps", {
+    name: "Movable props on battle maps",
+    hint: "Place a battle map's carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals as tiles the GM can move, turn and resize, as furniture is, instead of painting them into the map. A new map or an Update replaces them.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
   });
   game.settings.register(MOD, "batchTag", {
     name: "Batch tag",

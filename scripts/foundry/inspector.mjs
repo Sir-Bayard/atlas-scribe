@@ -22,6 +22,9 @@ export function kindOf(f) {
   if (f.type === "road") return f.class ?? "street";
   if (f.type === "wall") return f.class === "hedge" || f.class === "palisade" || f.class === "cliff" ? f.class : `${f.class ?? "drystone"} wall`;
   if (f.type === "crossing" || f.type === "prop" || f.type === "dock") return f.class ?? f.type;
+  if (f.type === "region") return ({ difficult: "difficult terrain", greater: "greater difficult terrain", hazard: "hazard", cover: "cover", squeeze: "squeeze", note: "note" })[f.class] ?? "region";
+  if (f.type === "trail") return ({ foot: "footprints", hoof: "hoofprints", paw: "paw prints", wheel: "wheel ruts" })[f.class] ?? "trail";
+  if (f.type === "tether") return "picket line";
   return f.type;
 }
 
@@ -264,7 +267,7 @@ export function howText(tool, points) {
 /** The drawing palette: a button per tool, the one in use lit, with how to use it and Finish and Cancel. */
 export function paletteHTML(tool, { points = 0, working = false, kind = "settlement" } = {}) {
   // (a region's tools: places, its ground, roads and water; a battle map adds caves and dungeons to its ground)
-  const groups = kind === "region" ? [["Places", ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"]], ["Land", ["woods", "fields", "hills", "mountains", "marsh"]], ["Lines", ["highway", "road", "track"]], ["Water", ["river", "stream", "lake", "sea"]], ["Points", ["label"]]] : [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Ground", kind === "battle" ? ["rise", "hollow", "cave", "dungeon"] : ["rise", "hollow"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]], ["Lights and story props", ["campfire", "brazier", "torch", "lamppost", "cairn", "standing-stone", "sledge"]]];
+  const groups = kind === "region" ? [["Places", ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"]], ["Land", ["woods", "fields", "hills", "mountains", "marsh"]], ["Lines", ["highway", "road", "track"]], ["Water", ["river", "stream", "lake", "sea"]], ["Points", ["label"]]] : [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Ground", kind === "battle" ? ["rise", "hollow", "cave", "dungeon"] : ["rise", "hollow"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]], ["Lights and story props", kind === "battle" ? ["campfire", "brazier", "torch", "lamppost", "light", "cairn", "standing-stone", "sledge", "footprints", "hoofprints", "pawprints", "ruts", "tether", "horse", "mule", "ox"] : ["campfire", "brazier", "torch", "lamppost", "cairn", "standing-stone", "sledge"]], ...(kind === "battle" ? [["Regions", ["difficult", "greater", "hazard", "cover", "squeeze", "note"]]] : [])];
   const by = new Map(TOOLS.map((t) => [t.id, t]));
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">

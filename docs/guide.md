@@ -153,17 +153,31 @@ A map is drawn in the illustrated style unless the plan's Style says textured or
 
 A battle map is a plan at 5 feet a square, made to fight on. It's painted from your map art (art folders, art you choose, or FA Nexus) and drawn where there's none (see [Art](#art)), and made a scene with its walls, doors, regions, lights and roof tiles. There are three ways to make one:
 
-- **Quick Start's Battle map tab:** pick a Site (Wilderness, Roadside building, Village or town street, Camp, Castle, Cave or Dungeon; a castle can have roofed or open towers and a moat, which makes its map 12 squares wider each way), its size, the season, time of day, weather and ground, its features (a road, a stream, a pond, a cliff, a rise, a hollow) and how much is scattered over it. Or type what you want in the Describe box ("a roadside inn at night in spring with a stage and a kitchen"): what it understood is set in the form, where you can change it, and words it doesn't know are listed and left out.
+- **Quick Start's Battle map tab:** pick a Site (Wilderness, Roadside building, Village or town street, Camp, Castle, Cave or Dungeon; a castle can have roofed or open towers and a moat, which makes its map 12 squares wider each way), its size, the season, time of day, weather and ground, its features (a road, a sunken road, a stream, a pond, a cliff, a rise, a hollow) and how much is scattered over it. Or type what you want in the Describe box ("a roadside inn at night in spring with a stage and a kitchen"): what it understood is set in the form, where you can change it, and words it doesn't know are listed and left out.
 - **From a town map:** on a village, town or city, the Battle map tool takes a box you drag (or a 30, 45 or 60 square one you click to place) and **Make battle map** makes that area a battle map, twice true size by default so there's room to fight, and opens it in the window ready for Make scene. It keeps the town map's streets, water, squares, notable buildings, walls, palisades, cliffs and high ground where they are and builds the rest again at battle size.
-- **By hand:** start from a Quick Start battle map (or import a plan with `"kind": "battle"`) and draw on it with the same tools as any map, plus Rise and Hollow for height, and Campfire, Brazier, Torch, Lamp post and the story props (Cairn, Standing stone, Sledge).
+- **By hand:** start from a Quick Start battle map (or import a plan with `"kind": "battle"`) and draw on it with the same tools as any map, plus Rise and Hollow for height; Campfire, Brazier, Torch, Lamp post and Light for light; the story props (Cairn, Standing stone, Sledge); Horse, Mule, Ox and Picket line for a camp; Footprints, Hoofprints, Paw prints and Ruts for a trail; and the Regions group (Difficult, Greater difficult, Hazard, Cover, Squeeze, Note).
 
 What you get:
 
 - **Buildings to fight in:** walls, doors and windows as Foundry walls, rooms divided by what the building is for and furnished, and a roof tile over each that fades when a token walks in. An inn, a mansion, a keep or a tower can have floors above and a cellar, each a level of the scene, joined by stairs.
 - **Castles:** a stone town wall is built as a castle's, with a wall walk at 20 feet, towers with a room on every floor, and gatehouses with a portcullis.
-- **Height:** rises, hollows, cliffs, banks and stream beds, each a region at its elevation. With the Battle map heights setting a token's elevation follows the ground, and a walker can't go up or down a cliff.
+- **Height:** rises, hollows, cliffs, banks, sunken roads and stream beds, each a region at its elevation, their faces painted in tiers with a shadow at the foot. With the Battle map heights setting a token's elevation follows the ground, and a walker can't go up or down a cliff.
 - **The land:** woods at battle size, streams and rivers that wander in their beds, ponds and loose rock, fields in rows, farmyards and docks; in winter, snow, drifts and ice along the streams.
-- **Light:** a fire at each hearth, lamps and torches, and the plan's Time of day (day, dawn, dusk or night).
+- **Light:** a fire at each hearth, lamps and torches, the plan's own lights, and the plan's Time of day (day, dawn, dusk, a moonlit night, or a dark night).
+- **Props you can move:** carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals are tiles the GM can move, turn and resize, as furniture is (the Movable props on battle maps setting; with it off they're painted into the map). A new map or an Update replaces them, as it does furniture (a scene published from a map's path keeps the ones it had). A wagon is only a tile: it gets no walls.
+
+### Battle map features
+
+- **Sunken roads:** a road's Sunken setting (in feet) cuts it below the ground around it, with a bank or cliff each side, and a region in the cut at its depth; through a rise or a hollow its floor goes up or down with the ground, with a slope between. A stream that crosses it runs under the road. A road at the ground's level that meets it stops at its bank, with no way down: a ramp into the cut is for a later version. Quick Start's Sunken road feature, or "a sunken road" in the Describe box, makes one.
+- **Rises and hollows that touch** are one piece of ground when they're the same height: no edge between them.
+- **Part of an edge:** a rise's or hollow's Edge is one kind all the way around; in a plan, `edges` makes a stretch of it another kind, by its corners: `"edges": [{ "from": 3, "to": 5, "edge": "slope" }]` turns the edge from the fourth corner to the sixth into a walkable slope (a ramp in a cliff, a collapse, a breach). Moving or removing a corner keeps the stretches on the corners they were on.
+- **Night:** Night is moonlit: a blue darkness with enough light to see by, and fires and lamps warm against it. Dark night is near black, with only the lights you place.
+- **Lights:** the Light tool places a light of its own: its bright and dim reach in feet, its color, strength and flicker (torch, flame, pulse, wave, fog), and whether it's lit only in the dark.
+- **Regions:** drawn by you, never guessed. Difficult and Greater difficult cost a walker double and triple movement; Squeeze costs double; Hazard, Cover and Note are named, colored regions. Each can carry a note, shown to the GM when a token enters. Cover and squeezing have no automation of their own in PF2e, so those carry their name and note.
+- **Trails and picket lines:** a trail is a path of prints (footprints, hoofprints, paw prints or wheel ruts) from one end to the other; a picket line is a rope from stake to stake for tying animals to.
+- **A prop's turn and size:** at a Turn of 0 a cart, wagon, boat, bedroll or animal runs down the map (a wagon's shafts and an animal's head to the south) and a sledge lies across it; a Turn turns it clockwise. Size is its whole length in feet along its longest side, a wagon's with its shafts: a 25 ft wagon is five squares long.
+- **Plan check:** warns when a cart, wagon, tent, animal or other movable prop sits on a rise's or hollow's bank or cliff or on a sunken road's bank (a walkable slope is fine), or reaches into a building, at the size its art draws it unless its Size says otherwise.
+- **The summary** lists the plan's regions with their notes, its lights, trails and picket lines.
 
 Limits for now: a big battle map is slow to paint, so the Battle map tool's box turns amber past 60 squares a side.
 
@@ -250,6 +264,7 @@ In Configure Settings, AtlasScribe:
 - **Battle map zoom** (each user's own): how big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight.
 - **Drawn battle art:** Painted or Inked, for whatever a battle map has no art for.
 - **Draw whole battle maps:** draws every battle map entirely, even where you have art, so it has one look.
+- **Movable props on battle maps:** carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals as tiles to move, as furniture is (the default), or painted into the map.
 - **Battle map heights:** a token's elevation follows the ground on battle maps, and walkers are kept off cliffs and out of deep water.
 - **Battle map rules:** the game system's rules on battle maps, or Foundry's own.
 
@@ -283,6 +298,8 @@ await as.render(plan, { publish: true }); // paints it, saves it, and makes a ne
 - `openArt()`: opens the Art window. `openFiles()`: opens the Files window. `openPlan(scene)`: opens a scene's plan (or `{ path }` a plan file's) in the window.
 - `build(plan)`: lays a plan out without painting: `{ layout, roles, notes }`. `art(plan or roles)`: the art each role would be painted with: `{ art, missing, notes, from }`. `summary(plan or { scene })`: the plan as built, as text.
 - `importPlan(input)`: imports a plan, a Watabou export or a Universal VTT file (text or object), its image saved under the output folder: `{ plan, notes, from }`. `exportUVTT(scene, { download })`: a scene as a Universal VTT object.
+- `snapshot(scene, { side, tokens, lighting, save })`: a picture of a scene without viewing it: its background, tiles and tokens under its darkness and lights, saved to the output folder's `snapshots` folder (`save: false` gives a data URL instead): `{ path or url, width, height }`. side is its longest side in pixels (2000 unless given, from 64 to 6000, never bigger than the scene itself). Its lighting is AtlasScribe's own, close to Foundry's but not the same: walls don't stop light and there's no vision or fog. It's for comparing maps, not for what players see.
+- `planOf(scene)`: the plan a scene was made from; publishing keeps it in the plans folder under its id. `savePlan(plan, { file })`: saves a plan there (by its id unless `file` is given).
 - `batch(tag)`: what AtlasScribe made with a batch tag: `[{ id, name, scene, documents }]`.
 - `rescanArt()`: reads the art folders again and gives what each holds: `[{ folder, files, dirs, manifests, roles, cut, error, errors }]`.
 - `preview(plan, { px })`: opens the plan in the AtlasScribe window (px: the sketch's pixels a square) (see [Changing the map](#changing-the-map)) and gives the window. Copy plan puts the plan, with its new seeds and locks, on the clipboard, and the window's `plan` holds it too: `const app = await as.preview(plan); /* reroll until you like it */ await as.render(app.plan, { publish: true });`

@@ -2,7 +2,7 @@
 import { bandPieces } from "../walls.mjs";
 import { distanceToPath, pointInPolygon, shapeToPolygon } from "../../geom.mjs";
 import { easeOnto } from "../crossings.mjs";
-import { edgeSpan, resample, shiftRight, terrainOf } from "../terrain.mjs";
+import { edgeSpan, isSunken, resample, shiftRight, terrainOf } from "../terrain.mjs";
 
 /**
  * Height on a battle map: the ground's levels (rises, hollows, stream beds) and the edges between them, each edge's
@@ -19,7 +19,7 @@ export function battleHeights(ctx) {
   if (battle) {
     const t = terrainOf({ plan, items, sq, pick: streamFor });
     notes.push(...t.notes);
-    for (const L of t.levels) items.push({ kind: "level", id: L.id, from: L.from, name: L.name, rings: L.rings, elevation: L.elevation, style: L.style, rock: L.rock, bed: L.bed, water: L.water ?? null, waterClass: L.waterClass ?? null, within: L.within ?? null, ...(L.shore ? { shore: L.shore } : {}) });
+    for (const L of t.levels) items.push({ kind: "level", id: L.id, from: L.from, name: L.name, rings: L.rings, elevation: L.elevation, style: L.style, rock: L.rock, bed: L.bed, water: L.water ?? null, waterClass: L.waterClass ?? null, within: L.within ?? null, ...(L.shore ? { shore: L.shore } : {}), ...(L.cut ? { cut: true } : {}) });
     for (const e of t.edges) {
       items.push(e);
       // (a walkable slope is ground like any: trees and houses may stand on it)
@@ -48,6 +48,8 @@ export function battleHeights(ctx) {
       for (let k = 0; k < 60 && (inBed(end(1)) || inBed(end(-1))); k++) c.length = (c.length ?? 2) + 0.25;
       // (and a road over it bends onto it gently over the squares before it, kept clear along its new line)
       for (const w of ways) {
+        // (a sunken road keeps its line: its cut was laid along it)
+        if (isSunken(plan.features.find((f) => f.id === w.from), w)) continue;
         const eased = easeOnto(w.path, c);
         if (!eased) continue;
         // (a road joining it near the bridge has its end carried along, so it still meets it)
