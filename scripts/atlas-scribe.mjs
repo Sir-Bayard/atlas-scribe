@@ -899,7 +899,7 @@ Hooks.once("init", () => {
   });
   game.settings.register(MOD, "movableProps", {
     name: "Movable props on battle maps",
-    hint: "Place a battle map's carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals as tiles the GM can move, turn and resize, as furniture is, instead of painting them into the map. A new map or an Update replaces them.",
+    hint: "Place a battle map's carts, wagons, sledges, boats, barrels, crates, bedrolls and tents as tiles the GM can move, turn and resize, as furniture is, and its horses, mules and oxen as tokens (of a creature from your compendiums when one matches), instead of painting them into the map. A new map or an Update replaces them.",
     scope: "world",
     config: true,
     type: Boolean,

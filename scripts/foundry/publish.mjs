@@ -17,6 +17,7 @@ import { CASTLE } from "../core/layout/castle.mjs";
 import { COVER } from "../core/rules.mjs";
 import { rules as rulesInUse, regionsAdapter, CORE } from "./rules.mjs";
 import { MOD } from "./util.mjs";
+import { animalActor, animalToken } from "./animals.mjs";
 
 const THUMB = 300;
 /** Foundry's limits on a drawing's font size. */
@@ -26,7 +27,7 @@ const FONT = { min: 8, max: 256 };
  * plan: a normalized plan. image: the rendered map's path, width, height and thumb (a Blob). folder: the output
  * folder. layout: the map's layout (none: no notable-building labels or battle documents). sceneId: a scene to update
  * (one AtlasScribe didn't make is refused unless force). check(): throws once the job is canceled; called before
- * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, props, mist,
+ * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, props, animals, mist,
  * walls, roofs, heights, lights, stairs, zones, levels, rules, ruled, warnings }, counts of what was placed.
  */
 /** Scenes backed up this session (for the backup setting's "first update of a session"). */
@@ -266,21 +267,23 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     + (layout?.items ?? []).filter((i) => i.kind === "light" && i.prop && FURNITURE[i.prop.f]).length;
   // (a battle map's movable props come with its furniture and are counted apart from it; when none of the furniture's
   // art was found, the last map's furniture is kept and only the props are replaced)
-  const furnFound = Array.isArray(image.furniture) ? image.furniture.filter((f) => !f.prop).length : 0;
-  const keepFurn = Array.isArray(image.furniture) && pieces > 0 && !furnFound;
+  // (its animals, sent with them too, are made tokens below)
+  const furnList = Array.isArray(image.furniture) ? image.furniture.filter((f) => !f.animal) : null;
+  const furnFound = furnList ? furnList.filter((f) => !f.prop).length : 0;
+  const keepFurn = !!furnList && pieces > 0 && !furnFound;
   if (keepFurn) warnings.push(`None of the furniture's art was found, so no furniture was placed${ours.some((t) => !t.flags[MOD].prop) ? " and the last map's was kept" : ""}.`);
-  if (keepFurn && !image.furniture.length) {
+  if (keepFurn && !furnList.length) {
     // (no furniture and no props: the last map's props still go, so a map that paints them doesn't show them twice)
     const out = ours.filter((t) => t.flags[MOD].prop).map((t) => t.id);
     try { for (let k = 0; k < out.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", out.slice(k, k + BATCH)); } catch (e) { warnings.push(`The last map's props couldn't all be taken out (${e.message}); delete them from the Tiles controls.`); }
-  } else if (Array.isArray(image.furniture)) {
+  } else if (furnList) {
     if (!keepFurn && furnFound < pieces) warnings.push(`${pieces - furnFound} of the ${pieces} pieces of furniture had no art and were left out.`);
     const out = keepFurn ? ours.filter((t) => t.flags[MOD].prop).map((t) => t.id) : oldFurn;
     let placed = false;
     try {
       onProgress(0.96, "Placing the furniture");
       const { sceneX, sceneY } = sceneById(sceneId).dimensions;
-      const tiles = image.furniture.map((f) => onFloor({ ...furnitureTile(f, sceneX, sceneY, plan.id ?? null), _floor: f.floor ?? 0 })).filter(Boolean);
+      const tiles = furnList.map((f) => onFloor({ ...furnitureTile(f, sceneX, sceneY, plan.id ?? null), _floor: f.floor ?? 0 })).filter(Boolean);
       await createAll(sceneId, "Tile", tagAll(tiles));
       furniture = tiles.filter((t) => !t.flags[MOD].prop).length;
       props = tiles.length - furniture;
@@ -290,6 +293,37 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       warnings.push(placed ? `The last map's furniture couldn't all be taken out (${e.message}); delete AtlasScribe's old pieces from the Tiles controls.` : `The furniture couldn't all be placed (${e.message}).`);
     }
   } else if (!Array.isArray(image.furniture) && oldFurn.length) warnings.push("The furniture was left as it was: it comes only with a map rendered for the scene.");
+
+  // A battle map's animals, each a token of a creature from the GM's compendiums (else a plain actor), visible as part
+  // of the scene: new in, then the old out, but never one now linked to an actor or in a combat (the GM's now); a map
+  // given by its path keeps those it had
+  let animals = 0;
+  if (Array.isArray(image.furniture)) {
+    const sc0 = sceneById(sceneId);
+    const inCombat = (t) => !!game.combats?.some?.((c) => c.combatants?.some?.((cb) => cb.tokenId === t.id && (cb.sceneId ?? c.scene?.id) === sceneId));
+    const ourTokens = sc0.tokens?.filter?.((t) => isObj(t.flags?.[MOD]) && "animal" in t.flags[MOD]) ?? [];
+    const kept = ourTokens.filter((t) => t.actorLink || inCombat(t)), oldAnimals = ourTokens.filter((t) => !kept.includes(t)).map((t) => t.id);
+    // (an animal whose token the GM kept isn't made again)
+    const keptIds = new Set(kept.map((t) => t.flags[MOD].piece).filter(Boolean));
+    const list = image.furniture.filter((f) => f.animal && !(f.id && keptIds.has(f.id)));
+    let placed = false;
+    try {
+      const { sceneX, sceneY } = sc0.dimensions, grid = plan.output.pxPerSquare, made = [], from = new Set();
+      for (const a of list) {
+        const src = localPath(a.src);
+        const { actor, from: how, name } = await animalActor(a.f, { img: src });
+        if (how === "compendium") from.add(name);
+        made.push(animalToken(actor, { src, x: sceneX + a.x, y: sceneY + a.y, width: a.width, height: a.height, rotation: a.rotation, elevation: a.elevation, kind: a.f, id: a.id, level: levelOf?.get(0) ?? null }, grid, plan.id ?? null));
+      }
+      if (made.length) { onProgress(0.97, "Placing the animals"); await createAll(sceneId, "Token", tagAll(made)); }
+      animals = made.length;
+      placed = true;
+      for (let k = 0; k < oldAnimals.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Token", oldAnimals.slice(k, k + BATCH));
+      if (from.size) warnings.push(`The animals are tokens of ${[...from].join(", ")} from your compendiums, kept in the actors' "AtlasScribe animals" folder.`);
+    } catch (e) {
+      warnings.push(placed ? `The last map's animals couldn't all be taken out (${e.message}); delete them from the scene.` : `The animals couldn't all be placed as tokens (${e.message}).`);
+    }
+  }
 
   // A battle map's walls, doors and windows, fences and low walls (movement only), a roof region over each building,
   // and its ground, banks, cliffs and water (height.mjs): new ones in, then the old out (a settlement map just takes
@@ -326,7 +360,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, furniture, props, mist, walls, roofs, heights, lights, stairs, zones, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, furniture, props, animals, mist, walls, roofs, heights, lights, stairs, zones, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
 }
 
 /**

@@ -30,7 +30,7 @@ export function styleOf(layout) {
  * plain); brokenArt the roles any file failed for, brokenUrls those files; overheads the pieces painted apart to lie over the map as tiles
  * ([{ name, kind, x, y, width, height (px from the map's corner), elevation, blob }]); furniture [{ src, f, x, y
  * (middle), width, height, rotation, floor, lock }, and with drawn.movable a battle map's movable props: { src, f (its class),
- * prop: true, x, y (its middle), width, height, rotation, elevation }]; mist the fog tiles; levels a battle map's other floors ([{
+ * prop: true, animal (a horse, mule or ox, made a token), x, y (its middle), width, height, rotation, elevation }]; mist the fog tiles; levels a battle map's other floors ([{
  * floor, blob }]); drawnFiles the drawn images its furniture and mist tiles use ([{ name, blob }], their src
  * "drawn:<name>" until saved). progress(pct, label) runs from 0 to 1. drawn: { look, all, movable } for a battle map: roles with
  * no art drawn in that look ("painted" or "inked"), or with all every role drawn; with movable, its movable props as
@@ -198,7 +198,8 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
     };
     // (a battle map draws what has no art: drawn-art.mjs; a settlement's styles paint it plain)
     const look = layout.kind === "battle" && drawn ? (drawn.look === "inked" ? "inked" : "painted") : null;
-    // (with the Movable props setting, a battle map's carts, wagons, barrels, tents and animals are tiles, not painted)
+    // (with the Movable props setting, a battle map's carts, wagons, barrels and tents are tiles and its animals tokens,
+    // not painted)
     const movable = layout.kind === "battle" && !!drawn?.movable && !!style.movables;
     const drawnOf = (role, variant) => (look ? drawnImages.art(role, variant, { look }) : null);
     const getArt = (role, variant = 0) => (look && drawn.all ? null : fileArt(role, variant)) ?? drawnOf(role, variant);
@@ -312,7 +313,7 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
       const bmp = url ? loaded.get(url) : d.im;
       if (!bmp) continue;
       const [w, h] = style.propSize(piece, bmp);
-      furniture.push({ src: url ?? d.src, f: piece.class, prop: true, x: piece.x * pp, y: piece.y * pp, width: w * pp, height: h * pp, rotation: piece.rot ?? 0, elevation: Number.isFinite(elevation) ? elevation : 0 });
+      furniture.push({ src: url ?? d.src, f: piece.class, prop: true, ...(style.ANIMAL_PROPS?.has(piece.class) ? { animal: true, id: piece.id } : {}), x: piece.x * pp, y: piece.y * pp, width: w * pp, height: h * pp, rotation: piece.rot ?? 0, elevation: Number.isFinite(elevation) ? elevation : 0 });
     }
     // Mist (a battle map's): each overlay a tile over the low place it lies in
     const mist = [];

@@ -50,7 +50,7 @@ Enable AtlasScribe in your world. It needs Foundry 14 and works with any game sy
 1. In Quick Start, open the **Battle map** tab.
 2. Pick a Site (Wilderness, Roadside building, Village or town street, Camp, Castle, Cave or Dungeon), the season, the time of day and what's scattered about, or describe it: "a roadside inn at night in spring with a stage, a cellar of casks and rooms upstairs".
 3. **Make the plan**, look it over in the window, then **Make scene**.
-4. The scene has walls, doors and windows, rooms with furniture you can move, wagons, tents and animals you can move too, roofs that fade as a token walks in, floors above and cellars as levels, lights and regions for height and water, and a moonlit night when it's set at night.
+4. The scene has walls, doors and windows, rooms with furniture you can move, wagons and tents you can move too, horses and oxen as tokens, roofs that fade as a token walks in, floors above and cellars as levels, lights and regions for height and water, and a moonlit night when it's set at night.
 
 On a battle map you can also sink a road between its banks, draw your own lights, regions for difficult terrain, hazards, cover and notes, and trails of prints and picket lines. `api.snapshot` takes a picture of a scene without opening it, for comparing maps.
 

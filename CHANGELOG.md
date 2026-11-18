@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+A battle map's animals are tokens.
+
+- Horses, mules and oxen are placed as tokens, visible to everyone and on no side (neutral), drawn from above at the size the map would paint them. Each is a token of a creature from your own compendiums when one matches (the game system's packs first, then modules', then the world's: a riding horse, a mule, an ox and other names they go by), imported once into the actors' "AtlasScribe animals" folder and used again after; with no match, a plain actor of the system's creature type with no stats stands in. Delete an animal's actor there to have it looked for again. AtlasScribe ships no creatures.
+- An Update replaces them as it does furniture, but leaves a token you've put in a combat or linked to an actor, and doesn't make that animal again. A scene published from a map's path keeps the ones it had.
+- With the Movable props on battle maps setting off they're painted into the map, as before.
+- `publish` also gives the count `animals`.
+
 ## 1.1.0
 
 Battle maps that read better and do more, from rebuilding a hand-made scene from a plan: sunken roads, height edges that show, moonlit nights, your own lights and regions, props you can move, and a way to see a scene without opening it.

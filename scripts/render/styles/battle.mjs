@@ -207,6 +207,8 @@ const isPlaza = (i) => i.kind === "surface" && (i.class === "square" || i.class 
  * painted, as part of the ground.
  */
 export const MOVABLE_PROPS = new Set(["cart", "wagon", "sledge", "boat", "barrel", "crate", "bedroll", "tent", "horse", "mule", "ox"]);
+/** The movable props that are animals: placed as tokens, not tiles (foundry/animals.mjs). */
+export const ANIMAL_PROPS = new Set(["horse", "mule", "ox"]);
 
 /**
  * A prop's size in squares, [across, along], from its art: the plan's or layout's own size, else its class's usual

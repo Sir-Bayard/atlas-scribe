@@ -164,7 +164,7 @@ What you get:
 - **Height:** rises, hollows, cliffs, banks, sunken roads and stream beds, each a region at its elevation, their faces painted in tiers with a shadow at the foot. With the Battle map heights setting a token's elevation follows the ground, and a walker can't go up or down a cliff.
 - **The land:** woods at battle size, streams and rivers that wander in their beds, ponds and loose rock, fields in rows, farmyards and docks; in winter, snow, drifts and ice along the streams.
 - **Light:** a fire at each hearth, lamps and torches, the plan's own lights, and the plan's Time of day (day, dawn, dusk, a moonlit night, or a dark night).
-- **Props you can move:** carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals are tiles the GM can move, turn and resize, as furniture is (the Movable props on battle maps setting; with it off they're painted into the map). A new map or an Update replaces them, as it does furniture (a scene published from a map's path keeps the ones it had). A wagon is only a tile: it gets no walls.
+- **Props you can move:** carts, wagons, sledges, boats, barrels, crates, bedrolls and tents are tiles the GM can move, turn and resize, as furniture is, and horses, mules and oxen are tokens (the Movable props on battle maps setting; with it off they're painted into the map). An animal's token is drawn from above at its painted size, visible to everyone and neutral, and made from a creature in your compendiums when one matches (the game system's packs first, then modules', then the world's; imported once into the actors' "AtlasScribe animals" folder, where deleting it has it looked for again), else from a plain actor with no stats; an Update leaves a token you've put in a combat or linked to an actor, and doesn't make that animal again. A new map or an Update replaces them, as it does furniture (a scene published from a map's path keeps the ones it had). A wagon is only a tile: it gets no walls.
 
 ### Battle map features
 
@@ -264,7 +264,7 @@ In Configure Settings, AtlasScribe:
 - **Battle map zoom** (each user's own): how big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight.
 - **Drawn battle art:** Painted or Inked, for whatever a battle map has no art for.
 - **Draw whole battle maps:** draws every battle map entirely, even where you have art, so it has one look.
-- **Movable props on battle maps:** carts, wagons, sledges, boats, barrels, crates, bedrolls, tents and animals as tiles to move, as furniture is (the default), or painted into the map.
+- **Movable props on battle maps:** carts, wagons, sledges, boats, barrels, crates, bedrolls and tents as tiles to move, as furniture is, and horses, mules and oxen as tokens (the default), or all painted into the map.
 - **Battle map heights:** a token's elevation follows the ground on battle maps, and walkers are kept off cliffs and out of deep water.
 - **Battle map rules:** the game system's rules on battle maps, or Foundry's own.
 
