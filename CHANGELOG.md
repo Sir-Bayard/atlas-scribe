@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- An animal's token shows a Forgotten Adventures token through FA Nexus when it has one (a riding horse, a donkey or pony for a mule, an ox), at FA's own scale, so it matches the map's art; else the compendium creature's own token art; else the animal drawn from above, as before. FA Nexus is asked only with the Art from FA Nexus setting on, and not when Draw whole battle maps is on. A plain stand-in actor takes the FA token as its picture too.
+- `snapshot` draws a token's picture at its texture's scale, fitted as Foundry fits it.
+
 ## 1.2.0
 
 A battle map's animals are tokens.

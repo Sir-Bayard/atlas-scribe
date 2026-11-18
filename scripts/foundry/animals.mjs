@@ -2,19 +2,24 @@
  * A battle map's animals as tokens: each horse, mule or ox a token of a creature from the GM's own compendiums when one
  * of the names it might go by is there (imported once into an "AtlasScribe animals" folder and reused), else of a plain
  * actor of the system's creature type with no stats. AtlasScribe ships no creatures: what's used is what the GM has
- * installed. The token shows the animal drawn from above, as the map draws it, so it reads as part of the scene.
+ * installed. Its token's picture is a Forgotten Adventures token through FA Nexus when it has one (drawn from above,
+ * as the map's art is), else the compendium creature's own, else the animal drawn from above as the map draws it.
  */
 import { MOD } from "./util.mjs";
 
 /**
- * Each animal: the names a creature for it may have in a compendium, tried in order (exact, any case), and the size
- * of its plain actor's token in squares when none is found.
+ * Each animal: the names a creature for it may have in a compendium, tried in order (exact, any case), the size of
+ * its plain actor's token in squares when none is found, and the starts of the Forgotten Adventures token file names
+ * that can show it, tried in order.
  */
 export const ANIMALS = {
-  horse: { label: "Horse", names: ["Riding Horse", "Horse", "Draft Horse", "Warhorse", "War Horse"], size: 2, pf2eSize: "lg" },
-  mule: { label: "Mule", names: ["Mule", "Riding Mule", "Donkey", "Pony", "Riding Pony"], size: 1, pf2eSize: "med" },
-  ox: { label: "Ox", names: ["Ox", "Draft Ox", "Oxen", "Cattle", "Cow", "Bull"], size: 2, pf2eSize: "lg" },
+  horse: { label: "Horse", names: ["Riding Horse", "Horse", "Draft Horse", "Warhorse", "War Horse"], size: 2, pf2eSize: "lg", fa: ["Riding_Horse", "Draft_Horse", "Horse"] },
+  mule: { label: "Mule", names: ["Mule", "Riding Mule", "Donkey", "Pony", "Riding Pony"], size: 1, pf2eSize: "med", fa: ["Mule", "Donkey", "Pony"] },
+  ox: { label: "Ox", names: ["Ox", "Draft Ox", "Oxen", "Cattle", "Cow", "Bull"], size: 2, pf2eSize: "lg", fa: ["Ox", "Cow"] },
 };
+
+/** A picture that's a placeholder, not a creature's own art: Foundry's and the systems' default icons. */
+export const isPlaceholder = (src) => !src || /^icons\/svg\//.test(src) || /mystery-man/.test(src) || /systems\/[^/]+\/icons\/default-icons\//.test(src);
 
 /**
  * What a creature of the scene's dressing needs from the game system: in PF2e, a size its token keeps (PF2e sizes an
@@ -70,7 +75,7 @@ async function animalFolder() {
 
 /**
  * The world actor an animal's tokens are made from: the one AtlasScribe made or imported for it before, else a
- * creature imported from the compendiums, else a plain actor. img: the drawn animal, for a plain actor's picture.
+ * creature imported from the compendiums, else a plain actor. img: the picture a plain actor gets.
  * Returns { actor, from: "world" | "compendium" | "plain", name }.
  */
 export async function animalActor(kind, { img = null } = {}) {
@@ -103,27 +108,36 @@ export async function animalActor(kind, { img = null } = {}) {
 }
 
 /**
- * An animal's token data: its actor's prototype token at the animal's place, its box the creature's size, with the
- * animal drawn from above as its picture at the size the map would paint it (no ring), turned as it stands, at the
- * ground's height, neutral, visible, unlinked, flagged as AtlasScribe's (with the plan's prop it stands for).
- * a: { src, x, y (its middle, px from the scene's corner), width, height (its painted size in px), rotation,
- * elevation, kind, id, level }; grid: px a square.
+ * Whether an actor's own token picture should show the animal: a creature AtlasScribe imported from a compendium,
+ * whose prototype token has a picture of its own (not a placeholder).
  */
-export function animalToken(actor, a, grid, plan) {
+export const ownPicture = (actor) => !!actor?.getFlag?.(MOD, "source") && !isPlaceholder(actor.prototypeToken?.texture?.src);
+
+/**
+ * An animal's token data: its actor's prototype token at the animal's place, its box the creature's size, turned as it
+ * stands, at the ground's height, neutral, visible, unlinked, flagged as AtlasScribe's (with the plan's prop it stands
+ * for). Its picture: pic { path, scale } (a Forgotten Adventures token, at FA's own scale, no ring), "own" (the
+ * creature's own, as its prototype has it), or none (the animal drawn from above, a.src, at the size the map would
+ * paint it, no ring). a: { src, x, y (its middle, px from the scene's corner), width, height (its painted size in px),
+ * rotation, elevation, kind, id, level }; grid: px a square.
+ */
+export function animalToken(actor, a, grid, plan, pic = null) {
   const proto = typeof actor.prototypeToken?.toObject === "function" ? actor.prototypeToken.toObject() : structuredClone(actor.prototypeToken ?? {});
   const w = Number(proto.width) > 0 ? Number(proto.width) : 1, h = Number(proto.height) > 0 ? Number(proto.height) : 1;
-  // (Foundry fits the picture inside the box keeping its shape; scaled from there to the painted size)
+  // (a drawn picture: Foundry fits it inside the box keeping its shape; scaled from there to the painted size)
   const pw = Number(a.width) > 0 ? a.width : grid, ph = Number(a.height) > 0 ? a.height : grid;
-  const fitted = Math.min((w * grid) / pw, (h * grid) / ph), scale = Math.round((1 / fitted) * 1000) / 1000;
+  const fitted = Math.min((w * grid) / pw, (h * grid) / ph), drawnScale = Math.round((1 / fitted) * 1000) / 1000;
+  const own = pic === "own", fa = pic && typeof pic === "object" && pic.path ? pic : null;
+  const texture = own ? { ...(proto.texture ?? {}) } : fa ? { ...(proto.texture ?? {}), src: fa.path, fit: "contain", scaleX: fa.scale ?? 1, scaleY: fa.scale ?? 1 } : { ...(proto.texture ?? {}), src: a.src, fit: "contain", scaleX: drawnScale, scaleY: drawnScale };
   return {
     ...proto,
     name: proto.name || actor.name, actorId: actor.id, actorLink: false,
     x: Math.round(a.x - (w * grid) / 2), y: Math.round(a.y - (h * grid) / 2), width: w, height: h,
     elevation: Math.round(a.elevation ?? 0), rotation: Math.round((a.rotation ?? 0) * 100) / 100, lockRotation: false, hidden: false,
     disposition: 0, ...(a.level ? { level: a.level } : {}),
-    texture: { ...(proto.texture ?? {}), src: a.src, fit: "contain", scaleX: scale, scaleY: scale },
-    ring: { ...(proto.ring ?? {}), enabled: false },
-    // (PF2e would size the token from its actor and scale its picture: kept as placed)
-    flags: { ...(proto.flags ?? {}), pf2e: { ...(proto.flags?.pf2e ?? {}), linkToActorSize: false, autoscale: false }, [MOD]: { ...(proto.flags?.[MOD] ?? {}), animal: plan, kind: a.kind, ...(a.id ? { piece: a.id } : {}) } },
+    texture,
+    ring: own ? { ...(proto.ring ?? {}) } : { ...(proto.ring ?? {}), enabled: false },
+    // (PF2e would size the token from its actor, and scale a picture AtlasScribe scaled: kept as placed)
+    flags: { ...(proto.flags ?? {}), pf2e: { ...(proto.flags?.pf2e ?? {}), linkToActorSize: false, ...(own ? {} : { autoscale: false }) }, [MOD]: { ...(proto.flags?.[MOD] ?? {}), animal: plan, kind: a.kind, ...(a.id ? { piece: a.id } : {}) } },
   };
 }

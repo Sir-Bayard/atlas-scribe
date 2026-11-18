@@ -24,6 +24,7 @@ const locked = new Set();
 /** Forgets the files found earlier, so the next render asks FA Nexus again (when an image failed to load, say). */
 export function forget() {
   found.clear();
+  tokensFound?.clear();
   locked.clear();
   catalog = null; // read again too, in case the files changed in FA Nexus
 }
@@ -258,4 +259,60 @@ async function fetchWith(app, names, progress, state, check = null) {
     for (let name; (name = queue.shift()) !== undefined;) await one(name);
   }));
   return { paths, downloaded, unsure, locked: lockedNow };
+}
+
+// Tokens found this session: { key: { path, scale, premium } } (a name that gave none: { path: null })
+const tokensFound = new Map();
+
+/**
+ * A Forgotten Adventures token through FA Nexus for the first of names that its token catalog has (each the start of a
+ * token's file name, as "Riding_Horse": its first color, free unless the Patreon login is there): { path, scale,
+ * grid } or null. scale: how much FA draws the token's picture past its square, for the token's texture.
+ */
+export async function fetchToken(names) {
+  if (!available() || !names?.length) return null;
+  const state = patreonState(), premium = !!state, key = names.join("|");
+  const f = tokensFound.get(key);
+  if (f && f.premium === premium) return f.path ? f : null;
+  let nexus = { app: null, opened: false };
+  try {
+    nexus = await nexusApp();
+    const app = nexus.app;
+    if (!app?._contentService || !app._downloadManager) return null;
+    const read = async () => {
+      const listed = await app._contentService.list("tokens");
+      const list = Array.isArray(listed) ? listed : Object.values(listed ?? {}).find(Array.isArray);
+      return Array.isArray(list) ? list : [];
+    };
+    let list = await read();
+    if (!list.length && typeof app._contentService.sync === "function") {
+      await Promise.race([app._contentService.sync("tokens").catch(() => null), new Promise((r) => setTimeout(r, 60000))]);
+      list = await read();
+    }
+    // (a creature's own tokens, not a skeleton's or a sea horse's: its file name starts with the name)
+    const base = (t) => String(t?.id ?? "").split("/").pop();
+    let item = null;
+    for (const n of names) {
+      const mine = list.filter((t) => base(t).startsWith(`${n}_`) && (t.tier === "free" || premium)).sort((a, b) => base(a).localeCompare(base(b)));
+      if ((item = mine[0])) break;
+    }
+    let out = null;
+    if (item) {
+      let local = await app._downloadManager.getLocalPath?.("tokens", item);
+      if (!local) {
+        const url = await app._contentService.getFullURL("tokens", item, state);
+        local = await app._downloadManager.ensureLocal("tokens", item, url, { forceDownload: true });
+      }
+      if (local) out = { path: local, scale: Number(item.scale) > 0 ? Number(item.scale) : 1, grid: Array.isArray(item.grid) ? item.grid : null, premium };
+    }
+    tokensFound.set(key, out ?? { path: null, premium });
+    return out;
+  } catch (e) {
+    console.warn(`${MOD} | couldn't get a token through FA Nexus: ${safeMessage(e)}`);
+    return null; // (the creature's own picture, or the drawn one, stands in)
+  } finally {
+    if (nexus.opened) {
+      try { await nexus.app?.close?.(); } catch { /* closing is a nicety */ }
+    }
+  }
 }

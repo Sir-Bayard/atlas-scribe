@@ -66,7 +66,10 @@ export async function drawScene(scene, { side = SNAPSHOT.side, tokens = true, li
   for (const t of under) { const im = await loadImage(t.texture.src); if (im) place(im, t.x, t.y, t.width, t.height, t.rotation, t.alpha ?? 1); }
   if (tokens) for (const t of scene.tokens.contents.filter((x) => !x.hidden && x.texture?.src && onFirst(x.level))) {
     const im = await loadImage(t.texture.src), w = t.width * d.size, h = t.height * d.size;
-    if (im) place(im, t.x + w / 2, t.y + h / 2, w, h, t.rotation, t.alpha ?? 1);
+    if (!im) continue;
+    // (its picture fitted inside its box keeping its shape, as Foundry's "contain", then scaled by its texture's scale)
+    const fit = Math.min(w / im.width, h / im.height), sx = Math.abs(t.texture.scaleX ?? 1) || 1, sy = Math.abs(t.texture.scaleY ?? 1) || 1;
+    place(im, t.x + w / 2, t.y + h / 2, im.width * fit * sx, im.height * fit * sy, t.rotation, t.alpha ?? 1);
   }
   for (const t of over) { const im = await loadImage(t.texture.src); if (im) place(im, t.x, t.y, t.width, t.height, t.rotation, t.alpha ?? 1); }
   if (lighting) {

@@ -17,7 +17,8 @@ import { CASTLE } from "../core/layout/castle.mjs";
 import { COVER } from "../core/rules.mjs";
 import { rules as rulesInUse, regionsAdapter, CORE } from "./rules.mjs";
 import { MOD } from "./util.mjs";
-import { animalActor, animalToken } from "./animals.mjs";
+import { animalActor, animalToken, ownPicture, ANIMALS } from "./animals.mjs";
+import { fetchToken } from "./art/fa-nexus.mjs";
 
 const THUMB = 300;
 /** Foundry's limits on a drawing's font size. */
@@ -309,11 +310,18 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     let placed = false;
     try {
       const { sceneX, sceneY } = sc0.dimensions, grid = plan.output.pxPerSquare, made = [], from = new Set();
+      // (each token's picture: a Forgotten Adventures token through FA Nexus, with the Art from FA Nexus setting on and
+      // whole maps not drawn; else the creature's own; else the animal drawn)
+      const setting = (k, d) => { try { return game.settings.get(MOD, k); } catch { return d; } };
+      const nexusOn = setting("artNexus", true) !== false && !setting("drawnAll", false);
+      const faOf = new Map();
       for (const a of list) {
         const src = localPath(a.src);
-        const { actor, from: how, name } = await animalActor(a.f, { img: src });
+        if (nexusOn && !faOf.has(a.f)) faOf.set(a.f, await fetchToken(ANIMALS[a.f]?.fa ?? []));
+        const fa = faOf.get(a.f) ?? null;
+        const { actor, from: how, name } = await animalActor(a.f, { img: fa?.path ?? src });
         if (how === "compendium") from.add(name);
-        made.push(animalToken(actor, { src, x: sceneX + a.x, y: sceneY + a.y, width: a.width, height: a.height, rotation: a.rotation, elevation: a.elevation, kind: a.f, id: a.id, level: levelOf?.get(0) ?? null }, grid, plan.id ?? null));
+        made.push(animalToken(actor, { src, x: sceneX + a.x, y: sceneY + a.y, width: a.width, height: a.height, rotation: a.rotation, elevation: a.elevation, kind: a.f, id: a.id, level: levelOf?.get(0) ?? null }, grid, plan.id ?? null, fa ?? (ownPicture(actor) ? "own" : null)));
       }
       if (made.length) { onProgress(0.97, "Placing the animals"); await createAll(sceneId, "Token", tagAll(made)); }
       animals = made.length;
