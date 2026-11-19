@@ -125,14 +125,15 @@ function stream(seed) {
  * Droplet erosion (as mockup 4b): droplets rolled over the land cut gullies and drop what they carry in hollows.
  * z is scaled by zs while rolling (the droplet's constants were set on heights of that size). In place.
  */
-function droplets(z, land, w, h, count, seed, steps = 40, zs = 60) {
-  const r = stream(seed);
+function droplets(z, land, w, h, count, seed, steps = 40, zs = 60, minZ = 0.05) {
+  const r = stream(seed), minStart = minZ * zs;
   for (let i = 0; i < z.length; i++) z[i] *= zs;
   const inertia = 0.05, capk = 4, minsl = 0.01, erk = 0.3, depk = 0.3, evap = 0.015, grav = 4;
   const at = (x, y) => { const ix = x | 0, iy = y | 0, fx = x - ix, fy = y - iy, o = iy * w + ix; return z[o] * (1 - fx) * (1 - fy) + z[o + 1] * fx * (1 - fy) + z[o + w] * (1 - fx) * fy + z[o + w + 1] * fx * fy; };
   for (let k = 0; k < count; k++) {
     let x = r() * (w - 6) + 3, y = r() * (h - 6) + 3;
-    if (!land[(y | 0) * w + (x | 0)]) continue;
+    // (gullies on raised ground only: the plains stay plain)
+    if (!land[(y | 0) * w + (x | 0)] || z[(y | 0) * w + (x | 0)] < minStart) continue;
     let dx = 0, dy = 0, v = 1, wat = 1, sed = 0;
     for (let s = 0; s < steps; s++) {
       const ix = x | 0, iy = y | 0;
@@ -323,7 +324,7 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
   // small relief on the land: noise growing with height, then droplets for gullies
   // (two bands: about the node spacing, and a few pixels, which the light picks out on high ground)
   const det = fbm(rw, rh, Math.max(3, 0.8 * sp), seed * 7 + 3, 0.55), fine = fbm(rw, rh, 3, seed * 7 + 5, 0.5, 2);
-  for (let i = 0; i < N; i++) if (landM[i]) { const zz = Math.min(1, Math.max(0, z[i])); z[i] += (0.0002 + 0.03 * zz) * det[i] + 0.008 * zz * zz * fine[i]; }
+  for (let i = 0; i < N; i++) if (landM[i]) { const zz = Math.min(1, Math.max(0, z[i])); z[i] += (0.0001 + 0.03 * Math.pow(zz, 1.4)) * det[i] + 0.008 * zz * zz * fine[i]; }
   let landPx = 0; for (let i = 0; i < N; i++) landPx += landM[i];
   droplets(z, landM, rw, rh, Math.round(landPx * 0.6), seed * 7 + 4, 40, 60 * (1365 / Math.max(rw, rh)));
   for (let i = 0; i < N; i++) if (landM[i] && z[i] < 0.0008) z[i] = 0.0008;

@@ -146,7 +146,9 @@ function smoothImage(R, L, seed) {
   slopes.sort((a, b) => a - b);
   const p95 = slopes[Math.floor(slopes.length * 0.95)] || 1e-4;
   const f = L.land.frame, base = (0.55 * Math.pow(Math.max(f.mapW, f.mapH), 0.75)) / R.cellMi;
-  const kz = Math.min(2 * base, Math.max(0.5 * base, 1.6 / p95));
+  // (the strength itself gentler on bigger maps: a continent's lowlands read flat, its ranges carry the relief)
+  const strength = 1.6 * Math.pow(240 / Math.max(240, Math.max(f.mapW, f.mapH)), 0.13);
+  const kz = Math.min(2 * base, Math.max(0.5 * base, strength / p95));
   const gxA = new Float32Array(N), gyA = new Float32Array(N), slopeA = new Float32Array(N);
   for (let y = 1; y < rh - 1; y++) for (let x = 1; x < rw - 1; x++) {
     const i = y * rw + x;
@@ -206,9 +208,9 @@ function smoothImage(R, L, seed) {
   const zoneW = new Float32Array(N), zr = new Float32Array(N), zg = new Float32Array(N), zb = new Float32Array(N);
   if (zoneColor.size) {
     for (let i = 0; i < N; i++) { const c = zoneColor.get(R.zone[i]); if (c && R.land[i]) { zoneW[i] = 1; zr[i] = c[0]; zg[i] = c[1]; zb[i] = c[2]; } }
-    for (const a of [zoneW, zr, zg, zb]) boxBlur(a, rw, rh, Math.max(2, side / 220));
+    for (const a of [zoneW, zr, zg, zb]) boxBlur(a, rw, rh, Math.max(3, side / 80));
     const edge = fbm(rw, rh, Math.max(6, side / 70), seed * 11 + 10, 0.6);
-    for (let i = 0; i < N; i++) if (zoneW[i] > 0.001) { const k = smooth(0.15, 0.85, zoneW[i] + 0.22 * edge[i]) / zoneW[i]; zoneW[i] *= k; zr[i] *= k; zg[i] *= k; zb[i] *= k; }
+    for (let i = 0; i < N; i++) if (zoneW[i] > 0.001) { const k = smooth(0.05, 0.95, zoneW[i] + 0.3 * edge[i]) / zoneW[i]; zoneW[i] *= k; zr[i] *= k; zg[i] *= k; zb[i] *= k; }
   }
   // (how far inside a lake: its middle darker)
   const lakeDist = R.lake.some((v) => v) ? distance(rw, rh, (i) => !R.lake[i]) : new Float32Array(N);
@@ -255,9 +257,10 @@ function smoothImage(R, L, seed) {
       let hs = 0;
       const gx = gxA[i], gy = gyA[i], nrm = Math.sqrt(gx * gx + gy * gy + 1);
       for (const [sx, sy, sz, w] of azs) hs += w * Math.max(0, Math.min(1, (gx * -sx + gy * -sy + sz) / nrm));
-      const sh = hs - flat, tone = snow > 0.4 ? LOOK.coolSnow : LOOK.cool;
+      // (aerial perspective: the light strongest on the heights, soft on the lowlands)
+      const sh = (hs - flat) * (0.35 + 0.85 * smooth(0.02, 0.5, e)), tone = snow > 0.4 ? LOOK.coolSnow : LOOK.cool;
       for (let ch = 0; ch < 3; ch++) col[ch] += Math.max(0, sh) * LOOK.warm[ch] - Math.max(0, -sh) * tone[ch] * 1.35;
-      const tk = 1 + 0.06 * Math.tanh(tex[i] / (tsd * 2.2)) * (0.2 + 0.8 * smooth(0.02, 0.3, e));
+      const tk = 1 + 0.06 * Math.tanh(tex[i] / (tsd * 2.2)) * (0.1 + 0.9 * smooth(0.04, 0.35, e));
       const aok = Math.min(1.04, Math.max(0.65, 1 - 7 * (ao[i] - zl[i])));
       for (let ch = 0; ch < 3; ch++) col[ch] *= tk * aok;
     }
