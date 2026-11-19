@@ -222,7 +222,9 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
     const coreW = single ? W : tileSize, coreH = single ? H : tileSize;
     // (the ground, or with floor a floor above or below it: a battle map's other levels, each an image of its own, clear
     // where nothing of that floor is)
-    const paintAll = (floor, p0, p1) => {
+    // (a style that saves layers apart, as an overland map's places: the ground painted without them)
+    const layerList = style.layers?.(layout) ?? [];
+    const paintAll = (floor, p0, p1, layer = layerList.length ? "ground" : undefined) => {
       const out = make(W, H, floor ? "a floor of the map" : "the map");
       const og = out.getContext("2d");
       const n = cols * rows;
@@ -235,7 +237,7 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
           const tile = make(tw, th, "a part of the map"), mask = make(tw, th, "a part of the map"), blur = make(tw, th, "a part of the map");
           try {
             style.paint({
-              g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp, floor, movable,
+              g: tile.getContext("2d"), mask, blur, W: tw, H: th, pp, floor, movable, layer,
               x0: (cx0 - margin) / pp, y0: (cy0 - margin) / pp,
               layout, art: getArt,
               progress: (p, label) => progress(p0 + ((p1 - p0) * (i + p)) / n, n > 1 ? `${label} (part ${i + 1} of ${n})` : label),
@@ -279,6 +281,26 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
       free(c);
     }
 
+    // Layers (an overland map's places and roads): each a see-through image as big as the map (in parts, as the ground
+    // is, past the largest image), laid on the thumbnail when the plan shows it, saved and let go
+    const overlays = [];
+    for (const [k, { name, shown }] of layerList.entries()) {
+      const p0 = 0.945 + (0.005 * k) / layerList.length;
+      const c = paintAll(0, p0, p0 + 0.005 / layerList.length, name);
+      if (shown) th.g.drawImage(c, th.ox, th.oy, W * th.k, H * th.k);
+      const pieces = [];
+      if (partSide > 0 && Math.max(W, H) > partSide) {
+        const nx = Math.ceil(W / partSide), ny = Math.ceil(H / partSide), pw = Math.ceil(W / nx), ph = Math.ceil(H / ny);
+        for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) pieces.push([i * pw, j * ph, Math.min(pw, W - i * pw), Math.min(ph, H - j * ph)]);
+      } else pieces.push([0, 0, W, H]);
+      for (const [q, [x, y, w, h]] of pieces.entries()) {
+        let piece = c;
+        if (pieces.length > 1) { piece = new OffscreenCanvas(w, h); canvases.add(piece); piece.getContext("2d").drawImage(c, x, y, w, h, 0, 0, w, h); }
+        overlays.push({ name: pieces.length > 1 ? `${name}-${q + 1}` : name, kind: name, x, y, width: w, height: h, blob: await piece.convertToBlob({ type: "image/webp", quality: Math.max(quality, 0.9) }) });
+        if (piece !== c) { free(piece); canvases.delete(piece); }
+      }
+      free(c);
+    }
     // Overhead pieces: each painted on a canvas of its own, as big as its box, laid onto the thumbnail, saved and let go
     // before the next, so only one is held at a time
     const pieces = style.overheads?.(layout) ?? [];
@@ -325,7 +347,7 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
       mist.push({ src: url ?? d.src, x: m.x * pp, y: m.y * pp, width: m.size * pp, height: m.size * pp, rotation: m.rot, alpha: m.alpha });
     }
     const thumb = await th.canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
-    return { blob, parts, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overBudget, overheads, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
+    return { blob, parts, thumb, width: W, height: H, tiles: n, failedArt, brokenArt, brokenUrls, overBudget, overheads, overlays, furniture, mist, levels, drawnFiles: [...drawnFiles].map(([name, { blob: b }]) => ({ name, blob: b })), ms: Math.round(performance.now() - t0) };
   } finally {
     for (const bmp of loaded.values()) bmp?.close();
     for (const c of canvases) free(c);

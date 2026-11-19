@@ -8,6 +8,7 @@ import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
 import { labelsOf, useLabelsOf } from "../core/labels.mjs";
 import { titleBox, paintTitle } from "../render/styles/title.mjs";
+import { layers as overlandLayers } from "../render/styles/overland.mjs";
 import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
 import { union, shapes } from "../core/lots/poly.mjs";
 import { FURNITURE, FLOORS } from "../core/layout/rooms.mjs";
@@ -28,7 +29,7 @@ const FONT = { min: 8, max: 256 };
  * plan: a normalized plan. image: the rendered map's path, width, height and thumb (a Blob). folder: the output
  * folder. layout: the map's layout (none: no notable-building labels or battle documents). sceneId: a scene to update
  * (one AtlasScribe didn't make is refused unless force). check(): throws once the job is canceled; called before
- * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, furniture, props, animals, mist,
+ * anything is written. Returns { sceneId, created, backup, thumb, labels, title, overheads, layers, furniture, props, animals, mist,
  * walls, roofs, heights, lights, stairs, zones, levels, rules, ruled, warnings }, counts of what was placed.
  */
 /** Scenes backed up this session (for the backup setting's "first update of a session"). */
@@ -242,6 +243,31 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (oldOver.length) warnings.push("The roofs and trees over the map were left as they were: they come only with a map rendered for the scene.");
   else if (layout?.kind === "battle") warnings.push("This battle map's roofs and trees weren't placed: they come only with a map rendered for the scene.");
 
+  // An overland map's places and roads: a see-through image over the land, its own tile (hidden when the plan says so),
+  // the land left bare under it; new ones in, then the old out. A map given by its path alone has none, so the scene
+  // keeps those it had
+  const oldLayers = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "layer" in t.flags[MOD]).map((t) => t.id);
+  let layers = 0;
+  if (Array.isArray(image.overlays)) {
+    let placed = false;
+    try {
+      const { sceneX, sceneY } = sceneById(sceneId).dimensions;
+      const tiles = image.overlays.map((o) => onFloor(layerTile(o, sceneX, sceneY, plan))).filter(Boolean);
+      if (tiles.length) await createAll(sceneId, "Tile", tagAll(tiles));
+      layers = tiles.length;
+      placed = true;
+      if (oldLayers.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldLayers);
+    } catch (e) {
+      warnings.push(placed ? `The last map's places and roads couldn't be taken out (${e.message}); delete the old tile from the Tiles controls.` : `The places and roads couldn't be laid over the map (${e.message}).`);
+    }
+  } else if (oldLayers.length) {
+    // (kept over a map given by its path: shown or hidden as the plan now says, and said they may be out of date)
+    const shown = new Map((layout ? overlandLayers(layout) : []).map((q) => [q.name, q.shown]));
+    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && shown.has(t.flags[MOD].kind) && t.hidden === shown.get(t.flags[MOD].kind)).map((t) => ({ _id: t.id, hidden: !shown.get(t.flags[MOD].kind) }));
+    if (fix.length) await sceneById(sceneId).updateEmbeddedDocuments("Tile", fix).catch(() => {});
+    warnings.push("The places, roads and dressing over the map were kept from its last render (they come only with a map rendered for the scene), so they may be out of date.");
+  } else if (layout && overlandLayers(layout).length) warnings.push("This map's places, roads and dressing weren't placed: they come only with a map rendered for the scene, and the map's image is the bare land.");
+
   // A battle map's mist, fog overlays over its low places (lying on the map, under the tokens): new ones in, the old out
   const oldMist = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "atmosphere" in t.flags[MOD]).map((t) => t.id);
   let mist = 0;
@@ -368,7 +394,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (plan.kind === "battle") warnings.push("This battle map's walls, doors, roofs, ground regions and lights were left as they were: the map couldn't be laid out again for them.");
 
   onProgress(1, "Published");
-  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, furniture, props, animals, mist, walls, roofs, heights, lights, stairs, zones, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
+  return { sceneId, created, backup, thumb, labels: labels.length, title, parts, overheads, layers, furniture, props, animals, mist, walls, roofs, heights, lights, stairs, zones, levels: levelOf ? levelOf.size : 1, rules: R.id, ruled, warnings };
 }
 
 /**
@@ -413,6 +439,26 @@ async function createAll(sceneId, type, data) {
     for (let k = 0; k < made.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, made.slice(k, k + BATCH)).catch(() => {});
     throw e;
   }
+}
+
+/** Each layer's place in the stack over the ground: the places, the dressing over them (the title tile is 200). */
+const LAYER_SORT = { places: 100, dressing: 110 };
+
+/**
+ * A layer (render's { path, kind, x, y, width, height }, px from the map's corner) as Tile data: on the map, under the
+ * tokens, over the ground and its parts, locked, hidden when the plan hides that layer (an overland map's places:
+ * `output.places` false; its dressing is shown, as the plan has it only when on). Hide or show it from the tile's
+ * controls.
+ */
+function layerTile(o, sceneX, sceneY, plan) {
+  return {
+    texture: { src: o.path },
+    x: Math.round(sceneX + o.x + o.width / 2), y: Math.round(sceneY + o.y + o.height / 2),
+    width: o.width, height: o.height, elevation: 0, sort: LAYER_SORT[o.kind] ?? 100,
+    hidden: plan.output?.[o.kind] === false,
+    locked: true,
+    flags: { [MOD]: { layer: plan.id ?? null, kind: o.kind } },
+  };
 }
 
 /** How see-through an overhead tile is while a token is under it: a roof nearly gone, a tree's crown thinned. */
@@ -924,6 +970,8 @@ async function titleTile(plan, layout, scene, sceneId, folder) {
     x: Math.round(sceneX + box.x * pps + c.width / 2), y: Math.round(sceneY + box.y * pps + c.height / 2),
     width: c.width, height: c.height,
     hidden: true,
+    // (over the places and dressing layers, when the GM shows it)
+    sort: 200,
     flags: { [MOD]: { title: plan.id ?? null } },
   };
 }

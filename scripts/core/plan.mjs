@@ -479,6 +479,8 @@ export function normalize(plan) {
   // (a frame, compass rose, scale bar and the map's name, painted on: the illustrated style, and on by default for an
   // overland map)
   p.output.dressing ??= p.kind === "region" && isObj(p.land);
+  // (an overland map's places, roads and crossings: shown, on a layer of their own the scene can hide)
+  if (p.kind === "region" && isObj(p.land)) p.output.places ??= true;
   if (!isObj(p.output.scene)) p.output.scene = {};
   // (a battle map is for tokens to see by: its walls, doors and windows block their sight, and what a token has seen
   // stays on the map, dimmed, rather than going black behind it: fog exploration)

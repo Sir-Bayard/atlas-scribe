@@ -109,16 +109,16 @@ function planOrThrow(input) {
   return checked;
 }
 
-/** { path, width, height, thumb?, overheads?, furniture?, mist?, levels?, parts? } for an image: from render's result, or measured from its file. */
+/** { path, width, height, thumb?, overheads?, overlays?, furniture?, mist?, levels?, parts? } for an image: from render's result, or measured from its file. */
 async function imageInfo(image) {
   if (image && typeof image === "object" && image.path && image.width && image.height)
-    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null, levels: Array.isArray(image.levels) ? image.levels : null, parts: Array.isArray(image.parts) && image.parts.length ? image.parts : null };
+    return { path: image.path, width: image.width, height: image.height, thumb: image.thumb ?? null, overheads: Array.isArray(image.overheads) ? image.overheads : null, overlays: Array.isArray(image.overlays) ? image.overlays : null, furniture: Array.isArray(image.furniture) ? image.furniture : null, mist: Array.isArray(image.mist) ? image.mist : null, levels: Array.isArray(image.levels) ? image.levels : null, parts: Array.isArray(image.parts) && image.parts.length ? image.parts : null };
   const path = typeof image === "string" ? image : image?.path;
   if (!path) throw new Error("AtlasScribe: publish needs the map image (render's result, or its path)");
   const res = await fetch(new URL(path, window.location.href));
   if (!res.ok) throw new Error(`AtlasScribe: couldn't load the map image ${path}`);
   const bmp = await createImageBitmap(await res.blob());
-  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, furniture: null, mist: null, levels: null };
+  const info = { path, width: bmp.width, height: bmp.height, thumb: null, overheads: null, overlays: null, furniture: null, mist: null, levels: null };
   bmp.close();
   return info;
 }
@@ -411,7 +411,8 @@ const api = {
    * missingArt and painted plain, or on a battle map drawn, in the look drawn names), paint, save. With publish: true the map is then published (scene and force as there); if that fails,
    * the error carries the saved map's result as error.result. A battle map also saves its roofs and crowns
    * (overheads: [{ path, kind, x, y, width, height, elevation }]), its floors (levels: [{ floor, path }]) and lists
-   * its furniture and mist tiles. Returns { path, width, height, tiles, ms, layout, overheads, furniture, mist,
+   * its furniture and mist tiles; an overland map saves its places and roads as a see-through layer (overlays: [{ path,
+   * kind, x, y, width, height }]). Returns { path, width, height, tiles, ms, layout, overheads, overlays, furniture, mist,
    * levels, missingArt, drawn, notes, artNotes, warnings }, and scene when published.
    */
   async render(input, { save = true, publish: andPublish = false, scene = null, force = false } = {}) {
@@ -445,7 +446,7 @@ const api = {
         if (img.overBudget?.length) notes.push(`${img.overBudget.length === 1 ? "An art file was" : `${img.overBudget.length} art files were`} left out: all the art together came to more than a map can hold in memory`);
         if (broken.length) notes.push(`${broken.length === 1 ? "An art file" : `${broken.length} art files`} couldn't be loaded and ${broken.length === 1 ? "was" : "were"} left out: ${broken.slice(0, 5).join(", ")}${broken.length > 5 ? ", ..." : ""}`);
         check();
-        let path = null, overheads = [], levels = [], parts = [];
+        let path = null, overheads = [], levels = [], parts = [], overlays = [];
         if (save) {
           bar.update(0.97, "Saving");
           const dir = `${outputFolder()}/maps`;
@@ -490,6 +491,23 @@ const api = {
               throw e;
             }
           }
+          // An overland map's places and roads, a see-through layer beside the map in a folder of its own, for publish to
+          // lay over the land as a tile
+          if (img.overlays?.length) {
+            try {
+              const sub = `${dir}/${await freeDir(dir, `${name.replace(/\.(webp|jpg)$/, "")}-layers`)}`;
+              await ensureDir(sub);
+              for (const o of img.overlays) {
+                check();
+                bar.update(0.98, "Saving the places and roads");
+                overlays.push({ path: await upload(sub, `${o.name}.webp`, o.blob, { ready: true }), kind: o.kind, x: o.x, y: o.y, width: o.width, height: o.height });
+              }
+            } catch (e) {
+              // (overlays null: a scene published from this keeps the places and roads it had)
+              e.result = { path, width: img.width, height: img.height, layout, overheads, overlays: null, furniture: null, mist: null, levels: null };
+              throw e;
+            }
+          }
           // The drawn images its furniture and mist use, beside the map in a folder of their own, and the tiles pointed
           // at them
           if (img.drawnFiles?.length) {
@@ -500,7 +518,7 @@ const api = {
               for (const f of img.drawnFiles) { check(); saved.set(`drawn:${f.name}`, await upload(sub, f.name, f.blob, { ready: true })); }
               for (const t of [...(img.furniture ?? []), ...(img.mist ?? [])]) if (saved.has(t.src)) t.src = saved.get(t.src);
             } catch (e) {
-              e.result = { path, width: img.width, height: img.height, layout, overheads, furniture: null, mist: null, levels: null };
+              e.result = { path, width: img.width, height: img.height, layout, overheads, overlays, furniture: null, mist: null, levels: null };
               throw e;
             }
           }
@@ -516,7 +534,7 @@ const api = {
                 levels.push({ floor: l.floor, path: await upload(sub, `${l.floor < 0 ? "cellar" : `floor-${l.floor}`}.webp`, l.blob, { ready: true }) });
               }
             } catch (e) {
-              e.result = { path, width: img.width, height: img.height, layout, overheads, furniture: null, mist: null, levels: null };
+              e.result = { path, width: img.width, height: img.height, layout, overheads, overlays, furniture: null, mist: null, levels: null };
               throw e;
             }
           }
@@ -537,7 +555,7 @@ const api = {
         const ms = Math.round(performance.now() - t0);
         bar.done(`${title}: done in ${Math.round(ms / 1000)} s${path ? `, saved to ${path}` : ""}`);
         result = {
-          path, parts, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
+          path, parts, width: img.width, height: img.height, tiles: img.tiles, ms, layout, overheads, overlays, furniture: img.furniture ?? [], mist: img.mist ?? [], levels,
           missingArt: [...new Set([...missing, ...(img.failedArt ?? [])])],
           drawn: drawn ? drawn.look : null, // (a battle map's: what has no art is drawn, in this look)
           artFrom: from, // (how many roles each source filled: { folders, nexus })

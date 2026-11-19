@@ -204,6 +204,7 @@ export const PLAN_FIELDS = [
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
+  { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },
@@ -416,8 +417,9 @@ const getPath = (obj, path) => path.split(".").reduce((o, k) => (o == null ? und
 export function planFieldsOf(plan) {
   const full = normalize(plan);
   const region = plan?.kind === "region";
-  const fields = !region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && p.path !== "output.dressing")
-    .map((p) => (p.path === "size.ftPerSquare" ? { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" } : p));
+  const overland = region && plan?.land && typeof plan.land === "object";
+  const fields = (!region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && p.path !== "output.dressing")
+    .map((p) => (p.path === "size.ftPerSquare" ? { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" } : p))).filter((p) => !p.overland || overland);
   return fields.map((p) => ({ ...p, name: p.path, value: getPath(plan, p.path), auto: getPath(full, p.path) ?? null }));
 }
 

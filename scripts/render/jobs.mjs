@@ -4,6 +4,7 @@
  * Each job is (payload, progress(pct, label)) => result.
  */
 import { layoutPlan } from "../core/layout/index.mjs";
+import { forgetLand } from "../core/layout/overland.mjs";
 import { pinnables } from "../core/pin.mjs";
 import { zoomPlan } from "../core/zoom.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
@@ -28,6 +29,7 @@ export const jobs = {
   /** Lets go of the layout kept for a paint that won't come (a render that failed or stopped first). */
   async forget() {
     kept = null;
+    forgetLand();
     return true;
   },
 

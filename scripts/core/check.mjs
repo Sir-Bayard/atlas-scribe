@@ -114,7 +114,8 @@ export function checkPlan(raw) {
   if (!["auto", "webp", "jpeg"].includes(plan.output.format)) warn(null, "output.format", `output.format "${plan.output.format}" isn't one AtlasScribe saves; it should be "auto", "webp" or "jpeg". It's saved as WebP.`);
   if (raw.output?.dressing !== undefined && typeof raw.output.dressing !== "boolean") warn(null, "output.dressing", `output.dressing should be true or false; it's left off.`);
   else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style === "textured") warn(null, "output.dressing", `Map dressing is drawn only in the illustrated and ink styles; this map is ${plan.style}.`);
-  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing", ...(overland ? ["grid"] : [])].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
+  if (overland && raw.output?.places !== undefined && typeof raw.output.places !== "boolean") warn(null, "output.places", `output.places should be true or false; the places and roads are shown.`);
+  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing", ...(overland ? ["grid", "places"] : [])].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
   // (an overland map's grid sets its extent: hex columns overlap, so a wrong value would change the map's size)
   if (overland && raw.output?.grid !== undefined && !["square", "hex"].includes(raw.output.grid)) err(null, "output.grid", `output.grid must be "square" or "hex" (lowercase); "${raw.output.grid}" isn't one.`);
 

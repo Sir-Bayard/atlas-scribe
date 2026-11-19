@@ -57,7 +57,8 @@ export function reliefSide(full) {
   return full <= 800 ? Math.max(64, Math.round(full)) : Math.max(800, Math.min(2730, Math.round(full / 2)));
 }
 
-// Worked out once per layout and relief size, for every tile of a paint
+// Worked out once per land and relief size, for every tile of a paint (and every layout of one land: an edit to
+// places, roads or labels keeps the land, so its rasters too; what they read is the land, the seed, the look and size)
 const PREPARED = new WeakMap();
 function prepared(L, pp) {
   const [MW, MH] = L.size.squares;
@@ -65,10 +66,14 @@ function prepared(L, pp) {
   // (rh covers the map's height at the raster's cell, which rw sets; drawn by that cell, so the outlines and the paint
   // agree)
   const rw = MW >= MH ? side : Math.max(16, Math.round((side * MW) / MH)), rh = Math.max(16, Math.ceil((rw * MH) / MW));
-  let byKey = PREPARED.get(L);
-  if (!byKey) { byKey = new Map(); PREPARED.set(L, byKey); }
-  const key = `${rw}x${rh}:${L.look?.forest ?? LOOK_OPTIONS.forest}:${L.look?.heights ?? LOOK_OPTIONS.heights}`;
-  if (!byKey.has(key)) byKey.set(key, prepare(L, rw, rh));
+  let byKey = PREPARED.get(L.land);
+  if (!byKey) { byKey = new Map(); PREPARED.set(L.land, byKey); }
+  const key = `${rw}x${rh}:${MW}x${MH}:${L.seed}:${L.look?.forest ?? LOOK_OPTIONS.forest}:${L.look?.heights ?? LOOK_OPTIONS.heights}`;
+  if (!byKey.has(key)) {
+    // (two sizes kept at most, a preview's and a render's; an older one let go, its canvases freed)
+    while (byKey.size >= 2) { const [k0, old] = byKey.entries().next().value; byKey.delete(k0); for (const v of Object.values(old)) if (v && typeof v === "object" && "width" in v && "getContext" in v) { v.width = 1; v.height = 1; } }
+    byKey.set(key, prepare(L, rw, rh));
+  }
   return byKey.get(key);
 }
 
@@ -269,9 +274,35 @@ function smoothImage(R, L, seed) {
   return out;
 }
 
-/** Paints one tile (ctx as every style's: g, W, H, x0, y0 in map units, pp, layout, mask, progress). */
+/**
+ * The layers a map is saved in besides its ground, each a see-through image (a tile over the land in the scene, shown
+ * or hidden there), when the map has places: its places, roads and crossings (shown when the plan shows them), then
+ * its dressing (frame, compass rose, scale bar), so the frame stays over road ends and the compass over any mark.
+ * [{ name, shown }].
+ */
+export function layers(layout) {
+  if (!layout.overland || !(layout.items ?? []).some((i) => i.kind === "place" || i.kind === "way" || i.kind === "crossing")) return [];
+  return [{ name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : [])];
+}
+
+/**
+ * Paints one tile (ctx as every style's: g, W, H, x0, y0 in map units, pp, layout, mask, progress). ctx.layer: "ground"
+ * paints the land alone, "places" the places, roads and crossings alone on a clear tile, "dressing" the dressing alone;
+ * left out, all of them (a preview), the places only when the plan shows them.
+ */
 export function paint(ctx) {
-  const { g, W, H, x0, y0, pp, layout: L, progress = () => {} } = ctx;
+  const { g, W, H, x0, y0, pp, layout: L, progress = () => {}, layer } = ctx;
+  if (layer === "places") {
+    const [MW0, MH0] = L.size.squares;
+    drawAtlas(ctx, L, prepared(L, pp).rivers, Math.max(MW0, MH0) * pp);
+    progress(1, "Done");
+    return;
+  }
+  if (layer === "dressing") {
+    if (L.dressing) dress(ctx, { ...PALETTE }, { miles: true });
+    progress(1, "Done");
+    return;
+  }
   const P = { ...PALETTE };
   const [MW, MH] = L.size.squares;
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
@@ -342,8 +373,9 @@ export function paint(ctx) {
   // paper: a vignette at the map's edge and grain; then roads, crossings and places as atlas markers, crisp on top
   paper(ctx, MW, MH);
   progress(0.85, "Places");
-  drawAtlas(ctx, L, S.rivers, outPx);
-  if (L.dressing) dress(ctx, P, { miles: true });
+  if (layer !== "ground" && L.places !== false) drawAtlas(ctx, L, S.rivers, outPx);
+  // (the dressing on the ground, unless it's a layer of its own over the places)
+  if (L.dressing && !(layer === "ground" && layers(L).some((q) => q.name === "dressing"))) dress(ctx, P, { miles: true });
   progress(1, "Done");
 }
 

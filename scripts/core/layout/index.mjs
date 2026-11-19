@@ -14,7 +14,7 @@ import { offset, area } from "../lots/poly.mjs";
 import { LOOK, characterOf } from "../character.mjs";
 import { isBody, isRunning, bodyOf, widthsOf, mouthWidths, shoreOf, keepOf, wander } from "../water.mjs";
 import { layoutRegion } from "./region.mjs";
-import { layoutOverland } from "./overland.mjs";
+import { layoutOverland, forgetLand } from "./overland.mjs";
 import { readPlan, fixedFeatures, battleHeights, millsAndPlacing, spaceGrids, quays, townWalls, squares, boatsAndCranes, parksAndFarms, fillDistricts, fieldSystems, countryLanes, fillParks, wildTracks, woodsAndRocks, tidyUp, finishLayout, underground, riverbeds } from "./phases/index.mjs";
 
 export const LAYOUT_VERSION = 9;
@@ -175,7 +175,8 @@ export const PARAPET = { out: 0.24, rail: 0.07, wing: 1.6, wingTurn: 35 };
 export function layoutPlan(rawPlan, { onProgress = null, cache = true } = {}) {
   // (a region map has its own: places as markers, at a scale of miles)
   // (an overland map, a region with land, has its land generated)
-  if (rawPlan?.kind === "region") { const p = normalize(rawPlan); return p.land && typeof p.land === "object" ? layoutOverland(p, { onProgress }) : layoutRegion(p, { onProgress }); }
+  if (rawPlan?.kind === "region") { const p = normalize(rawPlan); if (p.land && typeof p.land === "object") return layoutOverland(p, { onProgress }); forgetLand(); return layoutRegion(p, { onProgress }); }
+  forgetLand();
   const ctx = { rawPlan, onProgress, cache };
   readPlan(ctx);
   fixedFeatures(ctx);

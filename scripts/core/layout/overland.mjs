@@ -57,11 +57,30 @@ export function compactLand(L) {
   };
 }
 
+// (the last land made, kept while the plan's land doesn't change: a change to places, roads, labels or the plan's
+// output then lays out at once; the land is read only, so one land can serve several layouts. Only what a layout
+// reads after the compact land is made is kept)
+let lastLand = null;
+/** Lets go of the land kept for the next layout (a worker's forget, or a layout of another kind of map). */
+export function forgetLand() { lastLand = null; }
+/** What the land is made from: its settings (not the names given its features), seed, size, grid, picture scale, painted terrain and water. */
+function landKey(plan) {
+  const { names, ...land } = plan.land ?? {};
+  return JSON.stringify([land, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water"))]);
+}
+
 /** Lays out an overland plan (normalized). Returns the layout. */
 export function layoutOverland(plan, { onProgress = null } = {}) {
   const progress = (p, l) => onProgress?.(p, l);
-  const L = generateLand(plan, { onProgress: (p, l) => progress(0.9 * p, l) });
-  const land = compactLand(L);
+  const key = landKey(plan);
+  let L, land;
+  if (lastLand?.key === key) ({ L, land } = lastLand);
+  else {
+    const full = generateLand(plan, { onProgress: (p, l) => progress(0.9 * p, l) });
+    land = compactLand(full);
+    L = { problems: full.problems, attempt: full.attempt, frame: full.frame, grid: full.grid, landMask: full.landMask, lake: full.lake, g: { n: full.g.n, x: full.g.x, y: full.g.y, area: full.g.area } };
+  }
+  lastLand = { key, L, land };
   const [W, H] = extentOf(plan);
   const items = [];
   const notes = L.problems.map((p) => ({ level: "info", id: null, message: `The land is short of its kind here (${p.detail}); it was made ${L.attempt + 1 === 1 ? "once" : `${L.attempt + 1} times`} and the closest kept.` }));
@@ -109,7 +128,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     atlasScribe: LAYOUT_VERSION, plan: plan.id ?? null, kind: "region", overland: true, seed: plan.seed,
     size: { squares: [W, H], ftPerSquare: plan.size.ftPerSquare, grid: plan.output?.grid === "hex" ? "hex" : "square", cells: plan.size.squares },
     season: plan.season ?? "summer", style: "painted",
-    title: typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null, dressing: plan.output?.dressing === true, sun: plan.sun,
+    title: typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, sun: plan.sun,
     pxPerSquare: plan.output.pxPerSquare, items, labels: labelsOf(plan), notes, cornerLand, land,
   };
 }
