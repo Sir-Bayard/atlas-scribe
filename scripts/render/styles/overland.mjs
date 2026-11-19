@@ -19,38 +19,38 @@ export const rolesFor = () => [];
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rgb = ([r, g, b], a = 1) => (a === 1 ? `rgb(${r | 0},${g | 0},${b | 0})` : `rgba(${r | 0},${g | 0},${b | 0},${a})`);
 
-/** Lowland colors over temperature (rows, 0 to 1) and moisture (columns, 0 to 1): mockup 4b's cross-blend. */
-const T_AT = [0, 0.2, 0.4, 0.6, 0.8, 1.0], M_AT = [0, 0.25, 0.5, 0.75, 1.0];
-const TABLE = [
-  [[232, 230, 222], [226, 227, 220], [222, 225, 219], [218, 223, 218], [216, 222, 218]], // polar
-  [[190, 182, 150], [176, 174, 140], [146, 152, 118], [118, 134, 102], [104, 126, 98]], // tundra and taiga
-  [[204, 188, 142], [186, 180, 122], [146, 156, 98], [110, 136, 86], [92, 126, 84]], // cool temperate
-  [[218, 196, 140], [198, 186, 116], [156, 160, 92], [116, 142, 82], [94, 130, 80]], // warm temperate
-  [[226, 198, 140], [210, 188, 116], [172, 168, 90], [122, 146, 78], [92, 130, 72]], // subtropical
-  [[230, 200, 142], [212, 190, 114], [176, 170, 88], [116, 146, 72], [80, 124, 68]], // tropical
-];
-/** The look's colors. */
+/** The look's colors (mockup 3's palette: clear meadows and ochres, a canopy of its own, warm rock under violet shade). */
 const LOOK = {
-  upland: [186, 170, 138], rock: [204, 199, 188], snow: [248, 248, 246], alluvium: [184, 186, 132], salt: [236, 230, 212],
-  warm: [100, 82, 40], cool: [66, 62, 46], coolSnow: [78, 74, 56], haze: [226, 222, 204],
-  shallow: [176, 208, 200], deep: [64, 110, 128], lakeRim: [154, 194, 194], lakeDeep: [92, 138, 150],
+  dry: [206, 178, 116], meadow: [168, 180, 86], lush: [124, 158, 70], heath: [176, 178, 150], sand: [222, 196, 138], polar: [226, 228, 222],
+  forest: [92, 122, 72], forestCold: [-14, -8, 6], rock: [158, 142, 116], snow: [248, 248, 244], alluvium: [178, 184, 120], salt: [236, 230, 212],
+  warm: [96, 76, 34], cool: [62, 60, 34], coolSnow: [80, 70, 40],
+  shallow: [172, 206, 198], deep: [66, 112, 128], lakeRim: [150, 192, 192], lakeDeep: [96, 140, 150],
   ripple: [36, 66, 76], coast: [50, 42, 32], river: [58, 98, 118], lakeInk: [50, 70, 80], paper: [236, 226, 200], vignette: [96, 74, 44],
 };
-
-function lowColor(t, m, out) {
-  const ti = Math.min(T_AT.length - 1.0001, Math.max(0, t * 5)), mi = Math.min(M_AT.length - 1.0001, Math.max(0, m * 4));
-  const t0 = Math.floor(ti), m0 = Math.floor(mi), ft = ti - t0, fm = mi - m0;
-  const a = TABLE[t0][m0], b = TABLE[t0 + 1][m0], c = TABLE[t0][m0 + 1], d = TABLE[t0 + 1][m0 + 1];
-  for (let k = 0; k < 3; k++) out[k] = a[k] * (1 - ft) * (1 - fm) + b[k] * ft * (1 - fm) + c[k] * (1 - ft) * fm + d[k] * ft * fm;
+const mixTo = (c, to, t) => { const k = Math.min(1, Math.max(0, t)); for (let ch = 0; ch < 3; ch++) c[ch] += (to[ch] - c[ch]) * k; };
+/**
+ * The ground's color by climate, as mockup 3: dry ochre to meadow by moisture (lusher where wetter), heath where it's
+ * cold (t: the climate's temperature there), sand where hot and dry and pale where it's polar (tl: with height's cooling
+ * added back). Into out.
+ */
+function groundColor(m, t, tl, out) {
+  for (let ch = 0; ch < 3; ch++) out[ch] = LOOK.dry[ch];
+  mixTo(out, LOOK.meadow, (m - 0.14) * 4);
+  mixTo(out, LOOK.lush, (m - 0.55) * 3);
+  mixTo(out, LOOK.sand, Math.min(1, Math.max(0, (tl - 0.72) * 5)) * Math.min(1, Math.max(0, (0.3 - m) * 5)));
+  mixTo(out, LOOK.heath, (0.3 - t) * 3);
+  mixTo(out, LOOK.polar, (0.1 - tl) * 8);
   return out;
 }
+
 const hexColor = (s) => (typeof s === "string" && /^#[0-9a-f]{6}$/i.test(s) ? [1, 3, 5].map((k) => parseInt(s.slice(k, k + 2), 16)) : null);
 
 /**
- * How a layout is painted: options for side-by-sides (forest: "relief" or "speckle"; heights: "blend", tangent planes
- * between the nodes, or "refined", the graph subdivided and a few solver steps run at the finer spacing).
+ * How a layout is painted (options kept for side-by-sides): forest "speckle" (crowns as a fine speckle, Patrick's pick)
+ * or "plain"; heights "refined" (the graph subdivided and a few solver steps run at the finer spacing, Patrick's pick)
+ * or "blend" (tangent planes between the nodes).
  */
-export const LOOK_OPTIONS = { forest: "relief", heights: "blend" };
+export const LOOK_OPTIONS = { forest: "speckle", heights: "refined" };
 
 /** The relief raster's long side for a picture whose long side is `full` pixels: half of it, 800 to 2,730. */
 export function reliefSide(full) {
@@ -125,39 +125,17 @@ function canvasOf(w, h) {
 
 /** The smooth image at relief resolution: RGBA bytes. */
 function smoothImage(R, L, seed) {
-  const { rw, rh } = R, N = rw * rh;
+  const { rw, rh } = R, N = rw * rh, side = Math.max(rw, rh);
   const forestLook = L.look?.forest ?? LOOK_OPTIONS.forest;
   const E = new Float32Array(N);
   for (let i = 0; i < N; i++) E[i] = R.land[i] ? Math.min(1, Math.max(0, R.z[i] / 1.1)) : 0;
-  // the canopy: soft-edged where it's forest by biome (not on high ground), with crowns
-  const crownsN = fbm(rw, rh, Math.max(2, Math.max(rw, rh) / 700), seed * 11 + 5, 0.5, 2);
-  const forestEdge = fbm(rw, rh, Math.max(6, Math.max(rw, rh) / 90), seed * 11 + 6, 0.6);
-  // (from the climate, so its edge is gradual where the climate changes gradually: wet, warm enough and not high;
-  // inside a painted zone, from the zone's biome)
-  const forest = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    if (!R.land[i] || R.lake[i]) continue;
-    const m = R.rain[i] / 1.6, t = R.temp[i] + 0.6 * E[i];
-    const byClimate = smooth(0.42, 0.75, m + 0.12 * forestEdge[i]) * smooth(0.12, 0.25, t);
-    const v = R.zone[i] ? smooth(0.3, 0.7, R.forest[i] + 0.12 * forestEdge[i]) : byClimate;
-    forest[i] = Math.min(1, Math.max(0, v * (1 - smooth(0.3, 0.5, E[i]))));
-  }
-  // heights for light: the land's, with the canopy standing up a little when the forest is drawn as relief
+  // heights for the light, and the light's strength by percentile: the 95th percentile of land slope at a fixed
+  // shading strength, held between half and twice a base in true slope (a continent's slopes are gentler per mile
+  // than a kingdom's; per pixel it scales with the raster, so every picture size of one map shades alike)
   const zl = new Float32Array(N);
   for (let i = 0; i < N; i++) zl[i] = R.land[i] ? Math.max(R.z[i], 0.0008) : Math.min(R.z[i], 0);
   const zlit = Float32Array.from(zl);
-  // (as relief: the canopy a low, crowned layer over the ground, lit with it, so a wood's edge throws a little shade
-  // on its southeast side and its top shows soft crowns)
-  const can = new Float32Array(N);
-  if (forestLook === "relief") {
-    const crownsL = fbm(rw, rh, Math.max(2, Math.max(rw, rh) / 900), seed * 11 + 9, 0.45, 2);
-    for (let i = 0; i < N; i++) can[i] = smooth(0.25, 0.6, forest[i]) * (0.7 + 0.3 * crownsL[i]);
-    boxBlur(can, rw, rh, Math.max(1, Math.max(rw, rh) / 1800));
-  }
-  // (the canopy's slope for the light, whatever the land's exaggeration: a wood stands as high on every map)
-  const kc = 3.5 * Math.min(1, 2048 / Math.max(rw, rh));
-  boxBlur(zlit, rw, rh, Math.max(1, Math.max(rw, rh) / 1700));
-  // vertical exaggeration by percentile: the 95th percentile of land slope lands at a fixed shading strength
+  boxBlur(zlit, rw, rh, Math.max(1, side / 1700));
   const slopes = [];
   for (let y = 1; y < rh - 1; y += 2) for (let x = 1; x < rw - 1; x += 2) {
     const i = y * rw + x;
@@ -167,114 +145,121 @@ function smoothImage(R, L, seed) {
   }
   slopes.sort((a, b) => a - b);
   const p95 = slopes[Math.floor(slopes.length * 0.95)] || 1e-4;
-  // (a fixed strength, held between half and twice what the map's own scale would give, so a gentle land isn't
-  // drawn rugged and a continent isn't drawn flat)
-  // (in true slope: the base exaggeration grows with the map's size, as a continent's slopes are gentler per mile
-  // than a kingdom's; per pixel it scales with the raster, so every picture size of one map shades alike)
   const f = L.land.frame, base = (0.55 * Math.pow(Math.max(f.mapW, f.mapH), 0.75)) / R.cellMi;
   const kz = Math.min(2 * base, Math.max(0.5 * base, 1.6 / p95));
-  // texture shading (approximated by differences of blurs at several scales: ridges light, valleys dark)
+  const gxA = new Float32Array(N), gyA = new Float32Array(N), slopeA = new Float32Array(N);
+  for (let y = 1; y < rh - 1; y++) for (let x = 1; x < rw - 1; x++) {
+    const i = y * rw + x;
+    gxA[i] = ((zlit[i + 1] - zlit[i - 1]) / 2) * kz; gyA[i] = ((zlit[i + rw] - zlit[i - rw]) / 2) * kz;
+    slopeA[i] = Math.sqrt(gxA[i] * gxA[i] + gyA[i] * gyA[i]);
+  }
+  // texture shading (differences of blurs at several scales: ridges light, valleys dark), gently
   const tex = new Float32Array(N);
   for (const [r, w] of [[1, 0.5], [3, 0.8], [8, 1], [20, 0.8]]) {
     const b = Float32Array.from(zl);
-    boxBlur(b, rw, rh, Math.max(1, (r * Math.max(rw, rh)) / 1365));
+    boxBlur(b, rw, rh, Math.max(1, (r * side) / 1365));
     for (let i = 0; i < N; i++) tex[i] += w * (zl[i] - b[i]);
   }
   let tsd = 0, tn = 0;
   for (let i = 0; i < N; i += 3) if (R.land[i]) { tsd += tex[i] * tex[i]; tn++; }
   tsd = Math.sqrt(tsd / Math.max(1, tn)) || 1;
-  // ambient occlusion: hollows a little darker
+  // ambient occlusion: hollows darker
   const ao = Float32Array.from(zl);
-  boxBlur(ao, rw, rh, Math.max(2, (10 * Math.max(rw, rh)) / 3072 * 3));
-  // alluvium, brush and sea noise
-  const brush = fbm(rw, rh, Math.max(4, Math.max(rw, rh) / 120), seed * 11 + 7, 0.55);
-  const seaN = fbm(rw, rh, Math.max(6, Math.max(rw, rh) / 80), seed * 11 + 8, 0.55);
+  boxBlur(ao, rw, rh, Math.max(2, (9 * side) / 1536));
+  // noise: the forest's broken edge, its crowns (a fine speckle), brush, the sea
+  const edgeN = fbm(rw, rh, Math.max(4, side / 160), seed * 11 + 6, 0.7);
+  const crowns = fbm(rw, rh, 1.6, seed * 11 + 5, 0.5, 2);
+  const crownsB = fbm(rw, rh, Math.max(2, side / 600), seed * 11 + 9, 0.5, 2);
+  const brush = fbm(rw, rh, Math.max(4, side / 120), seed * 11 + 7, 0.55);
+  const seaN = fbm(rw, rh, Math.max(6, side / 80), seed * 11 + 8, 0.55);
+  // climate, smoothed so its edges blend (moisture and warmth at the lowland: height's cooling added back)
+  // (moisture 0 to 1 from the climate's rain, 1 being a rainy coastal lowland: scaled so a temperate land's middle rain
+  // is meadow, as mockup 3's was)
+  const moist = Float32Array.from(R.rain, (v) => Math.min(1, Math.max(0, v / 1.05)));
+  const warm = Float32Array.from(R.temp);
+  boxBlur(moist, rw, rh, Math.max(1, side / 300)); boxBlur(warm, rw, rh, Math.max(1, side / 300));
+  // the forest: where it's wet, warm enough and not high (inside a painted zone, by the zone's biome), its edge
+  // broken up, as mockup 3
+  const wood = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    if (!R.land[i] || R.lake[i]) continue;
+    const t = warm[i] + 0.6 * E[i];
+    const byClimate = Math.min(1, Math.max(0, (moist[i] - 0.66) * 4)) * Math.min(1, Math.max(0, (0.42 - E[i]) * 6)) * smooth(0.1, 0.18, t);
+    const v = R.zone[i] ? Math.min(1, Math.max(0, (R.forest[i] - 0.3) * 2.5)) * Math.min(1, Math.max(0, (0.5 - E[i]) * 6)) : byClimate;
+    wood[i] = Math.min(1, Math.max(0, v * 1.5 + 0.35 * Math.tanh(1.3 * edgeN[i]) - 0.1));
+  }
+  boxBlur(wood, rw, rh, Math.max(1, side / 2400));
+  // alluvium along big rivers, salt flats
   const allu = new Float32Array(N);
-  const rivReach = Math.max(4, (40 * Math.max(rw, rh)) / 3072);
+  const rivReach = Math.max(4, (40 * side) / 3072);
   for (let i = 0; i < N; i++) allu[i] = R.land[i] ? Math.max(0, 1 - R.riverDist[i] / rivReach) * (1 - smooth(0.05, 0.15, E[i])) : 0;
-  boxBlur(allu, rw, rh, Math.max(1, Math.max(rw, rh) / 500));
+  boxBlur(allu, rw, rh, Math.max(1, side / 500));
   const saltB = Float32Array.from(R.salt);
   boxBlur(saltB, rw, rh, 1);
-  // zones: their biome's color laid over the climate's, soft-edged
+  // zones: their biome's color laid over, blended over a few miles with a ragged edge (painted intent, not an outline)
   const zoneColor = new Map();
   for (const z of L.land.zones ?? []) {
     const own = hexColor(z.color);
     if (own) zoneColor.set(z.index, own);
-    else if (BIOME_CLIMATE[z.biome]) { const c = BIOME_CLIMATE[z.biome]; zoneColor.set(z.index, lowColor(c.temp, Math.min(1, c.rain / 1.6), [0, 0, 0])); }
+    else if (BIOME_CLIMATE[z.biome]) { const c = BIOME_CLIMATE[z.biome]; zoneColor.set(z.index, groundColor(Math.min(1, c.rain / 1.6), c.temp, c.temp, [0, 0, 0])); }
   }
   const zoneW = new Float32Array(N), zr = new Float32Array(N), zg = new Float32Array(N), zb = new Float32Array(N);
   if (zoneColor.size) {
     for (let i = 0; i < N; i++) { const c = zoneColor.get(R.zone[i]); if (c && R.land[i]) { zoneW[i] = 1; zr[i] = c[0]; zg[i] = c[1]; zb[i] = c[2]; } }
-    // (blended over a few miles with a ragged edge: painted intent, not an outline)
-    for (const a of [zoneW, zr, zg, zb]) boxBlur(a, rw, rh, Math.max(2, Math.max(rw, rh) / 220));
-    const edge = fbm(rw, rh, Math.max(6, Math.max(rw, rh) / 70), seed * 11 + 10, 0.6);
+    for (const a of [zoneW, zr, zg, zb]) boxBlur(a, rw, rh, Math.max(2, side / 220));
+    const edge = fbm(rw, rh, Math.max(6, side / 70), seed * 11 + 10, 0.6);
     for (let i = 0; i < N; i++) if (zoneW[i] > 0.001) { const k = smooth(0.15, 0.85, zoneW[i] + 0.22 * edge[i]) / zoneW[i]; zoneW[i] *= k; zr[i] *= k; zg[i] *= k; zb[i] *= k; }
   }
-  // lowland colors blurred so the climate's edges blend
-  const low = [new Float32Array(N), new Float32Array(N), new Float32Array(N)], c = [0, 0, 0];
-  for (let i = 0; i < N; i++) {
-    lowColor(Math.min(1, Math.max(0, R.temp[i] + 0.6 * E[i])), Math.min(1, Math.max(0, R.rain[i] / 1.6)), c);
-    if (zoneW[i] > 0.01) { const k = Math.min(1, zoneW[i] * 1.2), s = 1 / zoneW[i]; c[0] += (zr[i] * s - c[0]) * k; c[1] += (zg[i] * s - c[1]) * k; c[2] += (zb[i] * s - c[2]) * k; }
-    low[0][i] = c[0]; low[1][i] = c[1]; low[2][i] = c[2];
-  }
-  for (const a of low) boxBlur(a, rw, rh, Math.max(1, Math.max(rw, rh) / 120));
   // (how far inside a lake: its middle darker)
   const lakeDist = R.lake.some((v) => v) ? distance(rw, rh, (i) => !R.lake[i]) : new Float32Array(N);
-  const lakeFar = Math.max(4, (36 * Math.max(rw, rh)) / 3072);
+  const lakeFar = Math.max(4, (36 * side) / 3072);
   const out = new Uint8ClampedArray(N * 4);
-  const azs = [[315, 42, 0.6], [270, 55, 0.2], [355, 55, 0.2]].map(([az, alt, w]) => { const a = (az * Math.PI) / 180, e = (alt * Math.PI) / 180; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e), w]; });
-  const flat = 0.6 * Math.sin((42 * Math.PI) / 180) + 0.4 * Math.sin((55 * Math.PI) / 180);
+  const azs = [[315, 40, 0.62], [270, 60, 0.19], [0, 60, 0.19]].map(([az, alt, w]) => { const a = (az * Math.PI) / 180, e = (alt * Math.PI) / 180; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e), w]; });
+  const flat = 0.62 * Math.sin((40 * Math.PI) / 180) + 0.38 * Math.sin((60 * Math.PI) / 180);
   const col = [0, 0, 0];
-  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
-    const i = y * rw + x;
+  for (let i = 0; i < N; i++) {
     if (!R.land[i]) {
       // the sea: shallows to deep by its depth, brushed
-      const t = R.depth[i];
-      const k = 1 + 0.035 * Math.tanh(seaN[i]);
+      const t = R.depth[i], k = 1 + 0.035 * Math.tanh(seaN[i]);
       for (let ch = 0; ch < 3; ch++) col[ch] = (LOOK.shallow[ch] + (LOOK.deep[ch] - LOOK.shallow[ch]) * t) * k;
     } else if (R.lake[i]) {
       const t = Math.min(1, lakeDist[i] / lakeFar);
       for (let ch = 0; ch < 3; ch++) col[ch] = LOOK.lakeRim[ch] + (LOOK.lakeDeep[ch] - LOOK.lakeRim[ch]) * t;
     } else {
-      const e = E[i];
-      for (let ch = 0; ch < 3; ch++) col[ch] = low[ch][i];
-      // uplands converge to a pale brown, high ground to rock gray (not inside a painted zone: its biome's color holds,
-      // lit by its relief)
-      const zk = 1 - Math.min(1, zoneW[i] * 1.2);
-      const u = smooth(0.16, 0.5, e) * zk, rk = smooth(0.45, 0.85, e) * zk;
-      for (let ch = 0; ch < 3; ch++) { col[ch] += (LOOK.upland[ch] - col[ch]) * u; col[ch] += (LOOK.rock[ch] - col[ch]) * rk; }
-      // forest darker (and, as speckle, crowns)
-      const fo = forest[i];
-      const fk = forestLook === "speckle" ? 1 - 0.1 * fo + 0.05 * fo * crownsN[i] : 1 - 0.14 * fo;
-      for (let ch = 0; ch < 3; ch++) col[ch] *= fk;
-      if (forestLook === "relief" && fo > 0) { col[1] += 3 * fo; col[2] -= 2 * fo; }
-      // alluvium along big rivers, salt flats
-      const al = allu[i] * 0.35;
-      const sl = saltB[i] * 0.9;
+      const e = E[i], slope = slopeA[i], zk = 1 - Math.min(1, zoneW[i] * 1.2);
+      // the ground by climate: dry ochre to meadow by moisture, heath where it's cold, sand where hot and dry
+      groundColor(moist[i], warm[i], warm[i] + 0.6 * e, col);
+      if (zoneW[i] > 0.01) { const k = Math.min(1, zoneW[i] * 1.2), s = 1 / zoneW[i]; col[0] += (zr[i] * s - col[0]) * k; col[1] += (zg[i] * s - col[1]) * k; col[2] += (zb[i] * s - col[2]) * k; }
+      // bare rock high and on the steepest ground (slope against the land's own 95th percentile, so it doesn't follow
+      // the light's exaggeration; not inside a painted zone)
+      const sr = slope / 1.6;
+      const rk = Math.min(1, Math.max(0, (e - 0.45) * 3.5 + (sr - 1.1) * 0.7)) * zk;
+      for (let ch = 0; ch < 3; ch++) col[ch] += (LOOK.rock[ch] - col[ch]) * rk;
+      // alluvium and salt flats
+      const al = allu[i] * 0.3, sl = saltB[i] * 0.9;
       for (let ch = 0; ch < 3; ch++) { col[ch] += (LOOK.alluvium[ch] - col[ch]) * al; col[ch] += (LOOK.salt[ch] - col[ch]) * sl; }
-    }
-    // light
-    let sh = 0, slope = 0, snow = 0;
-    if (x > 0 && y > 0 && x < rw - 1 && y < rh - 1 && R.land[i]) {
-      const gxl = ((zlit[i + 1] - zlit[i - 1]) / 2) * kz + ((can[i + 1] - can[i - 1]) / 2) * kc, gyl = ((zlit[i + rw] - zlit[i - rw]) / 2) * kz + ((can[i + rw] - can[i - rw]) / 2) * kc, nrm = Math.sqrt(gxl * gxl + gyl * gyl + 1);
-      let hs = 0;
-      for (const [sx, sy, sz, w] of azs) hs += w * Math.max(0, Math.min(1, (gxl * -sx + gyl * -sy + sz) / nrm));
-      sh = hs - flat; slope = Math.sqrt(gxl * gxl + gyl * gyl);
-    }
-    if (R.land[i] && !R.lake[i]) {
-      const e = E[i];
-      snow = smooth(0.15, 0.04, R.temp[i]) * smooth(0.3, 0.5, e) * Math.min(1, Math.max(0, 1.25 - slope / 6)) * (1 - Math.min(1, zoneW[i] * 1.2));
+      // the forest canopy: its own dark green (bluer where it's cold), a speckle of crowns, its edge broken
+      const wd = wood[i] * (1 - rk);
+      if (wd > 0) {
+        const cold = smooth(0.4, 0.2, warm[i] + 0.6 * e);
+        const sp = forestLook === "speckle" ? 0.09 * crowns[i] + 0.05 * crownsB[i] : 0.04 * crownsB[i];
+        for (let ch = 0; ch < 3; ch++) col[ch] += ((LOOK.forest[ch] + LOOK.forestCold[ch] * cold) * (1 + sp) - col[ch]) * wd;
+      }
+      // snow on high, cold ground, less on steep faces
+      const snow = Math.min(1, Math.max(0, (e - 0.6) * 6 + (0.18 - R.temp[i]) * 4)) * Math.min(1, Math.max(0, 1.5 - sr * 0.45)) * zk * smooth(0.25, 0.4, e);
       for (let ch = 0; ch < 3; ch++) col[ch] += (LOOK.snow[ch] - col[ch]) * snow;
-      const bk = 1 + 0.035 * Math.tanh(brush[i]);
+      // brush
+      const bk = 1 + 0.04 * Math.tanh(brush[i]);
       for (let ch = 0; ch < 3; ch++) col[ch] *= bk;
-      const contrast = 0.55 + 0.75 * smooth(0, 0.6, e), shc = sh * contrast, cool = snow > 0.4 ? LOOK.coolSnow : LOOK.cool;
-      for (let ch = 0; ch < 3; ch++) col[ch] += Math.max(0, shc) * LOOK.warm[ch] - Math.max(0, -shc) * cool[ch] * 1.45;
-      const tx = Math.tanh(tex[i] / (tsd * 2.2));
-      const tk = 1 + 0.08 * tx * (0.15 + 0.85 * smooth(0.02, 0.3, e));
-      const aok = Math.min(1.03, Math.max(0.7, 1 - 6 * (ao[i] - zl[i])));
+      // painted light: warm in the light, cool and violet in the shade; texture shading; occlusion
+      let hs = 0;
+      const gx = gxA[i], gy = gyA[i], nrm = Math.sqrt(gx * gx + gy * gy + 1);
+      for (const [sx, sy, sz, w] of azs) hs += w * Math.max(0, Math.min(1, (gx * -sx + gy * -sy + sz) / nrm));
+      const sh = hs - flat, tone = snow > 0.4 ? LOOK.coolSnow : LOOK.cool;
+      for (let ch = 0; ch < 3; ch++) col[ch] += Math.max(0, sh) * LOOK.warm[ch] - Math.max(0, -sh) * tone[ch] * 1.35;
+      const tk = 1 + 0.06 * Math.tanh(tex[i] / (tsd * 2.2)) * (0.2 + 0.8 * smooth(0.02, 0.3, e));
+      const aok = Math.min(1.04, Math.max(0.65, 1 - 7 * (ao[i] - zl[i])));
       for (let ch = 0; ch < 3; ch++) col[ch] *= tk * aok;
-      const hz = 0.07 * (1 - smooth(0, 0.25, e));
-      for (let ch = 0; ch < 3; ch++) col[ch] += (LOOK.haze[ch] - col[ch]) * hz;
     }
     out[4 * i] = col[0]; out[4 * i + 1] = col[1]; out[4 * i + 2] = col[2]; out[4 * i + 3] = 255;
   }
