@@ -7,7 +7,7 @@
  */
 import { PALETTE } from "./palette.mjs";
 import { dress } from "./furniture.mjs";
-import { drawRoads, drawPlaces } from "./region.mjs";
+import { drawAtlas } from "./atlas.mjs";
 import { landRasters, boxBlur, fbm, chaikin, distance } from "../../core/land/raster.mjs";
 import { refineLand } from "../../core/land/refine.mjs";
 import { contours, smoothLine } from "../../core/land/vector.mjs";
@@ -46,8 +46,8 @@ function groundColor(m, t, tl, out) {
 const hexColor = (s) => (typeof s === "string" && /^#[0-9a-f]{6}$/i.test(s) ? [1, 3, 5].map((k) => parseInt(s.slice(k, k + 2), 16)) : null);
 
 /**
- * How a layout is painted (options kept for side-by-sides): forest "speckle" (crowns as a fine speckle, Patrick's pick)
- * or "plain"; heights "refined" (the graph subdivided and a few solver steps run at the finer spacing, Patrick's pick)
+ * How a layout is painted (options kept for side-by-sides): forest "speckle" (crowns as a fine speckle, the default)
+ * or "plain"; heights "refined" (the graph subdivided and a few solver steps run at the finer spacing, the default)
  * or "blend" (tangent planes between the nodes).
  */
 export const LOOK_OPTIONS = { forest: "speckle", heights: "refined" };
@@ -339,13 +339,10 @@ export function paint(ctx) {
   if (m) { g.globalAlpha = 0.72; g.drawImage(m, 0, 0); g.globalAlpha = 1; }
   g.strokeStyle = rgb(LOOK.lakeInk, 0.55); g.lineWidth = Math.max(1, inkW * 0.6);
   for (const s of S.shores) { if (!near(s.pts, 1)) continue; line(s.pts, s.closed); g.stroke(); }
-  // roads and places (markers until the towns and roads style is picked)
-  progress(0.85, "Places");
-  const items = L.items ?? [];
-  drawRoads(ctx, items.filter((i) => i.kind === "way"), P);
-  drawPlaces(ctx, items.filter((i) => i.kind === "place"), P);
-  // paper: a vignette at the map's edge and grain
+  // paper: a vignette at the map's edge and grain; then roads, crossings and places as atlas markers, crisp on top
   paper(ctx, MW, MH);
+  progress(0.85, "Places");
+  drawAtlas(ctx, L, S.rivers, outPx);
   if (L.dressing) dress(ctx, P, { miles: true });
   progress(1, "Done");
 }

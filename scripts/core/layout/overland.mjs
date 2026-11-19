@@ -36,9 +36,13 @@ export function compactLand(L) {
       const r = L.rec[R.nodes[R.nodes.length - 1]];
       pts.push([last[0], last[1], last[2], L.lakeId[r] >= 0 ? L.lakes[L.lakeId[r]].level : L.h[r]]);
     }
-    return { id: R.id, parent: R.parent, order: R.order, main: R.main, ends: R.ends, points: pts };
+    // (nodes: the river's own nodes, source to end; to: the node it flows into, a river it joins or a lake or the
+    // sea, or -1)
+    const lastNode = R.nodes[R.nodes.length - 1];
+    return { id: R.id, parent: R.parent, order: R.order, main: R.main, ends: R.ends, points: pts, nodes: Int32Array.from(R.nodes), to: R.points.length > R.nodes.length ? L.rec[lastNode] : -1 };
   });
   const f = L.frame;
+  const marks = L.marks ?? {};
   return {
     gen: L.gen, attempt: L.attempt, seed: L.seed,
     frame: { W: f.W, H: f.H, margin: f.margin, mapW: f.mapW, mapH: f.mapH, mpu: f.mpu, scale: f.scale },
@@ -48,6 +52,8 @@ export function compactLand(L) {
     rain: L.rain, temp: L.temp, hard: L.hard, biome, zone, sea, F: L.F, threshold: L.threshold,
     zones: (L.zones ?? []).map((z) => ({ index: z.index, id: z.id ?? null, name: z.name ?? null, biome: z.biome, color: z.color ?? null })),
     rivers, inventory: L.inventory ?? [],
+    // (river marks in frame miles: the head of navigation and the lowest bridging point on main rivers to the sea)
+    marks: { heads: marks.heads ?? [], bridges: marks.bridges ?? [] },
   };
 }
 
@@ -62,13 +68,41 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   for (const f of plan.features) {
     if (f.type === "road" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "way", id: f.id, from: f.id, class: f.class, path: f.path, width: REGION_WIDTHS[f.class] ?? 0.12 });
     else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null });
+    else if (f.type === "crossing" && Array.isArray(f.at)) items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], angle: f.angle ?? 0 });
+  }
+  // places standing in water and roads running through it (a GM's edit, or land that changed under them)
+  { const fr = L.frame;
+    const wetAt = (u, v) => { const i = L.grid.nearest(u * fr.mpu + fr.margin, v * fr.mpu + fr.margin); return i >= 0 && (!L.landMask[i] || L.lake[i] === 1); };
+    const named = (it) => `"${it.name ?? it.id}"`;
+    for (const it of items) {
+      if (it.kind === "place" && wetAt(it.x, it.y)) notes.push({ level: "warning", id: it.id, message: `${named(it)} stands in the water; move it onto the land.` });
+      if (it.kind !== "way") continue;
+      // (samples about every 2 miles, at most every half unit; over 10 miles of water in a row is more than a bridge)
+      const gap = Math.min(0.5, 2 / fr.mpu), most = Math.max(3, Math.ceil(10 / (gap * fr.mpu)));
+      let run = 0, worst = 0;
+      for (let m = 1; m < it.path.length; m++) {
+        const [ax, ay] = it.path[m - 1], [bx, by] = it.path[m], steps = Math.max(1, Math.ceil(Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) / gap));
+        for (let s = m === 1 ? 0 : 1; s <= steps; s++) { const t = s / steps; run = wetAt(ax + (bx - ax) * t, ay + (by - ay) * t) ? run + 1 : 0; worst = Math.max(worst, run); }
+      }
+      if (worst >= most) notes.push({ level: "warning", id: it.id, message: `${named(it)} runs a long way through open water (more than a bridge would cross); it's drawn as it is.` });
+    }
   }
   // (how much of each corner is land, for the dressing: nw, ne, sw, se)
   const cornerLand = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([cx, cy]) => {
     const f = L.frame, x0 = f.margin + cx * f.mapW * 0.76, y0 = f.margin + cy * f.mapH * 0.76;
     let a = 0, b = 0;
     for (let i = 0; i < L.g.n; i++) { const x = L.g.x[i], y = L.g.y[i]; if (x >= x0 && y >= y0 && x <= x0 + f.mapW * 0.24 && y <= y0 + f.mapH * 0.24) { b += L.g.area[i]; if (L.landMask[i]) a += L.g.area[i]; } }
-    return b ? Math.round((a / b) * 1000) / 1000 : 0;
+    // (each place or crossing in the corner counts as a share of land too, and each road through it by its length
+    // there, so the compass and scale bar keep off them)
+    const [W0, H0] = [f.mapW / f.mpu, f.mapH / f.mpu], u0 = cx * W0 * 0.76, v0 = cy * H0 * 0.76, cw = W0 * 0.24, ch = H0 * 0.24;
+    const inC = (x, y) => x >= u0 && y >= v0 && x <= u0 + cw && y <= v0 + ch;
+    const marks = items.filter((it) => (it.kind === "place" || it.kind === "crossing") && inC(it.x, it.y)).length;
+    let road = 0;
+    for (const it of items) if (it.kind === "way") for (let m = 1; m < it.path.length; m++) {
+      const [ax, ay] = it.path[m - 1], [bx, by] = it.path[m], len = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)), k = Math.max(1, Math.ceil(len / 0.25));
+      for (let q = 0; q < k; q++) { const t = (q + 0.5) / k; if (inC(ax + (bx - ax) * t, ay + (by - ay) * t)) road += len / k; }
+    }
+    return b ? Math.round((a / b + 0.12 * marks + (0.6 * road) / Math.max(1e-9, Math.min(cw, ch))) * 1000) / 1000 : 0;
   });
   progress(1, "Done");
   return {
