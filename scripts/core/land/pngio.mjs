@@ -5,6 +5,8 @@
  * apart from the streams, which the browser, the worker and node all have.
  */
 
+import { inflateSync } from "./inflate.mjs";
+
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(bytes) { let c = 0xffffffff; for (let i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
 
@@ -42,12 +44,22 @@ export async function encodeGray(values, w, h, bits = 8) {
 
 /** Decodes a gray PNG (8 or 16 bits, any filter, no interlace). Returns { w, h, bits, values }. */
 export async function decodeGray(bytes) {
+  const p = parse(bytes);
+  return unfilter(p, await through(p.z, new DecompressionStream("deflate")));
+}
+/** decodeGray without waiting (the layout reads painted layers this way). */
+export function decodeGraySync(bytes) {
+  const p = parse(bytes);
+  return unfilter(p, inflateSync(p.z, (p.w * (p.bits === 16 ? 2 : 1) + 1) * p.h));
+}
+
+function parse(bytes) {
   const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const sig = [137, 80, 78, 71, 13, 10, 26, 10];
   if (!sig.every((b, i) => u[i] === b)) throw new Error("not a PNG");
   let o = 8, w = 0, h = 0, bits = 8, color = 0, inter = 0;
   const idat = [];
-  while (o < u.length) {
+  while (o + 8 <= u.length) {
     const len = (u[o] << 24 | u[o + 1] << 16 | u[o + 2] << 8 | u[o + 3]) >>> 0;
     const type = String.fromCharCode(u[o + 4], u[o + 5], u[o + 6], u[o + 7]);
     const data = u.subarray(o + 8, o + 8 + len);
@@ -57,9 +69,14 @@ export async function decodeGray(bytes) {
     o += 12 + len;
   }
   if (color !== 0 || inter !== 0 || (bits !== 8 && bits !== 16)) throw new Error("only gray, non-interlaced, 8 or 16-bit PNGs are read here");
+  if (!(w > 0 && h > 0 && w <= 16384 && h <= 16384)) throw new Error("a PNG's size must be 1 to 16384 pixels a side");
   const z = new Uint8Array(idat.reduce((s, p) => s + p.length, 0)); { let q = 0; for (const p of idat) { z.set(p, q); q += p.length; } }
-  const raw = await through(z, new DecompressionStream("deflate"));
+  return { w, h, bits, z };
+}
+
+function unfilter({ w, h, bits }, raw) {
   const bpp = bits === 16 ? 2 : 1, row = w * bpp;
+  if (raw.length < (row + 1) * h) throw new Error("a PNG's image data is short");
   const cur = new Uint8Array(row), prev = new Uint8Array(row);
   const values = bits === 16 ? new Uint16Array(w * h) : new Uint8Array(w * h);
   for (let y = 0; y < h; y++) {

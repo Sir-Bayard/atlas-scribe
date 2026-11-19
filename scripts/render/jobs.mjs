@@ -9,6 +9,7 @@ import { zoomPlan } from "../core/zoom.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
 import * as sketch from "./styles/sketch.mjs";
 import * as region from "./styles/region.mjs";
+import * as overland from "./styles/overland.mjs";
 
 /** The last layout made here, kept so a paint of it needn't be sent it back from the page: { id, layout }. */
 let kept = null, nextId = 1;
@@ -55,8 +56,9 @@ export const jobs = {
     const pp = Math.max(4, Math.min(layout.pxPerSquare, px / Math.max(MW, MH)));
     const W = Math.max(1, Math.round(MW * pp)), H = Math.max(1, Math.round(MH * pp));
     const c = new OffscreenCanvas(W, H);
-    // (a region in its own style: it has no plain-color sketch)
-    (layout.kind === "region" ? region : sketch).paint({ g: c.getContext("2d"), mask: null, W, H, x0: 0, y0: 0, pp, layout, art: () => null, progress: (p, l) => progress(0.7 + 0.25 * p, l) });
+    // (a region in its own style, an overland map painted small: neither has a plain-color sketch)
+    const style = layout.kind === "region" ? (layout.overland ? overland : region) : sketch;
+    style.paint({ g: c.getContext("2d"), mask: layout.overland ? new OffscreenCanvas(W, H) : null, W, H, x0: 0, y0: 0, pp, layout, art: () => null, progress: (p, l) => progress(0.7 + 0.25 * p, l) });
     progress(0.96, "Encoding");
     const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
     const counts = {};

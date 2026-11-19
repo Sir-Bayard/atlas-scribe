@@ -77,16 +77,8 @@ export function paint(ctx) {
     g.moveTo(X(t.x - 0.22), Y(t.y)); g.lineTo(X(t.x + 0.22), Y(t.y)); g.stroke();
   }
 
-  // Roads: an inked edge and a pale middle; a track dashed
   progress(0.4, "Roads");
-  for (const w of items("way")) {
-    if (w.class === "track" || w.class === "path") {
-      g.setLineDash([pp * 0.35, pp * 0.25]); g.strokeStyle = rgb(P.edge, 0.9); g.lineWidth = Math.max(1, w.width * pp); path(w.path); g.stroke(); g.setLineDash([]);
-      continue;
-    }
-    g.strokeStyle = rgb(P.edge, 0.95); g.lineWidth = Math.max(1.5, (w.width + 0.08) * pp); path(w.path); g.stroke();
-    g.strokeStyle = rgb(P.street); g.lineWidth = Math.max(1, w.width * pp); path(w.path); g.stroke();
-  }
+  drawRoads(ctx, items("way"), P);
 
   // Hills and mountains, back to front: a hill a rounded hump shaded on its east; a mountain a peak, its east face
   // shaded, snow on its top on some
@@ -119,9 +111,39 @@ export function paint(ctx) {
     g.strokeStyle = rgb(P.canopyInk, 0.9); g.lineWidth = Math.max(1, pp * 0.025); g.stroke();
   }
 
-  // Places, each by a marker of its kind
   progress(0.9, "Places");
-  for (const p of items("place")) {
+  drawPlaces(ctx, items("place"), P);
+  progress(1, "Done");
+}
+
+/** A region's roads: an inked edge and a pale middle; a track dashed. (The overland style draws them too.) */
+export function drawRoads(ctx, ways, P) {
+  const { g, x0, y0, pp } = ctx;
+  const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
+  const path = (pts) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); };
+  g.lineCap = "round"; g.lineJoin = "round";
+  // Roads: an inked edge and a pale middle; a track dashed
+  for (const w of ways) {
+    if (w.class === "track" || w.class === "path") {
+      g.setLineDash([pp * 0.35, pp * 0.25]); g.strokeStyle = rgb(P.edge, 0.9); g.lineWidth = Math.max(1, w.width * pp); path(w.path); g.stroke(); g.setLineDash([]);
+      continue;
+    }
+    g.strokeStyle = rgb(P.edge, 0.95); g.lineWidth = Math.max(1.5, (w.width + 0.08) * pp); path(w.path); g.stroke();
+    g.strokeStyle = rgb(P.street); g.lineWidth = Math.max(1, w.width * pp); path(w.path); g.stroke();
+  }
+
+}
+
+/** A region's places, each by a marker of its kind. (The overland style draws them too.) */
+export function drawPlaces(ctx, places, P) {
+  const { g, W, H, x0, y0, pp } = ctx;
+  const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
+  const [tx1, ty1] = [x0 + W / pp, y0 + H / pp];
+  const near = (x, y, r) => x + r >= x0 && y + r >= y0 && x - r <= tx1 && y - r <= ty1;
+  const ink = rgb(P.ink, 0.85), inkW = Math.max(1, pp * 0.03);
+  g.lineCap = "round"; g.lineJoin = "round";
+  // Places, each by a marker of its kind
+  for (const p of places) {
     if (!near(p.x, p.y, 2)) continue;
     const x = X(p.x), y = Y(p.y), u = pp;
     g.lineWidth = inkW * 1.2; g.strokeStyle = ink;
@@ -139,5 +161,4 @@ export function paint(ctx) {
     else if (p.class === "mine") { g.beginPath(); g.moveTo(x - 0.22 * u, y + 0.2 * u); g.lineTo(x + 0.22 * u, y - 0.2 * u); g.moveTo(x + 0.22 * u, y + 0.2 * u); g.lineTo(x - 0.22 * u, y - 0.2 * u); g.stroke(); }
     else disc(0.22, rgb(P.ink, 0.85));
   }
-  progress(1, "Done");
 }

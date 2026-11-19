@@ -18,7 +18,7 @@ import { valleyFloors, lakesStage, riversStage, riverMarks, forcedNodes, holdFor
 import { biomeOf, BIOME_CLIMATE } from "./biome.mjs";
 import { rng, hashAt, hash128 } from "../rng.mjs";
 import { inventoryOf } from "./inventory.mjs";
-import { intentAtNodes } from "./layers.mjs";
+import { intentAtNodes, readIntent } from "./layers.mjs";
 import { sample } from "./field.mjs";
 import { landProblems } from "./quality.mjs";
 
@@ -33,6 +33,8 @@ export const TRIES = 4;
 export function generateLand(plan, opts = {}) {
   let best = null;
   const tries = Math.max(1, opts.tries ?? TRIES);
+  // (the painted intent read once for every try)
+  if (opts.intent === undefined) opts = { ...opts, intent: readIntent(plan, frameOf(plan)) };
   for (let attempt = 0; attempt < tries; attempt++) {
     const L = generateOnce(plan, { ...opts, attempt, onProgress: (p, l) => opts.onProgress?.((attempt + p) / tries < 1 ? (attempt === 0 ? p : 0.9 + 0.1 * p) : p, attempt ? `${l} (try ${attempt + 1})` : l) });
     L.inventory = inventoryOf(L);
@@ -44,8 +46,8 @@ export function generateLand(plan, opts = {}) {
 }
 
 /**
- * One land, no checks (attempt picks the sub-seed). opts.intent: the plan's painted intent (readIntent's result,
- * read beforehand since PNG decoding is async). opts.kept: a kept land entering at the heights stage: { heights (a
+ * One land, no checks (attempt picks the sub-seed). opts.intent: the plan's painted intent (readIntent's result;
+ * read from the plan when left out, null for none). opts.kept: a kept land entering at the heights stage: { heights (a
  * field of heights over the frame) }; with no lock layer every land node is held (the solver is skipped), with one
  * only the locked nodes are.
  */
@@ -76,7 +78,8 @@ export function generateOnce(plan, opts = {}) {
   const pts = makePoints({ width: frame.W, height: frame.H, spacing, seed: subSeed, maxLevel: opts.maxLevel ?? 2, keep: (x, y, lv) => lv === 0 || full(x, y) });
   const g = makeGraph(pts);
   const grid = nodeGrid(g);
-  const intent = intentAtNodes(opts.intent ?? null, g);
+  // (the plan's painted intent, read here unless the caller read it already)
+  const intent = intentAtNodes(opts.intent !== undefined ? opts.intent : readIntent(plan, frame), g);
 
   // painted terrain from the plan (units to frame miles)
   // (a raw plan may carry a broken point or path: the checker reports it; here it is left out)
@@ -183,7 +186,7 @@ export function generateOnce(plan, opts = {}) {
     landMask, outlet, U, hard: up.hard, spines: up.spines, plates: up.plates, distSea: up.distSea,
     rain: climate.rain, temp: climate.temp, rainF: climate.rainF, tempF: climate.tempF,
     F: lk.F, lake: lk.lake, salt: lk.salt, lakes: lk.lakes, lakeId: lk.lakeId, rivers: rv.rivers, riverOf: rv.riverOf, marks,
-    biome, hypso, threshold, spacing: up.spacing, fixed, kept: !!opts.kept, zones: intent?.zones ?? [],
+    biome, hypso, threshold, spacing: up.spacing, fixed, kept: !!opts.kept, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
   };
 }
 

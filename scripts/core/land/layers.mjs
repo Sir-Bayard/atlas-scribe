@@ -6,10 +6,10 @@
  * widens and blends every intent). Units: water 0 sea to 1 land (0.5 lets the recipe decide); relief -1 (flatten and
  * sink) to 1 (raise to mountains); rock 0 soft to 1 hard (0.5 normal); climateWet and climateWarm -1 to 1; zones an
  * index into land.zones; lock 0 or 1. The order of authority (lock, painted water, land and sea, relief, rock,
- * climate, zones, then the generator) is kept by the stages that read these. Pure apart from PNG decoding (async).
+ * climate, zones, then the generator) is kept by the stages that read these. Pure (writeLayers is async: it encodes).
  */
 import { makeField, like, sample, blur } from "./field.mjs";
-import { decodeGray, encodeGray, fromDataUrl, toDataUrl } from "./pngio.mjs";
+import { decodeGraySync, encodeGray, fromDataUrl, toDataUrl } from "./pngio.mjs";
 import { LAYER_NAMES, terrainGeometry } from "./schema.mjs";
 import { shapeToPolygon, pointInPolygon, bbox } from "../geom.mjs";
 
@@ -28,10 +28,10 @@ const WRITE = {
 const SOFT = { water: 8, relief: 18, rock: 10, climateWet: 15, climateWarm: 15, zones: 0, cover: 0, lock: 0 };
 
 /**
- * Reads a plan's intent. frame: frameOf(plan). Returns null when there is none, else { fields: { name: field },
+ * Reads a plan's intent (synchronously). frame: frameOf(plan). Returns null when there is none, else { fields: { name: field },
  * zones: [{ index, id, name, biome, color, reacts }] }.
  */
-export async function readIntent(plan, frame) {
+export function readIntent(plan, frame) {
   const land = plan.land ?? {}, fields = {};
   const lay = land.layers && typeof land.layers === "object" ? land.layers : null;
   // (layers cover the frame, so their shape is the frame's: one that isn't, or is under 2 px a side, is left out; the
@@ -42,7 +42,7 @@ export async function readIntent(plan, frame) {
   if (lay) for (const name of LAYER_NAMES) {
     if (typeof lay[name] !== "string") continue;
     try {
-      const { w, h, values } = await decodeGray(fromDataUrl(lay[name]));
+      const { w, h, values } = decodeGraySync(fromDataUrl(lay[name]));
       if (!fits(w, h) || (size && (w !== size[0] || h !== size[1]))) continue;
       const f = { w, h, cell: frame.W / w, data: new Float64Array(w * h) };
       for (let i = 0; i < w * h; i++) f.data[i] = READ[name].from(values[i]);

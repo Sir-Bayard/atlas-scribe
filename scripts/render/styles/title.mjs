@@ -15,7 +15,9 @@ export function cornersOf(L) {
   const unit = Math.min(mw, mh) / 100;
   const cw = mw * 0.24, ch = mh * 0.24;
   const busy = (cx, cy, w, h) => L.items.filter((i) => (i.kind === "building" || i.kind === "way" || i.kind === "water") && [[i.cx ?? i.x ?? i.path?.[0]?.[0], i.cy ?? i.y ?? i.path?.[0]?.[1]]].some(([x, y]) => x > cx && x < cx + w && y > cy && y < cy + h)).length;
-  const corners = [["nw", 0, 0], ["ne", mw - cw, 0], ["sw", 0, mh - ch], ["se", mw - cw, mh - ch]].map(([k, cx, cy]) => ({ k, cx, cy, n: busy(cx, cy, cw, ch) })).sort((a, b) => a.n - b.n);
+  // (an overland map's corners by how much land is in each: the dressing goes on the sea where it can)
+  const byLand = Array.isArray(L.cornerLand) ? { nw: L.cornerLand[0], ne: L.cornerLand[1], sw: L.cornerLand[2], se: L.cornerLand[3] } : null;
+  const corners = [["nw", 0, 0], ["ne", mw - cw, 0], ["sw", 0, mh - ch], ["se", mw - cw, mh - ch]].map(([k, cx, cy]) => ({ k, cx, cy, n: byLand ? byLand[k] : busy(cx, cy, cw, ch) })).sort((a, b) => a.n - b.n);
   return { unit, cw, ch, corners };
 }
 

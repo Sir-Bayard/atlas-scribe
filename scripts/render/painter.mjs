@@ -6,6 +6,7 @@ import * as textured from "./styles/textured.mjs";
 import * as illustrated from "./styles/illustrated.mjs";
 import * as battle from "./styles/battle.mjs";
 import * as region from "./styles/region.mjs";
+import * as overland from "./styles/overland.mjs";
 import { artPlacement } from "../core/layout/rooms.mjs";
 import { drawnSet } from "./drawn-art.mjs";
 
@@ -20,7 +21,7 @@ export const STYLES = { illustrated, textured, ink: illustrated }; // (ink: the 
  */
 export function styleOf(layout) {
   if (layout.kind === "battle") return battle;
-  if (layout.kind === "region") return region;
+  if (layout.kind === "region") return layout.overland ? overland : region;
   return STYLES[layout.style] ?? STYLES.illustrated;
 }
 

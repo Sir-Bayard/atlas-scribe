@@ -189,7 +189,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   onProgress(0.9, "Placing the title");
   // (an old one comes out only when a new one went in, or the map no longer has one; never on a failure)
   const oldTitles = sceneById(sceneId).tiles.filter((t) => isObj(t.flags?.[MOD]) && "title" in t.flags[MOD]).map((t) => t.id);
-  const wanted = (plan.style === "illustrated" || plan.style === "ink") && plan.output.dressing === true && typeof plan.name === "string" && plan.name.trim() !== "";
+  const wanted = (plan.style === "illustrated" || plan.style === "ink" || plan.style === "painted") && plan.output.dressing === true && typeof plan.name === "string" && plan.name.trim() !== "";
   let title = false;
   if (wanted && !layout) warnings.push("The map's name wasn't made into a tile (the map couldn't be laid out again); the scene keeps the one it had.");
   else {
