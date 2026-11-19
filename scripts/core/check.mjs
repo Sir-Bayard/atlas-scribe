@@ -4,6 +4,8 @@
  * render; warnings don't (the generator falls back or skips). Pure: runs anywhere.
  */
 import { underlayOf } from "./underlay.mjs";
+import { checkLand, terrainGeometry } from "./land/schema.mjs";
+import { extentOf, frameOf } from "./land/units.mjs";
 import { PLAN_VERSION, TYPES, PROFILES, SCENE, NOT_DRAWN_YET, SEASONS, STYLES, SURFACES, OUTPUT_LIMITS, isObj, normalize, okJoin, okCut, okChimney } from "./plan.mjs";
 import { shapeToPolygon, bbox, pathTouchesPolygon, polygonsOverlap, polygonCrossesItself, distanceToPath, segmentsIntersect, pointInPolygon } from "./geom.mjs";
 import { districtGates, gateSpacing } from "./streets/index.mjs";
@@ -69,16 +71,32 @@ export function checkPlan(raw) {
   // The reference image under the window's sketch: never painted, so a broken one is only a warning
   if (raw.underlay !== undefined && !underlayOf(raw)) warn(null, "underlay", "underlay should be { path, rect: [left, top, right, bottom] } (squares, left less than right, top less than bottom); it's ignored.");
   else if (underlayOf(raw) && /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(underlayOf(raw).path)) warn(null, "underlay", `The underlay's image is outside Foundry's files (${underlayOf(raw).path.split("/")[2] ?? "another site"}); it's fetched from there each time the plan is opened.`);
-  const [w, h] = plan.size.squares;
-  if (!(plan.size.squares.length === 2 && Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0)) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
+  // an overland map: a region plan with land (land on another kind of map is ignored)
+  const overland = plan.kind === "region" && raw.land !== undefined && raw.land !== null;
+  if (plan.kind !== "region" && raw.land !== undefined) warn(null, "land", "land (generated overland terrain) is used only by a region map; it's ignored.");
+  // (an overland map's extent comes from its grid: a hex grid's columns and rows aren't its width and height)
+  const [w, h] = overland ? extentOf(plan) : plan.size.squares;
+  if (!(plan.size.squares.length === 2 && plan.size.squares.every((v) => Number.isInteger(v) && v > 0))) err(null, "size.squares", "size.squares must be two whole numbers above 0, like [100, 100].");
   // Past 100 ft a square a district holds thousands of plots a square and takes minutes to lay out
-  if (plan.kind === "region") { if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 500 && plan.size.ftPerSquare <= 26400)) err(null, "size.ftPerSquare", "A region map's size.ftPerSquare must be a number from 500 to 26400 (feet a square; 2640 is half a mile, 5280 a mile)."); }
+  if (overland) {
+    // an overland map: generated land, cells up to 120 miles
+    if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 500 && plan.size.ftPerSquare <= 633600)) err(null, "size.ftPerSquare", "An overland map's size.ftPerSquare must be a number from 500 to 633600 (feet a cell; 31680 is 6 miles, 633600 is 120 miles).");
+    for (const p of checkLand(raw.land)) (p.level === "error" ? err : warn)(null, p.field, p.message);
+    // (painted layers cover the context frame: one of another shape would be stretched off it)
+    const ls = raw.land?.layers?.size;
+    if (Array.isArray(ls) && ls.length === 2 && ls.every((v) => Number.isInteger(v) && v >= 8)) {
+      try {
+        const fr = frameOf(plan), want = (ls[0] * fr.H) / fr.W;
+        if (Math.abs(ls[1] - want) > 1) err(null, "land.layers.size", `land.layers.size [${ls[0]}, ${ls[1]}] isn't the shape of the map and its margin (about ${ls[0]} by ${Math.round(want)}); the layers can't be lined up with the land.`);
+      } catch { /* (a size the checks above already report) */ }
+    }
+  } else if (plan.kind === "region") { if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 500 && plan.size.ftPerSquare <= 26400)) err(null, "size.ftPerSquare", "A region map's size.ftPerSquare must be a number from 500 to 26400 (feet a square; 2640 is half a mile, 5280 a mile)."); }
   else if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square; 25 suits a village or town).");
   // (a battle map's walls, rooms, yards and furniture are sized in squares, made for 5 feet each)
   else if (plan.kind === "battle" && plan.size.ftPerSquare !== 5) warn(null, "size.ftPerSquare", `A battle map is made for 5 feet a square: its walls, rooms, yards and furniture are sized in squares, so at ${plan.size.ftPerSquare} feet a square they'd be ${Math.round((plan.size.ftPerSquare / 5) * 10) / 10} times too big. Set Feet a square to 5.`);
   if (!isNum(plan.seed) && !(typeof plan.seed === "string" && plan.seed)) err(null, "seed", "seed must be a number.");
   if (!["settlement", "battle", "region"].includes(plan.kind)) warn(null, "kind", `kind "${plan.kind}" isn't one AtlasScribe knows (settlement, battle, region); it's drawn as a settlement.`);
-  for (const [name, values] of [["season", SEASONS], ["style", plan.kind === "region" ? ["region"] : STYLES], ["ground", SURFACES]])
+  for (const [name, values] of [["season", SEASONS], ["style", plan.kind === "region" ? (overland ? ["painted"] : ["region"]) : STYLES], ["ground", SURFACES]])
     if (!values.includes(plan[name])) warn(null, name, `${name} "${plan[name]}" isn't one AtlasScribe knows (${values.join(", ")}); ${name === "season" ? "summer" : name === "style" ? "illustrated" : "a plain fill"} will be used.`);
 
   // The image: Foundry's grid needs a whole number of pixels, 20 or more; WebP stops at 16383 px a side
@@ -96,7 +114,9 @@ export function checkPlan(raw) {
   if (!["auto", "webp", "jpeg"].includes(plan.output.format)) warn(null, "output.format", `output.format "${plan.output.format}" isn't one AtlasScribe saves; it should be "auto", "webp" or "jpeg". It's saved as WebP.`);
   if (raw.output?.dressing !== undefined && typeof raw.output.dressing !== "boolean") warn(null, "output.dressing", `output.dressing should be true or false; it's left off.`);
   else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style === "textured") warn(null, "output.dressing", `Map dressing is drawn only in the illustrated and ink styles; this map is ${plan.style}.`);
-  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing"].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
+  for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing", ...(overland ? ["grid"] : [])].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);
+  // (an overland map's grid sets its extent: hex columns overlap, so a wrong value would change the map's size)
+  if (overland && raw.output?.grid !== undefined && !["square", "hex"].includes(raw.output.grid)) err(null, "output.grid", `output.grid must be "square" or "hex" (lowercase); "${raw.output.grid}" isn't one.`);
 
   // A plan so big it takes minutes to lay out (C2): said before it's drawn, with how long, as near as can be told
   const plots = estimatePlots(plan);
@@ -111,7 +131,7 @@ export function checkPlan(raw) {
     else if (!ID.test(f.id)) err(f.id, "id", `The id "${f.id}" should use only letters, digits, - and _.`);
     else if (seen.has(f.id)) err(f.id, "id", `The id "${f.id}" is used twice.`);
     else seen.set(f.id, f);
-    checkFeature(f, where, raw.features?.[i] ?? {}, { err, warn, w, h });
+    checkFeature(f, where, raw.features?.[i] ?? {}, { err, warn, w, h, overland });
     // (a rise or a hollow is drawn on a battle map only: a settlement map's squares are too big for one)
     if (f?.type === "place" && plan.kind !== "region") warn(f.id ?? null, "type", `"${where}" is a place, which only a region map draws; it's left off this map.`);
     if (f?.type === "height" && plan.kind !== "battle") warn(f.id ?? null, "type", `"${where}" is a rise or hollow, which only a battle map draws; it's left off this map.`);
@@ -330,7 +350,7 @@ function shrink(poly, by = 0.02) {
   return poly.map(([x, y]) => [x + (cx - x) * by, y + (cy - y) * by]);
 }
 
-function checkFeature(f, where, raw, { err, warn, w, h }) {
+function checkFeature(f, where, raw, { err, warn, w, h, overland = false }) {
   const t = TYPES[f.type];
   if (!t) return err(f.id ?? null, "type", `"${where}" has the type "${f.type}", which AtlasScribe doesn't know (types: ${Object.keys(TYPES).join(", ")}).`);
   if (t.classes && raw.class !== undefined && !t.classes.includes(raw.class))
@@ -346,6 +366,13 @@ function checkFeature(f, where, raw, { err, warn, w, h }) {
   if (g === "path|shape") {
     if (f.path !== undefined) need(isPath(f.path), "path", `"${where}" has a path that isn't two or more [x, y] points.`);
     else checkShape(f.shape, where, "shape", need);
+  }
+  if (g === "terrain") {
+    const tg = terrainGeometry(f.class);
+    if (tg === "path") need(isPath(f.path), "path", `"${where}" is a range: it needs a spine, path: [[x, y], [x, y], ...].`);
+    else if (tg === "point") need(isPoint(f.at), "at", `"${where}" is a peak: it needs a position, at: [x, y].`);
+    else checkShape(f.shape, where, "shape", need);
+    if (!overland) warn(f.id, "type", `"${where}" is painted terrain, which only an overland map (a region plan with land) uses; it's ignored.`);
   }
   if (g === "buildings") {
     if (need(Array.isArray(raw.buildings) && raw.buildings.length > 0, "buildings", `Landmark "${where}" needs a list of buildings.`))

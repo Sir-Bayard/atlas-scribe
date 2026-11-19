@@ -9,6 +9,7 @@
 
 import { CHARACTERS } from "./character.mjs";
 import { USES, TRADES } from "./uses.mjs";
+import { TERRAIN_CLASSES, normalizeLand } from "./land/schema.mjs";
 
 /** Where in its district a centerpiece may stand (a district's anchorAt; left out, the plan's seed picks). */
 export const ANCHOR_PLACES = ["middle", "side", "edge"];
@@ -285,10 +286,43 @@ export const TYPES = {
     fields: { name: str(), note: str(""), rot: num(0, { unit: "deg" }) },
   },
   place: {
-    // A place on a region map (kind "region"): its marker and name; its own map is made from it
+    // A place on a region map (kind "region"): its marker and name; its own map is made from it. site: on generated
+    // land, what its own map should know (its river's size and bearings, the coast's bearing, its roads' bearings,
+    // biome, ground), from Quick Start
     geometry: "point",
     classes: ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"],
-    fields: { name: str(), seed: num(null, { min: 1, integer: true }) },
+    fields: { name: str(), seed: num(null, { min: 1, integer: true }), site: { kind: "data", default: null } },
+  },
+  terrain: {
+    // Painted intent on an overland map (a region plan with land): a range's spine along a path, a peak at a point,
+    // the rest as shapes rasterized into the land's intent layers. Intent, not outline: the generator widens and
+    // blends it. Lengths in miles.
+    geometry: "terrain",
+    classes: TERRAIN_CLASSES,
+    fields: {
+      name: str(),
+      height: num(1, { min: 0, max: 2, only: ["range", "peak", "plateau"] }),
+      width: num(30, { unit: "mi", min: 2, max: 400, only: ["range"] }),
+      hard: num(0.8, { min: 0, max: 1, only: ["range", "peak", "hardness"] }),
+      ridges: num(4, { min: 0, max: 4, integer: true, only: ["range"] }),
+      age: { ...oneOf(["young", "mature", "old"], "young"), only: ["range"] },
+      radius: num(15, { unit: "mi", min: 1, max: 300, only: ["peak"] }),
+      volcanic: { kind: "boolean", default: false, only: ["peak"] },
+      strength: num(1, { min: 0, max: 1, only: ["land", "sea", "lowland"] }),
+      depth: num(0.5, { min: 0, max: 1, only: ["basin"] }),
+      wetter: num(0, { min: -1, max: 1, only: ["climate"] }),
+      warmer: num(0, { min: -1, max: 1, only: ["climate"] }),
+      biome: str(null, { only: ["biome"] }),
+      color: str(null, { only: ["biome"] }),
+      reacts: { kind: "boolean", default: false, only: ["biome"] },
+      rot: num(0, { unit: "deg" }),
+    },
+  },
+  realm: {
+    // Reserved for realms and borders on overland maps (not drawn in this version)
+    geometry: "shape",
+    classes: ["realm"],
+    fields: { name: str(), color: str(null), capital: str(null) },
   },
   prop: {
     geometry: "point",
@@ -369,7 +403,7 @@ export const PROFILES = ["hamlet", "village", "town", "city"];
 export const OLD_PROFILES = { roadside: "hamlet", core: "city" };
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
-export const NOT_DRAWN_YET = { area: [] };
+export const NOT_DRAWN_YET = { area: [], realm: ["realm"] };
 
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];
@@ -426,7 +460,9 @@ export function fieldDefault(spec, cls) {
 export function normalize(plan) {
   const p = structuredClone(isObj(plan) ? plan : {});
   for (const [k, v] of Object.entries(DEFAULTS)) p[k] ??= v;
-  p.style ??= p.kind === "battle" ? "textured" : p.kind === "region" ? "region" : "illustrated"; // (a settlement drawn, a battle map in its art)
+  // (an overland map: a region plan with land, painted)
+  if (p.kind === "region" && isObj(p.land)) p.land = normalizeLand(p.land);
+  p.style ??= p.kind === "battle" ? "textured" : p.kind === "region" ? (isObj(p.land) ? "painted" : "region") : "illustrated"; // (a settlement drawn, a battle map in its art)
   p.atlasScribe ??= PLAN_VERSION;
   // Containers of the wrong kind are replaced (the checker reports them), so nothing downstream trips on them
   if (!isObj(p.size)) p.size = {};
