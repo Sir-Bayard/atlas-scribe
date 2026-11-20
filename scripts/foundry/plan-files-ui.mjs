@@ -103,14 +103,19 @@ function regionTabHTML() {
     coast: "How broken the coastline is",
     wind: "Where the wind comes from: the far side of a range from it is drier",
     rivers: "How many rivers are drawn",
-    climate: "How warm and wet the land is (a world spans every climate, so it has none)",
+    climate: "How warm and wet the land is",
+    hemisphere: "Which side of the equator the map lies on: which way it grows warmer, and which way the winds blow",
+    span: "The latitudes the world covers: pole to pole squeezes the whole globe onto the map, ice at the top and bottom",
+    lakes: "How many lakes: more shows smaller basins as lakes, and fewer of them dry to salt flats",
+    plateaus: "High, flat land of hard rock behind the great ranges, its edges cut into canyons",
+    volcanic: "Volcanoes along island arcs and coastal ranges, or a hotspot chain where there are none",
   };
   return `<section class="as-qs-region" data-tab="region" role="tabpanel" id="as-qs-panel-region" aria-labelledby="as-qs-tab-region" hidden>
       <div class="form-group"><label for="as-qr-scale">Scale</label><select id="as-qr-scale" name="r-scale">${[...LAND_QUICK.scale, "local"].map((v) => `<option value="${v}"${v === lastScale ? " selected" : ""}>${esc(v === "local" ? "Local (40 to 80 mi, the classic region)" : LAND_QUICK_LABELS.scale[v])}</option>`).join("")}</select></div>
       <div data-for="land">
         <p class="hint">Land, rivers and climate made by the generator, then towns, villages, castles, roads and names placed on it. Each town's own map can be made from it.</p>
-        <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
-        <details class="as-qs-more"><summary>More</summary><div class="as-qs-two">${LAND_MORE.map((k) => land(k, { age: "Age", plates: "Plates", coast: "Coast", wind: "Wind", rain: "Rain", rivers: "Rivers" }[k], tips[k])).join("")}</div></details>
+        <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("hemisphere", "Hemisphere", tips.hemisphere)}${land("span", "Latitudes", tips.span)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
+        <details class="as-qs-more"><summary>More</summary><div class="as-qs-two">${LAND_MORE.map((k) => land(k, { age: "Age", plates: "Plates", coast: "Coast", wind: "Wind", rain: "Rain", rivers: "Rivers", lakes: "Lakes", plateaus: "Plateaus", volcanic: "Volcanic" }[k], tips[k])).join("")}</div></details>
       </div>
       <div data-for="local" hidden>
         <p class="hint">Towns, villages, castles and ruins with their roads, rivers, woods and mountains. Each place's own map is made from it.</p>
@@ -122,7 +127,7 @@ function regionTabHTML() {
 /** The Region tab's last Scale, kept for the session. */
 let lastScale = LAND_QUICK.scale[0];
 
-/** The Region tab's Scale shows the generated region's choices, or the classic local region's; a world has no Climate. */
+/** The Region tab's Scale shows the generated region's choices, or the classic local region's; a world, its latitudes. */
 function wireRegionTab(root) {
   if (!root) return;
   const scale = root.querySelector('[name="r-scale"]');
@@ -131,7 +136,11 @@ function wireRegionTab(root) {
     lastScale = scale.value;
     root.querySelector('[data-for="land"]').hidden = local;
     root.querySelector('[data-for="local"]').hidden = !local;
-    root.querySelector('[data-land="climate"]').hidden = scale.value === "world";
+    // (a world takes a span of latitudes in place of a climate and a hemisphere)
+    const world = scale.value === "world";
+    root.querySelector('[data-land="climate"]').hidden = world;
+    root.querySelector('[data-land="hemisphere"]').hidden = world;
+    root.querySelector('[data-land="span"]').hidden = !world;
   };
   scale.addEventListener("change", show);
   show();

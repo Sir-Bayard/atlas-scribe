@@ -48,7 +48,8 @@ export function climateStage(ctx) {
     const seaDir = { east: 90, west: 270, north: 0, south: 180 }[ctx.seaSide];
     const fromSea = small && seaDir !== undefined ? sweepAt(seaDir) : null;
     for (let y = 0; y < f.h; y++) {
-      const L = lat((y + 0.5) * f.cell);
+      // (the belts by distance from the equator: westerlies blow in both hemispheres' middle latitudes)
+      const L = Math.abs(lat((y + 0.5) * f.cell));
       const wW = Math.min(1, Math.max(0, (L - 27) / 8)) * Math.min(1, Math.max(0, (66 - L) / 6));
       for (let x = 0; x < f.w; x++) {
         const i = y * f.w + x;
@@ -61,7 +62,7 @@ export function climateStage(ctx) {
   // belts by latitude: the subtropical dry belt and the wet equatorial band; the climate's own bias
   const bias = 1 + ({ arid: -0.55, tropical: 0.15, cold: -0.05 }[land.climate] ?? 0) + ({ drier: -0.3, wetter: 0.35 }[land.rain] ?? 0);
   for (let y = 0; y < f.h; y++) {
-    const L = lat((y + 0.5) * f.cell);
+    const L = Math.abs(lat((y + 0.5) * f.cell));
     const belt = (1 - 0.45 * exp(-((L - 28) / 7) * ((L - 28) / 7))) * (1 + 0.5 * exp(-(L / 8) * (L / 8))) * bias;
     for (let x = 0; x < f.w; x++) rainF.data[y * f.w + x] *= belt / RAIN_REF;
   }

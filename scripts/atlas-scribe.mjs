@@ -399,9 +399,10 @@ const api = {
 
   /**
    * A generated region's plan, as Quick Start's Region tab makes it at a kingdom, realm, continent or world scale
-   * ({ scale, type, seaSide, climate, mountains, towns, grid, size, names, season, age, plates, coast, wind, rain,
-   * rivers, nameSet (a library set's id or name, or { name, text }), name, seed }; any left out has a default, Any
-   * lets the seed pick; a world takes no climate).
+   * ({ scale, type, seaSide, climate, hemisphere, span, mountains, towns, grid, size, names, season, age, plates,
+   * coast, wind, rain, rivers, lakes, plateaus, volcanic, nameSet (a library set's id or name, or { name, text }),
+   * name, seed }; any left out has a default, Any lets the seed pick; a world takes a span of latitudes, pole to pole
+   * by default, in place of a climate and a hemisphere).
    * Returns { plan, choices, notes }; its towns and roads aren't placed yet (api.placeTowns). The choices are listed
    * in api.landChoices.
    */

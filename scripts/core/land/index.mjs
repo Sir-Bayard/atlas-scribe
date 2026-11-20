@@ -10,7 +10,7 @@ import { shapeField } from "./recipes.mjs";
 import { GEN, normalizeLand } from "./schema.mjs";
 import { makePoints, makeGraph, nodeGrid } from "./graph.mjs";
 import { distanceTo, atNodes } from "./field.mjs";
-import { upliftStage, SOLVER, components } from "./uplift.mjs";
+import { upliftStage, SOLVER, components, landforms, scourHollows } from "./uplift.mjs";
 import { workFor, fillRoute, accumulate, step } from "./solver.mjs";
 import { climateStage } from "./climate.mjs";
 import { remapHeights } from "./hypso.mjs";
@@ -89,7 +89,8 @@ export function generateOnce(plan, opts = {}) {
     at: isPoint(f.at) ? frame.toFrame(f.at) : null,
   }));
   progress(0.15, "Plates and ranges");
-  const up = upliftStage({ g, frame, land, seed: subSeed, r: r.fork("uplift"), shapeF, terrain, intent });
+  // (a land kept whole takes no new plateaus or volcanoes: its heights are read back, and they'd only move its coast)
+  const up = upliftStage({ g, frame, land, seed: subSeed, r: r.fork("uplift"), shapeF, terrain, intent, keptWhole: !!opts.kept && !intent?.lock });
   const { U, Uold, K, D, talus, landMask, outlet, fixedH } = up;
   const n = g.n;
 
@@ -143,6 +144,9 @@ export function generateOnce(plan, opts = {}) {
   // height distribution, valley floors, then the water on the finished land
   progress(0.72, "Lowlands and hills");
   const hypso = allKept ? null : remapHeights(h, landMask, fixed, mountains);
+  // (plateaus and volcanoes onto the eroded land, so erosion hasn't worn them away)
+  if (!allKept && (up.plateau || up.cones)) landforms(g, h, landMask, fixed, up, mountains);
+  if (!allKept && land.lakes === "many") scourHollows(g, h, landMask, fixed, up.distSea, r.fork("hollows"), frame);
   let np = fillRoute(g, h, outlet, w);
   const cl1 = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
   const rainW = new Float64Array(n);
@@ -162,7 +166,7 @@ export function generateOnce(plan, opts = {}) {
   progress(0.8, "Rain and rivers");
   const climate = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
   const pxPerMile = (Number(plan.output?.pxPerSquare) || 100) / frame.mpu;
-  const lk = lakesStage({ g, h, w, np, rain: climate.rain, temp: climate.temp, land: landMask, outlet, pxPerMile });
+  const lk = lakesStage({ g, h, w, np, rain: climate.rain, temp: climate.temp, land: landMask, outlet, pxPerMile, amount: land.lakes });
   // (a flooded hollow too small to show as a lake is filled flat, as sediment would: rivers then never step uphill)
   for (let i = 0; i < n; i++) if (landMask[i] && !lk.lake[i] && !lk.salt[i] && lk.depth[i] > 0) h[i] = w.hf[i];
   const rv = riversStage({ g, h, w, F: lk.F, land: landMask, lake: lk.lake, outlet, threshold, forced });
@@ -187,6 +191,8 @@ export function generateOnce(plan, opts = {}) {
     rain: climate.rain, temp: climate.temp, rainF: climate.rainF, tempF: climate.tempF,
     F: lk.F, lake: lk.lake, salt: lk.salt, lakes: lk.lakes, lakeId: lk.lakeId, rivers: rv.rivers, riverOf: rv.riverOf, marks,
     biome, hypso, threshold, spacing: up.spacing, fixed, kept: !!opts.kept, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
+    // (the volcanoes, [{ at: [x, y] frame miles, rad, ht }], when the land is volcanic)
+    ...(up.cones ? { cones: up.cones.filter((c) => landMask[grid.nearest(c.at[0], c.at[1])]) } : {}),
   };
 }
 

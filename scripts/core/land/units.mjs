@@ -70,8 +70,9 @@ export function frameOf(plan) {
 }
 
 /**
- * Latitude in degrees at a height in the frame (miles from its top): the map's span is its height in miles over 69,
- * centered on the climate's latitude; land.latitude [top, bottom] overrides. Returns lat(yMiles).
+ * Latitude in degrees at a height in the frame (miles from its top; the map's top is north): the map's span is its
+ * height in miles over 69, centered on the climate's latitude, south of the equator when land.hemisphere is "south";
+ * land.latitude [top, bottom] overrides (a world drawn pole to pole is [90, -90]). Returns lat(yMiles).
  */
 export function latitudeOf(plan, frame) {
   const land = plan?.land ?? {};
@@ -80,6 +81,6 @@ export function latitudeOf(plan, frame) {
     return (y) => top + ((bottom - top) * (y - frame.margin)) / frame.mapH;
   }
   const scale = frame.scale;
-  const mid = scale === "world" ? 35 : (CLIMATES[land.climate] ?? CLIMATES.temperate).lat;
+  const mid = (scale === "world" ? 35 : (CLIMATES[land.climate] ?? CLIMATES.temperate).lat) * (land.hemisphere === "south" ? -1 : 1);
   return (y) => mid - (y - frame.margin - frame.mapH / 2) / 69;
 }

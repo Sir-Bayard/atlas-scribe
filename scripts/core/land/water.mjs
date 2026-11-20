@@ -38,7 +38,8 @@ export function valleyFloors(g, h, w, big, land, fixed) {
 }
 
 /**
- * Lakes. ctx: { g, h, w (fillRoute work, routed on h), np, rain, temp, land, outlet, pxPerMile }. Every flooded
+ * Lakes. ctx: { g, h, w (fillRoute work, routed on h), np, rain, temp, land, outlet, pxPerMile, amount (land.lakes:
+ * few, some, many: how small a basin still shows as a lake, and how fast its water goes to the air) }. Every flooded
  * basin is a lake candidate; its level is the basin's filled height. Water balance: inflow (the runoff of its
  * catchment: rain less what the land gives back to the air, a share that grows with warmth and dryness, as Budyko's
  * curve) against evaporation (its open water's area times warmth); what's left leaves by its outlet, and the flow below
@@ -69,9 +70,10 @@ export function lakesStage(ctx) {
   }
   // shown lakes: open water of at least about 40 px of picture (a few nodes at least)
   let meanArea = 0; for (let i = 0; i < n; i++) meanArea += g.area[i]; meanArea /= n || 1;
-  const minArea = Math.max(40 / (ctx.pxPerMile * ctx.pxPerMile), 4 * meanArea);
+  const LAKES = { few: { size: 3, evap: 1.3 }, some: { size: 1, evap: 1 }, many: { size: 0.3, evap: 0.75 } }[ctx.amount] ?? { size: 1, evap: 1 };
+  const minArea = Math.max(40 / (ctx.pxPerMile * ctx.pxPerMile), 4 * meanArea) * LAKES.size;
   const lakes = [], lakeOfReg = new Int32Array(regs.length).fill(-1);
-  for (const r of regs) if (r.open >= minArea) { lakeOfReg[r.id] = lakes.length; lakes.push({ id: lakes.length, reg: r.id, area: r.open, level: 0, inflow: 0, evap: r.open * (0.06 + 0.35 * Math.min(1, Math.max(0, r.temp))), closed: false, outlet: -1 }); }
+  for (const r of regs) if (r.open >= minArea) { lakeOfReg[r.id] = lakes.length; lakes.push({ id: lakes.length, reg: r.id, area: r.open, level: 0, inflow: 0, evap: LAKES.evap * r.open * (0.06 + 0.35 * Math.min(1, Math.max(0, r.temp))), closed: false, outlet: -1 }); }
   // flow with lakes: evaporation is taken from what leaves each lake by its outlet
   // (F, the flow drawn as rivers, is rain; Q, the water balance's, is runoff)
   const F = new Float64Array(n), Q = new Float64Array(n);

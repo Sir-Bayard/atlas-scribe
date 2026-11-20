@@ -1,8 +1,8 @@
 /**
  * Quick Start's generated regions: a kingdom, realm, continent or world map from a few choices, as an overland plan
  * whose land the generator makes (core/land). The land's type, climate and mountains are always written (Any picks
- * them from the seed); the other settings only when chosen, so the generator's defaults stay its own. A world spans
- * every latitude, so it takes no climate. Pure.
+ * them from the seed); the other settings only when chosen, so the generator's defaults stay its own. A world takes
+ * a span of latitudes instead of a climate and a hemisphere (pole to pole by default). Pure.
  */
 import { PLAN_VERSION } from "./plan.mjs";
 import { rng } from "./rng.mjs";
@@ -18,6 +18,8 @@ export const LAND_QUICK = {
   type: ["any", ...LAND_TYPES],
   seaSide: ["auto", "north", "south", "east", "west"],
   climate: ["any", "temperate", "cold", "warm", "arid", "tropical"],
+  hemisphere: ["north", "south"],
+  span: ["poles", "north", "south", "equator"],
   mountains: ["any", "none", "few", "some", "many"],
   towns: ["some", "few", "many"],
   grid: ["hex", "square"],
@@ -31,15 +33,20 @@ export const LAND_QUICK = {
   wind: ["auto", "west", "east", "north", "south"],
   rain: ["normal", "drier", "wetter"],
   rivers: ["some", "few", "many"],
+  lakes: ["some", "few", "many"],
+  plateaus: ["no", "yes"],
+  volcanic: ["no", "yes"],
 };
 /** The choices shown under More. */
-export const LAND_MORE = ["age", "plates", "coast", "wind", "rain", "rivers"];
+export const LAND_MORE = ["age", "plates", "coast", "wind", "rain", "rivers", "lakes", "plateaus", "volcanic"];
 
 export const LAND_QUICK_LABELS = {
   scale: { kingdom: "Kingdom (240 by 160 mi)", realm: "Realm (720 by 480 mi)", continent: "Continent (2,400 by 1,600 mi)", world: "World (7,200 by 4,800 mi)" },
   type: { any: "Any", continents: "Continents", supercontinent: "One great continent", archipelago: "Many islands", island: "An island", arc: "An island arc", coastal: "A coast", landlocked: "No sea", peninsula: "A peninsula", "inland-sea": "An inland sea" },
   seaSide: { auto: "Any", north: "North", south: "South", east: "East", west: "West" },
   climate: { any: "Any", temperate: "Temperate", cold: "Cold", warm: "Warm", arid: "Dry", tropical: "Tropical" },
+  hemisphere: { north: "Northern", south: "Southern" },
+  span: { poles: "Pole to pole", north: "Northern half", south: "Southern half", equator: "Across the equator" },
   mountains: { any: "Any", none: "None", few: "Few", some: "Some", many: "Many" },
   towns: { few: "Few", some: "Some", many: "Many" },
   grid: { hex: "Hexes", square: "Squares" },
@@ -52,6 +59,9 @@ export const LAND_QUICK_LABELS = {
   wind: { auto: "Any", west: "From the west", east: "From the east", north: "From the north", south: "From the south" },
   rain: { normal: "Normal", drier: "Drier", wetter: "Wetter" },
   rivers: { few: "Few", some: "Some", many: "Many" },
+  lakes: { few: "Few", some: "Some", many: "Many" },
+  plateaus: { no: "None", yes: "Behind the ranges" },
+  volcanic: { no: "None", yes: "Volcanoes" },
 };
 
 /** The picture's long side in pixels for each Size. */
@@ -70,8 +80,9 @@ const TYPES_AT = {
 const CLIMATES_ANY = ["temperate", "temperate", "temperate", "cold", "warm", "arid", "tropical"];
 
 /**
- * The plan. options: { scale, type, seaSide, climate, mountains, towns, grid, size, names, season, age, plates,
- * coast, wind, rain, rivers, nameSet ({ name, text, from }: a set from the library, used for the names), name, seed }.
+ * The plan. options: { scale, type, seaSide, climate, hemisphere, span (a world's), mountains, towns, grid, size,
+ * names, season, age, plates, coast, wind, rain, rivers, lakes, plateaus, volcanic, nameSet ({ name, text, from }: a
+ * set from the library, used for the names), name, seed }.
  * Returns { plan, choices, notes }.
  */
 export function landPlan(options = {}) {
@@ -106,6 +117,15 @@ export function landPlan(options = {}) {
   if (c.wind !== "auto") land.wind = WIND[c.wind];
   if (c.rain !== "normal") land.rain = c.rain;
   if (c.rivers !== "some") land.rivers = c.rivers;
+  if (c.lakes !== "some") land.lakes = c.lakes;
+  if (c.plateaus === "yes") land.plateaus = true;
+  if (c.volcanic === "yes") land.volcanic = true;
+  // Latitudes: a world's span (the northern half is the generator's own: no setting), a smaller map's hemisphere
+  if (c.scale === "world") {
+    if (c.span === "poles") land.latitude = [90, -90];
+    else if (c.span === "equator") land.latitude = [35, -35];
+    else if (c.span === "south") land.hemisphere = "south";
+  } else if (c.hemisphere === "south") land.hemisphere = "south";
   // Names: a style, or a set of the GM's own copied in (a set that can't make names is left out, with a note)
   const set = options.nameSet && typeof options.nameSet.text === "string" ? options.nameSet : null;
   const parsed = set ? parseNameSet(set.text) : null;

@@ -6,7 +6,7 @@
  */
 import { noise, atNodes, makeField } from "./field.mjs";
 import { growPlates, boundarySpines, plateCount } from "./plates.mjs";
-import { addRange } from "./spine.mjs";
+import { addRange, resample } from "./spine.mjs";
 import { nodeGrid } from "./graph.mjs";
 import { Heap } from "./heap.mjs";
 import { tanh, exp, len, pow, cos, sin } from "./dmath.mjs";
@@ -103,7 +103,7 @@ export function upliftStage(ctx) {
       : { height: 1, width: sr.range(15, 30), kind: "rift" };
     if (mountains <= 0.02 && o.kind !== "rift") continue;
     const touched = addRange(g, pts, o, fields, sr, out);
-    if (touched) used.push({ kind: sp.kind, points: pts, width: o.width, plates: [sp.a, sp.b] });
+    if (touched) used.push({ kind: sp.kind, points: pts, width: o.width, plates: [sp.a, sp.b], lean: sp.lean, from: sp.points });
   }
   // a frame with no range on land gets one or two placed directly when mountains are asked for (a kingdom inside one plate)
   let landRange = 0;
@@ -122,6 +122,9 @@ export function upliftStage(ctx) {
       used.push({ kind: "own", points: pts, width: o.width });
     }
   }
+  // plateaus and volcanoes, only when asked for (each from a stream of its own, so other lands don't change)
+  if (land.plateaus && !ctx.keptWhole) plateaus({ g, frame, used, plates, fields, r: r.fork("plateaus"), out, shape });
+  if (land.volcanic && !ctx.keptWhole) volcanoes({ g, frame, mountains, used, r: r.fork("volcanic"), out, shape });
   // the GM's painted ranges and peaks (vector intent)
   // (defaults and limits as the plan's terrain fields, so a raw plan and its normalized form give the same land)
   const num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -169,6 +172,9 @@ export function upliftStage(ctx) {
     // fault basins, away from coasts
     if (distSea[i] > 60) U[i] -= 0.025 * Math.max(0, basinsN[i] - 1.0);
   }
+  // a plateau's hard rock, once the coast is known: it fades to the sea as the plateau's top does (landforms), so a
+  // shore stays where the sea wears it
+  if (out.plateau) for (let i = 0; i < n; i++) if (landMask[i] && out.plateau[i]) hard[i] = Math.max(hard[i], PLATEAU_HARD * out.plateau[i] * coastFade(g, distSea, i));
   // intent relief: raise or flatten
   // (raise toward mountains; below zero flatten, and past -0.5 sink: a basin)
   if (ctx.intent?.relief) for (let i = 0; i < n; i++) if (landMask[i]) { const v = ctx.intent.relief[i]; if (v > 0) U[i] += 0.9 * v; else { U[i] *= Math.max(0, 1 + v); if (v < -0.5) U[i] -= 0.03 * (-v - 0.5) * 2; } }
@@ -185,5 +191,213 @@ export function upliftStage(ctx) {
     talus[i] = SOLVER.talus * pow(s, -0.3) * (1 + 0.6 * hard[i]);
     D[i] = (Dphys * (1 - 0.6 * hard[i])) / SOLVER.dt;
   }
-  return { shape, U, Uold, K, hard, talus, D, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age };
+  return { shape, U, Uold, K, hard, talus, D, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null };
+}
+
+/** How hard a plateau's rock is at its heart. */
+const PLATEAU_HARD = 0.75;
+
+/**
+ * A plateau's share at node i by its distance from the sea: none on the shore, all of it four node spacings in (the
+ * node's own spacing, since the nodes are finer in some places than others).
+ */
+function coastFade(g, distSea, i) {
+  const loc = Math.sqrt(g.area[i]);
+  return Math.min(1, Math.max(0, (distSea[i] - 1.5 * loc) / (4 * loc)));
+}
+
+/** A polyline with its cumulative lengths, for toLine. */
+function lineOf(pts) {
+  const cum = [0]; for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + len(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  return { pts, cum };
+}
+
+/** Distance from (x, y) to a polyline (pts, with cumulative lengths cum) and how far along it, 0 to 1. */
+function toLine(pts, cum, x, y) {
+  let best = Infinity, at = 0;
+  for (let k = 1; k < pts.length; k++) {
+    const ax = pts[k - 1][0], ay = pts[k - 1][1], dx = pts[k][0] - ax, dy = pts[k][1] - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+    const d = len(ax + t * dx - x, ay + t * dy - y);
+    if (d < best) { best = d; at = cum[k - 1] + t * (cum[k] - cum[k - 1]); }
+  }
+  return { d: best, t: cum[cum.length - 1] ? at / cum[cum.length - 1] : 0 };
+}
+
+/**
+ * A plateau along a line, as a weight per node (out.plateau, 0 to 1: shaped onto the eroded land by landforms(),
+ * since erosion would wear a flat top into ordinary hills; upliftStage gives it hard rock once the coast is known).
+ * o: { back (miles from the line to the plateau's middle; 0 straddles it), half (half its breadth) }; keep(i): the
+ * nodes it may raise (land on the plate behind a range).
+ */
+function addPlateau(g, line, o, keep, fields, out) {
+  const pts = resample(line, Math.max(2, o.half / 6));
+  if (pts.length < 2) return 0;
+  const cum = [0]; for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + len(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const total = cum[cum.length - 1], reach = o.back + 2 * o.half;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  let touched = 0;
+  for (let i = 0; i < g.n; i++) {
+    const x = g.x[i], y = g.y[i];
+    if (x < x0 - reach || x > x1 + reach || y < y0 - reach || y > y1 + reach || !keep(i)) continue;
+    const { d, t } = toLine(pts, cum, x, y);
+    if (d > reach) continue;
+    // (a ragged edge, and its ends rounded off over half its breadth)
+    const q = Math.abs(d + 0.35 * o.half * fields.waver[i] - o.back) / o.half;
+    const ends = Math.min(1, (t * total) / o.half, ((1 - t) * total) / o.half);
+    const f = exp(-pow(q, 6)) * (ends <= 0 ? 0 : ends * ends * (3 - 2 * ends));
+    if (f <= 1e-4) continue;
+    out.plateau[i] = Math.max(out.plateau[i], f);
+    touched++;
+  }
+  return touched;
+}
+
+/**
+ * Plateaus: behind each range where two continents meet, on the larger plate (as a high plateau stands behind a
+ * collision range), and behind a coastal range on its continent; when those leave the map itself with little or
+ * none (a range off its edge), one stands on its own on the map's land, so a map asked for plateaus shows one.
+ */
+function plateaus({ g, frame, used, plates, fields, r, out, shape }) {
+  out.plateau = new Float64Array(g.n);
+  const size = new Map(); for (let i = 0; i < g.n; i++) size.set(plates.plate[i], (size.get(plates.plate[i]) ?? 0) + 1);
+  let made = 0;
+  for (const [k, u] of used.entries()) {
+    if (u.kind !== "collision" && u.kind !== "coastal") continue;
+    const behind = u.kind === "coastal" ? u.lean : (size.get(u.plates[0]) ?? 0) >= (size.get(u.plates[1]) ?? 0) ? u.plates[0] : u.plates[1];
+    const pr = r.fork("behind", k);
+    const o = u.kind === "collision"
+      // (its near edge a range's width or more behind the spine, clear of the range's core and peaks)
+      ? { back: u.width * pr.range(3, 3.6), half: u.width * pr.range(1.4, 2) }
+      : { back: u.width * pr.range(2.6, 3.2), half: u.width * pr.range(1, 1.4) };
+    // (behind a coastal range means inland of it: farther from the plates' boundary, the coast, than from the range)
+    const inland = u.kind === "coastal" ? lineOf(u.from) : null, range = u.kind === "coastal" ? lineOf(u.points) : null;
+    const landward = (i) => !inland || toLine(inland.pts, inland.cum, g.x[i], g.y[i]).d > toLine(range.pts, range.cum, g.x[i], g.y[i]).d;
+    made += addPlateau(g, u.points, o, (i) => plates.plate[i] === behind && shape[i] > 0.05 && landward(i), fields, out);
+  }
+  // (how much of the map's own land they cover)
+  let onMap = 0, mapLand = 0;
+  for (let i = 0; i < g.n; i++) if (shape[i] > 0.05 && frame.inMap(g.x[i], g.y[i])) { mapLand++; if (out.plateau[i] > 0.5) onMap++; }
+  if (made && onMap >= 0.03 * mapLand) return;
+  // (one of its own: a broad rise on the land, a line through a spot well inland)
+  const inland = []; for (let i = 0; i < g.n; i++) if (shape[i] > 0.35 && frame.inMap(g.x[i], g.y[i])) inland.push(i);
+  if (!inland.length) return;
+  const s = inland[r.int(inland.length)], long = Math.max(frame.mapW, frame.mapH);
+  const ang = r.range(0, 6.283), L = r.range(0.25, 0.4) * long, dx = cos(ang), dy = sin(ang);
+  const line = Array.from({ length: 7 }, (_, q) => { const t = q / 6 - 0.5; return [g.x[s] + dx * t * L, g.y[s] + dy * t * L]; });
+  addPlateau(g, line, { back: 0, half: r.range(0.08, 0.13) * long }, (i) => shape[i] > 0.05, fields, out);
+}
+
+/**
+ * A volcano: recorded in out.cones for landforms() to shape onto the eroded land (a cone with a crater at its top),
+ * with enough uplift at its core that one out at sea raises an island the land's cleanup keeps (it keeps a speck
+ * whose uplift is 0.3 or more), and harder rock than the land around it. rad: miles; ht: its height.
+ */
+function addCone(g, at, rad, ht, out) {
+  (out.cones ??= []).push({ at, rad, ht });
+  for (let i = 0; i < g.n; i++) {
+    const dx = g.x[i] - at[0], dy = g.y[i] - at[1];
+    if (dx > 3 * rad || dx < -3 * rad || dy > 3 * rad || dy < -3 * rad) continue;
+    const q = len(dx, dy) / rad;
+    if (q > 3) continue;
+    out.U[i] += Math.max(0.35 * ht, 0.34) * exp(-q * q);
+    out.hard[i] = Math.max(out.hard[i], 0.6 * exp(-q * q));
+  }
+}
+
+/**
+ * Volcanoes: a chain of cones along every island arc (where an ocean plate sinks under another) and along the crest of
+ * every coastal range; when fewer than two stand on the map, a hotspot chain or two, cones in a line growing smaller
+ * the older they are, out at sea as islands or on the land. Each cone at least a few nodes across, so it shows at any
+ * scale. Returns how many were made.
+ */
+function volcanoes({ g, frame, mountains, used, r, out, shape }) {
+  let area = 0; for (let i = 0; i < g.n; i++) area += g.area[i];
+  const least = 2.2 * Math.sqrt(area / g.n); // (miles: a cone a couple of nodes across at the least)
+  let cones = 0;
+  for (const [k, u] of used.entries()) {
+    if (u.kind !== "arc" && u.kind !== "coastal") continue;
+    const arc = u.kind === "arc", vr = r.fork("chain", k);
+    const pts = resample(u.points, u.width * (arc ? 2 : 3));
+    for (let q = 1; q + 1 < pts.length; q++) {
+      const cr = vr.fork("cone", q);
+      if (!cr.chance(arc ? 0.75 : 0.55) || !frame.inMap(pts[q][0], pts[q][1])) continue;
+      addCone(g, pts[q], Math.max(least, u.width * cr.range(0.45, 0.7)), arc ? cr.range(0.6, 0.95) : 0.45 + 0.5 * mountains * cr.range(0.8, 1.2), out);
+      cones++;
+    }
+  }
+  if (cones >= 2) return cones;
+  // hotspot chains: one on a kingdom or realm, two on a continent or world
+  const long = Math.max(frame.mapW, frame.mapH), chains = long > 1200 ? 2 : 1;
+  for (let c = 0; c < chains; c++) {
+    const hr = r.fork("hotspot", c);
+    const rad = Math.max(least, hr.range(0.02, 0.032) * long), n = 3 + hr.int(4);
+    const ang = hr.range(0, 6.283), step = rad * hr.range(2.2, 3), dx = cos(ang), dy = sin(ang);
+    const x0 = frame.margin + hr.range(0.2, 0.8) * frame.mapW, y0 = frame.margin + hr.range(0.2, 0.8) * frame.mapH;
+    for (let q = 0; q < n; q++) {
+      const at = [x0 + dx * step * q, y0 + dy * step * q];
+      if (!frame.inMap(at[0], at[1])) continue;
+      addCone(g, at, rad * (1 - 0.12 * q), hr.range(0.6, 0.9) * (1 - 0.13 * q), out);
+      cones++;
+    }
+  }
+  return cones;
+}
+
+/**
+ * Plateaus and volcanoes shaped onto the eroded land, after the heights are remapped and before the water is routed
+ * (so rivers and lakes follow them): a plateau lifts its land toward a flat top a little above the hills, its own
+ * relief pressed flat (rivers then cut its edges; it stands clear of the range behind it, and true mountains in it stay); a volcano stands as a cone over whatever is there, a crater at its
+ * top. up: upliftStage's result; h: heights, changed in place (fixed nodes, the GM's kept land, are left).
+ */
+export function landforms(g, h, landMask, fixed, up, mountains) {
+  if (up.plateau) {
+    const top = 0.5 + 0.2 * mountains;
+    for (let i = 0; i < g.n; i++) {
+      // (it falls away to the sea: no plateau top on the shore itself)
+      const p = up.plateau[i] * coastFade(g, up.distSea, i);
+      // (true mountains standing in it, another range's peaks, are left as they are)
+      if (!p || !landMask[i] || (fixed && fixed[i]) || h[i] > top + 0.25) continue;
+      h[i] = (1 - p) * h[i] + p * (top + 0.15 * (h[i] - top));
+    }
+  }
+  for (const c of up.cones ?? []) {
+    // (a volcano stands above the land it rises from, even on a range's crest)
+    let peak = c.ht, nearest = Infinity;
+    for (let i = 0; i < g.n; i++) { const d = len(g.x[i] - c.at[0], g.y[i] - c.at[1]); if (d < nearest) { nearest = d; peak = Math.max(c.ht, h[i] + 0.25); } }
+    for (let i = 0; i < g.n; i++) {
+      if (!landMask[i] || (fixed && fixed[i])) continue;
+      const dx = g.x[i] - c.at[0], dy = g.y[i] - c.at[1];
+      if (dx > 2.5 * c.rad || dx < -2.5 * c.rad || dy > 2.5 * c.rad || dy < -2.5 * c.rad) continue;
+      const q = len(dx, dy) / c.rad;
+      if (q > 2.5) continue;
+      const cone = peak * exp(-q * q) - 0.3 * peak * exp(-(q / 0.22) * (q / 0.22));
+      if (cone > h[i]) h[i] = cone;
+    }
+  }
+}
+
+/**
+ * Lake country, for land.lakes "many": small hollows scoured into the lower land away from the sea (as ice leaves
+ * kettles and scoured basins), which the routing then floods into lakes. About one per 400 land nodes, each a few
+ * nodes across, on the map's land below the mountains and at least four node spacings from the sea. r: a random
+ * stream; h: changed in place; frame: for the map within it.
+ */
+export function scourHollows(g, h, landMask, fixed, distSea, r, frame) {
+  let area = 0, land = 0; for (let i = 0; i < g.n; i++) { area += g.area[i]; if (landMask[i] && frame.inMap(g.x[i], g.y[i])) land++; }
+  const spacing = Math.sqrt(area / g.n);
+  const spots = []; for (let i = 0; i < g.n; i++) if (landMask[i] && frame.inMap(g.x[i], g.y[i]) && !(fixed && fixed[i]) && h[i] < 0.55 && distSea[i] > 4 * spacing) spots.push(i);
+  const count = Math.floor(land / 400);
+  for (let k = 0; k < count && spots.length; k++) {
+    const hr = r.fork("hollow", k);
+    const s = spots[hr.int(spots.length)], rad = spacing * hr.range(1.8, 3.2), depth = hr.range(0.02, 0.05);
+    for (let i = 0; i < g.n; i++) {
+      if (!landMask[i] || (fixed && fixed[i])) continue;
+      const dx = g.x[i] - g.x[s], dy = g.y[i] - g.y[s];
+      if (dx > 2 * rad || dx < -2 * rad || dy > 2 * rad || dy < -2 * rad) continue;
+      const q = len(dx, dy) / rad;
+      if (q < 2) h[i] = Math.max(0.0015, h[i] - depth * exp(-q * q));
+    }
+  }
 }

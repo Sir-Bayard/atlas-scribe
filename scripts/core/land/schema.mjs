@@ -12,6 +12,8 @@ export const LAND_CLIMATES = ["temperate", "cold", "warm", "arid", "tropical", "
 export const LAND_AMOUNTS = ["few", "some", "many"];
 export const LAND_AGES = ["young", "mature", "old"];
 export const LAND_SIDES = ["north", "south", "east", "west", "auto"];
+/** Which side of the equator a map lies on (when land.latitude doesn't say). */
+export const LAND_HEMISPHERES = ["north", "south"];
 /** How invented names sound: English countryside, English places with older-sounding features, or one invented tongue. */
 export const NAME_STYLES = ["english", "mixed", "invented", "custom"];
 /** The intent layers a plan may carry (8-bit gray rasters over the context frame). */
@@ -32,6 +34,7 @@ export function normalizeLand(land = {}) {
   L.lakes = LAND_AMOUNTS.includes(L.lakes) ? L.lakes : "some";
   L.plates ??= "auto";
   L.climate = LAND_CLIMATES.includes(L.climate) ? L.climate : "temperate";
+  L.hemisphere = LAND_HEMISPHERES.includes(L.hemisphere) ? L.hemisphere : "north";
   if (!Number.isFinite(L.wind)) L.wind = "auto";
   L.rain = ["drier", "normal", "wetter"].includes(L.rain) ? L.rain : "normal";
   L.plateaus = L.plateaus === true;
@@ -55,7 +58,7 @@ export function checkLand(raw) {
   const err = (field, message) => out.push({ level: "error", field: `land.${field}`, message });
   const warn = (field, message) => out.push({ level: "warning", field: `land.${field}`, message });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { err("", "land should be an object, like { type: \"continents\" }."); return out; }
-  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "keep"]);
+  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "hemisphere", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "keep"]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
@@ -67,6 +70,7 @@ export function checkLand(raw) {
   if (raw.plates !== undefined && !(raw.plates === "auto" || LAND_AMOUNTS.includes(raw.plates) || (Number.isInteger(raw.plates) && raw.plates >= 2 && raw.plates <= 40))) err("plates", "land.plates must be auto, few, some, many or a whole number from 2 to 40.");
   if (raw.age !== undefined && !LAND_AGES.includes(raw.age)) err("age", `land.age must be ${LAND_AGES.join(", ")}.`);
   if (raw.climate !== undefined && !LAND_CLIMATES.includes(raw.climate)) err("climate", `land.climate must be one of ${LAND_CLIMATES.join(", ")}.`);
+  if (raw.hemisphere !== undefined && !LAND_HEMISPHERES.includes(raw.hemisphere)) warn("hemisphere", "land.hemisphere should be north or south; north is used.");
   if (raw.latitude !== undefined && raw.latitude !== null && !(Array.isArray(raw.latitude) && raw.latitude.length === 2 && raw.latitude.every((v) => Number.isFinite(v) && v >= -90 && v <= 90))) err("latitude", "land.latitude must be [top, bottom] in degrees from -90 to 90, or null.");
   if (raw.wind !== undefined && raw.wind !== "auto" && !(Number.isFinite(raw.wind) && raw.wind >= 0 && raw.wind <= 360)) err("wind", "land.wind must be auto or a heading in degrees (the direction the wind comes from: 270 is a west wind).");
   if (raw.rain !== undefined && !["drier", "normal", "wetter"].includes(raw.rain)) err("rain", "land.rain must be drier, normal or wetter.");
