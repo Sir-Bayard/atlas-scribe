@@ -103,7 +103,7 @@ export function overlaySVG(o) {
     const dark = !(/^#[0-9a-f]{6}$/i.test(l.color) && Math.max(...[1, 3, 5].map((i) => parseInt(l.color.slice(i, i + 2), 16))) / 255 > 0.6);
     return `<g class="as-pv-label-g ${on ? "as-selected" : ""}" data-id="${esc(l.id)}" transform="translate(${l.at[0]} ${l.at[1]}) rotate(${Number(l.angle) || 0})">
         ${on ? `<rect class="as-pv-label-box" data-id="${esc(l.id)}" x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" vector-effect="non-scaling-stroke"></rect>` : ""}
-        <text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "#ffffff" : "#000000"}; stroke-width: ${em * 0.09}; paint-order: stroke; stroke-linejoin: round">${esc(l.text)}</text>
+        <text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "#ffffff" : "#000000"}; stroke-width: ${em * 0.07}; paint-order: stroke; stroke-linejoin: round">${esc(l.text)}</text>
         ${on && !o.drawing ? `<circle class="as-pv-handle as-turn" data-id="${esc(l.id)}" cx="${hw + em * 0.6}" cy="0" r="0.3"></circle>` : ""}
       </g>`;
   }).join("");

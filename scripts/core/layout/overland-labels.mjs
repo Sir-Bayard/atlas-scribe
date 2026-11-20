@@ -26,7 +26,7 @@ const ORDER = ["ocean", "sea", "land", "range", "city", "town", "river", "bigLak
  * plan: the normalized plan; land: the layout's compact land; items: the layout's items so far; keepOut: boxes in map
  * units labels keep off where they can (the compass rose, the scale bar, the key and the cartouche: core/dressing.mjs);
  * hidden: boxes covering the map (the key), so a place under one gets no label. Returns { labels,
- * placeNames: Map(place id -> name) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
+ * placeNames: Map(place id -> name), featureNames: Map(inventory id -> name, for each named feature) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
 export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } = {}) {
@@ -178,6 +178,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
     return [at[0] + dx, at[1] + dy];
   };
   const labels = [];
+  // (each feature's name as made, before capitals: for keepNames)
+  const featureNames = new Map(want.filter((x) => x.q).map((x) => [x.q.id, x.text]));
   for (const L of want.sort((a, b) => rank(a.kind) - rank(b.kind))) {
     const size = em(L.px ?? LABEL_PX[L.kind] ?? 20), text = L.caps ? L.text.toUpperCase() : L.text;
     const w = text.length * size * (L.caps ? 0.66 : 0.5), h = size * 1.2;
@@ -224,7 +226,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
       color: L.place ? placeColor : water ? COLOR.water : COLOR.land, font: L.place ? placeFont : water ? FONT.water : FONT.land, alpha: 1, gen: true,
     });
   }
-  return { labels, placeNames };
+  return { labels, placeNames, featureNames };
 }
 
 /** A river's main stem as a line in map units, from the land's rivers. */

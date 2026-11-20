@@ -60,6 +60,16 @@ const genCache = new WeakMap();
 
 const Base = keyboardWindow(rememberWindow(foundry.applications.api.ApplicationV2, { module: MOD, name: "main" }), { module: MOD, scope: "main", ownKeys: true });
 
+/** The map's size in words: an overland map's cells and miles ("46 by 26 hexes, 240 by 159 mi"), else its squares. */
+function sizeWords(plan, extent) {
+  const r1 = (v) => Math.round(v * 10) / 10;
+  if (plan?.kind === "region" && plan.land && typeof plan.land === "object" && Array.isArray(plan.size?.squares)) {
+    const mpu = (Number(plan.size.ftPerSquare) || 5280) / 5280;
+    return `${plan.size.squares[0]} by ${plan.size.squares[1]} ${plan.output?.grid === "hex" ? "hexes" : "squares"}, ${Math.round(extent[0] * mpu).toLocaleString()} by ${Math.round(extent[1] * mpu).toLocaleString()} mi`;
+  }
+  return `${r1(extent[0])} by ${r1(extent[1])} squares`;
+}
+
 export class AtlasScribeApp extends Base {
   static DEFAULT_OPTIONS = {
     id: "atlas-scribe",
@@ -97,6 +107,8 @@ export class AtlasScribeApp extends Base {
       asDelete: AtlasScribeApp.#onDelete,
       asWallIn: AtlasScribeApp.#onWallIn,
       asPlaceMap: AtlasScribeApp.#onPlaceMap,
+      asPlaceTowns: AtlasScribeApp.#onPlaceTowns,
+      asKeepNames: AtlasScribeApp.#onKeepNames,
       asPlan: AtlasScribeApp.#onPlan,
       asPin: AtlasScribeApp.#onPin,
       asUnder: AtlasScribeApp.#onUnder,
@@ -139,6 +151,7 @@ export class AtlasScribeApp extends Base {
   #zoomBox = null; // the Battle map tool's box, once placed: [x0, y0, x1, y1] in the plan's squares
   #preset = BATTLE.preset; // the Battle map tool's size for a click, in battle squares a side
   #zooming = false; // a battle map is being made from the box
+  #placing = false; // towns and roads being placed, or names kept, on an overland plan
   #boxPreset = false; // the box was placed by a click, at the preset size
   #keys = null; // the keyboard listener while drawing (Enter, Esc, Backspace)
   #presses = null; // while drawing: notes whether the last press was in the window
@@ -299,7 +312,7 @@ export class AtlasScribeApp extends Base {
 
   /** True while anything that holds the job (a draw, or making the scene) is running. */
   get #working() {
-    return this.#busy || this.#publishing || this.#saving || this.#zooming; // a reroll while "Save over a plan?" is up would go unsaved
+    return this.#busy || this.#publishing || this.#saving || this.#zooming || this.#placing; // a reroll while "Save over a plan?" is up would go unsaved
   }
 
   /** True while Make scene or Update scene is painting. */
@@ -449,7 +462,7 @@ export class AtlasScribeApp extends Base {
       </li>`;
     const rows = this.#everything ? this.#everythingRows(feats, row) : feats.map((f) => row(f.id, f.name ?? f.id, f.type === "district" ? `${f.kind} district` : f.kind, f)).join("");
     const notes = (r?.notes ?? []);
-    const time = r ? `${r.squares[0]} by ${r.squares[1]} squares, drawn in ${(r.ms / 1000).toFixed(1)} s` : "";
+    const time = r ? `${sizeWords(this.#plan, r.squares)}, drawn in ${(r.ms / 1000).toFixed(1)} s` : "";
     const problems = this.#host.check(this.#plan).problems;
     const lastScene = this.#sceneNotes?.notes.length ? `<details class="as-pv-notes as-pv-scene-notes"><summary>${esc(this.#sceneNotes.name)}: ${this.#sceneNotes.notes.length} note${this.#sceneNotes.notes.length === 1 ? "" : "s"}</summary><ul>${this.#sceneNotes.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
     const scene = this.#sceneFor();
@@ -1242,6 +1255,41 @@ export class AtlasScribeApp extends Base {
     const drawn = await this.#change(res.plan);
     if (!drawn && this.#selected === res.id) { this.#selected = this.#inspect = null; this.render(); }
     if (drawn) note.info(`AtlasScribe: pinned as ${res.id}. ${gen.kind === "house" ? "It stays as it is when" : "It stays, and the district's other streets follow it, when"} ${this.#nameOf(gen.item.from)} is rerolled; delete it to let the generator have the spot again.`);
+  }
+
+  /** An overland plan: towns and roads placed (or placed again) by the generator, one step Undo takes back. */
+  static async #onPlaceTowns() {
+    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}. Undo takes them back.`);
+  }
+
+  /** An overland plan: the names its map made written into it. */
+  static async #onKeepNames() {
+    await this.#placeJob((plan) => this.#host.keepNames(plan), (res) => res.places + res.features ? `AtlasScribe: kept ${res.places} place names and ${res.features} names of the land in the plan. They stay now when the land changes.` : "AtlasScribe: every name is already in the plan.");
+  }
+
+  /** Runs a job that gives back the plan changed ({ plan, ... }), then shows it as one step; told() says what it did. */
+  async #placeJob(job, told) {
+    const from = this.#plan;
+    if (!from || this.#working || this.#stale) return;
+    this.#placing = true;
+    this.#error = null;
+    this.render();
+    let res = null;
+    try {
+      res = await job(from);
+    } catch (e) {
+      this.#error = e.canceled ? "Stopped." : `${e.message ?? e}`.replace(/^AtlasScribe: /, "");
+    }
+    this.#placing = false;
+    if (!this.rendered) return;
+    // (the plan changed meanwhile: what came back is let go, and changes made in the panel are applied now)
+    if (!res?.plan || this.#plan !== from) {
+      if (this.#queue.length) setTimeout(() => this.#flush(), 0);
+      return this.render();
+    }
+    for (const n of res.notes ?? []) note.warn(`AtlasScribe: ${n?.message ?? n}`);
+    const drawn = await this.#change(res.plan);
+    if (drawn) note.info(told(res));
   }
 
   /** Underlay: with none, pick an image to put under the sketch; with one, its panel (again to close it). */

@@ -9,6 +9,7 @@ import { rerollable } from "../core/seeds.mjs";
 import { TOOLS } from "../core/draw.mjs";
 import { OLD_PROFILES } from "../core/plan.mjs";
 import { cleanFont } from "../core/labels.mjs";
+import { hasMadePlaces } from "../core/land/places.mjs";
 import { esc, labelAttr } from "./util.mjs";
 
 
@@ -225,11 +226,23 @@ export function planHTML(plan, { working = false, fonts = [] } = {}) {
         <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Plan settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
       </header>
+      ${overlandActionsHTML(plan, working)}
       <div class="as-pv-fields">
         ${groupsHTML(main, working, fonts)}
         <details class="as-pv-more" ${scene.some((f) => f.value !== undefined) ? "open" : ""}><summary>Scene</summary>${scene.map((f) => fieldHTML(f, working, fonts)).join("")}</details>
       </div>
     </section>`;
+}
+
+/** An overland plan's own actions in its Plan panel: place (or reroll) its towns and roads, and keep its names. */
+function overlandActionsHTML(plan, working) {
+  if (plan?.kind !== "region" || !plan?.land || typeof plan.land !== "object") return "";
+  const dis = working ? "disabled" : "";
+  const made = hasMadePlaces(plan);
+  return `<div class="as-pv-tools">
+      <button type="button" data-action="asPlaceTowns"${labelAttr(made ? "Place them again: the towns, roads and bridges the generator made and you haven't changed are replaced; any you moved, renamed or placed stay, and the new ones join them" : "Towns, villages, castles, ruins, roads and bridges placed where people would build them; they're kept in the plan, so they stay put")} ${dis}><i class="fa-solid ${made ? "fa-dice" : "fa-city"}" aria-hidden="true"></i> ${made ? "Reroll places" : "Place towns and roads"}</button>
+      <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-signature" aria-hidden="true"></i> Keep the names</button>
+    </div>`;
 }
 
 /**

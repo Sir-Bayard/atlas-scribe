@@ -96,7 +96,8 @@ export function paintKey(ctx, P, { miles = true } = {}) {
   const ink = (a = 1) => `rgba(${P.ink.join(",")},${a})`, paper = (a = 1) => `rgba(${P.paper.join(",")},${a})`;
   const key = keyOf(L, { miles });
   if (!key) return;
-  const u = key.unit, mu = (Math.max(mw, mh) * pp) / 3600; // (the markers' own size, as the map draws them)
+  // (the markers' own size, as the map draws them; on a long, thin map no bigger than the key's rows hold)
+  const u = key.unit, mu = Math.min((Math.max(mw, mh) * pp) / 3600, 0.085 * u * pp);
   g.save();
   g.fillStyle = paper(0.9); g.fillRect(X(key.x), Y(key.y), key.w * pp, key.h * pp);
   g.strokeStyle = ink(0.9); g.lineWidth = Math.max(1, pp * 0.06); g.strokeRect(X(key.x), Y(key.y), key.w * pp, key.h * pp);

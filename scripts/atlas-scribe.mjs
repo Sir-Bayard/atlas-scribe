@@ -670,6 +670,30 @@ const api = {
   },
 
   /**
+   * Towns, villages, castles, ruins, roads and bridges placed on an overland plan's land, in place of the generator's
+   * own the GM hasn't changed (moved, renamed or otherwise edited ones are kept). options: { seed (a new one moves
+   * them), density: few, some or many (the plan's land.towns when left out) }. Returns { plan, added, removed, notes }.
+   */
+  async placeTowns(input, { seed = 1 + Math.floor(Math.random() * 2147483645), density = null } = {}) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    if (plan.kind !== "region" || !plan.land || typeof plan.land !== "object") throw new Error("AtlasScribe: towns and roads are placed on an overland map (a region plan with land)");
+    planOrThrow(plan);
+    return exclusive(() => worker.run("placeTowns", { plan, seed, density }));
+  },
+
+  /** The names an overland plan's map makes, kept in the plan so they stay when the land is made again. Returns { plan, places, features }. */
+  async keepNames(input) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    if (plan.kind !== "region" || !plan.land || typeof plan.land !== "object") throw new Error("AtlasScribe: names are kept on an overland map (a region plan with land)");
+    planOrThrow(plan);
+    return exclusive(() => worker.run("keepNames", { plan }));
+  },
+
+  /**
    * The "as built" summary of a plan, or of the plan a scene was made from ({ scene: id or name }), in Markdown: its
    * size, districts and what each holds, roads, water, walls, squares, parks and landmarks (GM only).
    */
@@ -783,6 +807,8 @@ const host = {
   openArt: () => api.openArt(),
   openFiles: () => api.openFiles(),
   summary: (plan) => api.summary(plan),
+  placeTowns: (plan, options) => api.placeTowns(plan, options),
+  keepNames: (plan) => api.keepNames(plan),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
     try {

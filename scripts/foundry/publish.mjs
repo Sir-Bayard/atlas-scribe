@@ -93,7 +93,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     padding: opts.padding,
     thumb,
     // (a region measured in miles)
-    grid: { type: CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, ...(plan.kind === "region" ? { distance: Number((plan.size.ftPerSquare / 5280).toPrecision(3)), units: "mi" } : { distance: plan.size.ftPerSquare, units: "ft" }), alpha: opts.gridAlpha },
+    grid: { type: plan.output.grid === "hex" && plan.kind === "region" ? hexGridType(width, height, opts.padding, plan.output.pxPerSquare, warnings) : CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, ...(plan.kind === "region" ? { distance: Number((plan.size.ftPerSquare / 5280).toPrecision(3)), units: "mi" } : { distance: plan.size.ftPerSquare, units: "ft" }), alpha: opts.gridAlpha },
     tokenVision: opts.tokenVision,
     fog: { mode: opts.fog ? CONST.FOG_EXPLORATION_MODES.INDIVIDUAL : CONST.FOG_EXPLORATION_MODES.DISABLED },
     environment,
@@ -263,7 +263,9 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   } else if (oldLayers.length) {
     // (kept over a map given by its path: shown or hidden as the plan now says, and said they may be out of date)
     const shown = new Map((layout ? overlandLayers(layout) : []).map((q) => [q.name, q.shown]));
-    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && shown.has(t.flags[MOD].kind) && t.hidden === shown.get(t.flags[MOD].kind)).map((t) => ({ _id: t.id, hidden: !shown.get(t.flags[MOD].kind) }));
+    // (a kind the plan no longer has, as a key turned off, is hidden)
+    const want = (t) => shown.get(t.flags[MOD].kind) ?? false;
+    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && t.hidden === want(t)).map((t) => ({ _id: t.id, hidden: !want(t) }));
     if (fix.length) await sceneById(sceneId).updateEmbeddedDocuments("Tile", fix).catch(() => {});
     warnings.push("The places, roads and dressing over the map were kept from its last render (they come only with a map rendered for the scene), so they may be out of date.");
   } else if (layout && overlandLayers(layout).length) warnings.push("This map's places, roads and dressing weren't placed: they come only with a map rendered for the scene, and the map's image is the bare land.");
@@ -439,6 +441,28 @@ async function createAll(sceneId, type, data) {
     for (let k = 0; k < made.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments(type, made.slice(k, k + BATCH)).catch(() => {});
     throw e;
   }
+}
+
+/**
+ * A hex map's grid type: flat-topped hexes in columns (one size flat to flat), with whichever offset puts Foundry's
+ * hexes on the map's own once the scene's padding is added: the map's first column has its first hex at the top
+ * (core/land/units.mjs), so the type is the one whose hex there is centered where the map's is.
+ */
+export function hexGridType(width, height, padding, size, warnings = []) {
+  const T = CONST.GRID_TYPES, HG = globalThis.foundry?.grid?.HexagonalGrid;
+  if (!HG) return T.HEXODDQ ?? 4;
+  for (const type of [T.HEXODDQ, T.HEXEVENQ]) {
+    const g = new HG({ size, columns: true, even: type === T.HEXEVENQ });
+    const d = g.calculateDimensions(width, height, padding);
+    // (the map's first two hexes, in its first and second columns, centered as the map draws them)
+    const ok = [[0.5 / Math.sqrt(3) * 2, 0.5], [0.5 / Math.sqrt(3) * 2 + Math.sqrt(3) / 2, 1]].every(([u, v]) => {
+      const p = { x: d.x + u * size, y: d.y + v * size }, c = g.getCenterPoint(g.getOffset(p));
+      return Math.abs(c.x - p.x) < 1 && Math.abs(c.y - p.y) < 1;
+    });
+    if (ok) return type;
+  }
+  warnings.push("The scene's hex grid may sit off the map's hexes (Foundry placed the map where neither hex layout lines up); its padding may help.");
+  return T.HEXODDQ;
 }
 
 /** Each layer's place in the stack over the ground: the places, the dressing over them, the key (the title tile is 200). */

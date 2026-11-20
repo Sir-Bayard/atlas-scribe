@@ -284,18 +284,23 @@ async function paint({ layout, art = {}, scale = {}, tileSize = 2560, quality = 
     // Layers (an overland map's places and roads): each a see-through image as big as the map (in parts, as the ground
     // is, past the largest image), laid on the thumbnail when the plan shows it, saved and let go
     const overlays = [];
-    for (const [k, { name, shown }] of layerList.entries()) {
+    for (const [k, { name, shown, box }] of layerList.entries()) {
       const p0 = 0.945 + (0.005 * k) / layerList.length;
       const c = paintAll(0, p0, p0 + 0.005 / layerList.length, name);
       if (shown) th.g.drawImage(c, th.ox, th.oy, W * th.k, H * th.k);
       const pieces = [];
-      if (partSide > 0 && Math.max(W, H) > partSide) {
+      // (a layer covering only part of the map, as an overland map's key, is saved as just that part)
+      const ext = layout.size?.squares ?? [W, H], ppx = W / Math.max(1e-9, ext[0]);
+      if (Array.isArray(box) && box.length === 4 && box.every(Number.isFinite)) {
+        const x = Math.max(0, Math.floor(box[0] * ppx)), y = Math.max(0, Math.floor(box[1] * ppx));
+        pieces.push([x, y, Math.max(1, Math.min(W, Math.ceil(box[2] * ppx)) - x), Math.max(1, Math.min(H, Math.ceil(box[3] * ppx)) - y)]);
+      } else if (partSide > 0 && Math.max(W, H) > partSide) {
         const nx = Math.ceil(W / partSide), ny = Math.ceil(H / partSide), pw = Math.ceil(W / nx), ph = Math.ceil(H / ny);
         for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) pieces.push([i * pw, j * ph, Math.min(pw, W - i * pw), Math.min(ph, H - j * ph)]);
       } else pieces.push([0, 0, W, H]);
       for (const [q, [x, y, w, h]] of pieces.entries()) {
         let piece = c;
-        if (pieces.length > 1) { piece = new OffscreenCanvas(w, h); canvases.add(piece); piece.getContext("2d").drawImage(c, x, y, w, h, 0, 0, w, h); }
+        if (pieces.length > 1 || w !== W || h !== H) { piece = new OffscreenCanvas(w, h); canvases.add(piece); piece.getContext("2d").drawImage(c, x, y, w, h, 0, 0, w, h); }
         overlays.push({ name: pieces.length > 1 ? `${name}-${q + 1}` : name, kind: name, x, y, width: w, height: h, blob: await piece.convertToBlob({ type: "image/webp", quality: Math.max(quality, 0.9) }) });
         if (piece !== c) { free(piece); canvases.delete(piece); }
       }

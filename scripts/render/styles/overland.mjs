@@ -280,11 +280,14 @@ function smoothImage(R, L, seed) {
  * or hidden there), when the map has places: its places, roads and crossings (shown when the plan shows them), then
  * its dressing (frame, compass rose, scale bar), so the frame stays over road ends and the compass over any mark, then
  * its key when it has one (with the scale bar), so the GM can hide it and see what's under it.
- * [{ name, shown }].
+ * [{ name, shown, box? }] (box: [x0, y0, x1, y1] in map units, the part of the map a layer covers; else all of it).
  */
+// (the key's box with a little room, in map units: its layer is saved as that much of the map, not all of it)
+const keyBox = (layout) => { const k = keyOf(layout); if (!k) return null; const p = k.unit; return [Math.max(0, k.x - p), Math.max(0, k.y - p), k.x + k.w + p, k.y + k.h + p]; };
+
 export function layers(layout) {
   if (!layout.overland || !(layout.items ?? []).some((i) => i.kind === "place" || i.kind === "way" || i.kind === "crossing")) return [];
-  return [{ name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyOf(layout) ? [{ name: "legend", shown: true }] : [])];
+  return [{ name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
 }
 
 /**

@@ -10,6 +10,8 @@ import { nameLabelsOf, cleanFont } from "./labels.mjs";
 import { CHARACTERS, CHARACTER_LABELS, characterOf } from "./character.mjs";
 import { BLOCKS } from "./layout/anchors.mjs";
 import { NAME_STYLES } from "./land/schema.mjs";
+import { SCALES, gridFor, extentOf, MILE_FT } from "./land/units.mjs";
+import { untouched, stillNeeded } from "./land/places.mjs";
 
 /** The characters that have a centerpiece. */
 const ANCHORED = new Set(Object.keys(BLOCKS));
@@ -123,6 +125,7 @@ export const FIELD_TEXT = {
   "area.wear": { label: "Wear", names: { some: "cracks, rubble, moss, puddles", none: "none" } },
   "place.name": { label: "Name" },
   "place.seed": { label: "Its map's seed", help: "The seed Make its map gives the place's own map; else one from the region's", more: true },
+  "*.made": { hidden: true }, // (the generator's fingerprint on a place, road or crossing it made: land/places.mjs)
   "place.site": { hidden: true }, // (on generated land: what its own map should know, from Quick Start)
   "terrain.class": { names: { range: "a range", peak: "a peak", land: "land", sea: "sea", basin: "a basin", plateau: "a plateau", lowland: "lowland", hardness: "hard or soft rock", climate: "wetter or warmer", biome: "a biome", lock: "kept as it is" } },
   "terrain.height": { label: "Height", help: "How high it rises: 1 is high mountains" },
@@ -205,8 +208,11 @@ export const PLAN_FIELDS = [
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
+  { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size; towns and roads the generator placed go (place them again), and what you placed keeps its spot on the map" },
+  { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
+  { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place towns and roads puts down" },
   { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound. A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
-  { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it" },
+  { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it. It's a tile of its own in the scene; the places it covers have no label" },
   { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label color" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
@@ -217,7 +223,7 @@ export const PLAN_FIELDS = [
   { path: "seed", label: "Seed", kind: "number", step: 1, whole: true, help: "Changing it redraws everything that has no seed of its own", more: true },
   { path: "output.format", label: "Image file", kind: "enum", values: ["auto", "webp", "jpeg"], names: { auto: "WebP, JPEG when big", webp: "WebP (smaller)", jpeg: "JPEG (saves faster)" }, more: true, help: "A big map saves several times faster as JPEG" },
   { path: "output.quality", label: "Image quality", kind: "number", min: 0.5, max: 1, step: 0.01, more: true, help: "From 0.5 to 1: higher keeps more detail and makes a bigger file" },
-  { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own" },
+  { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own (on an overland map the names it makes follow Label look; with map ink, its place names take this color)" },
   { path: "output.scene.labelFont", label: "Label font", kind: "font", more: true, help: "Every label's font, unless a label sets its own" },
   { path: "output.scene.name", label: "Scene name", kind: "string", group: "scene" },
   { path: "output.scene.weather", label: "Weather", kind: "string", group: "scene", help: "A Foundry weather effect (snow, rain, fog...), or none; left empty, a battle map in winter snows" },
@@ -422,9 +428,41 @@ export function planFieldsOf(plan) {
   const full = normalize(plan);
   const region = plan?.kind === "region";
   const overland = region && plan?.land && typeof plan.land === "object";
-  const fields = (!region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && p.path !== "output.dressing")
-    .map((p) => (p.path === "size.ftPerSquare" ? { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" } : p))).filter((p) => !p.overland || overland);
-  return fields.map((p) => ({ ...p, name: p.path, value: getPath(plan, p.path), auto: getPath(full, p.path) ?? null }));
+  const fields = (!region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && !(p.path === "output.dressing" && !overland) && !(overland && p.path === "ground"))
+    .map((p) => (p.path === "output.dressing" && overland ? { ...p, help: "A frame, a compass rose, a scale bar and the key painted on the map, and the map's name on a hidden tile" } : p))
+    .map((p) => (p.path !== "size.ftPerSquare" ? p : overland ? { ...p, min: MILE_FT, max: 120 * MILE_FT, help: "A cell's width: 31680 is 6 miles (a kingdom), 211200 is 40 (a continent). Changing it changes the map's miles; Scale sets both" } : { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" }))).filter((p) => !p.overland || overland);
+  return fields.map((p) => ({ ...p, name: p.path, value: p.path === "@scale" ? scaleOf(plan) : getPath(plan, p.path), auto: p.path === "@scale" ? "custom" : getPath(full, p.path) ?? p.auto ?? null }));
+}
+
+/** Which scale preset an overland plan is at (its size and cells as the preset makes them), or undefined. */
+function scaleOf(plan) {
+  const grid = plan?.output?.grid === "hex" ? "hex" : "square", sq = plan?.size?.squares;
+  return Object.keys(SCALES).find((k) => { const s = SCALES[k]; const g = gridFor(s.miles, s.cell, grid); return plan?.size?.ftPerSquare === s.cell * MILE_FT && Array.isArray(sq) && sq[0] === g[0] && sq[1] === g[1]; });
+}
+
+/**
+ * A feature's place, path and shape scaled (to keep a GM's feature where it was on a resized map): every [x, y], a
+ * rect's corners, an ellipse's middle and radii, a circle's middle and radius (by the mean of the two scales), and a
+ * label's offset from what it follows.
+ */
+function scaleFeature(f, sx, sy) {
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const pt = (v) => (Array.isArray(v) && v.length === 2 && v.every(Number.isFinite) ? [r2(v[0] * sx), r2(v[1] * sy)] : Array.isArray(v) ? v.map(pt) : v);
+  const shape = (s) => {
+    if (Array.isArray(s)) return pt(s);
+    if (!isObj(s)) return s;
+    const o = { ...s };
+    if (Array.isArray(o.rect) && o.rect.length === 4) o.rect = [r2(o.rect[0] * sx), r2(o.rect[1] * sy), r2(o.rect[2] * sx), r2(o.rect[3] * sy)];
+    if (Array.isArray(o.ellipse) && o.ellipse.length === 4) o.ellipse = [r2(o.ellipse[0] * sx), r2(o.ellipse[1] * sy), r2(o.ellipse[2] * sx), r2(o.ellipse[3] * sy)];
+    if (Array.isArray(o.circle) && o.circle.length === 3) o.circle = [r2(o.circle[0] * sx), r2(o.circle[1] * sy), r2(o.circle[2] * Math.sqrt(sx * sy))];
+    return o;
+  };
+  const out = { ...f };
+  if (out.at !== undefined) out.at = pt(out.at);
+  if (out.path !== undefined) out.path = pt(out.path);
+  if (out.offset !== undefined) out.offset = pt(out.offset);
+  if (out.shape !== undefined) out.shape = shape(out.shape);
+  return out;
 }
 
 /** The plan with one plan-wide setting changed. Returns { plan } or { error }. */
@@ -435,6 +473,31 @@ export function setPlanField(plan, path, raw) {
   if (error) return { error };
   const keys = path.split(".");
   const next = structuredClone(plan);
+  // An overland map's scale: its size and cells from the preset; the generator's places go, the GM's keep their spot
+  if (path === "@scale") {
+    if (value === undefined) return { error: "Pick a scale; the map's own size is set with Width, Height and Feet a square." };
+    const s = SCALES[value], grid = next.output?.grid === "hex" ? "hex" : "square";
+    const [w0, h0] = extentOf(plan);
+    next.size = isObj(next.size) ? next.size : {};
+    next.size.squares = gridFor(s.miles, s.cell, grid);
+    next.size.ftPerSquare = s.cell * MILE_FT;
+    const [w1, h1] = extentOf(next);
+    const need = stillNeeded(next.features ?? []);
+    next.features = (next.features ?? []).filter((f) => !untouched(f) || need.has(f.id)).map((f) => scaleFeature(f, w1 / w0, h1 / h0));
+    // (names kept for the land's features name other features on new land)
+    if (isObj(next.land) && isObj(next.land.names)) next.land.names = {};
+    return { plan: next };
+  }
+  // An overland map's grid: its cells are the same size, so it keeps its miles
+  if (path === "output.grid" && next.land && typeof next.land === "object") {
+    next.output = isObj(next.output) ? next.output : {};
+    if (value === undefined) delete next.output.grid; else next.output.grid = value;
+    // (the rows stay; the columns are worked out again for the map's width, so switching back and forth is the same map)
+    const [w0] = extentOf(plan), rows = normalize(plan).size.squares[1];
+    next.size = isObj(next.size) ? next.size : {};
+    next.size.squares = [next.output.grid === "hex" ? Math.max(1, Math.round((w0 - 2 / Math.sqrt(3)) / (Math.sqrt(3) / 2) + 1)) : Math.max(1, Math.round(w0)), rows];
+    return { plan: next };
+  }
   // The map's size is two whole numbers, both always written
   if (path.startsWith("size.squares.")) {
     if (value === undefined || !Number.isInteger(value)) return { error: `${field.label} should be a whole number of squares.` };

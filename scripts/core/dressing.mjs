@@ -12,7 +12,7 @@ export const KEY_ENTRIES = [
   { kind: "place", cls: "temple", text: "Temple" }, { kind: "place", cls: "inn", text: "Inn" }, { kind: "place", cls: "mine", text: "Mine" },
   { kind: "place", cls: "ruin", text: "Ruin" },
   { kind: "way", cls: "highway", text: "Highway" }, { kind: "way", cls: "street", text: "Road" }, { kind: "way", cls: "track", text: "Track" },
-  { kind: "crossing", cls: "bridge", text: "Bridge" }, { kind: "crossing", cls: "ford", text: "Ford" },
+  { kind: "crossing", cls: "bridge", text: "Bridge" }, { kind: "crossing", cls: "footbridge", text: "Footbridge" }, { kind: "crossing", cls: "ford", text: "Ford" },
 ];
 // (sizes in the dressing's unit: letters, a row, the symbol's column, the padding, the gap between the columns, the
 // heading, the scale bar's part at the foot, and the inset from the map's edge)
@@ -24,6 +24,16 @@ const KEY = { font: 1.55, row: 2.9, mark: 4.2, pad: 1.6, gap: 2.2, head: 3.6, sc
  * has its key or its places turned off, or has no places or roads to show.
  */
 export function keyOf(L, { miles = true } = {}) {
+  // (worked out once a layout: the painter asks for it for every tile)
+  const memo = KEY_MEMO.get(L);
+  if (memo && miles in memo) return memo[miles];
+  const key = keyFor(L, miles);
+  if (L && typeof L === "object") KEY_MEMO.set(L, { ...(memo ?? {}), [miles]: key });
+  return key;
+}
+const KEY_MEMO = new WeakMap();
+
+function keyFor(L, miles) {
   if (!L.dressing || !L.overland || L.legend === false || L.places === false || !(L.size?.squares?.[0] > 0)) return null;
   const items = L.items ?? [];
   const has = (kind, cls) => items.some((i) => i.kind === kind && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls)));

@@ -49,11 +49,11 @@ export function spacingsOf(longMi) {
 
 /**
  * Places, roads and crossings for an overland plan. land: the layout's compact land (layout.land); plan: the
- * normalized plan (its size, seed and any places it already has). density: few, some or many. Returns { features,
+ * normalized plan (its size, seed and any places it already has). density: few, some or many; reserve: ids not to give out. Returns { features,
  * notes, stats }: features are new plan features in map units (places with `site`, roads, crossings), ids `city-1`,
  * `road-1`... clear of the plan's own ids.
  */
-export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1 } = {}) {
+export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, reserve = [] } = {}) {
   const { n, x, y, indptr, indices, h, landMask, lake, rain, temp, F, threshold: T } = land;
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu;
@@ -412,7 +412,9 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1 } 
   const tol = (0.35 * step) / mpu, edge = 0.25;
   const givenAt = new Map(places.filter((p) => p.given).map((p) => [p.node, p.at]));
   const features = [], roadsAt = new Map();
-  const taken = new Set((plan?.features ?? []).map((q) => q?.id).filter(Boolean));
+  // (ids in use: the plan's, and any reserved, as the ids of what a reroll took out, so nothing that pointed at one
+  // finds a new place under it)
+  const taken = new Set([...(plan?.features ?? []).map((q) => q?.id), ...reserve].filter(Boolean));
   const freeId = (base, k) => { let id; do id = `${base}-${++k.n}`; while (taken.has(id)); return id; };
   const nRoad = { n: 0 };
   for (const L of lines) {

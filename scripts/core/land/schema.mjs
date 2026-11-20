@@ -38,6 +38,7 @@ export function normalizeLand(land = {}) {
   L.zones = Array.isArray(L.zones) ? L.zones : [];
   L.names = L.names && typeof L.names === "object" && !Array.isArray(L.names) ? L.names : {};
   L.nameStyle = NAME_STYLES.includes(L.nameStyle) ? L.nameStyle : "english";
+  L.towns = LAND_AMOUNTS.includes(L.towns) ? L.towns : "some";
   L.layers ??= null;
   L.keep ??= null;
   return L;
@@ -49,7 +50,7 @@ export function checkLand(raw) {
   const err = (field, message) => out.push({ level: "error", field: `land.${field}`, message });
   const warn = (field, message) => out.push({ level: "warning", field: `land.${field}`, message });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { err("", "land should be an object, like { type: \"continents\" }."); return out; }
-  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "nameStyle", "keep"]);
+  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "nameStyle", "towns", "keep"]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
@@ -66,6 +67,7 @@ export function checkLand(raw) {
   if (raw.rain !== undefined && !["drier", "normal", "wetter"].includes(raw.rain)) err("rain", "land.rain must be drier, normal or wetter.");
   if (raw.nameStyle !== undefined && !NAME_STYLES.includes(raw.nameStyle)) warn("nameStyle", `land.nameStyle should be one of ${NAME_STYLES.join(", ")}; English names are used.`);
   if (raw.names !== undefined && (typeof raw.names !== "object" || raw.names === null || Array.isArray(raw.names))) warn("names", "land.names should be { feature id: name }; it's left out.");
+  if (raw.towns !== undefined && !LAND_AMOUNTS.includes(raw.towns)) warn("towns", "land.towns should be few, some or many; some are placed.");
   for (const k of ["rivers", "lakes"]) if (raw[k] !== undefined && !LAND_AMOUNTS.includes(raw[k])) err(k, `land.${k} must be few, some or many.`);
   for (const k of ["plateaus", "volcanic"]) if (raw[k] !== undefined && typeof raw[k] !== "boolean") err(k, `land.${k} must be true or false.`);
   if (raw.seed !== undefined && raw.seed !== null && !Number.isInteger(raw.seed)) err("seed", "land.seed must be a whole number, or null for the plan's seed.");

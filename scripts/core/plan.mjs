@@ -66,6 +66,8 @@ export const TYPES = {
       width: num(null, { unit: "ft", min: 1, max: 200, byClass: { highway: 30, street: 20, lane: 15, track: 10, path: 5 } }),
       surface: oneOf(SURFACES, "dirt"),
       ruts: bool(false),
+      // (placed by the generator on an overland map: land/places.mjs)
+      made: { kind: "data", default: null },
       straight: bool(false), // drawn straight between its points; else it curves smoothly through them
       // (on a battle map: the road runs in a cut this many feet below the ground either side, a holloway or sunken
       // lane, its banks a cliff past 5 ft; its faces lie outside its width)
@@ -134,6 +136,8 @@ export const TYPES = {
       length: num(null, { unit: "ft", min: 1, max: 2000, byClass: { bridge: 60, footbridge: 40, ford: 50 } }),
       width: num(null, { unit: "ft", min: 1, max: 200, byClass: { bridge: 20, footbridge: 10, ford: 50 } }),
       frozen: bool(false),
+      // (placed by the generator on an overland map: land/places.mjs)
+      made: { kind: "data", default: null },
     },
   },
   square: {
@@ -291,7 +295,7 @@ export const TYPES = {
     // biome, ground), from Quick Start
     geometry: "point",
     classes: ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"],
-    fields: { name: str(), seed: num(null, { min: 1, integer: true }), site: { kind: "data", default: null } },
+    fields: { name: str(), seed: num(null, { min: 1, integer: true }), site: { kind: "data", default: null }, made: { kind: "data", default: null } },
   },
   terrain: {
     // Painted intent on an overland map (a region plan with land): a range's spine along a path, a peak at a point,
