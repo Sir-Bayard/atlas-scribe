@@ -389,6 +389,8 @@ export const SCENE = {
   gridAlpha: num(0.1, { min: 0, max: 1 }),
   labelColor: str("#13202e"),
   labelFont: str("Signika"),
+  // (an overland map's made names: white with a black outline, or map ink, dark with a light outline)
+  labelLook: oneOf(["bold", "ink"], null),
 };
 
 /** A pinned building's details as the generator writes them: join { start?, end?, inset, flush? }, cut [[a, b, t]...], chimneyAt { u, v, variant }. */
@@ -480,7 +482,7 @@ export function normalize(plan) {
   // overland map)
   p.output.dressing ??= p.kind === "region" && isObj(p.land);
   // (an overland map's places, roads and crossings: shown, on a layer of their own the scene can hide)
-  if (p.kind === "region" && isObj(p.land)) p.output.places ??= true;
+  if (p.kind === "region" && isObj(p.land)) { p.output.places ??= true; p.output.legend ??= true; }
   if (!isObj(p.output.scene)) p.output.scene = {};
   // (a battle map is for tokens to see by: its walls, doors and windows block their sight, and what a token has seen
   // stays on the map, dimmed, rather than going black behind it: fog exploration)

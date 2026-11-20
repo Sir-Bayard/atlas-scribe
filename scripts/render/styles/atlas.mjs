@@ -30,27 +30,13 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
   // roads, lowest class first, so a highway runs over a road where they meet
   for (const w of ways) {
     if (!near(w.line)) continue;
-    if (w.class === "highway") {
-      g.strokeStyle = "rgba(30,20,16,0.9)"; g.lineWidth = 7 * u; line(w.line); g.stroke();
-      g.strokeStyle = rgba(HIGH); g.lineWidth = 4 * u; line(w.line); g.stroke();
-    } else if (w.class === "track" || w.class === "path") {
-      g.setLineDash([7 * u, 5 * u]); g.strokeStyle = "rgba(40,32,26,0.85)"; g.lineWidth = Math.max(1, 1.8 * u); line(w.line); g.stroke(); g.setLineDash([]);
-    } else {
-      g.strokeStyle = "rgba(250,240,220,0.6)"; g.lineWidth = 5.5 * u; line(w.line); g.stroke();
-      g.strokeStyle = rgba(RED, 0.95); g.lineWidth = 3 * u; line(w.line); g.stroke();
-    }
+    strokeRoad(g, w.class, u, () => line(w.line));
   }
   // crossings: at the road's crossing with the river as drawn, nearest the crossing's own point
   for (const { c, at } of crossings) {
     if (!near([[at.x, at.y]])) continue;
-    g.save(); g.translate(X(at.x), Y(at.y)); g.rotate(at.angle); g.strokeStyle = INK;
-    const w = (at.cls === "highway" ? 7 : at.cls === "track" ? 4 : 5) * u;
-    if (c.class === "ford") {
-      g.fillStyle = INK; for (const s of [-1, 1]) { g.beginPath(); g.arc(0, s * (w + 2.5 * u), 1.6 * u, 0, 2 * Math.PI); g.fill(); }
-    } else {
-      const L = 9 * u; g.lineWidth = Math.max(1, 2 * u);
-      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(-L, s * (w + 3 * u)); g.quadraticCurveTo(0, s * w * 0.6, L, s * (w + 3 * u)); g.stroke(); }
-    }
+    g.save(); g.translate(X(at.x), Y(at.y)); g.rotate(at.angle);
+    crossingMark(g, c.class, at.cls, u);
     g.restore();
   }
   // places, smallest first so a city's mark is on top
@@ -61,6 +47,31 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
     placeMark(g, X(p.x), Y(p.y), p.class, u);
   }
   g.restore();
+}
+
+/** Strokes a road of a class: path() builds the path (called once a pass). Shared with the map's key. */
+export function strokeRoad(g, cls, u, path) {
+  if (cls === "highway") {
+    g.strokeStyle = "rgba(30,20,16,0.9)"; g.lineWidth = 7 * u; path(); g.stroke();
+    g.strokeStyle = rgba(HIGH); g.lineWidth = 4 * u; path(); g.stroke();
+  } else if (cls === "track" || cls === "path") {
+    g.setLineDash([7 * u, 5 * u]); g.strokeStyle = "rgba(40,32,26,0.85)"; g.lineWidth = Math.max(1, 1.8 * u); path(); g.stroke(); g.setLineDash([]);
+  } else {
+    g.strokeStyle = "rgba(250,240,220,0.6)"; g.lineWidth = 5.5 * u; path(); g.stroke();
+    g.strokeStyle = rgba(RED, 0.95); g.lineWidth = 3 * u; path(); g.stroke();
+  }
+}
+
+/** A crossing's mark at the origin, along x: )( for a bridge, two dots for a ford, beside a road of class road. */
+export function crossingMark(g, cls, road, u) {
+  g.strokeStyle = INK;
+  const w = (road === "highway" ? 7 : road === "track" ? 4 : 5) * u;
+  if (cls === "ford") {
+    g.fillStyle = INK; for (const s of [-1, 1]) { g.beginPath(); g.arc(0, s * (w + 2.5 * u), 1.6 * u, 0, 2 * Math.PI); g.fill(); }
+  } else {
+    const L = 9 * u; g.lineWidth = Math.max(1, 2 * u);
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(-L, s * (w + 3 * u)); g.quadraticCurveTo(0, s * w * 0.6, L, s * (w + 3 * u)); g.stroke(); }
+  }
 }
 
 // (each layout's road lines and crossing spots, worked out once for all its tiles)

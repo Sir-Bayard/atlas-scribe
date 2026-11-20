@@ -6,7 +6,8 @@
  * marks, places, roads, the furniture, paper grain) is drawn at full size in each tile.
  */
 import { PALETTE } from "./palette.mjs";
-import { dress } from "./furniture.mjs";
+import { dress, paintKey } from "./furniture.mjs";
+import { keyOf } from "../../core/dressing.mjs";
 import { drawAtlas } from "./atlas.mjs";
 import { landRasters, boxBlur, fbm, chaikin, distance } from "../../core/land/raster.mjs";
 import { refineLand } from "../../core/land/refine.mjs";
@@ -277,12 +278,13 @@ function smoothImage(R, L, seed) {
 /**
  * The layers a map is saved in besides its ground, each a see-through image (a tile over the land in the scene, shown
  * or hidden there), when the map has places: its places, roads and crossings (shown when the plan shows them), then
- * its dressing (frame, compass rose, scale bar), so the frame stays over road ends and the compass over any mark.
+ * its dressing (frame, compass rose, scale bar), so the frame stays over road ends and the compass over any mark, then
+ * its key when it has one (with the scale bar), so the GM can hide it and see what's under it.
  * [{ name, shown }].
  */
 export function layers(layout) {
   if (!layout.overland || !(layout.items ?? []).some((i) => i.kind === "place" || i.kind === "way" || i.kind === "crossing")) return [];
-  return [{ name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : [])];
+  return [{ name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyOf(layout) ? [{ name: "legend", shown: true }] : [])];
 }
 
 /**
@@ -299,7 +301,12 @@ export function paint(ctx) {
     return;
   }
   if (layer === "dressing") {
-    if (L.dressing) dress(ctx, { ...PALETTE }, { miles: true });
+    if (L.dressing) dress(ctx, { ...PALETTE }, { miles: true, key: false });
+    progress(1, "Done");
+    return;
+  }
+  if (layer === "legend") {
+    if (L.dressing) paintKey(ctx, { ...PALETTE }, { miles: true });
     progress(1, "Done");
     return;
   }

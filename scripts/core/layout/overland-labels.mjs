@@ -15,25 +15,29 @@ export const LABEL_PX = { city: 34, town: 27, village: 19, hamlet: 17, castle: 2
 // (each mark's half size, in the same pixels as the markers: the label sits beside it)
 const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6 };
 const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river"]);
-const COLOR = { water: "#1d4a6e", land: "#4b3621" };
+// (each look's colors: Foundry outlines a light label in black and a dark one in white, so "bold" is white with a black
+// outline and "ink" dark with a light one)
+const LOOKS = { bold: { water: "#e8f3ff", land: "#fff8ec", place: "#ffffff" }, ink: { water: "#1d4a6e", land: "#4b3621", place: null } };
 const FONT = { water: "Amiri", land: "Vollkorn" };
 // (the order labels are placed in: the first placed keeps its spot, later ones step around it)
 const ORDER = ["ocean", "sea", "land", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "forest", "desert", "marsh", "island", "village", "cape", "ruin", "tower", "temple", "inn", "mine", "hamlet", "place"];
 
 /**
  * plan: the normalized plan; land: the layout's compact land; items: the layout's items so far; keepOut: boxes in map
- * units labels keep off where they can (the compass rose, the scale bar and the cartouche: core/dressing.mjs). Returns { labels,
+ * units labels keep off where they can (the compass rose, the scale bar, the key and the cartouche: core/dressing.mjs);
+ * hidden: boxes covering the map (the key), so a place under one gets no label. Returns { labels,
  * placeNames: Map(place id -> name) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
-export function overlandLabels(plan, land, items, { keepOut = [] } = {}) {
+export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } = {}) {
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu, side = Math.max(MW, MH);
   const em = (px) => (px * side) / 3600;
   const U = (x, y) => [(x - M) / mpu, (y - M) / mpu];
   const inside = (u, v, pad = 0) => u >= pad && v >= pad && u <= MW - pad && v <= MH - pad;
   const scene = plan.output?.scene ?? {};
-  const placeColor = /^#[0-9a-f]{6}$/i.test(scene.labelColor ?? "") ? scene.labelColor : "#13202e";
+  const COLOR = LOOKS[scene.labelLook] ?? LOOKS.bold;
+  const placeColor = COLOR.place ?? (/^#[0-9a-f]{6}$/i.test(scene.labelColor ?? "") ? scene.labelColor : "#13202e");
   const placeFont = scene.labelFont && scene.labelFont !== "Signika" ? scene.labelFont : FONT.land;
   const nm = namer(plan.land?.nameStyle, Number.isFinite(plan.land?.seed) ? plan.land.seed : plan.seed);
   const given = plan.land?.names && typeof plan.land.names === "object" ? plan.land.names : {};
@@ -49,9 +53,9 @@ export function overlandLabels(plan, land, items, { keepOut = [] } = {}) {
 
   // ---- what's to be named ----
   const want = [];
-  // (a place past the map's edge keeps its name but gets no label)
+  // (a place past the map's edge, or under the key, keeps its name but gets no label)
   const places = items.filter((i) => i.kind === "place");
-  const shown = (p) => inside(p.x, p.y);
+  const shown = (p) => inside(p.x, p.y) && !hidden.some((b) => p.x > b[0] && p.x < b[2] && p.y > b[1] && p.y < b[3]);
   const placeNames = new Map();
   const rank = (c) => (ORDER.indexOf(c) < 0 ? ORDER.length : ORDER.indexOf(c));
   for (const p of places.slice().sort((a, b) => rank(a.class) - rank(b.class) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
@@ -130,13 +134,15 @@ export function overlandLabels(plan, land, items, { keepOut = [] } = {}) {
     let start = nearest(q.x, q.y);
     if (start < 0 || !isW(start)) { start = -1; if (lakeWater) for (let i = 0; i < land.n; i++) if (isW(i)) { start = i; break; } }
     if (start < 0) return [];
-    // (how open: its distance to the shore, or to the map's edge where that's nearer, so a sea's name doesn't run off
-    // to a corner of open ocean)
+    // (how open: its distance to the shore, or to the map's edge or the dressing where that's nearer, so a sea's name
+    // doesn't run off to a corner of open ocean)
     const seen = new Uint8Array(land.n), st = [start], pool = []; seen[start] = 1;
     while (st.length) {
       const i = st.pop();
       const [u, v] = U(land.x[i], land.y[i]);
-      if (inside(u, v, pad)) pool.push([i, Math.min(d[i], Math.min(u, v, MW - u, MH - v) * mpu)]);
+      // (the key, compass and cartouche count as shore too, so a sea's name keeps clear of them)
+      const toHard = hard.reduce((m, b) => Math.min(m, Math.hypot(Math.max(b[0] - u, 0, u - b[2]), Math.max(b[1] - v, 0, v - b[3]))), Infinity);
+      if (inside(u, v, pad)) pool.push([i, Math.min(d[i], Math.min(u, v, MW - u, MH - v) * mpu, toHard * mpu)]);
       for (let k = land.indptr[i]; k < land.indptr[i + 1]; k++) { const j = land.indices[k]; if (!seen[j] && isW(j)) { seen[j] = 1; st.push(j); } }
     }
     pool.sort((a, b) => b[1] - a[1] || a[0] - b[0]);

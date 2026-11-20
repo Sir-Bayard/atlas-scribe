@@ -441,8 +441,8 @@ async function createAll(sceneId, type, data) {
   }
 }
 
-/** Each layer's place in the stack over the ground: the places, the dressing over them (the title tile is 200). */
-const LAYER_SORT = { places: 100, dressing: 110 };
+/** Each layer's place in the stack over the ground: the places, the dressing over them, the key (the title tile is 200). */
+const LAYER_SORT = { places: 100, dressing: 110, legend: 120 };
 
 /**
  * A layer (render's { path, kind, x, y, width, height }, px from the map's corner) as Tile data: on the map, under the

@@ -6,7 +6,7 @@ import { LAYOUT_VERSION } from "./index.mjs";
 import { REGION_WIDTHS } from "./region.mjs";
 import { labelsOf } from "../labels.mjs";
 import { overlandLabels } from "./overland-labels.mjs";
-import { dressingBoxes } from "../dressing.mjs";
+import { dressingBoxes, keyOf } from "../dressing.mjs";
 import { generateLand } from "../land/index.mjs";
 import { extentOf } from "../land/units.mjs";
 import { sample } from "../land/field.mjs";
@@ -112,8 +112,10 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   // places so they keep off the marks, and off the dressing's corners)
   const title = typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null;
   const size = { squares: [W, H], ftPerSquare: plan.size.ftPerSquare, grid: plan.output?.grid === "hex" ? "hex" : "square", cells: plan.size.squares };
-  const keepOut = dressingBoxes({ size, cornerLand, title, dressing: plan.output?.dressing === true }, { miles: true, pad: Math.min(W, H) / 100 });
-  const named = overlandLabels(plan, land, items, { keepOut });
+  const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false };
+  const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
+  const keyBox = keyOf(shape);
+  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [] });
   for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
   // places standing in water and roads running through it (a GM's edit, or land that changed under them)
   { const fr = L.frame;
@@ -137,7 +139,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     atlasScribe: LAYOUT_VERSION, plan: plan.id ?? null, kind: "region", overland: true, seed: plan.seed,
     size,
     season: plan.season ?? "summer", style: "painted",
-    title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, sun: plan.sun,
+    title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...labelsOf(plan), ...named.labels], notes, cornerLand, land,
   };
 }

@@ -99,10 +99,11 @@ export function overlaySVG(o) {
   // dot to turn it by
   const labels = (o.labels ?? []).filter((l) => Array.isArray(l.at)).map((l) => {
     const { em, hw, hh } = labelBox(l), on = l.id === o.selected;
-    const dark = /^#[0-9a-f]{6}$/i.test(l.color) && [1, 3, 5].reduce((a, i) => a + parseInt(l.color.slice(i, i + 2), 16), 0) < 384;
+    // (outlined as Foundry outlines a drawing's text: black around a light color, white around a dark one)
+    const dark = !(/^#[0-9a-f]{6}$/i.test(l.color) && Math.max(...[1, 3, 5].map((i) => parseInt(l.color.slice(i, i + 2), 16))) / 255 > 0.6);
     return `<g class="as-pv-label-g ${on ? "as-selected" : ""}" data-id="${esc(l.id)}" transform="translate(${l.at[0]} ${l.at[1]}) rotate(${Number(l.angle) || 0})">
         ${on ? `<rect class="as-pv-label-box" data-id="${esc(l.id)}" x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" vector-effect="non-scaling-stroke"></rect>` : ""}
-        <text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.7)"}; stroke-width: ${em * 0.1}">${esc(l.text)}</text>
+        <text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "#ffffff" : "#000000"}; stroke-width: ${em * 0.09}; paint-order: stroke; stroke-linejoin: round">${esc(l.text)}</text>
         ${on && !o.drawing ? `<circle class="as-pv-handle as-turn" data-id="${esc(l.id)}" cx="${hw + em * 0.6}" cy="0" r="0.3"></circle>` : ""}
       </g>`;
   }).join("");
