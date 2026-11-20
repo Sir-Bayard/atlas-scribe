@@ -65,9 +65,12 @@ export const underStyle = (rect, px, opacity) => `left:${rect[0] * px}px;top:${r
 const pts = (list) => list.map((p) => p.join(",")).join(" ");
 const sel = (id, selected) => (id === selected ? "as-selected" : "");
 
+/** Whether the window lets the GM pick a label to move or edit: a plan's own, not a name made for an overland map. */
+export const pickableLabel = (l) => !String(l?.id ?? "").startsWith("@");
+
 /** A label's half width and half height in squares, guessed from its text before the browser has measured it. */
 export function labelBox(l) {
-  const em = LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
+  const em = Number.isFinite(l.em) && l.em > 0 ? l.em : LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
   return { em, hw: (String(l.text).length * em * 0.55) / 2 + em * 0.15, hh: em * 0.62 };
 }
 

@@ -107,7 +107,9 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
       out.push(`- ${named(f)}${what && what !== named(f) ? ` (${what})` : ""}${walls ? `: ${walls}` : ""}`);
     }
   }
-  const labels = layout?.labels ?? [];
+  const labels = (layout?.labels ?? []).filter((l) => !l.gen), made = (layout?.labels ?? []).filter((l) => l.gen);
   if (labels.length) out.push("", "## Labels", "", ...labels.map((l) => `- ${l.text}`));
+  // (an overland map's names, its places' and its land's, as a gazetteer)
+  if (made.length) out.push("", "## Names on the map", "", ...made.map((l) => `- ${l.id.startsWith("@land:") ? l.text.replace(/^THE /, "the ").replace(/\b([A-Z])([A-Z']+)\b/g, (m, a, b) => a + b.toLowerCase()).replace(/ Of /g, " of ") : l.text}`));
   return out.join("\n") + "\n";
 }

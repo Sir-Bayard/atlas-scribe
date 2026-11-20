@@ -9,6 +9,7 @@ import { TYPES, SURFACES, SEASONS, STYLES, ROOFS, OLD_PROFILES, RUNNING, BODIES,
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
 import { CHARACTERS, CHARACTER_LABELS, characterOf } from "./character.mjs";
 import { BLOCKS } from "./layout/anchors.mjs";
+import { NAME_STYLES } from "./land/schema.mjs";
 
 /** The characters that have a centerpiece. */
 const ANCHORED = new Set(Object.keys(BLOCKS));
@@ -204,6 +205,7 @@ export const PLAN_FIELDS = [
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
+  { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound. A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },

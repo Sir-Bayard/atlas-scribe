@@ -2,7 +2,7 @@
  * Map furniture: the frame, compass rose and scale bar a dressed map is painted with, shared by the illustrated and
  * the overland painted styles (the map's name is a tile of its own: title.mjs).
  */
-import { cornersOf } from "./title.mjs";
+import { compassOf, scaleBarOf } from "../../core/dressing.mjs";
 
 /**
  * Map dressing: a ruled frame, a compass rose and a scale bar (in feet, or miles on an overland map), each in the
@@ -15,13 +15,10 @@ export function dress(ctx, P, { miles = false } = {}) {
   if (!mw || !mh) return;
   const ft = L.size?.ftPerSquare ?? 25;
   const ink = (a = 1) => `rgba(${P.ink.join(",")},${a})`, paper = (a = 1) => `rgba(${P.paper.join(",")},${a})`;
-  const { unit, cw, ch, corners } = cornersOf(L);
-  const spot = (c) => ({ x: c.cx + cw / 2, y: c.cy + ch / 2 });
+  const unit = Math.min(mw, mh) / 100;
 
   // The compass rose in the emptiest corner
-  { const c0 = spot(corners[0]), R = unit * 6.5;
-    // (drawn in a little toward the middle, so its N clears the frame)
-    const x = c0.x + (mw / 2 - c0.x) * 0.12, y = c0.y + (mh / 2 - c0.y) * 0.12 + unit * 1.2;
+  { const { x, y, R } = compassOf(L);
     g.save(); g.translate(X(x), Y(y));
     const r = R * pp;
     g.fillStyle = paper(0.55); g.beginPath(); g.arc(0, 0, r * 1.05, 0, 2 * Math.PI); g.fill();
@@ -42,12 +39,7 @@ export function dress(ctx, P, { miles = false } = {}) {
     g.restore(); }
 
   // The scale bar: about a fifth of the map across, in a round number of feet, five parts
-  { const c = corners[1];
-    // (the biggest round length up to a fifth of the map that fits its corner)
-    const per = miles ? ft / 5280 : ft; // (feet or miles a square)
-    const want = Math.min((mw * per) / 5, (cw - unit * 5) * per), mag = 10 ** Math.floor(Math.log10(want)), nice = [10, 5, 2.5, 2, 1].map((m) => m * mag).find((v) => v <= want) ?? mag;
-    const len = nice / per, h = unit * 0.9;
-    const x = Math.min(Math.max(spot(c).x, len / 2 + unit * 4.5), mw - len / 2 - unit * 4.5), y = spot(c).y, left = x - len / 2;
+  { const { x, y, left, len, h, nice, per } = scaleBarOf(L, { miles });
     g.save();
     g.fillStyle = paper(0.6); g.fillRect(X(left - unit * 2), Y(y - unit * 3.6), (len + unit * 4) * pp, unit * 6 * pp);
     g.strokeStyle = ink(0.9); g.lineWidth = Math.max(1, pp * 0.04);

@@ -21,7 +21,7 @@ import { briefPlan } from "../core/brief.mjs";
 import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
 import { esc, note, FP, MOD, labelAttr } from "./util.mjs";
-import { overlaySVG, draftSVG, battleBoxSVG, underStyle } from "./overlay.mjs";
+import { overlaySVG, draftSVG, battleBoxSVG, underStyle, pickableLabel } from "./overlay.mjs";
 import { regionPlan } from "../core/quick-region.mjs";
 import { quickDialog, openDialog, importDialog, confirmSaveOver, confirmDrop, confirmDraft, summaryDialog } from "./plan-files-ui.mjs";
 import { rememberWindow } from "../kit/window-memory.mjs";
@@ -391,7 +391,7 @@ export class AtlasScribeApp extends Base {
    */
   #labelBoxes() {
     return (this.#result?.labels ?? []).map((l) => {
-      const em = LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
+      const em = Number.isFinite(l.em) && l.em > 0 ? l.em : LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
       const t = this.element?.querySelector(`text.as-pv-label[data-id="${CSS.escape(l.id)}"]`);
       let w = 0;
       try { w = t?.getComputedTextLength?.() ?? 0; } catch { w = 0; }
@@ -816,7 +816,8 @@ export class AtlasScribeApp extends Base {
     // A label, by the box its text takes (with at least 8 pixels around it, however far out the map is zoomed). A
     // click on the text itself picks the label over a well or cart under it; around the text, the well or cart wins
     const near = 8 / px;
-    const inLabel = (pad) => this.#labelBoxes().find((l) => {
+    // (a name the map made for a place or feature isn't a plan label to move: it's picked through what it names)
+    const inLabel = (pad) => this.#labelBoxes().filter(pickableLabel).find((l) => {
       const a = (-l.angle * Math.PI) / 180, dx = at[0] - l.at[0], dy = at[1] - l.at[1];
       const x = dx * Math.cos(a) - dy * Math.sin(a), y = dx * Math.sin(a) + dy * Math.cos(a); // into the label's frame
       return Math.abs(x) <= Math.max(l.hw, pad) && Math.abs(y) <= Math.max(l.hh, pad);

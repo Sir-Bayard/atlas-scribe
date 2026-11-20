@@ -5,6 +5,8 @@
 import { LAYOUT_VERSION } from "./index.mjs";
 import { REGION_WIDTHS } from "./region.mjs";
 import { labelsOf } from "../labels.mjs";
+import { overlandLabels } from "./overland-labels.mjs";
+import { dressingBoxes } from "../dressing.mjs";
 import { generateLand } from "../land/index.mjs";
 import { extentOf } from "../land/units.mjs";
 import { sample } from "../land/field.mjs";
@@ -63,10 +65,10 @@ export function compactLand(L) {
 let lastLand = null;
 /** Lets go of the land kept for the next layout (a worker's forget, or a layout of another kind of map). */
 export function forgetLand() { lastLand = null; }
-/** What the land is made from: its settings (not the names given its features), seed, size, grid, picture scale, painted terrain and water. */
+/** What the land is made from: its settings (not the names given its features or their style), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, ...land } = plan.land ?? {};
-  return JSON.stringify([land, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water"))]);
+  const { names, nameStyle, ...landIn } = plan.land ?? {};
+  return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water"))]);
 }
 
 /** Lays out an overland plan (normalized). Returns the layout. */
@@ -89,23 +91,6 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null });
     else if (f.type === "crossing" && Array.isArray(f.at)) items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], angle: f.angle ?? 0 });
   }
-  // places standing in water and roads running through it (a GM's edit, or land that changed under them)
-  { const fr = L.frame;
-    const wetAt = (u, v) => { const i = L.grid.nearest(u * fr.mpu + fr.margin, v * fr.mpu + fr.margin); return i >= 0 && (!L.landMask[i] || L.lake[i] === 1); };
-    const named = (it) => `"${it.name ?? it.id}"`;
-    for (const it of items) {
-      if (it.kind === "place" && wetAt(it.x, it.y)) notes.push({ level: "warning", id: it.id, message: `${named(it)} stands in the water; move it onto the land.` });
-      if (it.kind !== "way") continue;
-      // (samples about every 2 miles, at most every half unit; over 10 miles of water in a row is more than a bridge)
-      const gap = Math.min(0.5, 2 / fr.mpu), most = Math.max(3, Math.ceil(10 / (gap * fr.mpu)));
-      let run = 0, worst = 0;
-      for (let m = 1; m < it.path.length; m++) {
-        const [ax, ay] = it.path[m - 1], [bx, by] = it.path[m], steps = Math.max(1, Math.ceil(Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) / gap));
-        for (let s = m === 1 ? 0 : 1; s <= steps; s++) { const t = s / steps; run = wetAt(ax + (bx - ax) * t, ay + (by - ay) * t) ? run + 1 : 0; worst = Math.max(worst, run); }
-      }
-      if (worst >= most) notes.push({ level: "warning", id: it.id, message: `${named(it)} runs a long way through open water (more than a bridge would cross); it's drawn as it is.` });
-    }
-  }
   // (how much of each corner is land, for the dressing: nw, ne, sw, se)
   const cornerLand = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([cx, cy]) => {
     const f = L.frame, x0 = f.margin + cx * f.mapW * 0.76, y0 = f.margin + cy * f.mapH * 0.76;
@@ -123,12 +108,36 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     }
     return b ? Math.round((a / b + 0.12 * marks + (0.6 * road) / Math.max(1e-9, Math.min(cw, ch))) * 1000) / 1000 : 0;
   });
+  // names and labels: every place and the land's features, the plan's own names first (hidden labels, placed after the
+  // places so they keep off the marks, and off the dressing's corners)
+  const title = typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null;
+  const size = { squares: [W, H], ftPerSquare: plan.size.ftPerSquare, grid: plan.output?.grid === "hex" ? "hex" : "square", cells: plan.size.squares };
+  const keepOut = dressingBoxes({ size, cornerLand, title, dressing: plan.output?.dressing === true }, { miles: true, pad: Math.min(W, H) / 100 });
+  const named = overlandLabels(plan, land, items, { keepOut });
+  for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
+  // places standing in water and roads running through it (a GM's edit, or land that changed under them)
+  { const fr = L.frame;
+    const wetAt = (u, v) => { const i = L.grid.nearest(u * fr.mpu + fr.margin, v * fr.mpu + fr.margin); return i >= 0 && (!L.landMask[i] || L.lake[i] === 1); };
+    const named = (it) => `"${it.name ?? it.id}"`;
+    for (const it of items) {
+      if (it.kind === "place" && wetAt(it.x, it.y)) notes.push({ level: "warning", id: it.id, message: `${named(it)} stands in the water; move it onto the land.` });
+      if (it.kind !== "way") continue;
+      // (samples about every 2 miles, at most every half unit; over 10 miles of water in a row is more than a bridge)
+      const gap = Math.min(0.5, 2 / fr.mpu), most = Math.max(3, Math.ceil(10 / (gap * fr.mpu)));
+      let run = 0, worst = 0;
+      for (let m = 1; m < it.path.length; m++) {
+        const [ax, ay] = it.path[m - 1], [bx, by] = it.path[m], steps = Math.max(1, Math.ceil(Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) / gap));
+        for (let s = m === 1 ? 0 : 1; s <= steps; s++) { const t = s / steps; run = wetAt(ax + (bx - ax) * t, ay + (by - ay) * t) ? run + 1 : 0; worst = Math.max(worst, run); }
+      }
+      if (worst >= most) notes.push({ level: "warning", id: it.id, message: `${named(it)} runs a long way through open water (more than a bridge would cross); it's drawn as it is.` });
+    }
+  }
   progress(1, "Done");
   return {
     atlasScribe: LAYOUT_VERSION, plan: plan.id ?? null, kind: "region", overland: true, seed: plan.seed,
-    size: { squares: [W, H], ftPerSquare: plan.size.ftPerSquare, grid: plan.output?.grid === "hex" ? "hex" : "square", cells: plan.size.squares },
+    size,
     season: plan.season ?? "summer", style: "painted",
-    title: typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, sun: plan.sun,
-    pxPerSquare: plan.output.pxPerSquare, items, labels: labelsOf(plan), notes, cornerLand, land,
+    title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, sun: plan.sun,
+    pxPerSquare: plan.output.pxPerSquare, items, labels: [...labelsOf(plan), ...named.labels], notes, cornerLand, land,
   };
 }

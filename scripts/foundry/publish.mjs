@@ -918,8 +918,9 @@ async function labelDrawings(plan, scene, warnings, layout) {
   const { sceneX, sceneY } = scene.dimensions;
   const ctx = new OffscreenCanvas(8, 8).getContext("2d");
   const out = [], fonts = new Set();
-  for (const l of [...labelsOf(plan), ...useLabelsOf(plan, layout)]) {
-    const size = Math.min(FONT.max, Math.max(FONT.min, Math.round(pps * (LABEL_SIZES[l.size] ?? LABEL_SIZES.normal))));
+  // (an overland map's labels come from its layout: the plan's, then its places' and features' names)
+  for (const l of layout?.overland ? layout.labels ?? [] : [...labelsOf(plan), ...useLabelsOf(plan, layout)]) {
+    const size = Math.min(FONT.max, Math.max(FONT.min, Math.round(pps * (Number.isFinite(l.em) && l.em > 0 ? l.em : LABEL_SIZES[l.size] ?? LABEL_SIZES.normal))));
     try {
       await document.fonts.load(`${size}px "${l.font}"`);
     } catch {

@@ -11,6 +11,8 @@ export const LAND_CLIMATES = ["temperate", "cold", "warm", "arid", "tropical", "
 export const LAND_AMOUNTS = ["few", "some", "many"];
 export const LAND_AGES = ["young", "mature", "old"];
 export const LAND_SIDES = ["north", "south", "east", "west", "auto"];
+/** How invented names sound: English countryside, English places with older-sounding features, or one invented tongue. */
+export const NAME_STYLES = ["english", "mixed", "invented"];
 /** The intent layers a plan may carry (8-bit gray rasters over the context frame). */
 export const LAYER_NAMES = ["relief", "rock", "water", "climateWet", "climateWarm", "cover", "zones", "lock"];
 /** Painted terrain classes: range is drawn along a path, peak at a point, the rest as shapes. */
@@ -34,7 +36,8 @@ export function normalizeLand(land = {}) {
   L.plateaus = L.plateaus === true;
   L.volcanic = L.volcanic === true;
   L.zones = Array.isArray(L.zones) ? L.zones : [];
-  L.names = L.names && typeof L.names === "object" ? L.names : {};
+  L.names = L.names && typeof L.names === "object" && !Array.isArray(L.names) ? L.names : {};
+  L.nameStyle = NAME_STYLES.includes(L.nameStyle) ? L.nameStyle : "english";
   L.layers ??= null;
   L.keep ??= null;
   return L;
@@ -46,7 +49,7 @@ export function checkLand(raw) {
   const err = (field, message) => out.push({ level: "error", field: `land.${field}`, message });
   const warn = (field, message) => out.push({ level: "warning", field: `land.${field}`, message });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { err("", "land should be an object, like { type: \"continents\" }."); return out; }
-  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keep"]);
+  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "nameStyle", "keep"]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
@@ -61,6 +64,8 @@ export function checkLand(raw) {
   if (raw.latitude !== undefined && raw.latitude !== null && !(Array.isArray(raw.latitude) && raw.latitude.length === 2 && raw.latitude.every((v) => Number.isFinite(v) && v >= -90 && v <= 90))) err("latitude", "land.latitude must be [top, bottom] in degrees from -90 to 90, or null.");
   if (raw.wind !== undefined && raw.wind !== "auto" && !(Number.isFinite(raw.wind) && raw.wind >= 0 && raw.wind <= 360)) err("wind", "land.wind must be auto or a heading in degrees (the direction the wind comes from: 270 is a west wind).");
   if (raw.rain !== undefined && !["drier", "normal", "wetter"].includes(raw.rain)) err("rain", "land.rain must be drier, normal or wetter.");
+  if (raw.nameStyle !== undefined && !NAME_STYLES.includes(raw.nameStyle)) warn("nameStyle", `land.nameStyle should be one of ${NAME_STYLES.join(", ")}; English names are used.`);
+  if (raw.names !== undefined && (typeof raw.names !== "object" || raw.names === null || Array.isArray(raw.names))) warn("names", "land.names should be { feature id: name }; it's left out.");
   for (const k of ["rivers", "lakes"]) if (raw[k] !== undefined && !LAND_AMOUNTS.includes(raw[k])) err(k, `land.${k} must be few, some or many.`);
   for (const k of ["plateaus", "volcanic"]) if (raw[k] !== undefined && typeof raw[k] !== "boolean") err(k, `land.${k} must be true or false.`);
   if (raw.seed !== undefined && raw.seed !== null && !Number.isInteger(raw.seed)) err("seed", "land.seed must be a whole number, or null for the plan's seed.");

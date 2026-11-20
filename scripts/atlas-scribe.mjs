@@ -161,7 +161,7 @@ async function publishChecked(plan, image, { scene, force, raw = null }, check) 
         layout = (await worker.run("layout", { plan }, { onProgress: (p, l) => bar.update(from * p, `Laying out for the labels: ${l ?? ""}`.trim()) })).layout;
       } catch (e) {
         if (e.canceled) throw e;
-        lost = `The notable buildings' hidden labels were left off: laying the map out again for them failed (${e.message}).`;
+        lost = plan.land ? `The map's names (its hidden labels) were left off: laying the map out again for them failed (${e.message}).` : `The notable buildings' hidden labels were left off: laying the map out again for them failed (${e.message}).`;
       }
     }
     check();
