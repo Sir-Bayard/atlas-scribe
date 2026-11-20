@@ -12,6 +12,7 @@
  *   - castle: a curtain wall with towers and a gatehouse, a keep and buildings around its yard (layout/castle.mjs
  *     builds their floors and the wall walk); a fort, a castle or a great castle by size.
  */
+import { titleCase } from "./titles.mjs";
 import { rng, hash128 } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
 import { CHARACTERS } from "./character.mjs";
@@ -265,7 +266,7 @@ export function briefPlan(input = {}) {
       const edge = wander(r, top ? depth : H - depth, W, Math.max(0.5, Math.min(2.2, (room - 3.5 - depth) / 2)));
       cliffEdge = edge;
       const shape = top ? [[-2, -2], [W + 2, -2], ...edge.slice().reverse()] : [[-2, H + 2], ...edge, [W + 2, H + 2]];
-      features.push({ id: "cliff", type: "height", name: "The cliff", height: 5 * r.int(3) + 15, edge: "cliff", shape: shape.map(pt) });
+      features.push({ id: "cliff", type: "height", name: "The Cliff", height: 5 * r.int(3) + 15, edge: "cliff", shape: shape.map(pt) });
       taken.push({ path: edge, half: 2.5 });
       const mid = top ? depth * 0.5 : H - depth * 0.5;
       for (let x = 0; x <= W; x += 2) taken.push({ at: [x, mid], r: depth * 0.5 + 0.5 });
@@ -703,14 +704,14 @@ function innName(r) {
   return `The ${r.pick(["Wayside", "Gilded", "Crooked", "Weary", "Laughing", "Silver", "Red", "Drowsy", "Wandering", "Painted"])} ${r.pick(["Lantern", "Stag", "Kettle", "Goose", "Anchor", "Barrel", "Fox", "Wheel", "Hound", "Plow"])}`;
 }
 
-/** A plan's name from its brief: "Forest cliff", the building's name (an inn's made up) or "Roadside smithy", "Village street", "Caravan camp". */
+/** A plan's name from its brief: "Forest Cliff", the building's name (an inn's made up) or "Roadside Smithy", "Village Street", "Caravan Camp". */
 function defaultName(b, site) {
   const feat = ["cliff", "stream", "pond", "hollow", "rise"].find((f) => b.features.includes(f));
-  if (b.site === "wilderness") return `${BRIEF_LABELS.ground[b.ground]}${feat ? ` ${feat}` : ""}`;
-  if (b.site === "roadside") return site?.name || `Roadside ${BRIEF_LABELS.use[b.building.use].toLowerCase()}`;
-  if (b.site === "street") return `${BRIEF_LABELS.place[b.street.place]} street`;
-  if (b.site === "castle") return BRIEF_LABELS.castleSize[b.size].replace(/ \(.*$/, "");
+  if (b.site === "wilderness") return titleCase(`${BRIEF_LABELS.ground[b.ground]}${feat ? ` ${feat}` : ""}`);
+  if (b.site === "roadside") return site?.name || titleCase(`Roadside ${BRIEF_LABELS.use[b.building.use].toLowerCase()}`);
+  if (b.site === "street") return titleCase(`${BRIEF_LABELS.place[b.street.place]} street`);
+  if (b.site === "castle") return titleCase(BRIEF_LABELS.castleSize[b.size].replace(/ \(.*$/, ""));
   if (b.site === "cave") return b.underground.openness === "open" ? "Caverns" : "Cave";
   if (b.site === "dungeon") return "Dungeon";
-  return `${BRIEF_LABELS.camp[b.camp.kind]} camp`;
+  return titleCase(`${BRIEF_LABELS.camp[b.camp.kind]} camp`);
 }

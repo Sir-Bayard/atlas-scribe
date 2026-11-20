@@ -11,7 +11,7 @@ export const CHARACTERS = ["homes", "market", "merchants", "crafts", "docks", "n
 /** What the window calls each. */
 export const CHARACTER_LABELS = {
   homes: "Homes", market: "Market", merchants: "Merchants", crafts: "Crafts", docks: "Docks", nobles: "Nobles",
-  temple: "Temple", poor: "Poor quarter", garrison: "Garrison",
+  temple: "Temple", poor: "Poor Quarter", garrison: "Garrison",
 };
 
 /**

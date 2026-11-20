@@ -65,7 +65,7 @@ export function millsAndCemetery(ctx) {
       ctx.cemetery = shape;
     }
     if (ctx.cemetery) {
-      features.push({ id: "cemetery", type: "area", class: "cemetery", name: "The cemetery", shape: ctx.cemetery });
+      features.push({ id: "cemetery", type: "area", class: "cemetery", name: "The Cemetery", shape: ctx.cemetery });
       millKeep.push({ poly: ctx.cemetery }); // (the farms and woods keep off it)
     } else if (has.cemetery) (ctx.notes ??= []).push("No room was found for the cemetery asked for, by a road just past the houses, so there's none.");
   }

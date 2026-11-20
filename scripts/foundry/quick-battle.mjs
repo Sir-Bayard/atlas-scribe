@@ -6,28 +6,31 @@
  */
 import { BRIEF, BRIEF_LABELS, SITE_LACKS, normalizeBrief } from "../core/brief.mjs";
 import { readDescription } from "../core/describe.mjs";
+import { titleCase } from "../core/titles.mjs";
 import { esc } from "./util.mjs";
 
+// (a chip that repeats words the GM wrote, a name or a list of rooms, is shown as written; the rest in title case)
+const FREE_TEXT = new Set(["name", "building.name", "building.rooms", "building.upstairs"]);
 // (every field's name begins b-: the Settlement tab shares the form)
-const select = (name, title, key, value) => `<div class="form-group"><label for="as-qb-${name}">${title}</label><select id="as-qb-${name}" name="b-${name}">${BRIEF[key].map((v) => `<option value="${v}" ${v === value ? "selected" : ""}>${esc(BRIEF_LABELS[key][v])}</option>`).join("")}</select></div>`;
+const select = (name, title, key, value) => `<div class="form-group"><label for="as-qb-${name}">${title}</label><select id="as-qb-${name}" name="b-${name}">${BRIEF[key].map((v) => `<option value="${v}" ${v === value ? "selected" : ""}>${esc(titleCase(BRIEF_LABELS[key][v]))}</option>`).join("")}</select></div>`;
 
 /** The tab's HTML, its form at the defaults. */
 export function battleTabHTML() {
   const b = normalizeBrief({});
   return `<section class="as-qs-battle" data-tab="battle" id="as-qs-panel-battle" role="tabpanel" aria-labelledby="as-qs-tab-battle" hidden>
-    <div class="form-group stacked"><label for="as-qb-describe">Describe it (optional)</label><textarea id="as-qb-describe" name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk; a fort with roofed towers in winter..."></textarea></div>
+    <div class="form-group stacked"><label for="as-qb-describe">Describe It (Optional)</label><textarea id="as-qb-describe" name="b-describe" rows="3" placeholder="A roadside inn at night in spring, with a stage and a kitchen; a wilderness map on a cliff, littered with trees, stumps and logs; a caravan camp by a road at dusk; a fort with roofed towers in winter..."></textarea></div>
     <div class="as-qs-chips" aria-live="polite"></div>
     <h4>Site</h4>
     <div class="as-qs-two">
       ${select("site", "Site", "site", b.site)}${select("size", "Size", "size", b.size)}
-      ${select("season", "Season", "season", b.season)}${select("time", "Time of day", "time", b.time)}
+      ${select("season", "Season", "season", b.season)}${select("time", "Time of Day", "time", b.time)}
       ${select("weather", "Weather", "weather", b.weather)}${select("ground", "Ground", "ground", b.ground)}
     </div>
-    <div class="form-group"><label id="as-qb-features">Features</label><div class="as-qs-features" role="group" aria-labelledby="as-qb-features">${BRIEF.features.map((f) => `<label><input type="checkbox" name="b-f-${f}" ${b.features.includes(f) ? "checked" : ""}> ${esc(BRIEF_LABELS.features[f])}<span class="as-why"></span></label>`).join("")}</div></div>
+    <div class="form-group"><label id="as-qb-features">Features</label><div class="as-qs-features" role="group" aria-labelledby="as-qb-features">${BRIEF.features.map((f) => `<label><input type="checkbox" name="b-f-${f}" ${b.features.includes(f) ? "checked" : ""}> ${esc(titleCase(BRIEF_LABELS.features[f]))}<span class="as-why"></span></label>`).join("")}</div></div>
     <h4>Scatter</h4>
     <div class="as-qs-two">
-      ${select("trees", "Trees", "trees", b.trees)}${select("litter", "Stumps and logs", "litter", b.litter)}
-      ${select("rocks", "Rocks", "rocks", b.rocks)}${select("brush", "Bushes and ferns", "brush", b.brush)}
+      ${select("trees", "Trees", "trees", b.trees)}${select("litter", "Stumps and Logs", "litter", b.litter)}
+      ${select("rocks", "Rocks", "rocks", b.rocks)}${select("brush", "Bushes and Ferns", "brush", b.brush)}
     </div>
     <div data-site="roadside" hidden>
       <h4>Building</h4>
@@ -35,11 +38,11 @@ export function battleTabHTML() {
       <div class="form-group stacked"><label for="as-qb-rooms">Rooms</label><input type="text" id="as-qb-rooms" name="b-rooms" placeholder="From its use if empty (common room with a stage, kitchen, two bedrooms)"></div>
       <div class="form-group"><label for="as-qb-bname">Name</label><input type="text" id="as-qb-bname" name="b-bname" placeholder="Made up for an inn if empty"></div>
       <div class="as-qs-two">
-        <div class="form-group"><label for="as-qb-floors">Floors above</label><select id="as-qb-floors" name="b-floors"><option value="">By its use</option><option value="0">None</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></div>
-        <div class="form-group"><label for="as-qb-cellar">Cellar</label><select id="as-qb-cellar" name="b-cellar"><option value="">By its use</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+        <div class="form-group"><label for="as-qb-floors">Floors Above</label><select id="as-qb-floors" name="b-floors"><option value="">By Its Use</option><option value="0">None</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></div>
+        <div class="form-group"><label for="as-qb-cellar">Cellar</label><select id="as-qb-cellar" name="b-cellar"><option value="">By Its Use</option><option value="yes">Yes</option><option value="no">No</option></select></div>
       </div>
-      <div class="form-group stacked"><label for="as-qb-upstairs">Upstairs rooms</label><input type="text" id="as-qb-upstairs" name="b-upstairs" placeholder="By its use if empty (an inn's guest rooms off a corridor: 7 bedrooms)"></div>
-      <div class="form-group stacked"><label for="as-qb-crooms">Cellar rooms</label><input type="text" id="as-qb-crooms" name="b-crooms" placeholder="By its use if empty (cellar, storeroom)"></div>
+      <div class="form-group stacked"><label for="as-qb-upstairs">Upstairs Rooms</label><input type="text" id="as-qb-upstairs" name="b-upstairs" placeholder="By its use if empty (an inn's guest rooms off a corridor: 7 bedrooms)"></div>
+      <div class="form-group stacked"><label for="as-qb-crooms">Cellar Rooms</label><input type="text" id="as-qb-crooms" name="b-crooms" placeholder="By its use if empty (cellar, storeroom)"></div>
     </div>
     <div data-site="street" hidden>
       <h4>Street</h4>
@@ -52,7 +55,7 @@ export function battleTabHTML() {
     <div data-site="cave" hidden>
       <h4>Cave</h4>
       <p class="hint">Solid rock, its passages and chambers carved out, the floor worn with cracks, rubble, moss and puddles.</p>
-      <div class="as-qs-two">${select("openness", "Open ground", "openness", b.underground.openness)}</div>
+      <div class="as-qs-two">${select("openness", "Open Ground", "openness", b.underground.openness)}</div>
     </div>
     <div data-site="dungeon" hidden>
       <h4>Dungeon</h4>
@@ -62,7 +65,7 @@ export function battleTabHTML() {
     <div data-site="castle" hidden>
       <h4>Castle</h4>
       <p class="hint">A curtain wall with a walk along its top, towers and a gatehouse with floors, a keep and its yard's buildings, each floor a level of the scene. Its size above is the castle's.</p>
-      <div class="as-qs-two">${select("towers", "Tower tops", "towers", b.castle.towers)}${select("moat", "Moat", "moat", b.castle.moat)}</div>
+      <div class="as-qs-two">${select("towers", "Tower Tops", "towers", b.castle.towers)}${select("moat", "Moat", "moat", b.castle.moat)}</div>
     </div>
   </section>`;
 }
@@ -172,9 +175,9 @@ export function wireBattleTab(root) {
     showSite(root);
     chips.innerHTML = [
       kept.length || read.later.length || read.skipped.length || read.unknown.length ? `<div class="hint">What it understood (each also set in the form below; × takes it out):</div>` : "",
-      ...kept.map((c) => `<span class="as-qs-chip" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(c.label)} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip-text="Take this out">×</button></span>`),
-      ...(read.later ?? []).map((l) => `<span class="as-qs-chip as-later">${esc(l.label)}</span>`),
-      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" role="note" aria-label="${esc(`${k.label}: left out. ${k.why}`)}" data-tooltip-text="${esc(k.why)}">${esc(k.label)}: left out</span>`),
+      ...kept.map((c) => `<span class="as-qs-chip" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(FREE_TEXT.has(c.key) ? c.label : titleCase(c.label))} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip-text="Take this out">×</button></span>`),
+      ...(read.later ?? []).map((l) => `<span class="as-qs-chip as-later">${esc(titleCase(l.label))}</span>`),
+      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" role="note" aria-label="${esc(`${k.label}: left out. ${k.why}`)}" data-tooltip-text="${esc(k.why)}">${esc(titleCase(k.label))}: Left Out</span>`),
       ...read.unknown.map((w) => `<span class="as-qs-chip as-unknown" data-tooltip-text="Not understood: left out">${esc(w)}</span>`),
     ].join("");
   };

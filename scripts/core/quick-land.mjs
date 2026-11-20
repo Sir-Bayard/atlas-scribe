@@ -129,10 +129,10 @@ export function landPlan(options = {}) {
   // Names: a style, or a set of the GM's own copied in (a set that can't make names is left out, with a note)
   const set = options.nameSet && typeof options.nameSet.text === "string" ? options.nameSet : null;
   const parsed = set ? parseNameSet(set.text) : null;
-  if (set && (!parsed.set || parsed.problems.some((p) => p.level === "error"))) notes.push(`The name set "${set.name ?? "Name set"}" can't make names (${parsed.problems.find((p) => p.level === "error")?.message ?? "it makes none"}), so ${LAND_QUICK_LABELS.names[c.names]} names are used.`);
+  if (set && (!parsed.set || parsed.problems.some((p) => p.level === "error"))) notes.push(`The name set "${set.name ?? "Name Set"}" can't make names (${parsed.problems.find((p) => p.level === "error")?.message ?? "it makes none"}), so ${LAND_QUICK_LABELS.names[c.names]} names are used.`);
   if (set && parsed.set && !parsed.problems.some((p) => p.level === "error")) {
     land.nameStyle = "custom";
-    land.nameSet = { name: typeof set.name === "string" && set.name.trim() ? set.name.trim() : "Name set", text: set.text, ...(set.from ? { from: set.from } : {}) };
+    land.nameSet = { name: typeof set.name === "string" && set.name.trim() ? set.name.trim() : "Name Set", text: set.text, ...(set.from ? { from: set.from } : {}) };
   } else land.nameStyle = c.names;
   // The map's name: the one given, else a name for the land in its own style
   const given = typeof options.name === "string" ? options.name.trim() : "";

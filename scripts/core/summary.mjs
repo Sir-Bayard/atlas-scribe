@@ -88,12 +88,12 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
     ["Water", feats.filter((f) => f.type === "water")],
     ["Walls", feats.filter((f) => f.type === "wall")],
     ["Squares", feats.filter((f) => f.type === "square")],
-    [region ? "Woods, hills and mountains" : "Parks, woods and fields", feats.filter((f) => f.type === "area")],
-    ["Buildings and landmarks", feats.filter((f) => f.type === "building" || f.type === "landmark")],
+    [region ? "Woods, Hills and Mountains" : "Parks, Woods and Fields", feats.filter((f) => f.type === "area")],
+    ["Buildings and Landmarks", feats.filter((f) => f.type === "building" || f.type === "landmark")],
     // (a battle map's own: a settlement map leaves them off)
     ["Regions", battleOnly.filter((f) => f.type === "region")],
     ["Lights", battleOnly.filter((f) => f.type === "light")],
-    ["Trails and picket lines", battleOnly.filter((f) => f.type === "trail" || f.type === "tether")],
+    ["Trails and Picket Lines", battleOnly.filter((f) => f.type === "trail" || f.type === "tether")],
   ].filter(([, l]) => l.length);
   // (a region's and a trail's kind in words; a region's note and a light's reach after it)
   const KIND_WORDS = { difficult: "difficult terrain", greater: "greater difficult terrain", foot: "footprints", hoof: "hoofprints", paw: "paw prints", wheel: "wheel ruts" };

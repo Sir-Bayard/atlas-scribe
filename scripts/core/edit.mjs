@@ -124,7 +124,7 @@ export const FIELD_TEXT = {
   "area.doors": { label: "Doors", names: { none: "none", some: "some", all: "every one" }, help: "Where corridors meet rooms" },
   "area.wear": { label: "Wear", names: { some: "cracks, rubble, moss, puddles", none: "none" } },
   "place.name": { label: "Name" },
-  "place.seed": { label: "Its map's seed", help: "The seed Make its map gives the place's own map; else one from the region's", more: true },
+  "place.seed": { label: "Its map's seed", help: "The seed Make This Town gives the place's own map; else one from the region's", more: true },
   "*.made": { hidden: true }, // (the generator's fingerprint on a place, road or crossing it made: land/places.mjs)
   "place.site": { hidden: true }, // (on generated land: what its own map should know, from Quick Start)
   "terrain.class": { names: { range: "a range", peak: "a peak", land: "land", sea: "sea", basin: "a basin", plateau: "a plateau", lowland: "lowland", hardness: "hard or soft rock", climate: "wetter or warmer", biome: "a biome", lock: "kept as it is" } },
@@ -210,10 +210,10 @@ export const PLAN_FIELDS = [
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
   { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size; towns and roads the generator placed go (place them again), and what you placed keeps its spot on the map" },
   { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
-  { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place towns and roads puts down" },
-  { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
+  { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
+  { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name Sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it. It's a tile of its own in the scene; the places it covers have no label" },
-  { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label color" },
+  { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label Color" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
@@ -223,11 +223,11 @@ export const PLAN_FIELDS = [
   { path: "seed", label: "Seed", kind: "number", step: 1, whole: true, help: "Changing it redraws everything that has no seed of its own", more: true },
   { path: "output.format", label: "Image file", kind: "enum", values: ["auto", "webp", "jpeg"], names: { auto: "WebP, JPEG when big", webp: "WebP (smaller)", jpeg: "JPEG (saves faster)" }, more: true, help: "A big map saves several times faster as JPEG" },
   { path: "output.quality", label: "Image quality", kind: "number", min: 0.5, max: 1, step: 0.01, more: true, help: "From 0.5 to 1: higher keeps more detail and makes a bigger file" },
-  { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own (on an overland map the names it makes follow Label look; with map ink, its place names take this color)" },
+  { path: "output.scene.labelColor", label: "Label color", kind: "color", more: true, help: "Every label's color, unless a label sets its own (on an overland map the names it makes follow Label Look; with map ink, its place names take this color)" },
   { path: "output.scene.labelFont", label: "Label font", kind: "font", more: true, help: "Every label's font, unless a label sets its own" },
   { path: "output.scene.name", label: "Scene name", kind: "string", group: "scene" },
   { path: "output.scene.weather", label: "Weather", kind: "string", group: "scene", help: "A Foundry weather effect (snow, rain, fog...), or none; left empty, a battle map in winter snows" },
-  { path: "output.scene.time", label: "Time of day", kind: "enum", values: ["day", "dawn", "dusk", "night", "dark"], names: { day: "day", dawn: "dawn", dusk: "dusk", night: "night, moonlit", dark: "a dark night" }, group: "scene", help: "Sets the scene's darkness and light (in place of Darkness and Global light) and lights the lanterns and lamps after dark. A night is moonlit (dim light everywhere); a dark night has no moon" },
+  { path: "output.scene.time", label: "Time of day", kind: "enum", values: ["day", "dawn", "dusk", "night", "dark"], names: { day: "day", dawn: "dawn", dusk: "dusk", night: "night, moonlit", dark: "a dark night" }, group: "scene", help: "Sets the scene's darkness and light (in place of Darkness and Global Light) and lights the lanterns and lamps after dark. A night is moonlit (dim light everywhere); a dark night has no moon" },
   { path: "output.scene.darkness", label: "Darkness", kind: "number", min: 0, max: 1, group: "scene" },
   { path: "output.scene.globalLight", label: "Global light", kind: "boolean", group: "scene" },
   { path: "output.scene.tokenVision", label: "Token vision", kind: "boolean", group: "scene" },
@@ -475,7 +475,7 @@ export function setPlanField(plan, path, raw) {
   const next = structuredClone(plan);
   // An overland map's scale: its size and cells from the preset; the generator's places go, the GM's keep their spot
   if (path === "@scale") {
-    if (value === undefined) return { error: "Pick a scale; the map's own size is set with Width, Height and Feet a square." };
+    if (value === undefined) return { error: "Pick a scale; the map's own size is set with Width, Height and Feet a Square." };
     const s = SCALES[value], grid = next.output?.grid === "hex" ? "hex" : "square";
     const [w0, h0] = extentOf(plan);
     next.size = isObj(next.size) ? next.size : {};
@@ -549,7 +549,7 @@ export function withNameSet(plan, set, { rename = false } = {}) {
   if (plan?.kind !== "region" || !isObj(plan.land)) return { error: "A name set is for an overland map (a region plan with land)." };
   if (!set || typeof set.text !== "string" || !set.text.trim()) return { error: "That name set is empty." };
   const next = structuredClone(plan);
-  next.land.nameSet = { name: typeof set.name === "string" && set.name.trim() ? set.name.trim() : "Name set", text: set.text, ...(set.from ? { from: set.from } : {}) };
+  next.land.nameSet = { name: typeof set.name === "string" && set.name.trim() ? set.name.trim() : "Name Set", text: set.text, ...(set.from ? { from: set.from } : {}) };
   next.land.nameStyle = "custom";
   if (rename) {
     const { places, land } = keptIds(plan);

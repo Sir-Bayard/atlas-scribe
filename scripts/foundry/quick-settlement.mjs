@@ -7,36 +7,37 @@
  */
 import { QUICK, QUICK_LABELS, QUICK_ANY, QUICK_HIGH, QUICK_HIGH_LABELS, HAS, QUARTERS, quickLacks } from "../core/quick.mjs";
 import { readPlace } from "../core/describe-place.mjs";
+import { titleCase } from "../core/titles.mjs";
 import { esc } from "./util.mjs";
 
 const CITIES = ["city", "metropolis"];
 const CENTER_LABELS = { square: "A market square", green: "A green", well: "A well", cathedral: "A cathedral", palace: "A palace", none: "None" };
 const HAS_LABELS = { temple: "Temple", inn: "Inn", smithy: "Smithy", cemetery: "Cemetery", watermill: "Watermill", windmill: "Windmill", walled: "Walled" };
 const QUARTER_LABELS = { docks: "Docks", market: "Market", temple: "Temple", nobles: "Nobles", crafts: "Crafts", poor: "Poor", garrison: "Garrison", merchants: "Merchants" };
-const ANY = `<option value="">Any (by the seed)</option>`;
+const ANY = `<option value="">Any (by the Seed)</option>`;
 // (every field's name begins s-: the tabs share the form)
 const select = (name, title, values, labels, anyFirst) => {
-  const opts = values.map((v) => `<option value="${v}">${esc(labels[v] ?? v)}</option>`).join("");
+  const opts = values.map((v) => `<option value="${v}">${esc(titleCase(labels[v] ?? v))}</option>`).join("");
   return `<div class="form-group" data-field="${name}"><label for="as-qs-${name}">${title}</label><select id="as-qs-${name}" name="s-${name}">${anyFirst ? ANY + opts : opts + ANY}</select></div>`;
 };
 const yesNo = (name, title) => `<div class="form-group" data-field="${name}"><label for="as-qs-${name}">${title}</label><select id="as-qs-${name}" name="s-o-${name}">${ANY}<option value="yes">Yes</option><option value="no">No</option></select></div>`;
 // (a box's why, when it's grayed out, is shown beside its name)
-const box = (name, label) => `<label><input type="checkbox" name="${name}"> ${esc(label)}<span class="as-why"></span></label>`;
+const box = (name, label) => `<label><input type="checkbox" name="${name}"> ${esc(titleCase(label))}<span class="as-why"></span></label>`;
 
 /** The tab's HTML. */
 export function settlementTabHTML() {
   const L = QUICK_LABELS;
   return `<section class="as-qs-settlement" data-tab="settlement" id="as-qs-panel-settlement" role="tabpanel" aria-labelledby="as-qs-tab-settlement">
-    <div class="form-group stacked"><label for="as-qs-describe">Describe it (optional)</label><textarea id="as-qs-describe" name="s-describe" rows="3" placeholder="A walled port city with a cathedral, a citadel and no slums; a village called 'Ashby' with a green, a mill and an inn, in winter; a fortified town on a river among farms and woods..."></textarea></div>
+    <div class="form-group stacked"><label for="as-qs-describe">Describe It (Optional)</label><textarea id="as-qs-describe" name="s-describe" rows="3" placeholder="A walled port city with a cathedral, a citadel and no slums; a village called 'Ashby' with a green, a mill and an inn, in winter; a fortified town on a river among farms and woods..."></textarea></div>
     <div class="as-qs-chips" aria-live="polite"></div>
     <div class="as-qs-two">
       ${select("size", "Place", QUICK.size, L.size, false)}${select("season", "Season", QUICK.season, L.season, false)}
       ${select("water", "Water", QUICK.water, L.water, false)}${select("roads", "Roads", QUICK.roads, L.roads, false)}
-      ${select("surroundings", "Around it", QUICK.surroundings, L.surroundings, false)}${select("center", "Center", QUICK.center, CENTER_LABELS, false)}
+      ${select("surroundings", "Around It", QUICK.surroundings, L.surroundings, false)}${select("center", "Center", QUICK.center, CENTER_LABELS, false)}
       ${select("river", "River", QUICK.river, L.river, QUICK_ANY.includes("river"))}${select("shape", "Outline", QUICK.shape, L.shape, QUICK_ANY.includes("shape"))}
     </div>
-    <div class="as-qs-two" data-for="town">${select("high", "High ground", QUICK_HIGH, QUICK_HIGH_LABELS, false).replace(ANY, "").replace("<select ", '<select data-tooltip-text="Along the edge with the most room; mountains come with hills before them" ')}</div>
-    <div class="form-group" data-for="town"><label id="as-qs-has">It has</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-has">${HAS.map((k) => box(`s-h-${k}`, HAS_LABELS[k])).join("")}<button type="button" class="as-qs-reset" data-tooltip-text="Back to what its size has" hidden>Reset</button></div></div>
+    <div class="as-qs-two" data-for="town">${select("high", "High Ground", QUICK_HIGH, QUICK_HIGH_LABELS, false).replace(ANY, "").replace("<select ", '<select data-tooltip-text="Along the edge with the most room; mountains come with hills before them" ')}</div>
+    <div class="form-group" data-for="town"><label id="as-qs-has">It Has</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-has">${HAS.map((k) => box(`s-h-${k}`, HAS_LABELS[k])).join("")}<button type="button" class="as-qs-reset" data-tooltip-text="Back to what its size has" hidden>Reset</button></div></div>
     <div class="form-group" data-for="city"><label id="as-qs-quarters">Quarters</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-quarters">${QUARTERS.map((k) => box(`s-q-${k}`, QUARTER_LABELS[k])).join("")}</div></div>
     <div class="as-qs-two" data-for="city">${yesNo("citadel", "Citadel")}</div>
     <div class="form-group" data-for="city"><label id="as-qs-outside">Also</label><div class="as-qs-features" role="group" aria-labelledby="as-qs-outside">${box("s-o-oldWall", "Old inner wall")}${box("s-o-suburbs", "Suburbs")}${box("s-o-cemetery", "Cemeteries")}${box("s-o-mills", "Mills")}</div></div>
@@ -106,7 +107,7 @@ export function wireSettlementTab(root) {
         if (!o.value) continue;
         const w = lacks[k]?.[o.value] ?? "", short = !w ? "" : city ? (k === "water" ? "a river in a city" : "a village's or town's") : "a city's";
         o.disabled = !!w;
-        o.textContent = `${String(labels[o.value] ?? o.value).replace(/ \(a city\)$/, "")}${short ? ` (${short})` : ""}`;
+        o.textContent = `${titleCase(String(labels[o.value] ?? o.value).replace(/ \(a city\)$/, ""))}${short ? ` (${short})` : ""}`;
       }
       if (s.selectedOptions[0]?.disabled) s.value = firstOf(s);
     }
@@ -182,9 +183,9 @@ export function wireSettlementTab(root) {
       kept.length || read.skipped.length || read.unknown.length ? `<div class="hint">What it understood (each also set in the form below; × takes it out):</div>` : "",
       ...kept.map((c) => {
         const over = handWins(c.key) && hand[c.key].v !== c.value;
-        return `<span class="as-qs-chip${over ? " as-later" : ""}" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(c.label)}${over ? " (changed below)" : ""} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip-text="Take this out">×</button></span>`;
+        return `<span class="as-qs-chip${over ? " as-later" : ""}" data-chip="${esc(`${c.key}=${c.value}`)}">${esc(c.key === "name" ? c.label : titleCase(c.label))}${over ? " (changed below)" : ""} <button type="button" class="as-qs-x" aria-label="Take out ${esc(c.label)}" data-tooltip-text="Take this out">×</button></span>`;
       }),
-      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" role="note" aria-label="${esc(`${k.label}: left out. ${k.why}`)}" data-tooltip-text="${esc(k.why)}">${esc(k.label)}: left out</span>`),
+      ...read.skipped.map((k) => `<span class="as-qs-chip as-unknown" role="note" aria-label="${esc(`${k.label}: left out. ${k.why}`)}" data-tooltip-text="${esc(k.why)}">${esc(titleCase(k.label))}: Left Out</span>`),
       ...read.unknown.map((w) => `<span class="as-qs-chip as-unknown" data-tooltip-text="Not understood: left out">${esc(w)}</span>`),
     ].join("");
     // (only when it changed, so a screen reader doesn't read the list again at every click)

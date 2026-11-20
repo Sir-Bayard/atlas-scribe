@@ -9,6 +9,7 @@ import { windowKeys } from "../kit/keyboard.mjs";
 import { REGION, REGION_LABELS } from "../core/quick-region.mjs";
 import { LAND_QUICK, LAND_QUICK_LABELS, LAND_MORE } from "../core/quick-land.mjs";
 import { storedNameSets } from "./name-sets.mjs";
+import { titleCase } from "../core/titles.mjs";
 import { esc, note } from "./util.mjs";
 
 const Dialog = () => foundry.applications.api.DialogV2;
@@ -23,7 +24,7 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
   const tabButton = (id, label) => `<button type="button" role="tab" id="as-qs-tab-${id}" aria-controls="as-qs-panel-${id}" data-qs-tab="${id}">${label}</button>`;
   const content = `<div class="atlas-scribe as-quick">
       <input type="hidden" name="tab" value="${tab}">
-      <div class="as-qs-tabs" role="tablist" aria-label="What to make">${tabButton("settlement", "Settlement")}${tabButton("battle", "Battle map")}${tabButton("region", "Region")}</div>
+      <div class="as-qs-tabs" role="tablist" aria-label="What to make">${tabButton("settlement", "Settlement")}${tabButton("battle", "Battle Map")}${tabButton("region", "Region")}</div>
       ${settlementTabHTML()}
       ${battleTabHTML()}
       ${regionTabHTML()}
@@ -62,7 +63,7 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
       showTab(root, tab);
     },
     buttons: [
-      { action: "make", label: "Make the plan", icon: "fa-solid fa-wand-magic-sparkles", default: true, callback: (event, button) => {
+      { action: "make", label: "Make the Plan", icon: "fa-solid fa-wand-magic-sparkles", default: true, callback: (event, button) => {
         const { name, seed: s } = button.form.elements;
         if (button.form.elements.tab.value === "region") {
           const el = button.form.elements;
@@ -86,17 +87,17 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
  * roads and names placed on it), or the classic local region of a few dozen miles.
  */
 function regionTabHTML() {
-  const select = (k, label) => `<div class="form-group"><label for="as-qr-${k}">${label}</label><select id="as-qr-${k}" name="r-${k}">${REGION[k].map((v) => `<option value="${v}">${esc(REGION_LABELS[k][v])}</option>`).join("")}</select></div>`;
+  const select = (k, label) => `<div class="form-group"><label for="as-qr-${k}">${label}</label><select id="as-qr-${k}" name="r-${k}">${REGION[k].map((v) => `<option value="${v}">${esc(titleCase(REGION_LABELS[k][v]))}</option>`).join("")}</select></div>`;
   // (what a choice means, as a tooltip and for screen readers)
-  const land = (k, label, tip = "") => `<div class="form-group" data-land="${k}"><label for="as-ql-${k}">${label}</label><select id="as-ql-${k}" name="l-${k}"${tip ? ` data-tooltip-text="${esc(tip)}" aria-describedby="as-ql-${k}-tip"` : ""}>${LAND_QUICK[k].map((v) => `<option value="${v}">${esc(LAND_QUICK_LABELS[k][v])}</option>`).join("")}</select>${tip ? `<span id="as-ql-${k}-tip" class="as-sr-only">${esc(tip)}</span>` : ""}</div>`;
+  const land = (k, label, tip = "") => `<div class="form-group" data-land="${k}"><label for="as-ql-${k}">${label}</label><select id="as-ql-${k}" name="l-${k}"${tip ? ` data-tooltip-text="${esc(tip)}" aria-describedby="as-ql-${k}-tip"` : ""}>${LAND_QUICK[k].map((v) => `<option value="${v}">${esc(titleCase(LAND_QUICK_LABELS[k][v]))}</option>`).join("")}</select>${tip ? `<span id="as-ql-${k}-tip" class="as-sr-only">${esc(tip)}</span>` : ""}</div>`;
   // (names: a style, or one of the world's name sets)
   const sets = storedNameSets();
-  const namesTip = "How the names of places, rivers, ranges and seas sound: a style, or a name set of your own (Name sets, in the Plan panel)";
-  const names = `<div class="form-group"><label for="as-ql-names">Names</label><span id="as-ql-names-tip" class="as-sr-only">${namesTip}</span><select id="as-ql-names" name="l-names" data-tooltip-text="${namesTip}" aria-describedby="as-ql-names-tip">${LAND_QUICK.names.map((v) => `<option value="${v}">${esc(LAND_QUICK_LABELS.names[v])}</option>`).join("")}${sets.length ? `<optgroup label="Your name sets">${sets.map((x) => `<option value="set:${esc(x.id)}">${esc(x.name)}</option>`).join("")}</optgroup>` : ""}</select></div>`;
+  const namesTip = "How the names of places, rivers, ranges and seas sound: a style, or a name set of your own (Name Sets, in the Plan panel)";
+  const names = `<div class="form-group"><label for="as-ql-names">Names</label><span id="as-ql-names-tip" class="as-sr-only">${namesTip}</span><select id="as-ql-names" name="l-names" data-tooltip-text="${namesTip}" aria-describedby="as-ql-names-tip">${LAND_QUICK.names.map((v) => `<option value="${v}">${esc(titleCase(LAND_QUICK_LABELS.names[v]))}</option>`).join("")}${sets.length ? `<optgroup label="Your Name Sets">${sets.map((x) => `<option value="set:${esc(x.id)}">${esc(x.name)}</option>`).join("")}</optgroup>` : ""}</select></div>`;
   const tips = {
     type: "The shape of the land and sea",
     seaSide: "Where the open sea lies, for a coast or a peninsula",
-    towns: "How many towns, villages and castles are placed (Reroll places in the Plan panel places them again)",
+    towns: "How many towns, villages and castles are placed (Reroll Places in the Plan panel places them again)",
     size: "The picture's long side; a bigger map takes longer to draw",
     age: "Young land has sharp, high ranges; old land is worn down to hills",
     plates: "How many plates the land is built from: more makes more, shorter ranges",
@@ -111,10 +112,10 @@ function regionTabHTML() {
     volcanic: "Volcanoes along island arcs and coastal ranges, or a hotspot chain where there are none",
   };
   return `<section class="as-qs-region" data-tab="region" role="tabpanel" id="as-qs-panel-region" aria-labelledby="as-qs-tab-region" hidden>
-      <div class="form-group"><label for="as-qr-scale">Scale</label><select id="as-qr-scale" name="r-scale">${[...LAND_QUICK.scale, "local"].map((v) => `<option value="${v}"${v === lastScale ? " selected" : ""}>${esc(v === "local" ? "Local (40 to 80 mi, the classic region)" : LAND_QUICK_LABELS.scale[v])}</option>`).join("")}</select></div>
+      <div class="form-group"><label for="as-qr-scale">Scale</label><select id="as-qr-scale" name="r-scale">${[...LAND_QUICK.scale, "local"].map((v) => `<option value="${v}"${v === lastScale ? " selected" : ""}>${esc(titleCase(v === "local" ? "Local (40 to 80 mi, the classic region)" : LAND_QUICK_LABELS.scale[v]))}</option>`).join("")}</select></div>
       <div data-for="land">
         <p class="hint">Land, rivers and climate made by the generator, then towns, villages, castles, roads and names placed on it. Each town's own map can be made from it.</p>
-        <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("hemisphere", "Hemisphere", tips.hemisphere)}${land("span", "Latitudes", tips.span)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
+        <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea Side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("hemisphere", "Hemisphere", tips.hemisphere)}${land("span", "Latitudes", tips.span)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
         <details class="as-qs-more"><summary>More</summary><div class="as-qs-two">${LAND_MORE.map((k) => land(k, { age: "Age", plates: "Plates", coast: "Coast", wind: "Wind", rain: "Rain", rivers: "Rivers", lakes: "Lakes", plateaus: "Plateaus", volcanic: "Volcanic" }[k], tips[k])).join("")}</div></details>
       </div>
       <div data-for="local" hidden>
@@ -151,8 +152,8 @@ export async function openDialog(plans, folder) {
   const twice = new Set(plans.map((p) => p.name).filter((n, i, all) => all.indexOf(n) !== i)); // names saved more than once show their file
   const rows = plans.map((p, i) => `<option value="${i}" ${p.error ? "disabled" : ""}>${esc(p.name)}${twice.has(p.name) ? ` [${esc(p.file)}]` : ""}${p.size ? ` (${esc(p.size[0])} by ${esc(p.size[1])}${p.season ? `, ${esc(p.season)}` : ""})` : ""}${p.error ? " (can't be read)" : ""}</option>`).join("");
   const pick = await Dialog().wait({
-    window: { title: "AtlasScribe: Open a plan", icon: "fa-solid fa-folder-open" },
-    content: `<div class="atlas-scribe"><div class="form-group"><select name="plan" aria-label="Saved plans" size="${Math.min(12, Math.max(4, plans.length))}" style="width:100%">${rows}</select></div><p class="hint">Plans saved in ${esc(folder)}.</p></div>`,
+    window: { title: "AtlasScribe: Open a Plan", icon: "fa-solid fa-folder-open" },
+    content: `<div class="atlas-scribe"><div class="form-group"><select name="plan" aria-label="Saved Plans" size="${Math.min(12, Math.max(4, plans.length))}" style="width:100%">${rows}</select></div><p class="hint">Plans saved in ${esc(folder)}.</p></div>`,
     buttons: [
       { action: "open", label: "Open", icon: "fa-solid fa-folder-open", default: true, callback: (event, button) => button.form.elements.plan.value },
       { action: "cancel", label: "Cancel" },
@@ -166,10 +167,10 @@ export async function openDialog(plans, folder) {
 /** Import: a plan pasted or from a file. Resolves to its text, or null. */
 export async function importDialog() {
   const text = await Dialog().wait({
-    window: { title: "AtlasScribe: Import a plan", icon: "fa-solid fa-file-import" },
+    window: { title: "AtlasScribe: Import a Plan", icon: "fa-solid fa-file-import" },
     content: `<div class="atlas-scribe as-import">
-        <div class="form-group stacked"><label for="as-import-text">Paste a plan (JSON, or text with a mapplan block), a watabou export or a Universal VTT file</label><textarea id="as-import-text" name="text" rows="10"></textarea></div>
-        <div class="form-group"><label for="as-import-file">Or a file</label><input type="file" id="as-import-file" name="file" accept=".json,.md,.txt,.dd2vtt,.uvtt,.df2vtt"></div>
+        <div class="form-group stacked"><label for="as-import-text">Paste a Plan</label><textarea id="as-import-text" name="text" rows="10" aria-describedby="as-import-hint"></textarea><p class="hint" id="as-import-hint">A plan's JSON, text with a mapplan block, a watabou export or a Universal VTT file.</p></div>
+        <div class="form-group"><label for="as-import-file">Or a File</label><input type="file" id="as-import-file" name="file" accept=".json,.md,.txt,.dd2vtt,.uvtt,.df2vtt"></div>
       </div>`,
     buttons: [
       { action: "import", label: "Import", icon: "fa-solid fa-file-import", default: true, callback: async (event, button) => {
@@ -185,22 +186,22 @@ export async function importDialog() {
 
 /** Whether to save over another plan's file. */
 export function confirmSaveOver(file) {
-  return Dialog().confirm({ window: { title: "Save over a plan" }, content: `<p>A plan is already saved as ${esc(file)}. Save this one over it?</p>`, rejectClose: false });
+  return Dialog().confirm({ window: { title: "AtlasScribe: Save Over a Plan" }, content: `<p>A plan is already saved as ${esc(file)}. Save this one over it?</p>`, rejectClose: false });
 }
 
 /** Whether to drop a plan's unsaved changes. */
 export function confirmDrop(name) {
-  return Dialog().confirm({ window: { title: "Unsaved changes" }, content: `<p>${esc(name)} has changes that aren't saved. Drop them?</p>`, rejectClose: false });
+  return Dialog().confirm({ window: { title: "AtlasScribe: Unsaved Changes" }, content: `<p>${esc(name)} has changes that aren't saved. Drop them?</p>`, rejectClose: false });
 }
 
 /** Whether to bring back a plan's unsaved changes, kept from before a reload or a crash. at: when they were made (ms). */
 export function confirmDraft(name, at) {
   const when = new Date(at).toLocaleString();
   return Dialog().confirm({
-    window: { title: "AtlasScribe: unsaved changes" },
+    window: { title: "AtlasScribe: Unsaved Changes" },
     content: `<p>${esc(name)} had changes that weren't saved (${esc(when)}). Bring them back?</p>`,
-    yes: { label: "Bring them back" },
-    no: { label: "Drop them" },
+    yes: { label: "Bring Them Back" },
+    no: { label: "Drop Them" },
     rejectClose: false,
   });
 }
@@ -208,9 +209,9 @@ export function confirmDraft(name, at) {
 /** The "as built" summary in a box to read and copy (text: Markdown). */
 export function summaryDialog(text) {
   return Dialog().wait({
-    window: { title: "AtlasScribe: summary", icon: "fa-solid fa-list-ul" },
+    window: { title: "AtlasScribe: Summary", icon: "fa-solid fa-list-ul" },
     position: { width: 560 },
-    content: `<div class="atlas-scribe as-summary"><div class="form-group stacked"><label for="as-summary-text">What the map holds, in Markdown</label><textarea id="as-summary-text" name="text" rows="18" readonly>${esc(text)}</textarea></div></div>`,
+    content: `<div class="atlas-scribe as-summary"><div class="form-group stacked"><label for="as-summary-text">What the Map Holds (Markdown)</label><textarea id="as-summary-text" name="text" rows="18" readonly>${esc(text)}</textarea></div></div>`,
     buttons: [
       { action: "copy", label: "Copy", icon: "fa-solid fa-copy", default: true, callback: async () => { await game.clipboard.copyPlainText(text); note.info("AtlasScribe: summary copied"); return "copy"; } },
       { action: "close", label: "Close" },

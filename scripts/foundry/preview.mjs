@@ -20,6 +20,7 @@ import { NO_ART } from "./art/index.mjs";
 import { briefPlan } from "../core/brief.mjs";
 import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
+import { titleCase } from "../core/titles.mjs";
 import { esc, note, FP, MOD, labelAttr } from "./util.mjs";
 import { overlaySVG, draftSVG, battleBoxSVG, underStyle, pickableLabel } from "./overlay.mjs";
 import { regionPlan } from "../core/quick-region.mjs";
@@ -423,12 +424,12 @@ export class AtlasScribeApp extends Base {
       el.classList.add("as-empty");
       el.innerHTML = `<div class="as-pv-welcome">
           <i class="fa-solid fa-map-location-dot"></i>
-          <h2>Make a map</h2>
+          <h2>Make a Map</h2>
           <p>Quick Start makes a hamlet, village, town or city, or a battle map, from a few choices or a few words. Then change anything on the map here (reroll, reshape, change settings, draw new things) and make it into a scene.</p>
           <div class="as-pv-tools">
             <button type="button" data-action="asQuick"><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Start</button>
-            <button type="button" data-action="asOpen"><i class="fa-solid fa-folder-open"></i> Open a saved plan</button>
-            <button type="button" data-action="asImport"><i class="fa-solid fa-file-import"></i> Import a plan</button>
+            <button type="button" data-action="asOpen"><i class="fa-solid fa-folder-open"></i> Open a Saved Plan</button>
+            <button type="button" data-action="asImport"><i class="fa-solid fa-file-import"></i> Import a Plan</button>
           </div>
           ${this.#error ? `<p class="as-pv-error">${esc(this.#error)}</p>` : ""}
         </div>`;
@@ -461,7 +462,7 @@ export class AtlasScribeApp extends Base {
     // The list: what a reroll can redraw, or with Everything every feature in the plan, grouped by kind. Each name is a
     // button that picks it (as a click on the map does), so the whole plan can be reached from the keyboard
     const row = (id, name, kind, roll) => `<li data-id="${esc(id)}" class="${roll?.locked ? "as-locked" : ""} ${id === this.#selected ? "as-selected" : ""}">
-        <button type="button" class="as-pv-name" data-action="asPick" data-id="${esc(id)}" aria-pressed="${id === this.#selected}"${labelAttr(`${name}: its settings, and reshape it`)}><strong>${esc(name)}</strong><em>${esc(kind)}</em></button>
+        <button type="button" class="as-pv-name" data-action="asPick" data-id="${esc(id)}" aria-pressed="${id === this.#selected}"${labelAttr(`${name}: its settings, and reshape it`)}><strong>${esc(name)}</strong><em>${esc(titleCase(kind))}</em></button>
         ${roll ? rerollButtons(id, name, roll.locked, this.#working) : ""}
       </li>`;
     const rows = this.#everything ? this.#everythingRows(feats, row) : feats.map((f) => row(f.id, f.name ?? f.id, f.type === "district" ? `${f.kind} district` : f.kind, f)).join("");
@@ -476,7 +477,7 @@ export class AtlasScribeApp extends Base {
       <div class="as-pv-map ${this.#busy ? "as-busy" : ""} ${this.#stale ? "as-stale" : ""} ${this.#tool ? "as-drawing" : ""}">
         ${map}
         <div class="as-pv-wait"><i class="fa-solid fa-spinner fa-spin"></i> Drawing <button type="button" data-action="asStopDraw" data-tooltip-text="Stop drawing (the change that started it is taken back)">Stop</button></div>
-        ${this.#error ? `<p class="as-pv-error" role="alert">${esc(this.#error)}${!r && !this.#busy ? ` <button type="button" data-action="asRedraw">Draw it</button>` : ""}</p>` : ""}
+        ${this.#error ? `<p class="as-pv-error" role="alert">${esc(this.#error)}${!r && !this.#busy ? ` <button type="button" data-action="asRedraw">Draw It</button>` : ""}</p>` : ""}
       </div>
       <aside class="as-pv-side">
         <header>
@@ -486,12 +487,12 @@ export class AtlasScribeApp extends Base {
         </header>
         <div class="as-pv-tools as-pv-file">
           <button type="button" data-action="asQuick" aria-label="Quick Start" data-tooltip-text="Quick Start: a new plan from a few choices" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i></button>
-          <button type="button" data-action="asOpen" aria-label="Open a saved plan" data-tooltip-text="Open a saved plan" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i></button>
-          <button type="button" data-action="asImport" aria-label="Import a plan" data-tooltip-text="Import a plan (JSON, or a mapplan block)" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-file-import"></i></button>
-          <button type="button" data-action="asSave" aria-label="Save the plan" data-tooltip-text="Save the plan in this world" class="${this.dirty ? "as-on" : ""}"><i class="fa-solid fa-floppy-disk"></i></button>
-          <button type="button" data-action="asExport" aria-label="Download the plan" data-tooltip-text="Download the plan as a file"><i class="fa-solid fa-file-export"></i></button>
-          <button type="button" data-action="asCopy" aria-label="Copy the plan" data-tooltip-text="Copy the plan as JSON"><i class="fa-solid fa-copy"></i></button>
-          <button type="button" data-action="asPlan" aria-label="Plan settings" data-tooltip-text="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
+          <button type="button" data-action="asOpen" aria-label="Open a Saved Plan" data-tooltip-text="Open a saved plan" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i></button>
+          <button type="button" data-action="asImport" aria-label="Import a Plan" data-tooltip-text="Import a plan (JSON, or a mapplan block)" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-file-import"></i></button>
+          <button type="button" data-action="asSave" aria-label="Save the Plan" data-tooltip-text="Save the plan in this world" class="${this.dirty ? "as-on" : ""}"><i class="fa-solid fa-floppy-disk"></i></button>
+          <button type="button" data-action="asExport" aria-label="Download the Plan" data-tooltip-text="Download the plan as a file"><i class="fa-solid fa-file-export"></i></button>
+          <button type="button" data-action="asCopy" aria-label="Copy the Plan" data-tooltip-text="Copy the plan as JSON"><i class="fa-solid fa-copy"></i></button>
+          <button type="button" data-action="asPlan" aria-label="Plan Settings" data-tooltip-text="Plan settings: name, season, size, the scene" class="${this.#inspect === "@plan" ? "as-on" : ""}"><i class="fa-solid fa-gear"></i></button>
           <button type="button" data-action="asArt" data-tooltip-text="Art: folders, art you choose, filename rules" aria-label="Art"><i class="fa-solid fa-images"></i></button>
           <button type="button" data-action="asFiles"${labelAttr("Files: each plan's maps and backups")}><i class="fa-solid fa-folder-tree" aria-hidden="true"></i></button>
           <button type="button" data-action="asSummary"${labelAttr("Summary: what the map holds, to copy into your notes")} ${this.#plan && !this.#working ? "" : "disabled"}><i class="fa-solid fa-list-ul" aria-hidden="true"></i></button>
@@ -499,8 +500,8 @@ export class AtlasScribeApp extends Base {
         ${problems.length ? `<details class="as-pv-problems"><summary><i class="fa-solid fa-triangle-exclamation"></i> ${problems.length} problem${problems.length === 1 ? "" : "s"} in the plan</summary><ul>${problems.map((p) => `<li class="as-${p.level}">${esc(p.message)}</li>`).join("")}</ul></details>` : ""}
         <div class="as-pv-tools">
           <button type="button" data-action="asDraw" class="${this.#palette ? "as-on" : ""}" data-tooltip-text="Draw something new: a district, area, square, building, road, river, wall, bridge, prop or label" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-pen"></i> Draw</button>
-          ${this.#plan?.kind !== "battle" && this.#plan?.kind !== "region" ? `<button type="button" data-action="asBattle" class="${this.#tool?.id === "battle" ? "as-on" : ""}" data-tooltip-text="Pick an area of this map to make a battle map of: its streets, water and notable buildings where they are here, its houses built again at battle size" ${this.#working || !this.#result ? "disabled" : ""}><i class="fa-solid fa-chess-board"></i> Battle map</button>` : ""}
-          <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll all</button>
+          ${this.#plan?.kind !== "battle" && this.#plan?.kind !== "region" ? `<button type="button" data-action="asBattle" class="${this.#tool?.id === "battle" ? "as-on" : ""}" data-tooltip-text="Pick an area of this map to make a battle map of: its streets, water and notable buildings where they are here, its houses built again at battle size" ${this.#working || !this.#result ? "disabled" : ""}><i class="fa-solid fa-chess-board"></i> Battle Map</button>` : ""}
+          <button type="button" data-action="asRerollAll" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-dice"></i> Reroll All</button>
           <button type="button" data-action="asUndo" ${this.#history.length && !this.#working ? "" : "disabled"} data-tooltip-text="Back to the plan before the last change (Ctrl+Z)"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Undo</button>
           <button type="button" data-action="asRedo" ${this.#future.length && !this.#working ? "" : "disabled"} data-tooltip-text="The change Undo took back (Ctrl+Y)"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Redo</button>
         </div>
@@ -521,7 +522,7 @@ export class AtlasScribeApp extends Base {
           <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip-text="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
         <div class="as-pv-tools as-pv-scene">
-          <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip-text="${scene ? "Draw the map and update the scene made from this plan (backed up as the Scene backups setting says)" : "Draw the map and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update scene" : "Make scene"}</button>
+          <button type="button" data-action="asScene" class="as-primary" ${this.#working ? "disabled" : ""} data-tooltip-text="${scene ? "Draw the map and update the scene made from this plan (backed up as the Scene Backups setting says)" : "Draw the map and make it a scene"}"><i class="fa-solid fa-image"></i> ${this.#publishing ? "Painting..." : scene ? "Update Scene" : "Make Scene"}</button>
           ${this.#publishing ? `<button type="button" data-action="asCancel" data-tooltip-text="Stop painting (no scene is made or changed)"><i class="fa-solid fa-xmark"></i> Cancel</button>` : ""}
           ${scene && !this.#publishing ? `<button type="button" data-action="asView" data-tooltip-text="Go to the scene"><i class="fa-solid fa-eye"></i></button>` : ""}
         </div>
@@ -541,7 +542,7 @@ export class AtlasScribeApp extends Base {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(row(f.id, f.name ?? f.text ?? f.id, kind, rolls.get(f.id) ?? null));
     }
-    const TITLES = { district: "Districts", area: "Areas", height: "Rises and hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket lines" };
+    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines" };
     return [...groups].map(([g, list]) => `<li class="as-pv-group" role="presentation"><strong>${esc(TITLES[g] ?? g)}</strong></li>${list.join("")}`).join("");
   }
 
@@ -1294,11 +1295,11 @@ export class AtlasScribeApp extends Base {
     if (!places && !features) return true;
     const what = [places ? `${places} place name${places === 1 ? "" : "s"}` : "", features ? `${features} name${features === 1 ? "" : "s"} of the land` : ""].filter(Boolean).join(" and ");
     return foundry.applications.api.DialogV2.wait({
-      window: { title: "AtlasScribe: kept names" },
+      window: { title: "AtlasScribe: Kept Names" },
       content: `<p>This map keeps ${esc(what)} in its plan, so they stay as they are. Should ${esc(setName)} name them again? Names you typed or changed yourself stay either way.</p>`,
       buttons: [
-        { action: "rename", label: "Name them again", icon: "fa-solid fa-signature", default: true, callback: () => true },
-        { action: "keep", label: "Keep them", icon: "fa-solid fa-lock", callback: () => false },
+        { action: "rename", label: "Name Them Again", icon: "fa-solid fa-signature", default: true, callback: () => true },
+        { action: "keep", label: "Keep Them", icon: "fa-solid fa-lock", callback: () => false },
       ],
       rejectClose: false,
     }).then((r) => (typeof r === "boolean" ? r : null));
@@ -1679,7 +1680,7 @@ export class AtlasScribeApp extends Base {
     }
     for (const n of res.notes ?? []) note.warn(`AtlasScribe: ${n}`);
     const drawn = await this.show(res.plan);
-    if (drawn) note.info(`AtlasScribe: made ${res.plan.name}, ${res.plan.size.squares.join(" x ")} squares. Save it to keep it, or Make scene.`);
+    if (drawn) note.info(`AtlasScribe: made ${res.plan.name}, ${res.plan.size.squares.join(" x ")} squares. Save it to keep it, or Make Scene.`);
   }
 
   /** The drawing tools in the side panel (again to close them). */
@@ -1780,8 +1781,8 @@ export class AtlasScribeApp extends Base {
         for (const n of notes) note.info(n);
         const drawn = await this.show(plan);
         // (towns from the plan's own seed, so the same seed and choices make the same map; Reroll places varies them)
-        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges. Reroll places in the Plan panel places them again; Undo takes them off.`);
-        else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place towns and roads in the Plan panel once it draws.");
+        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges. Reroll Places in the Plan panel places them again; Undo takes them off.`);
+        else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place Towns and Roads in the Plan panel once it draws.");
       } catch (e) {
         note.error(e.message);
       }

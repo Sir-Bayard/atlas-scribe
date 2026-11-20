@@ -17,8 +17,8 @@ export function cityDistricts(ctx) {
   const sh = squareShape({ r: sr.fork("shape"), C, angle: main ? main.angle : spin, rad: S.square, kinds: ["circle", "rect", "irregular"] });
   // (a cathedral or palace at the center stands beside a paved square, as a market square does)
   const square = choices.center === "green"
-    ? { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "grass", name: "The green" }
-    : { id: "square", type: "square", shape: sh.shape, surface: sr.pick(PAVINGS), market: true, name: "The market square" };
+    ? { id: "square", type: "square", shape: { circle: [r1(C[0]), r1(C[1]), S.square] }, surface: "grass", name: "The Green" }
+    : { id: "square", type: "square", shape: sh.shape, surface: sr.pick(PAVINGS), market: true, name: "The Market Square" };
   if (choices.center !== "none") features.push(square);
 
   // Districts: the wards, dense throughout, numbered around from the north

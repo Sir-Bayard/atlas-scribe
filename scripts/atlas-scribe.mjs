@@ -314,7 +314,7 @@ const api = {
    */
   batch(tag) {
     requireGM();
-    if (typeof tag !== "string" || !tag) throw new Error("AtlasScribe: batch(tag) needs the tag, a plan's id or the Batch tag setting's word");
+    if (typeof tag !== "string" || !tag) throw new Error("AtlasScribe: batch(tag) needs the tag, a plan's id or the Batch Tag setting's word");
     const marked = (d) => d?.flags?.[MOD]?.batch === tag;
     const out = [];
     for (const sc of game.scenes) {
@@ -734,7 +734,7 @@ const api = {
     const { set, problems } = parseNameSet(text);
     if (!set) throw new Error(`AtlasScribe: the name set makes no names: ${problems.map((p) => p.message).join(" ")}`);
     if (id !== null && (typeof id !== "string" || !id.trim())) throw new Error("AtlasScribe: a name set's id is a string (leave it out for a new set)");
-    const list = storedNameSets(), sid = id ?? foundry.utils.randomID(), item = { id: sid, name: set.name ?? "Name set", text };
+    const list = storedNameSets(), sid = id ?? foundry.utils.randomID(), item = { id: sid, name: set.name ?? "Name Set", text };
     const k = list.findIndex((s) => s.id === sid);
     if (k >= 0) list[k] = item; else list.push(item);
     await saveNameSets(list);
@@ -942,7 +942,7 @@ function theWindow() {
 
 Hooks.once("init", () => {
   game.settings.register(MOD, "outputFolder", {
-    name: "Output folder",
+    name: "Output Folder",
     hint: "Where AtlasScribe saves plans, maps, thumbnails and scene backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",
     scope: "world",
     config: true,
@@ -950,7 +950,7 @@ Hooks.once("init", () => {
     default: "",
   });
   game.settings.register(MOD, "backupFolder", {
-    name: "Backup folder",
+    name: "Backup Folder",
     hint: "Where scene backups go, under the Data folder. Leave empty for the backups folder in the output folder.",
     scope: "world",
     config: true,
@@ -958,7 +958,7 @@ Hooks.once("init", () => {
     default: "",
   });
   game.settings.register(MOD, "cacheFolder", {
-    name: "Cache folder",
+    name: "Cache Folder",
     hint: "Where AtlasScribe keeps what it remembers between renders (what each plan's last map held, to say what changed). Leave empty for the cache folder in the output folder.",
     scope: "world",
     config: true,
@@ -966,12 +966,12 @@ Hooks.once("init", () => {
     default: "",
   });
   game.settings.register(MOD, "backups", {
-    name: "Scene backups",
+    name: "Scene Backups",
     hint: "When AtlasScribe saves a copy of a scene before updating it. A scene it didn't make is always backed up first.",
     scope: "world",
     config: true,
     type: String,
-    choices: { every: "Every update", session: "First update each session", never: "Never" },
+    choices: { every: "Every Update", session: "First Update Each Session", never: "Never" },
     default: "every",
   });
   game.settings.register(MOD, "lastPlan", { scope: "client", config: false, type: String, default: "" });
@@ -991,7 +991,7 @@ Hooks.once("init", () => {
     restricted: true,
   });
   game.settings.register(MOD, "artNexus", {
-    name: "Art from FA Nexus",
+    name: "Art From FA Nexus",
     hint: "Let AtlasScribe ask FA Nexus (when it's active) for the Forgotten Adventures files your art folders lack, downloading them as needed. Off: only your art folders are used.",
     scope: "world",
     config: true,
@@ -999,25 +999,25 @@ Hooks.once("init", () => {
     default: true,
   });
   game.settings.register(MOD, "artOrder", {
-    name: "Art order",
+    name: "Art Order",
     hint: "When a folder's own art (its manifest or a filename rule) and a Forgotten Adventures file both fit a role, which is used. Art you chose by hand in the Art window always comes first.",
     scope: "world",
     config: true,
     type: String,
-    choices: { yours: "Your folders' own art first", fa: "Forgotten Adventures first" },
+    choices: { yours: "Your Folders' Own Art First", fa: "Forgotten Adventures First" },
     default: "yours",
   });
   game.settings.register(MOD, "battleZoom", {
-    name: "Battle map zoom",
-    hint: "How big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight. The Battle map tool in the AtlasScribe window changes it too.",
+    name: "Battle Map Zoom",
+    hint: "How big a battle map made from an area of a town map is drawn: true size, or bigger so there's room to fight. The Battle Map tool in the AtlasScribe window changes it too.",
     scope: "client",
     config: true,
     type: Number,
-    choices: { 1: "True size", 1.5: "1.5 times true size", 2: "2 times true size" },
+    choices: { 1: "True Size", 1.5: "1.5 Times True Size", 2: "2 Times True Size" },
     default: 2,
   });
   game.settings.register(MOD, "drawnLook", {
-    name: "Drawn battle art",
+    name: "Drawn Battle Art",
     hint: "How a battle map draws what has no art: painted (shaded, in natural colors) or inked (pale colors with ink lines, like a town map).",
     scope: "world",
     config: true,
@@ -1026,7 +1026,7 @@ Hooks.once("init", () => {
     default: "painted",
   });
   game.settings.register(MOD, "drawnAll", {
-    name: "Draw whole battle maps",
+    name: "Draw Whole Battle Maps",
     hint: "Draw every battle map entirely, even where art folders or FA Nexus have art, so the whole map has one look.",
     scope: "world",
     config: true,
@@ -1034,7 +1034,7 @@ Hooks.once("init", () => {
     default: false,
   });
   game.settings.register(MOD, "movableProps", {
-    name: "Movable props on battle maps",
+    name: "Movable Props on Battle Maps",
     hint: "Place a battle map's carts, wagons, sledges, boats, barrels, crates, bedrolls and tents as tiles the GM can move, turn and resize, as furniture is, and its horses, mules and oxen as tokens (of a creature from your compendiums when one matches), instead of painting them into the map. A new map or an Update replaces them.",
     scope: "world",
     config: true,
@@ -1042,7 +1042,7 @@ Hooks.once("init", () => {
     default: true,
   });
   game.settings.register(MOD, "batchTag", {
-    name: "Batch tag",
+    name: "Batch Tag",
     hint: "A word every scene, tile, wall, light and region AtlasScribe makes is marked with, so a script can find them (api.batch). Leave empty to mark each with its plan's id.",
     scope: "world",
     config: true,
@@ -1050,16 +1050,16 @@ Hooks.once("init", () => {
     default: "",
   });
   game.settings.register(MOD, "largestImage", {
-    name: "Largest image",
+    name: "Largest Image",
     hint: "A map wider or taller than this is also saved in parts, and its scene shows them as tiles: for graphics cards that can't show a big scene background.",
     scope: "world",
     config: true,
     type: Number,
-    choices: { 16384: "16384 px (most graphics cards)", 8192: "8192 px", 4096: "4096 px" },
+    choices: { 16384: "16384 px (Most Graphics Cards)", 8192: "8192 px", 4096: "4096 px" },
     default: 16384,
   });
   game.settings.register(MOD, "renderInWorker", {
-    name: "Render in a worker",
+    name: "Render in a Worker",
     hint: "Lay out and paint maps off Foundry's page, so it never freezes. Turn off only if maps fail to render in your browser; the page then pauses while a map is made.",
     scope: "client",
     config: true,
@@ -1075,7 +1075,7 @@ Hooks.on("getSceneContextOptions", (app, options) => {
   if (!game.user.isGM || !Array.isArray(options)) return;
   const sceneOf = (li) => game.scenes.get((li instanceof HTMLElement ? li : li?.[0])?.dataset?.entryId);
   options.push({
-    name: "Open its plan in AtlasScribe",
+    name: "Open Its Plan in AtlasScribe",
     icon: `<i class="fa-solid fa-map"></i>`,
     condition: (li) => !!sceneOf(li)?.getFlag(MOD, "plan"),
     callback: (li) => api.openPlan(sceneOf(li)).catch((e) => note.error(e.message)),

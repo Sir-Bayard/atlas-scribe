@@ -29,7 +29,7 @@ export const isPlaceholder = (src) => !src || /^icons\/svg\//.test(src) || /myst
 const systemData = (kind) => (game.system?.id === "pf2e" ? { "system.traits.size.value": ANIMALS[kind].pf2eSize, "system.details.alliance": null } : {});
 
 /** The folder AtlasScribe's animals are kept in, among the world's actors. */
-export const ANIMAL_FOLDER = "AtlasScribe animals";
+export const ANIMAL_FOLDER = "AtlasScribe Animals";
 
 /** Compendium entries that are never a creature to place: player characters, hazards, loot and the like. */
 const NOT_CREATURES = new Set(["character", "hazard", "loot", "vehicle", "party", "army", "familiar", "group"]);

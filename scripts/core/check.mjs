@@ -93,7 +93,7 @@ export function checkPlan(raw) {
   } else if (plan.kind === "region") { if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 500 && plan.size.ftPerSquare <= 26400)) err(null, "size.ftPerSquare", "A region map's size.ftPerSquare must be a number from 500 to 26400 (feet a square; 2640 is half a mile, 5280 a mile)."); }
   else if (!(isNum(plan.size.ftPerSquare) && plan.size.ftPerSquare >= 1 && plan.size.ftPerSquare <= 100)) err(null, "size.ftPerSquare", "size.ftPerSquare must be a number from 1 to 100 (feet a square; 25 suits a village or town).");
   // (a battle map's walls, rooms, yards and furniture are sized in squares, made for 5 feet each)
-  else if (plan.kind === "battle" && plan.size.ftPerSquare !== 5) warn(null, "size.ftPerSquare", `A battle map is made for 5 feet a square: its walls, rooms, yards and furniture are sized in squares, so at ${plan.size.ftPerSquare} feet a square they'd be ${Math.round((plan.size.ftPerSquare / 5) * 10) / 10} times too big. Set Feet a square to 5.`);
+  else if (plan.kind === "battle" && plan.size.ftPerSquare !== 5) warn(null, "size.ftPerSquare", `A battle map is made for 5 feet a square: its walls, rooms, yards and furniture are sized in squares, so at ${plan.size.ftPerSquare} feet a square they'd be ${Math.round((plan.size.ftPerSquare / 5) * 10) / 10} times too big. Set Feet a Square to 5.`);
   if (!isNum(plan.seed) && !(typeof plan.seed === "string" && plan.seed)) err(null, "seed", "seed must be a number.");
   if (!["settlement", "battle", "region"].includes(plan.kind)) warn(null, "kind", `kind "${plan.kind}" isn't one AtlasScribe knows (settlement, battle, region); it's drawn as a settlement.`);
   for (const [name, values] of [["season", SEASONS], ["style", plan.kind === "region" ? (overland ? ["painted"] : ["region"]) : STYLES], ["ground", SURFACES]])
@@ -109,12 +109,12 @@ export function checkPlan(raw) {
     if (side > OUTPUT_LIMITS.maxSide)
       err(null, "output.pxPerSquare", `The map would be ${pw} by ${ph} px; images can't be more than ${OUTPUT_LIMITS.maxSide} px a side. Use fewer pixels per square (at most ${Math.floor(OUTPUT_LIMITS.maxSide / Math.max(w, h))}).`);
     else if (side > OUTPUT_LIMITS.warnSide)
-      warn(null, "output.pxPerSquare", `The map will be ${pw} by ${ph} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(pw, ph)} of memory.${plan.output.format === "webp" ? " Saving it as WebP takes a while; JPEG (Image file) saves several times faster." : ""}`);
+      warn(null, "output.pxPerSquare", `The map will be ${pw} by ${ph} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(pw, ph)} of memory.${plan.output.format === "webp" ? " Saving it as WebP takes a while; JPEG (Image File) saves several times faster." : ""}`);
   }
   if (!(isNum(plan.output.quality) && plan.output.quality > 0 && plan.output.quality <= 1)) err(null, "output.quality", `output.quality is ${plan.output.quality}; it should be a number above 0, up to 1.`);
   if (!["auto", "webp", "jpeg"].includes(plan.output.format)) warn(null, "output.format", `output.format "${plan.output.format}" isn't one AtlasScribe saves; it should be "auto", "webp" or "jpeg". It's saved as WebP.`);
   if (raw.output?.dressing !== undefined && typeof raw.output.dressing !== "boolean") warn(null, "output.dressing", `output.dressing should be true or false; it's left off.`);
-  else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style === "textured") warn(null, "output.dressing", `Map dressing is drawn only in the illustrated and ink styles; this map is ${plan.style}.`);
+  else if (raw.output?.dressing === true && STYLES.includes(plan.style) && plan.style === "textured") warn(null, "output.dressing", `Map Dressing is drawn only in the illustrated and ink styles; this map is ${plan.style}.`);
   if (overland && raw.output?.places !== undefined && typeof raw.output.places !== "boolean") warn(null, "output.places", `output.places should be true or false; the places and roads are shown.`);
   if (overland && raw.output?.legend !== undefined && typeof raw.output.legend !== "boolean") warn(null, "output.legend", `output.legend should be true or false; the key is shown.`);
   for (const k of Object.keys(raw.output ?? {})) if (!["pxPerSquare", "format", "quality", "scene", "dressing", ...(overland ? ["grid", "places", "legend"] : [])].includes(k)) warn(null, `output.${k}`, `output has a field "${k}" that AtlasScribe doesn't use.`);

@@ -42,19 +42,19 @@ Enable AtlasScribe in your world. It needs Foundry 14 and works with any game sy
 
 1. As the GM, open the Scenes tab and click **AtlasScribe**.
 2. Click **Quick Start** (the magic wand). Pick a Place (a hamlet up to a metropolis), a season, the water and roads, or type what you want in the Describe box: "a walled market town called 'Kestrel's Rest' on a river, with a temple and an inn, in autumn". What it understood is set in the form, where you can change it. Set a choice to Any (last in its list) and the seed picks.
-3. **Make the plan.** The map appears in the window in a second or two (a city takes a few seconds, a metropolis about 20). Click a district to reroll it, lock it or change its settings; drag its corners to reshape it; Draw adds roads, rivers, woods, walls, buildings and labels. Drawing and reshaping need a mouse; everything else works from the keyboard.
-4. **Make scene.** AtlasScribe draws the map and makes it a scene, with hidden labels for the GM on the notable buildings. The scene takes its name from the plan's name, or from the place named in Quick Start. It's in the Scenes tab; the eye button beside Update scene goes to it.
+3. **Make the Plan.** The map appears in the window in a second or two (a city takes a few seconds, a metropolis about 20). Click a district to reroll it, lock it or change its settings; drag its corners to reshape it; Draw adds roads, rivers, woods, walls, buildings and labels. Drawing and reshaping need a mouse; everything else works from the keyboard.
+4. **Make Scene.** AtlasScribe draws the map and makes it a scene, with hidden labels for the GM on the notable buildings. The scene takes its name from the plan's name, or from the place named in Quick Start. It's in the Scenes tab; the eye button beside Update Scene goes to it.
 
 ## Your first battle map
 
-1. In Quick Start, open the **Battle map** tab.
+1. In Quick Start, open the **Battle Map** tab.
 2. Pick a Site (Wilderness, Roadside building, Village or town street, Camp, Castle, Cave or Dungeon), the season, the time of day and what's scattered about, or describe it: "a roadside inn at night in spring with a stage, a cellar of casks and rooms upstairs".
-3. **Make the plan**, look it over in the window, then **Make scene**.
+3. **Make the Plan**, look it over in the window, then **Make Scene**.
 4. The scene has walls, doors and windows, rooms with furniture you can move, wagons and tents you can move too, horses and oxen as tokens, roofs that fade as a token walks in, floors above and cellars as levels, lights and regions for height and water, and a moonlit night when it's set at night.
 
 On a battle map you can also sink a road between its banks, draw your own lights, regions for difficult terrain, hazards, cover and notes, and trails of prints and picket lines. `api.snapshot` takes a picture of a scene without opening it, for comparing maps.
 
-You can also drag a box on a town map with the **Battle map** tool, then click **Make battle map**: that corner of town opens in the window as a battle map, its streets and notable buildings where they were, ready for Make scene.
+You can also drag a box on a town map with the **Battle Map** tool, then click **Make Battle Map**: that corner of town opens in the window as a battle map, its streets and notable buildings where they were, ready for Make Scene.
 
 ## Region maps and imports
 
@@ -67,8 +67,8 @@ You can also drag a box on a town map with the **Battle map** tool, then click *
 AtlasScribe ships no art and needs none.
 
 - **Town and city maps** are drawn in the illustrated style: ink lines, one light palette, streets by their paving, fields by their crop. Nothing to set up.
-- **Battle maps** paint with your map art where you have it and draw the rest. With no art at all, the whole map is drawn, in one of two looks (Configure Settings, AtlasScribe, Drawn battle art): Painted or Inked.
-- **Your own art:** Configure Settings, AtlasScribe, **Art** opens the Art window. List folders of map art on your server on its Folders tab (then **Save and read**); Forgotten Adventures files are found by their names, and any other pack can say which image is which with a small manifest or with filename rules. You can also choose an image for any kind of art by hand. If you use FA Nexus, AtlasScribe fetches the Forgotten Adventures art you have through it: it uses your FA Nexus Patreon connection, downloads into FA Nexus's own folder, and may open and close FA Nexus's window during a render. Configure Settings turns that off.
+- **Battle maps** paint with your map art where you have it and draw the rest. With no art at all, the whole map is drawn, in one of two looks (Configure Settings, AtlasScribe, Drawn Battle Art): Painted or Inked.
+- **Your own art:** Configure Settings, AtlasScribe, **Art** opens the Art window. List folders of map art on your server on its Folders tab (then **Save and Read**); Forgotten Adventures files are found by their names, and any other pack can say which image is which with a small manifest or with filename rules. You can also choose an image for any kind of art by hand. If you use FA Nexus, AtlasScribe fetches the Forgotten Adventures art you have through it: it uses your FA Nexus Patreon connection, downloads into FA Nexus's own folder, and may open and close FA Nexus's window during a render. Configure Settings turns that off.
 
 ![The Art window, showing art from a pack chosen by a manifest, rules and by hand](docs/images/art-window.png)
 
@@ -77,7 +77,7 @@ A map painted from someone's art is for your own table under that art's license.
 ## Game rules
 
 - **Any system:** Foundry's own region rules. Banks and shallow water slow walkers, and stairs change level.
-- **With Battle map heights on (the default):** deep water is swum, a token's elevation follows the ground, and a walker can't step off a cliff.
+- **With Battle Map Heights on (the default):** deep water is swum, a token's elevation follows the ground, and a walker can't step off a cliff.
 - **Pathfinder Second Edition:** scenes and regions get their environment (urban, forest, plains), a walker stopped at a cliff gets an Athletics check at its Climb DC, and with PF2E Visioner fences and low walls give cover.
 - **D&D Fifth Edition:** banks, slopes, shallows and ice are its own kinds of difficult terrain, the ground is laid as floors for its falling, and a walker stopped at a cliff gets an Athletics check.
 

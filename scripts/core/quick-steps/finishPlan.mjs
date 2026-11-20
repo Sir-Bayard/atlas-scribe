@@ -22,7 +22,7 @@ export function finishPlan(ctx) {
     const away = districts.filter((d) => d.poly.length >= 3 && !pointInPolygon(C, d.poly)).sort((a, b) => area(b.poly) - area(a.poly));
     if (gr.next() < 0.4 && away.length) {
       const at = placeGreen({ poly: away[0].poly, len: gr.range(6, 8), dep: gr.range(4, 5.5), roads, inWater: (q) => !!ctx.water && distToPath(q, ctx.water.path) < ctx.water.width / 25 / 2 + 1, r: gr.fork("place"), clear: 2 });
-      if (at) features.push({ id: "town-green", type: "area", class: "park", style: "green", name: "The green", ...at });
+      if (at) features.push({ id: "town-green", type: "area", class: "park", style: "green", name: "The Green", ...at });
     }
   }
 

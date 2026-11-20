@@ -25,7 +25,7 @@ const zones = new Map();
 /** The setting and the hooks; called at init. */
 export function registerHeight() {
   game.settings.register(MOD, SETTING, {
-    name: "Battle map heights",
+    name: "Battle Map Heights",
     hint: "On AtlasScribe battle maps, a token's elevation follows the ground it moves onto (up a rise, down into a stream bed), and a walking token can't walk up or down a cliff or into deep water: it climbs, leaps, flies or swims instead. With this off, banks, slopes and water still slow walkers, deep water is greater difficult terrain, and a cliff doesn't stop them.",
     scope: "world",
     config: true,

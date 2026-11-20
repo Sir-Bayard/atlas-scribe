@@ -10,6 +10,7 @@ import { FP, MOD, esc, note } from "./util.mjs";
 import { rememberWindow } from "../kit/window-memory.mjs";
 import { keyboardWindow } from "../kit/keyboard.mjs";
 import { singleWindow } from "../kit/single-window.mjs";
+import { titleCase } from "../core/titles.mjs";
 
 /** Folder and rule edits left unsaved when the Art window was closed, given back when it opens again. */
 let kept = null;
@@ -48,24 +49,23 @@ function thumbOf(url) {
 
 /** A role's group, by its first part. */
 const GROUPS = {
-  ground: "Ground", surface: "Paths and paving", overlay: "Overlays", water: "Water", stone: "Stone", roof: "Roofs", tree: "Trees",
+  ground: "Ground", surface: "Paths and Paving", overlay: "Overlays", water: "Water", stone: "Stone", roof: "Roofs", tree: "Trees",
   bush: "Bushes", chimney: "Chimneys", prop: "Props", cliff: "Cliffs", smoke: "Smoke", floor: "Floors", wood: "Wood", wall: "Walls",
-  window: "Windows", fence: "Fences", shore: "Shores", dock: "Docks", field: "Fields", furn: "Furniture", edge: "Banks and edges",
+  window: "Windows", fence: "Fences", shore: "Shores", dock: "Docks", field: "Fields", furn: "Furniture", edge: "Banks and Edges",
   shadow: "Shadows", fog: "Mist", strip: "Strips",
 };
 const groupOf = (role) => role.split(".")[0];
 /** A filename rule as saved, to compare edits with. */
 const ruleOf = (r) => ({ pattern: String(r.pattern ?? "").trim(), role: String(r.role ?? "").trim(), px: Number(r.px) > 0 ? Number(r.px) : null });
 const groupLabel = (g) => GROUPS[g] ?? g.charAt(0).toUpperCase() + g.slice(1);
-/** A role's name in words: "roof.slate.winter" is "Slate, winter". */
+/** A role's name in words: "roof.slate.winter" is "Slate, Winter". */
 export function roleLabel(role) {
   const rest = role.split(".").slice(1).map((p) => p.replace(/-/g, " "));
-  const s = rest.length ? rest.join(", ") : role;
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return titleCase(rest.length ? rest.join(", ") : role);
 }
 /** Whether every battle map is drawn (the world setting), whatever art there is. */
 const drawAll = () => { try { return !!game.settings.get(MOD, "drawnAll"); } catch { return false; } };
-const SOURCES = { hand: "By hand", rule: "Rule", manifest: "Manifest", folder: "Folder", nexus: "FA Nexus", none: "None" };
+const SOURCES = { hand: "By Hand", rule: "Rule", manifest: "Manifest", folder: "Folder", nexus: "FA Nexus", none: "None" };
 
 const Base = keyboardWindow(rememberWindow(foundry.applications.api.ApplicationV2, { module: MOD, name: "art" }), { module: MOD, scope: "art", ownKeys: true });
 
@@ -220,9 +220,9 @@ export class ArtBrowser extends Base {
       return `<button type="button" role="tab" id="as-art-tab-${id}" aria-selected="${on}" aria-controls="as-art-panel" class="${on ? "active" : ""}" data-action="asTab" data-tab="${id}" ${on ? "data-focus-home" : ""}>${label}${mark}</button>`;
     };
     const body = this.#tab === "folders" ? this.#foldersHTML() : this.#tab === "rules" ? this.#rulesHTML() : this.#artHTML();
-    const elsewhere = this.#elsewhere.has(this.#tab) ? `<p class="as-art-elsewhere" role="status">Another GM saved art settings. <button type="button" data-action="asReloadEdits">Use theirs</button></p>` : "";
+    const elsewhere = this.#elsewhere.has(this.#tab) ? `<p class="as-art-elsewhere" role="status">Another GM saved art settings. <button type="button" data-action="asReloadEdits">Use Theirs</button></p>` : "";
     return `<nav class="as-art-tabs" role="tablist" aria-label="Art">${tab("folders", "Folders")}${tab("art", "Art")}${tab("rules", "Rules")}
-        <button type="button" class="as-art-reread" data-action="asReread" ${this.#reading ? "disabled" : ""} data-tooltip-text="Read the folders again" aria-label="Read the folders again"><i class="fa-solid fa-rotate${this.#reading ? " fa-spin" : ""}" aria-hidden="true"></i></button></nav>
+        <button type="button" class="as-art-reread" data-action="asReread" ${this.#reading ? "disabled" : ""} data-tooltip-text="Read the folders again" aria-label="Read the Folders Again"><i class="fa-solid fa-rotate${this.#reading ? " fa-spin" : ""}" aria-hidden="true"></i></button></nav>
       <section class="as-art-body" id="as-art-panel" role="tabpanel" aria-labelledby="as-art-tab-${this.#tab}" data-keep-scroll="art-body">${elsewhere}${body}</section>`;
   }
 
@@ -337,9 +337,9 @@ export class ArtBrowser extends Base {
     return `<p class="hint">Folders of map art on the server, looked in for battle maps and the textured style. Forgotten Adventures files are found by name; another pack needs a manifest (atlas-scribe.json) in its folder, or rules (the Rules tab), or art chosen in the Art tab.</p>
       <ol class="as-af-list">${rows || `<li class="as-af-none">No folders.</li>`}</ol>
       <div class="as-af-buttons">
-        <button type="button" data-action="asAdd"><i class="fa-solid fa-plus"></i> Add a folder</button>
+        <button type="button" data-action="asAdd"><i class="fa-solid fa-plus"></i> Add a Folder</button>
         <button type="button" data-action="asDefault">Default</button>
-        <button type="button" class="as-af-save" data-action="asSaveFolders" ${this.#reading ? "disabled" : ""}><i class="fa-solid fa-floppy-disk"></i> Save and read</button>
+        <button type="button" class="as-af-save" data-action="asSaveFolders" ${this.#reading ? "disabled" : ""}><i class="fa-solid fa-floppy-disk"></i> Save and Read</button>
       </div>`;
   }
 
@@ -445,7 +445,7 @@ export class ArtBrowser extends Base {
     const names = this.#rows.map((r) => r.role);
     const hasKinds = (role) => names.some((n) => n.startsWith(`${role}.`));
     const fileName = (f) => { try { return decodeURIComponent(String(f).split("/").pop()); } catch { return String(f).split("/").pop(); } };
-    const btn = (action, role, label, icon, extra = "") => `<button type="button" data-action="${action}" data-role="${esc(role)}" data-tooltip-text="${label}" aria-label="${label}" ${extra}><i class="fa-solid ${icon}"></i></button>`;
+    const btn = (action, role, label, icon, extra = "") => `<button type="button" data-action="${action}" data-role="${esc(role)}" data-tooltip-text="${label}" aria-label="${titleCase(label)}" ${extra}><i class="fa-solid ${icon}"></i></button>`;
     const html = [...groups].sort(([a], [b]) => groupLabel(a).localeCompare(groupLabel(b))).map(([g, rows]) => {
       const none = rows.filter((r) => r.source === "none").length;
       const items = rows.map((r) => {
@@ -459,7 +459,7 @@ export class ArtBrowser extends Base {
             <span class="as-art-acts">
               ${btn("asPickFiles", r.role, "Choose an image", "fa-image")}
               ${btn("asPickFolder", r.role, "Use a folder of images", "fa-folder-open")}
-              ${mine ? `<input type="number" class="as-art-px" data-role="${esc(r.role)}" value="${esc(mine.px ?? 200)}" min="20" max="2000" data-tooltip-text="Pixels a square" aria-label="Pixels a square">
+              ${mine ? `<input type="number" class="as-art-px" data-role="${esc(r.role)}" value="${esc(mine.px ?? 200)}" min="20" max="2000" data-tooltip-text="Pixels a square" aria-label="Pixels a Square">
               ${hasKinds(r.role) ? btn("asAllKinds", r.role, "Also for its seasons and sizes", "fa-layer-group", `class="${mine.all ? "active" : ""}" aria-pressed="${!!mine.all}"`) : ""}
               ${btn("asClear", r.role, "Clear", "fa-xmark")}` : ""}
             </span>
@@ -473,10 +473,10 @@ export class ArtBrowser extends Base {
     }).join("");
     const opt = (v, l) => `<option value="${v}" ${show === v ? "selected" : ""}>${l}</option>`;
     return `<div class="as-art-bar">
-        <input type="search" class="as-art-search" placeholder="Search" aria-label="Search the roles" value="${esc(this.#filter.text)}">
-        <select class="as-art-show" aria-label="Show">${opt("all", "All")}${opt("none", "None")}${opt("mine", "Your art")}${opt("hand", "By hand")}${opt("folder", "Folders")}${game.modules.get("fa-nexus")?.active || show === "nexus" ? opt("nexus", "FA Nexus") : ""}</select>
+        <input type="search" class="as-art-search" placeholder="Search" aria-label="Search the Roles" value="${esc(this.#filter.text)}">
+        <select class="as-art-show" aria-label="Show">${opt("all", "All")}${opt("none", "None")}${opt("mine", "Your Art")}${opt("hand", "By Hand")}${opt("folder", "Folders")}${game.modules.get("fa-nexus")?.active || show === "nexus" ? opt("nexus", "FA Nexus") : ""}</select>
       </div>
-      <p class="hint">${drawAll() ? "Draw whole battle maps is on (Configure Settings), so battle maps draw everything and use none of this art; the textured style still does." : "A role with none is drawn on a battle map and painted a plain color in the textured style."}</p>
+      <p class="hint">${drawAll() ? "Draw Whole Battle Maps is on (Configure Settings), so battle maps draw everything and use none of this art; the textured style still does." : "A role with none is drawn on a battle map and painted a plain color in the textured style."}</p>
       ${(this.#idx.notes ?? []).length ? `<ul class="as-art-notes">${this.#idx.notes.slice(0, 5).map((n) => `<li>${esc(n)}</li>`).join("")}${this.#idx.notes.length > 5 ? `<li>and ${this.#idx.notes.length - 5} more</li>` : ""}</ul>` : ""}
       ${html || `<p class="as-art-wait">Nothing to show.</p>`}`;
   }
@@ -550,7 +550,7 @@ export class ArtBrowser extends Base {
     const rows = this.#rules.map((r, i) => `<li>
         <input type="text" name="pattern-${i}" value="${esc(r.pattern)}" placeholder="*slate*roof*" aria-label="Pattern">
         <input type="text" name="role-${i}" value="${esc(r.role)}" placeholder="roof.slate" list="as-art-roles" aria-label="Role">
-        <input type="number" name="px-${i}" value="${esc(r.px)}" placeholder="200" min="20" max="2000" data-tooltip-text="Pixels a square" aria-label="Pixels a square">
+        <input type="number" name="px-${i}" value="${esc(r.px)}" placeholder="200" min="20" max="2000" data-tooltip-text="Pixels a square" aria-label="Pixels a Square">
         <span class="as-rule-n">${!this.#reading && same(r, i) && matches[i] !== undefined ? matches[i].toLocaleString() : ""}</span>
         <button type="button" data-action="asRemoveRule" data-i="${i}" data-tooltip-text="Remove" aria-label="Remove"><i class="fa-solid fa-trash"></i></button>
       </li>`).join("");
@@ -558,8 +558,8 @@ export class ArtBrowser extends Base {
       <ol class="as-rule-list">${rows || `<li class="as-af-none">No rules.</li>`}</ol>
       <datalist id="as-art-roles">${roles.map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join("")}</datalist>
       <div class="as-af-buttons">
-        <button type="button" data-action="asAddRule"><i class="fa-solid fa-plus"></i> Add a rule</button>
-        <button type="button" class="as-af-save" data-action="asSaveRules" ${this.#reading ? "disabled" : ""}><i class="fa-solid fa-floppy-disk"></i> Save and read</button>
+        <button type="button" data-action="asAddRule"><i class="fa-solid fa-plus"></i> Add a Rule</button>
+        <button type="button" class="as-af-save" data-action="asSaveRules" ${this.#reading ? "disabled" : ""}><i class="fa-solid fa-floppy-disk"></i> Save and Read</button>
       </div>`;
   }
 

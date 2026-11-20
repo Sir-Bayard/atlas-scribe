@@ -33,7 +33,7 @@ export function wallsAndCenter(ctx) {
   if (choices.center === "square") {
     const kinds = choices.size === "hamlet" ? ["circle", "irregular"] : choices.size === "village" ? ["circle", "rect", "irregular", "triangle"] : undefined;
     const sh = squareShape({ r: sr.fork("shape"), C, angle: (theta * Math.PI) / 180, rad: S.square, fork: choices.roads === "fork", kinds, arms: arms.map((a) => Math.atan2(a[1][1] - a[0][1], a[1][0] - a[0][0])) });
-    features.push({ id: "square", type: "square", shape: sh.shape, surface: paved ? paving : bare, radial: choices.size === "town" && sh.radial, market: true, name: sh.kind === "street" ? "The market street" : "The square" });
+    features.push({ id: "square", type: "square", shape: sh.shape, surface: paved ? paving : bare, radial: choices.size === "town" && sh.radial, market: true, name: sh.kind === "street" ? "The Market Street" : "The Square" });
   }
   // A well: beside the main road where the roads meet, with no square or green
   if (choices.center === "well") features.push({ id: "well", type: "prop", class: "well", at: pt(at(0, roadHalf(roads[0]) + 0.9)) });

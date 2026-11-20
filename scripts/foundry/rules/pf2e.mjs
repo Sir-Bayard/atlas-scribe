@@ -52,7 +52,7 @@ export const pf2e = {
     const { forest } = environmentsOf(plan, layout);
     const woods = withHoles(forest);
     if (woods.length) out.push({
-      name: "Woods (forest)", color: "#3f6b35",
+      name: "Woods (Forest)", color: "#3f6b35",
       shapes: woods.map((p) => ({ type: "polygon", points: pts(p.points), hole: p.hole })),
       visibility: CONST.REGION_VISIBILITY.LAYER, locked: true,
       behaviors: [environment(["forest"])],
@@ -60,7 +60,7 @@ export const pf2e = {
     });
     // (a cellar is underground, wherever on its level a token stands)
     if (levels?.has?.(-1) && W > 0 && H > 0) out.push({
-      name: "Cellar (underground)", color: "#5a4a3a",
+      name: "Cellar (Underground)", color: "#5a4a3a",
       shapes: [{ type: "rectangle", x: sceneX, y: sceneY, width: Math.round(W * pps), height: Math.round(H * pps), rotation: 0, hole: false }],
       visibility: CONST.REGION_VISIBILITY.LAYER, locked: true,
       behaviors: [environment(["underground"], "override")],

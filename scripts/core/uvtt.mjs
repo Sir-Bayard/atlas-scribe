@@ -15,7 +15,7 @@ const ptOf = (p) => (isNum(p?.x) && isNum(p?.y) ? [p.x, p.y] : null);
  * in as stone walls, its doors as gaps in them, its image as the underlay. Returns { plan, notes, image: { base64,
  * type, rect } or null } (rect: where the image lies, in squares). ftPerSquare: the grid's feet (5).
  */
-export function fromUVTT(input, { name = "Imported battle map", ftPerSquare = 5, seed = 1 } = {}) {
+export function fromUVTT(input, { name = "Imported Battle Map", ftPerSquare = 5, seed = 1 } = {}) {
   const u = typeof input === "string" ? JSON.parse(input) : input;
   const size = ptOf(u?.resolution?.map_size);
   if (!size || size[0] <= 0 || size[1] <= 0) throw new Error("This isn't a Universal VTT file: it has no resolution.map_size");

@@ -143,9 +143,9 @@ export class FilesView extends Base {
             ${maps.map(mapRow).join("")}
             ${backups.map((b) => file(b, " <small>(backup)</small>")).join("")}
           </ul>
-          ${plan.id ? `<button type="button" data-action="asOpenPlan" data-path="${esc(plan.path)}"><i class="fa-solid fa-map" aria-hidden="true"></i> Open the plan</button>` : ""}`, all);
+          ${plan.id ? `<button type="button" data-action="asOpenPlan" data-path="${esc(plan.path)}"><i class="fa-solid fa-map" aria-hidden="true"></i> Open the Plan</button>` : ""}`, all);
       }),
-      d.other.maps.length || d.other.backups.length ? group("@other", "Other files", "maps and backups of plans not saved here", `<ul class="as-file-list">${d.other.maps.map(mapRow).join("")}${d.other.backups.map((b) => file(b, " <small>(backup)</small>")).join("")}</ul>`, [...d.other.maps.map((m) => m.path), ...d.other.backups]) : "",
+      d.other.maps.length || d.other.backups.length ? group("@other", "Other Files", "maps and backups of plans not saved here", `<ul class="as-file-list">${d.other.maps.map(mapRow).join("")}${d.other.backups.map((b) => file(b, " <small>(backup)</small>")).join("")}</ul>`, [...d.other.maps.map((m) => m.path), ...d.other.backups]) : "",
     ].join("") || `<p class="as-art-wait">Nothing saved yet.</p>`;
     return `<div class="as-files-bar"><p class="hint">In ${esc(this.#where?.folder ?? "")}. Foundry can't delete files: remove ones you don't need from the server's Data folder.</p>
         <button type="button" data-action="asRefresh" ${this.#reading ? "disabled" : ""}${labelAttr("Read the files again")}><i class="fa-solid fa-rotate${this.#reading ? " fa-spin" : ""}" aria-hidden="true"></i></button></div>

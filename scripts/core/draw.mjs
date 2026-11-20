@@ -99,7 +99,7 @@ export const TOOLS = [
   { id: "inn", label: "Inn", icon: "fa-beer-mug-empty", geometry: "point", make: { type: "place", class: "inn" } },
   { id: "mine", label: "Mine", icon: "fa-person-digging", geometry: "point", make: { type: "place", class: "mine" } },
   { id: "highway", label: "High road", icon: "fa-road", geometry: "path", make: { type: "road", class: "highway" } },
-  { id: "label", label: "Label", icon: "fa-font", geometry: "point", make: { type: "label", text: "New label", show: "gm" } },
+  { id: "label", label: "Label", icon: "fa-font", geometry: "point", make: { type: "label", text: "New Label", show: "gm" } },
 ];
 
 export const toolOf = (id) => TOOLS.find((t) => t.id === id) ?? null;

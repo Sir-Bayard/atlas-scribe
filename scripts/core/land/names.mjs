@@ -96,14 +96,17 @@ function tongue(seed) {
  * parsed name set, namesets.mjs) makes names by the GM's own rules; a site's riverName is its river's name, for an
  * element that names it.
  */
+/** A name as a title: one that starts with "the" starts with "The" (a name stands on its own on a map or in a list). */
+export const titled = (n) => (typeof n === "string" ? n.replace(/^the(\s)/, "The$1") : n);
+
 export function namer(style = "english", seed = 1, { set = null } = {}) {
   if (style === "custom" && set) return customNamer(set, seed);
   const st = NAME_STYLES.includes(style) && style !== "custom" ? style : "english";
   const T = st === "english" ? null : tongue(seed);
   const used = new Set();
   const unique = (key, make) => {
-    for (let k = 0; k < 30; k++) { const nm = make(rng(seed, "names", st, key, k)); if (nm && !used.has(nm) && (st === "english" || !rude(nm))) { used.add(nm); return nm; } }
-    let k = 2, base = make(rng(seed, "names", st, key, "last")); while (used.has(`${base} ${k}`)) k++;
+    for (let k = 0; k < 30; k++) { const nm = titled(make(rng(seed, "names", st, key, k))); if (nm && !used.has(nm) && (st === "english" || !rude(nm))) { used.add(nm); return nm; } }
+    let k = 2, base = titled(make(rng(seed, "names", st, key, "last"))); while (used.has(`${base} ${k}`)) k++;
     used.add(`${base} ${k}`); return `${base} ${k}`;
   };
   const inventedPlaces = st === "invented";
@@ -204,14 +207,14 @@ function customNamer(set, seed) {
   const fromBank = (keys, key) => {
     for (const k of keys) {
       const list = bank(k), at = hash(`${k}|${key}`);
-      for (let i = 0; i < list.length; i++) { const n = list[(at + i) % list.length]; if (!used.has(n)) { used.add(n); for (const w of wordsOf(n)) roots.add(w); return n; } }
+      for (let i = 0; i < list.length; i++) { const n = titled(list[(at + i) % list.length]); if (!used.has(n)) { used.add(n); for (const w of wordsOf(n)) roots.add(w); return n; } }
     }
     return null;
   };
   const ok = (nm) => nm && !used.has(nm) && !banned.has(flat(nm));
   const unique = (key, makeOne) => {
-    for (let k = 0; k < 40; k++) { lastRoot = null; const nm = makeOne(rng(seed, "names", "custom", key, k)); if (ok(nm)) { used.add(nm); if (lastRoot) roots.add(flat(lastRoot)); return nm; } }
-    let k = 2, base = makeOne(rng(seed, "names", "custom", key, "last")) ?? set.name ?? "Unnamed"; while (used.has(`${base} ${k}`)) k++;
+    for (let k = 0; k < 40; k++) { lastRoot = null; const nm = titled(makeOne(rng(seed, "names", "custom", key, k))); if (ok(nm)) { used.add(nm); if (lastRoot) roots.add(flat(lastRoot)); return nm; } }
+    let k = 2, base = titled(makeOne(rng(seed, "names", "custom", key, "last")) ?? set.name ?? "Unnamed"); while (used.has(`${base} ${k}`)) k++;
     used.add(`${base} ${k}`); return `${base} ${k}`;
   };
   const pattern = (r, kind, name) => { const own = set.kinds?.[kind], list = own?.length ? own : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };

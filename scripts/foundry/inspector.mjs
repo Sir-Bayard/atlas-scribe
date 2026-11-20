@@ -10,6 +10,7 @@ import { TOOLS } from "../core/draw.mjs";
 import { OLD_PROFILES } from "../core/plan.mjs";
 import { cleanFont } from "../core/labels.mjs";
 import { hasMadePlaces } from "../core/land/places.mjs";
+import { titleCase } from "../core/titles.mjs";
 import { esc, labelAttr } from "./util.mjs";
 
 
@@ -36,13 +37,13 @@ function fieldHTML(field, disabled, fonts = []) {
   // What applies when it's left empty: words, or the default value (bare in a number box, which shows its unit beside it)
   const auto = field.auto === null || field.auto === undefined ? ""
     : typeof field.auto === "string" && !(field.values ?? []).includes(field.auto) ? field.auto
-    : typeof field.auto === "number" ? String(field.auto) : wordsFor(field, field.auto);
+    : typeof field.auto === "number" ? String(field.auto) : titleCase(wordsFor(field, field.auto));
   const dis = disabled ? "disabled" : "";
   const data = `data-field="${esc(field.name)}" data-kind="${esc(field.kind)}"`;
   let input;
   switch (field.kind) {
     case "enum": {
-      const opts = field.values.map((v) => `<option value="${esc(v)}" ${set && field.value === v ? "selected" : ""}>${esc(field.names?.[v] ?? v)}</option>`).join("");
+      const opts = field.values.map((v) => `<option value="${esc(v)}" ${set && field.value === v ? "selected" : ""}>${esc(titleCase(field.names?.[v] ?? v))}</option>`).join("");
       // A field that is always set (a kind) has no "default" choice; nor has one that sets something else (a building
       // group's roof sets each building's), which shows what's there when it differs ("mixed") and can't be picked
       const blank = field.name === "class" ? ""
@@ -54,8 +55,8 @@ function fieldHTML(field, disabled, fonts = []) {
     case "tristate":
       input = `<select id="${id}" ${data} ${dis}>
           <option value="" ${set ? "" : "selected"}>${esc(auto ? `Default (${auto})` : "Default")}</option>
-          <option value="yes" ${field.value === true ? "selected" : ""}>yes</option>
-          <option value="no" ${field.value === false ? "selected" : ""}>no</option></select>`;
+          <option value="yes" ${field.value === true ? "selected" : ""}>Yes</option>
+          <option value="no" ${field.value === false ? "selected" : ""}>No</option></select>`;
       break;
     case "boolean": {
       const on = set ? !!field.value : !!field.auto;
@@ -64,7 +65,7 @@ function fieldHTML(field, disabled, fonts = []) {
     }
     case "list": {
       const chosen = new Set(Array.isArray(field.value) ? field.value : []);
-      input = `<div class="as-pv-checks" id="${id}" ${data}>${field.values.map((v) => `<label><input type="checkbox" value="${esc(v)}" ${chosen.has(v) ? "checked" : ""} ${dis}> ${esc(field.names?.[v] ?? v)}</label>`).join("")}</div>`;
+      input = `<div class="as-pv-checks" id="${id}" ${data}>${field.values.map((v) => `<label><input type="checkbox" value="${esc(v)}" ${chosen.has(v) ? "checked" : ""} ${dis}> ${esc(titleCase(field.names?.[v] ?? v))}</label>`).join("")}</div>`;
       if (!set && auto) input += `<p class="as-pv-auto">None checked: ${esc(auto)}</p>`;
       break;
     }
@@ -98,7 +99,7 @@ function fieldHTML(field, disabled, fonts = []) {
     ? `<button type="button" class="as-pv-reset" data-action="asReset" data-field="${esc(field.name)}"${labelAttr(`${field.label}: back to the default`)} ${dis}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>`
     : field.kind === "boolean" && set ? `<button type="button" class="as-pv-reset" data-action="asReset" data-field="${esc(field.name)}"${labelAttr(`${field.label}: back to the default (${wordsFor(field, field.auto)})`)} ${dis}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>` : "";
   return `<div class="as-pv-field as-k-${esc(field.kind)} ${set ? "as-set" : ""}">
-      <label for="${id}" ${field.help ? `data-tooltip-text="${esc(field.help)}"` : ""}>${esc(field.label)}</label>
+      <label for="${id}" ${field.help ? `data-tooltip-text="${esc(field.help)}"` : ""}>${esc(titleCase(field.label))}</label>
       <div class="as-pv-input">${input}${unit}${reset}</div>
     </div>`;
 }
@@ -132,13 +133,13 @@ export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
   return `<section class="as-pv-insp" data-id="${esc(id)}">
       <header>
         <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
-        <span class="as-pv-name"><strong>${esc(f.name ?? f.text ?? id)}</strong><em>${esc(kindOf(f))}${f.name || f.text ? ` · ${esc(id)}` : ""}</em></span>
+        <span class="as-pv-name"><strong>${esc(f.name ?? f.text ?? id)}</strong><em>${esc(titleCase(kindOf(f)))}${f.name || f.text ? ` · ${esc(id)}` : ""}</em></span>
         ${roll}
       </header>
       <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
       <div class="as-pv-tools">
-        ${f.type === "place" && ["city", "town", "village", "hamlet", "castle"].includes(f.class) ? `<button type="button" data-action="asPlaceMap" data-id="${esc(id)}"${labelAttr("A new plan of this place, made by Quick Start at its size, with its name")} ${working ? "disabled" : ""}><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> Make its map</button>` : ""}
-        ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip-text="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall in</button>` : ""}
+        ${f.type === "place" && ["city", "town", "village", "hamlet", "castle"].includes(f.class) ? `<button type="button" data-action="asPlaceMap" data-id="${esc(id)}"${labelAttr(f.class === "castle" ? "A battle map of this castle, named for it" : "Quick Start with this place filled in: its size, name, water, roads and the way they run, and what's around it, to change before making it")} ${working ? "disabled" : ""}><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> ${f.class === "castle" ? "Make This Castle" : "Make This Town"}</button>` : ""}
+        ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip-text="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall In</button>` : ""}
         <button type="button" data-action="asDelete" data-id="${esc(id)}" class="as-danger" data-tooltip-text="Take it out of the plan (Undo brings it back)" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Delete</button>
       </div>
     </section>`;
@@ -175,7 +176,7 @@ export function generatedHTML(gen, { working = false, nameOf = (id) => id } = {}
   return `<section class="as-pv-insp" data-id="${esc(`@gen:${item.id}`)}">
       <header>
         <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
-        <span class="as-pv-name"><strong>${esc(kind === "house" ? called : item.class === "street" ? "Street" : "Lane")}</strong><em>generated · ${esc(item.id)}</em></span>
+        <span class="as-pv-name"><strong>${esc(titleCase(kind === "house" ? called : item.class === "street" ? "Street" : "Lane"))}</strong><em>generated · ${esc(item.id)}</em></span>
       </header>
       <div class="as-pv-fields">
         <p class="as-pv-hint">${esc(what)}</p>
@@ -210,7 +211,7 @@ export function underlayHTML(u, { working = false } = {}) {
         ${num("width", "Width", x1 - x0)}
       </div>
       <div class="as-pv-tools">
-        <button type="button" data-action="asUnderPick" ${working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i> Another image</button>
+        <button type="button" data-action="asUnderPick" ${working ? "disabled" : ""}><i class="fa-solid fa-folder-open"></i> Another Image</button>
         <button type="button" data-action="asUnderRemove" class="as-danger" ${working ? "disabled" : ""}><i class="fa-solid fa-trash"></i> Remove</button>
       </div>
     </section>`;
@@ -224,7 +225,7 @@ export function planHTML(plan, { working = false, fonts = [], nameSets = [] } = 
   return `<section class="as-pv-insp" data-id="@plan">
       <header>
         <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
-        <span class="as-pv-name"><strong>Plan settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
+        <span class="as-pv-name"><strong>Plan Settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
       </header>
       ${overlandActionsHTML(plan, working, nameSets)}
       <div class="as-pv-fields">
@@ -243,13 +244,13 @@ function overlandActionsHTML(plan, working, nameSets = []) {
   const ns = plan.land.nameSet && typeof plan.land.nameSet.text === "string" ? plan.land.nameSet : null;
   const lib = ns?.from ? nameSets.find((s) => s.id === ns.from) : null;
   const changed = lib && lib.text !== ns.text;
-  const nameLine = `<p class="as-pv-hint">${ns ? `Name set: <strong>${esc(ns.name ?? "Name set")}</strong>${plan.land.nameStyle === "custom" ? "" : " (not used: Names is set to another style)"}${changed ? " · changed in the library since" : ""}` : "Names follow the Names setting below, or a name set of your own."}</p>`;
+  const nameLine = `<p class="as-pv-hint">${ns ? `Name set: <strong>${esc(ns.name ?? "Name Set")}</strong>${plan.land.nameStyle === "custom" ? "" : " (not used: Names is set to another style)"}${changed ? " · changed in the library since" : ""}` : "Names follow the Names setting below, or a name set of your own."}</p>`;
   return `${nameLine}<div class="as-pv-tools">
-      <button type="button" data-action="asNameSets"${labelAttr("Your own naming rules: write them, check them, and use one on this map")} ${dis}><i class="fa-solid fa-signature" aria-hidden="true"></i> Name sets</button>
-      ${changed ? `<button type="button" data-action="asNameSetUpdate"${labelAttr("Copy the library's version of this name set into the plan; names it makes may change")} ${dis}><i class="fa-solid fa-rotate" aria-hidden="true"></i> Update from library</button>` : ""}
+      <button type="button" data-action="asNameSets"${labelAttr("Your own naming rules: write them, check them, and use one on this map")} ${dis}><i class="fa-solid fa-signature" aria-hidden="true"></i> Name Sets</button>
+      ${changed ? `<button type="button" data-action="asNameSetUpdate"${labelAttr("Copy the library's version of this name set into the plan; names it makes may change")} ${dis}><i class="fa-solid fa-rotate" aria-hidden="true"></i> Update From Library</button>` : ""}
     </div><div class="as-pv-tools">
-      <button type="button" data-action="asPlaceTowns"${labelAttr(made ? "Place them again: the towns, roads and bridges the generator made and you haven't changed are replaced; any you moved, renamed or placed stay, and the new ones join them" : "Towns, villages, castles, ruins, roads and bridges placed where people would build them; they're kept in the plan, so they stay put")} ${dis}><i class="fa-solid ${made ? "fa-dice" : "fa-city"}" aria-hidden="true"></i> ${made ? "Reroll places" : "Place towns and roads"}</button>
-      <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Keep the names</button>
+      <button type="button" data-action="asPlaceTowns"${labelAttr(made ? "Place them again: the towns, roads and bridges the generator made and you haven't changed are replaced; any you moved, renamed or placed stay, and the new ones join them" : "Towns, villages, castles, ruins, roads and bridges placed where people would build them; they're kept in the plan, so they stay put")} ${dis}><i class="fa-solid ${made ? "fa-dice" : "fa-city"}" aria-hidden="true"></i> ${made ? "Reroll Places" : "Place Towns and Roads"}</button>
+      <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Keep the Names</button>
     </div>`;
 }
 
@@ -297,9 +298,9 @@ export function paletteHTML(tool, { points = 0, working = false, kind = "settlem
         <span class="as-pv-name"><strong>Draw</strong><em>${esc(active ? `a new ${active.label.toLowerCase()}` : "pick what to add")}</em></span>
       </header>
       <div class="as-pv-fields">
-        ${groups.map(([name, ids]) => `<p class="as-pv-group">${esc(name)}</p><div class="as-pv-tools-grid">${ids.map((id) => {
+        ${groups.map(([name, ids]) => `<p class="as-pv-group">${esc(titleCase(name))}</p><div class="as-pv-tools-grid">${ids.map((id) => {
           const t = by.get(id);
-          return `<button type="button" data-action="asTool" data-tool="${esc(id)}" class="${tool === id ? "as-on" : ""}" ${working ? "disabled" : ""}><i class="fa-solid ${esc(t.icon)}"></i> ${esc(t.label)}</button>`;
+          return `<button type="button" data-action="asTool" data-tool="${esc(id)}" class="${tool === id ? "as-on" : ""}" ${working ? "disabled" : ""}><i class="fa-solid ${esc(t.icon)}"></i> ${esc(titleCase(t.label))}</button>`;
         }).join("")}</div>`).join("")}
         ${active ? `<p class="as-pv-hint as-pv-how">${esc(howText(active, points))}</p>` : ""}
       </div>
@@ -321,22 +322,22 @@ export function battleSizeText({ box, size, big, limit, tooBig, most }) {
  * battle map. st: the window's #battleState().
  */
 export function battleHTML(st) {
-  const zoomLabel = (z) => (z === 1 ? "True size" : z === 1.5 ? "1.5 times true size" : `${z} times true size`);
+  const zoomLabel = (z) => (z === 1 ? "True Size" : z === 1.5 ? "1.5 Times True Size" : `${z} Times True Size`);
   return `<section class="as-pv-insp as-pv-palette as-pv-battle">
       <header>
         <button type="button" data-action="asBattle" data-tooltip-text="Back to the list" aria-label="Back to the list" ${st.working ? "disabled" : ""}><i class="fa-solid fa-arrow-left"></i></button>
-        <span class="as-pv-name"><strong>Battle map</strong><em>an area of this map, at battle size</em></span>
+        <span class="as-pv-name"><strong>Battle Map</strong><em>an area of this map, at battle size</em></span>
       </header>
       <div class="as-pv-fields">
         <p class="as-pv-hint as-pv-how">${esc(HOW.battle)} Its streets, water, squares and notable buildings stay where they are here; its houses are built again at battle size.</p>
         <div class="as-pv-field"><label for="as-pv-battle-zoom">Zoom</label><select id="as-pv-battle-zoom" data-battle-zoom ${st.working ? "disabled" : ""}>${st.zooms.map((z) => `<option value="${z}" ${z === st.zoom ? "selected" : ""}>${esc(zoomLabel(z))}</option>`).join("")}</select></div>
-        <p class="as-pv-group">A click places</p>
+        <p class="as-pv-group">A Click Places</p>
         <div class="as-pv-tools-grid">${st.presets.map((n) => `<button type="button" data-action="asBattlePreset" data-size="${n}" class="${n === st.preset ? "as-on" : ""}" aria-pressed="${n === st.preset}" ${st.working ? "disabled" : ""}>${n} x ${n}</button>`).join("")}</div>
-        <p class="as-pv-group">The box</p>
+        <p class="as-pv-group">The Box</p>
         <p class="as-pv-hint as-pv-battle-size ${st.big ? "as-warn" : ""}">${esc(battleSizeText(st))}</p>
       </div>
       <div class="as-pv-tools">
-        <button type="button" data-action="asBattleMake" ${st.placed && !st.working && !st.tooBig ? "" : "disabled"} data-tooltip-text="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making it" : "Make battle map"}</button>
+        <button type="button" data-action="asBattleMake" ${st.placed && !st.working && !st.tooBig ? "" : "disabled"} data-tooltip-text="Make the battle map and open it here (save it to keep it)"><i class="fa-solid ${st.zooming ? "fa-spinner fa-spin" : "fa-chess-board"}"></i> ${st.zooming ? "Making It" : "Make Battle Map"}</button>
         ${st.zooming ? `<button type="button" data-action="asBattleStop"><i class="fa-solid fa-stop"></i> Stop</button>` : `<button type="button" data-action="asBattle" ${st.working ? "disabled" : ""}><i class="fa-solid fa-xmark"></i> Cancel</button>`}
       </div>
     </section>`;

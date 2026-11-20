@@ -211,7 +211,7 @@ export function quickPlan(options = {}) {
   if (options.outside?.citadel === true && Array.isArray(q) && !q.includes("garrison")) notes.push("A citadel is the garrison quarter walled in, and this city has no garrison quarter, so it has no citadel. Add Garrison to its quarters for one.");
   if (out.stepNotes) { notes.push(...out.stepNotes); delete out.stepNotes; }
   if (options.high && options.high !== "none" && !QUICK_HIGH.includes(options.high)) notes.push(`"${options.high}" isn't high ground Quick Start knows (${QUICK_HIGH.join(", ")}), so the map has none.`);
-  if (options.high && options.high !== "none" && CITIES.includes(out.choices?.size)) notes.push("A city's own ground makes its high ground; the High ground choice is for a village or town.");
+  if (options.high && options.high !== "none" && CITIES.includes(out.choices?.size)) notes.push("A city's own ground makes its high ground; the High Ground choice is for a village or town.");
   // (choices asked for that the rest didn't allow, and what was used instead)
   const used = out.choices ?? {};
   if (CITIES.includes(used.size)) {

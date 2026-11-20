@@ -149,7 +149,7 @@ export function fromWatabou(json, { name = null, ftPerUnit = 3.28, ftPerSquare =
     if (n.building > 3000) notes.push(`${n.building} buildings came in as fixed buildings; laying them out is slow`);
   } else if (houses.length) notes.push(`The export's ${houses.length} buildings were left out: AtlasScribe builds its own (api.importPlan with { buildings: true } keeps the generator's)`);
   if (!n.road) notes.push("The export has no roads; AtlasScribe's districts make their own streets");
-  const title = name ?? values.name ?? data.name ?? "Imported town";
+  const title = name ?? values.name ?? data.name ?? "Imported Town";
   features.push({ id: "name", type: "label", text: String(title), at: [r1(W / 2), 1.5], show: "gm", size: "huge" });
   const plan = {
     atlasScribe: PLAN_VERSION,

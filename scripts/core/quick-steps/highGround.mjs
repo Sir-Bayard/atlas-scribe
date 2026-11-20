@@ -61,9 +61,9 @@ export function highGround(ctx) {
   };
   const hills = band(1, 1);
   if (!hills) { (ctx.notes ??= []).push("There was no room along any edge for the high ground asked for, so the map has none."); return; }
-  features.push({ id: "hills", type: "area", class: "hills", name: "The hills", shape: hills });
+  features.push({ id: "hills", type: "area", class: "hills", name: "The Hills", shape: hills });
   if (want === "mountains") {
     const peaks = band(0.5, 2);
-    if (peaks) features.push({ id: "mountains", type: "area", class: "mountains", name: "The mountains", shape: peaks });
+    if (peaks) features.push({ id: "mountains", type: "area", class: "mountains", name: "The Mountains", shape: peaks });
   }
 }

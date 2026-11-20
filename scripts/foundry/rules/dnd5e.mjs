@@ -35,7 +35,7 @@ export const dnd5e = {
     const rough = roughOf(spec);
     // (a world whose system has no typed difficult terrain, an older one, keeps Foundry's own costs)
     if (!rough || !spec.cost || !globalThis.CONFIG?.RegionBehavior?.dataModels?.["dnd5e.difficultTerrain"]) return core();
-    return [{ type: "dnd5e.difficultTerrain", name: "Difficult terrain", system: { magical: false, types: [TERRAIN_5E[rough]], ignoredDispositions: [] } }];
+    return [{ type: "dnd5e.difficultTerrain", name: "Difficult Terrain", system: { magical: false, types: [TERRAIN_5E[rough]], ignoredDispositions: [] } }];
   },
 
   regions({ layout, levels, sceneX, sceneY, pps, floorFt = 10 }) {

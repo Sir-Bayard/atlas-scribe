@@ -28,7 +28,7 @@ import { MOD } from "./util.mjs";
 const SETTING = "gameRules";
 
 /** Foundry's own rules: no adapter. */
-export const CORE = Object.freeze({ id: "core", label: "Foundry's own" });
+export const CORE = Object.freeze({ id: "core", label: "Foundry's Own" });
 
 /** The adapters by game system id. */
 const adapters = new Map([["pf2e", pf2e], ["dnd5e", dnd5e]]);
@@ -43,12 +43,12 @@ export function registerRules(systemId, adapter) {
 /** The world setting, and the hook other modules add their adapters on. Called at init. */
 export function registerRulesSetting() {
   game.settings.register(MOD, SETTING, {
-    name: "Battle map rules",
+    name: "Battle Map Rules",
     hint: "The rules a battle map's regions follow. The game system's: PF2e's environments and climb checks, D&D 5e's difficult terrain, floors and falling, or another system's when a module adds it (any other system keeps Foundry's own). Foundry's own: only the movement costs and level changes every system reads (D&D 5e's floors are laid either way, as its falling needs them). Takes effect when a scene is made or updated.",
     scope: "world",
     config: true,
     type: String,
-    choices: { system: "The game system's", core: "Foundry's own" },
+    choices: { system: "The Game System's", core: "Foundry's Own" },
     default: "system",
   });
   Hooks.once("setup", () => Hooks.callAll(`${MOD}.rules`, registerRules));

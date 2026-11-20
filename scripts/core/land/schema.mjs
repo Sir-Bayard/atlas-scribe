@@ -75,7 +75,7 @@ export function checkLand(raw) {
   if (raw.wind !== undefined && raw.wind !== "auto" && !(Number.isFinite(raw.wind) && raw.wind >= 0 && raw.wind <= 360)) err("wind", "land.wind must be auto or a heading in degrees (the direction the wind comes from: 270 is a west wind).");
   if (raw.rain !== undefined && !["drier", "normal", "wetter"].includes(raw.rain)) err("rain", "land.rain must be drier, normal or wetter.");
   if (raw.nameStyle !== undefined && !NAME_STYLES.includes(raw.nameStyle)) warn("nameStyle", `land.nameStyle should be one of ${NAME_STYLES.join(", ")}; English names are used.`);
-  if (raw.nameStyle === "custom" && !(raw.nameSet && typeof raw.nameSet.text === "string")) warn("nameSet", "The map's names are set to a name set of its own, but it has none (land.nameSet); English names are used. Pick one in Name sets.");
+  if (raw.nameStyle === "custom" && !(raw.nameSet && typeof raw.nameSet.text === "string")) warn("nameSet", "The map's names are set to a name set of its own, but it has none (land.nameSet); English names are used. Pick one in Name Sets.");
   if (raw.nameSet !== undefined && raw.nameSet !== null) {
     if (typeof raw.nameSet !== "object" || typeof raw.nameSet.text !== "string") warn("nameSet", "land.nameSet should be { name, text }; it's left out.");
     else for (const p of parseNameSet(raw.nameSet.text).problems) warn("nameSet", `Name set${raw.nameSet.name ? ` "${raw.nameSet.name}"` : ""}${p.line ? `, line ${p.line}` : ""}: ${p.message}`);

@@ -147,7 +147,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       onProgress(0.8, "Placing the floors");
       // (a castle's 20 ft level is its wall walk as well as its buildings' floors at that height)
       const walk = layout?.items?.some((i) => i.kind === "wall" && i.curtain);
-      levelOf = await syncLevels(sceneId, image.levels, groundSrc, walk ? { 2: "Wall walk" } : {}, tagAll);
+      levelOf = await syncLevels(sceneId, image.levels, groundSrc, walk ? { 2: "Wall Walk" } : {}, tagAll);
       // (a map given by its path brings no floor images: a scene without its floors' levels gets only the ground's)
       if (!levelOf && !Array.isArray(image.levels) && layout?.items?.some((i) => i.kind === "stairs")) warnings.push("This battle map's floors above and below the ground weren't made: they come only with a map rendered for the scene, so only the ground's walls, furniture and lights were placed.");
     } catch (e) {
@@ -587,8 +587,8 @@ function ownLight(o) {
 
 /** Each kind of a plan's own region: its color in the Regions controls, its name when it has none, and a walker's cost. */
 export const ZONES = {
-  difficult: { color: "#c9a227", name: "Difficult terrain", cost: 2 },
-  greater: { color: "#b5651d", name: "Greater difficult terrain", cost: 3 },
+  difficult: { color: "#c9a227", name: "Difficult Terrain", cost: 2 },
+  greater: { color: "#b5651d", name: "Greater Difficult Terrain", cost: 3 },
   hazard: { color: "#c0392b", name: "Hazard" },
   cover: { color: "#2e86c1", name: "Cover" },
   squeeze: { color: "#8e44ad", name: "Squeeze", cost: 2 },
@@ -607,7 +607,7 @@ export function planZones(layout, sceneX, sceneY, pps, plan) {
   return layout.items.filter((i) => i.kind === "zone" && ZONES[i.class]).map((z) => {
     const Z = ZONES[z.class], name = z.name || Z.name, text = String(z.note || name).slice(0, 200);
     const behaviors = [];
-    if (Z.cost && keys.length) behaviors.push({ type: "modifyMovementCost", name: "Walking cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? Z.cost : 1])) } });
+    if (Z.cost && keys.length) behaviors.push({ type: "modifyMovementCost", name: "Walking Cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? Z.cost : 1])) } });
     // (shown to the GM only, as a token moves in: Foundry 14's event and its Gamemaster visibility, 0)
     if (canSay) behaviors.push({ type: "displayScrollingText", name: "Note", system: { events: ["tokenAnimateIn"], text, color: Z.color, visibility: 0, once: false } });
     return {
@@ -800,7 +800,7 @@ const CELLAR_DARK = 0.55;
 const FLOOR_FT = FLOORS.height;
 /** A floor's level's name. */
 // (counted as American floors are: the ground floor is the first)
-const FLOOR_NAMES = { "-1": "Cellar", 1: "Second floor", 2: "Third floor", 3: "Fourth floor" };
+const FLOOR_NAMES = { "-1": "Cellar", 1: "Second Floor", 2: "Third Floor", 3: "Fourth Floor" };
 
 /**
  * A battle layout's stairs as Region data: over each flight, Foundry's own Change Level, on every floor it joins
@@ -890,7 +890,7 @@ export function battleHeights(layout, sceneX, sceneY, pps, plan, rules = CORE) {
   const pts = (ring) => ring.flatMap(([x, y]) => [Math.round(sceneX + x * pps), Math.round(sceneY + y * pps)]);
   // (the actions the scene's movement cost knows, so a system that leaves some out isn't given them)
   const keys = Object.keys(CONFIG.RegionBehavior?.dataModels?.modifyMovementCost?.schema?.fields?.difficulties?.fields ?? {});
-  const slows = (cost) => [{ type: "modifyMovementCost", name: "Walking cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? cost : 1])) } }];
+  const slows = (cost) => [{ type: "modifyMovementCost", name: "Walking Cost", system: { difficulties: Object.fromEntries(keys.map((k) => [k, WALKING.includes(k) ? cost : 1])) } }];
   const core = (r) => (r.kind === "ground" || !keys.length || !r.cost ? [] : slows(r.cost));
   return heightRegions(layout).map((r) => ({
     name: r.name,

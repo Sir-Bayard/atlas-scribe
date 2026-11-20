@@ -13,7 +13,7 @@ import { zoomSize, ZOOMS } from "../core/zoom.mjs";
  * squares a side the size shows amber; MOST: past this many it can't be made (one image's limit at the fewest pixels
  * a square); LEAST: a box under this many squares a side is too small to fight in.
  */
-export const BATTLE_TOOL = { id: "battle", label: "Battle map", geometry: "box", how: "battle" };
+export const BATTLE_TOOL = { id: "battle", label: "Battle Map", geometry: "box", how: "battle" };
 export const BATTLE = { PRESETS: [30, 45, 60], preset: 45, BIG: 60, MOST: Math.floor(OUTPUT_LIMITS.maxSide / OUTPUT_LIMITS.minPxPerSquare), LEAST: 5 };
 
 /** The tool a palette id names. */

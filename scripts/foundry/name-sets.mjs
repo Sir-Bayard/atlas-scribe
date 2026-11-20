@@ -14,7 +14,7 @@ import { singleWindow } from "../kit/single-window.mjs";
 export function storedNameSets() {
   try {
     const list = JSON.parse(game.settings.get(MOD, "nameSets") || "[]");
-    return Array.isArray(list) ? list.filter((s) => s && typeof s.id === "string" && typeof s.text === "string").map((s) => ({ id: s.id, name: typeof s.name === "string" && s.name.trim() ? s.name.trim() : "Name set", text: s.text })) : [];
+    return Array.isArray(list) ? list.filter((s) => s && typeof s.id === "string" && typeof s.text === "string").map((s) => ({ id: s.id, name: typeof s.name === "string" && s.name.trim() ? s.name.trim() : "Name Set", text: s.text })) : [];
   } catch { return []; }
 }
 
@@ -24,7 +24,7 @@ export async function saveNameSets(list) {
 }
 
 /** The name a set's text gives itself (its name: line), else the fallback. */
-export const setNameOf = (text, fallback = "Name set") => parseNameSet(text).set?.name ?? fallback;
+export const setNameOf = (text, fallback = "Name Set") => parseNameSet(text).set?.name ?? fallback;
 
 /** A new set's text: every part shown, with a line saying what it's for. */
 export const NEW_SET = `name: New name set
@@ -60,7 +60,7 @@ const Base = keyboardWindow(rememberWindow(foundry.applications.api.ApplicationV
 let useHere = null;
 /** A set being edited when the window closed unsaved: brought back when it opens again (until a reload). */
 let keptEdit = null;
-/** How "Use on this map" reaches the AtlasScribe window: fn({ name, text, from }) => true when used. */
+/** How "Use on This Map" reaches the AtlasScribe window: fn({ name, text, from }) => true when used. */
 export function setUseHere(fn) { useHere = fn; }
 
 export class NameSetsWindow extends Base {
@@ -68,7 +68,7 @@ export class NameSetsWindow extends Base {
     id: "atlas-scribe-name-sets",
     classes: ["atlas-scribe", "as-names"],
     tag: "div",
-    window: { title: "AtlasScribe: Name sets", icon: "fa-solid fa-signature", resizable: true },
+    window: { title: "AtlasScribe: Name Sets", icon: "fa-solid fa-signature", resizable: true },
     position: { width: 760, height: 640 },
     actions: {
       asNsPick: NameSetsWindow.#onPick,
@@ -105,7 +105,7 @@ export class NameSetsWindow extends Base {
   async close(options = {}) {
     if (this.dirty && !options.discard) {
       keptEdit = { ...this.#edit };
-      note.info(`AtlasScribe: your changes to ${setNameOf(this.#edit.text)} aren't saved. They're kept until you reload: open Name sets again to save them.`);
+      note.info(`AtlasScribe: your changes to ${setNameOf(this.#edit.text)} aren't saved. They're kept until you reload: open Name Sets again to save them.`);
     }
     clearTimeout(this.#timer);
     return super.close(options);
@@ -115,16 +115,16 @@ export class NameSetsWindow extends Base {
     const list = this.#sets.map((s) => `<li><button type="button" data-action="asNsPick" data-id="${esc(s.id)}" class="${s.id === this.#edit.id ? "active" : ""}" aria-pressed="${s.id === this.#edit.id}">${esc(s.name)}</button></li>`).join("");
     const isNew = this.#edit.id === null;
     return `<div class="as-ns">
-      <nav class="as-ns-list" aria-label="Name sets">
-        <ul>${list || `<li class="as-ns-empty">None yet</li>`}${isNew ? `<li><button type="button" class="active" aria-pressed="true">${esc(setNameOf(this.#edit.text, "New name set"))} <em>(not saved)</em></button></li>` : ""}</ul>
+      <nav class="as-ns-list" aria-label="Name Sets">
+        <ul>${list || `<li class="as-ns-empty">None Yet</li>`}${isNew ? `<li><button type="button" class="active" aria-pressed="true">${esc(setNameOf(this.#edit.text, "New Name Set"))} <em>(Not Saved)</em></button></li>` : ""}</ul>
         <button type="button" data-action="asNsNew"><i class="fa-solid fa-plus" aria-hidden="true"></i> New</button>
       </nav>
       <section class="as-ns-edit">
-        <label for="as-ns-text" class="as-ns-label">The set's rules, as text</label>
+        <label for="as-ns-text" class="as-ns-label">The Set's Rules</label>
         <textarea id="as-ns-text" class="as-ns-text" spellcheck="false" data-focus-home>${esc(this.#edit.text)}</textarea>
         <div class="as-ns-buttons">
           <button type="button" data-action="asNsSave"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save</button>
-          <button type="button" data-action="asNsUse" data-tooltip-text="Copy it into the plan open in AtlasScribe; that map's names follow it from then on (the library can change; the map keeps its copy)"><i class="fa-solid fa-map" aria-hidden="true"></i> Use on this map</button>
+          <button type="button" data-action="asNsUse" data-tooltip-text="Copy it into the plan open in AtlasScribe; that map's names follow it from then on (the library can change; the map keeps its copy)"><i class="fa-solid fa-map" aria-hidden="true"></i> Use on This Map</button>
           ${isNew ? "" : `<button type="button" data-action="asNsDelete" class="as-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>`}
         </div>
         <div class="as-ns-check" aria-live="polite">${this.#checkHTML()}</div>
@@ -156,7 +156,7 @@ export class NameSetsWindow extends Base {
   /** Asks before a pick or a new set drops unsaved changes. */
   async #mayLeave() {
     if (!this.dirty) return true;
-    return foundry.applications.api.DialogV2.confirm({ window: { title: "AtlasScribe: unsaved name set" }, content: `<p>${esc(setNameOf(this.#edit.text))} has changes that aren't saved. Drop them?</p>`, rejectClose: false });
+    return foundry.applications.api.DialogV2.confirm({ window: { title: "AtlasScribe: Unsaved Name Set" }, content: `<p>${esc(setNameOf(this.#edit.text))} has changes that aren't saved. Drop them?</p>`, rejectClose: false });
   }
 
   static async #onPick(event, target) {
@@ -176,7 +176,7 @@ export class NameSetsWindow extends Base {
     if (!set) return note.warn(`AtlasScribe: the name set can't be saved yet: ${problems.find((p) => p.level === "error")?.message ?? "it makes no names"}`);
     const list = storedNameSets();
     const id = this.#edit.id ?? foundry.utils.randomID();
-    const item = { id, name: set.name ?? "Name set", text: this.#edit.text };
+    const item = { id, name: set.name ?? "Name Set", text: this.#edit.text };
     const k = list.findIndex((s) => s.id === id);
     if (k >= 0) list[k] = item; else list.push(item);
     await saveNameSets(list);
@@ -188,7 +188,7 @@ export class NameSetsWindow extends Base {
   static async #onDelete() {
     const s = this.#sets.find((q) => q.id === this.#edit.id);
     if (!s) return;
-    const yes = await foundry.applications.api.DialogV2.confirm({ window: { title: "AtlasScribe: delete a name set" }, content: `<p>Delete ${esc(s.name)} from the library? Maps that use it keep their own copy.</p>`, rejectClose: false });
+    const yes = await foundry.applications.api.DialogV2.confirm({ window: { title: "AtlasScribe: Delete a Name Set" }, content: `<p>Delete ${esc(s.name)} from the library? Maps that use it keep their own copy.</p>`, rejectClose: false });
     if (!yes) return;
     await saveNameSets(storedNameSets().filter((q) => q.id !== s.id));
     this.#edit = null;
@@ -202,7 +202,7 @@ export class NameSetsWindow extends Base {
     if (!useHere) return note.warn("AtlasScribe: open an overland map in AtlasScribe first.");
     // (the map's copy is the library's only when it's the text saved there; changes not saved make a copy of its own)
     const saved = this.#sets.find((s) => s.id === this.#edit.id), same = !!saved && saved.text === this.#edit.text;
-    const done = await useHere({ name: set.name ?? "Name set", text: this.#edit.text, from: same ? saved.id : null });
+    const done = await useHere({ name: set.name ?? "Name Set", text: this.#edit.text, from: same ? saved.id : null });
     if (done) note.info(`AtlasScribe: the map now uses ${set.name ?? "this name set"}.${same ? "" : " Save it to keep it in the library too."}`);
   }
 
