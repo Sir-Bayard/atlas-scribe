@@ -23,6 +23,8 @@ import { zoomSize, ZOOMS } from "../core/zoom.mjs";
 import { esc, note, FP, MOD, labelAttr } from "./util.mjs";
 import { overlaySVG, draftSVG, battleBoxSVG, underStyle, pickableLabel } from "./overlay.mjs";
 import { regionPlan } from "../core/quick-region.mjs";
+import { landPlan } from "../core/quick-land.mjs";
+import { storedNameSets } from "./name-sets.mjs";
 import { quickDialog, openDialog, importDialog, confirmSaveOver, confirmDrop, confirmDraft, summaryDialog } from "./plan-files-ui.mjs";
 import { rememberWindow } from "../kit/window-memory.mjs";
 import { keyboardWindow } from "../kit/keyboard.mjs";
@@ -1766,6 +1768,25 @@ export class AtlasScribeApp extends Base {
     const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
     const chosen = await quickDialog({ tab: ["battle", "region"].includes(this.#quickTab) ? this.#quickTab : "settlement", seed, onTab: (t) => { this.#quickTab = t; } });
     if (!chosen) return;
+    // A generated region: its plan into the window, then its towns, roads and bridges placed on its land
+    if (chosen.land) {
+      if (!(await this.#mayReplace(before))) return;
+      try {
+        const { nameSetId, ...opts } = chosen.land;
+        if (!opts.name?.trim()) delete opts.name;
+        const lib = nameSetId ? storedNameSets().find((s) => s.id === nameSetId) : null;
+        if (nameSetId && !lib) note.warn("AtlasScribe: that name set isn't in the library any more, so the names are English.");
+        const { plan, notes } = landPlan({ ...opts, ...(lib ? { nameSet: { name: lib.name, text: lib.text, from: lib.id } } : {}) });
+        for (const n of notes) note.info(n);
+        const drawn = await this.show(plan);
+        // (towns from the plan's own seed, so the same seed and choices make the same map; Reroll places varies them)
+        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges. Reroll places in the Plan panel places them again; Undo takes them off.`);
+        else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place towns and roads in the Plan panel once it draws.");
+      } catch (e) {
+        note.error(e.message);
+      }
+      return;
+    }
     // A region: its plan into the window
     if (chosen.region) {
       if (!(await this.#mayReplace(before))) return;

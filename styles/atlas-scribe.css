@@ -800,3 +800,8 @@
 .atlas-scribe .as-ns-problems .as-error { color: var(--color-level-error, #c33); }
 .atlas-scribe .as-ns-problems .as-warning { color: var(--color-level-warning, #b8860b); }
 .atlas-scribe .as-ns-samples p { margin: 0.25rem 0; }
+
+/* Quick Start's Region tab: the generated region's further choices */
+.atlas-scribe.as-quick .as-qs-more { margin: 0.2rem 0 0.4rem; }
+.atlas-scribe.as-quick .as-qs-more summary { cursor: pointer; font-size: 0.9em; opacity: 0.85; margin-bottom: 0.3rem; }
+.atlas-scribe .as-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

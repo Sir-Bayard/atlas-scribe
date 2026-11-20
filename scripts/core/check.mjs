@@ -103,12 +103,13 @@ export function checkPlan(raw) {
   const pps = plan.output.pxPerSquare;
   if (!(Number.isInteger(pps) && pps >= OUTPUT_LIMITS.minPxPerSquare))
     err(null, "output.pxPerSquare", `output.pxPerSquare is ${pps}; it should be a whole number of pixels, ${OUTPUT_LIMITS.minPxPerSquare} or more (Foundry's smallest grid).`);
-  else if (Number.isInteger(w) && Number.isInteger(h)) {
-    const side = Math.max(w, h) * pps;
+  else if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+    // (a hex map's extent isn't whole cells, so its picture's pixels are rounded up)
+    const pw = Math.ceil(w * pps), ph = Math.ceil(h * pps), side = Math.max(pw, ph);
     if (side > OUTPUT_LIMITS.maxSide)
-      err(null, "output.pxPerSquare", `The map would be ${w * pps} by ${h * pps} px; images can't be more than ${OUTPUT_LIMITS.maxSide} px a side. Use fewer pixels per square (at most ${Math.floor(OUTPUT_LIMITS.maxSide / Math.max(w, h))}).`);
+      err(null, "output.pxPerSquare", `The map would be ${pw} by ${ph} px; images can't be more than ${OUTPUT_LIMITS.maxSide} px a side. Use fewer pixels per square (at most ${Math.floor(OUTPUT_LIMITS.maxSide / Math.max(w, h))}).`);
     else if (side > OUTPUT_LIMITS.warnSide)
-      warn(null, "output.pxPerSquare", `The map will be ${w * pps} by ${h * pps} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(w * pps, h * pps)} of memory.${plan.output.format === "webp" ? " Saving it as WebP takes a while; JPEG (Image file) saves several times faster." : ""}`);
+      warn(null, "output.pxPerSquare", `The map will be ${pw} by ${ph} px. Some graphics cards can't show a scene background over ${OUTPUT_LIMITS.warnSide} px a side, and painting it takes about ${paintMemory(pw, ph)} of memory.${plan.output.format === "webp" ? " Saving it as WebP takes a while; JPEG (Image file) saves several times faster." : ""}`);
   }
   if (!(isNum(plan.output.quality) && plan.output.quality > 0 && plan.output.quality <= 1)) err(null, "output.quality", `output.quality is ${plan.output.quality}; it should be a number above 0, up to 1.`);
   if (!["auto", "webp", "jpeg"].includes(plan.output.format)) warn(null, "output.format", `output.format "${plan.output.format}" isn't one AtlasScribe saves; it should be "auto", "webp" or "jpeg". It's saved as WebP.`);

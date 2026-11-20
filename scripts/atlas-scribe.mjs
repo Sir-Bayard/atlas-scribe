@@ -25,6 +25,7 @@ import { filesWindow } from "./foundry/files-view.mjs";
 import { listPlans, loadPlan, savePlan, planExists, fileFor } from "./foundry/plans.mjs";
 import { quickPlan, QUICK, QUICK_LABELS, QUICK_ANY, HAS, QUARTERS, OUTSIDE } from "./core/quick.mjs";
 import { briefPlan, BRIEF, BRIEF_LABELS } from "./core/brief.mjs";
+import { landPlan, LAND_QUICK, LAND_QUICK_LABELS } from "./core/quick-land.mjs";
 import { readDescription } from "./core/describe.mjs";
 import { registerHeight } from "./foundry/height.mjs";
 import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
@@ -394,6 +395,33 @@ const api = {
    */
   briefPlan(brief = {}) {
     return briefPlan(brief);
+  },
+
+  /**
+   * A generated region's plan, as Quick Start's Region tab makes it at a kingdom, realm, continent or world scale
+   * ({ scale, type, seaSide, climate, mountains, towns, grid, size, names, season, age, plates, coast, wind, rain,
+   * rivers, nameSet (a library set's id or name, or { name, text }), name, seed }; any left out has a default, Any
+   * lets the seed pick; a world takes no climate).
+   * Returns { plan, choices, notes }; its towns and roads aren't placed yet (api.placeTowns). The choices are listed
+   * in api.landChoices.
+   */
+  landPlan(options = {}) {
+    const { nameSet, ...rest } = options ?? {};
+    let set = null;
+    if (typeof nameSet === "string") {
+      const lib = storedNameSets().find((s) => s.id === nameSet || s.name === nameSet);
+      if (!lib) throw new Error(`AtlasScribe: the library has no name set "${nameSet}"`);
+      set = { name: lib.name, text: lib.text, from: lib.id };
+    } else if (nameSet && typeof nameSet === "object") {
+      if (typeof nameSet.text !== "string") throw new Error("AtlasScribe: a name set given as an object needs its text ({ name, text })");
+      set = { name: nameSet.name, text: nameSet.text };
+    }
+    return landPlan({ ...rest, ...(set ? { nameSet: set } : {}) });
+  },
+
+  /** A generated region's choices for landPlan: each one's values (the first the default) and labels. */
+  get landChoices() {
+    return { values: structuredClone(LAND_QUICK), labels: structuredClone(LAND_QUICK_LABELS) };
   },
 
   /**
