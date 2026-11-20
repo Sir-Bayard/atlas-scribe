@@ -11,7 +11,7 @@ import { CHARACTERS, CHARACTER_LABELS, characterOf } from "./character.mjs";
 import { BLOCKS } from "./layout/anchors.mjs";
 import { NAME_STYLES } from "./land/schema.mjs";
 import { SCALES, gridFor, extentOf, MILE_FT } from "./land/units.mjs";
-import { untouched, stillNeeded } from "./land/places.mjs";
+import { untouched, stillNeeded, madeMark } from "./land/places.mjs";
 
 /** The characters that have a centerpiece. */
 const ANCHORED = new Set(Object.keys(BLOCKS));
@@ -211,7 +211,7 @@ export const PLAN_FIELDS = [
   { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size; towns and roads the generator placed go (place them again), and what you placed keeps its spot on the map" },
   { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place towns and roads puts down" },
-  { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound. A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
+  { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it. It's a tile of its own in the scene; the places it covers have no label" },
   { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label color" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
@@ -486,6 +486,7 @@ export function setPlanField(plan, path, raw) {
     next.features = (next.features ?? []).filter((f) => !untouched(f) || need.has(f.id)).map((f) => scaleFeature(f, w1 / w0, h1 / h0));
     // (names kept for the land's features name other features on new land)
     if (isObj(next.land) && isObj(next.land.names)) next.land.names = {};
+    if (isObj(next.land)) delete next.land.keptNames;
     return { plan: next };
   }
   // An overland map's grid: its cells are the same size, so it keeps its miles
@@ -515,6 +516,52 @@ export function setPlanField(plan, path, raw) {
   const last = keys[keys.length - 1];
   if (value === undefined) delete o[last];
   else o[last] = value;
+  return { plan: next };
+}
+
+/** Which names an overland plan keeps from Keep names, still as kept: { places: Set of ids, land: Set of ids }. */
+function keptIds(plan) {
+  const k = isObj(plan?.land?.keptNames) ? plan.land.keptNames : {}, kp = isObj(k.places) ? k.places : {}, kl = isObj(k.land) ? k.land : {};
+  const named = (n) => typeof n === "string" && n.trim();
+  // (the generator's places that keep a name and haven't been changed since, and the GM's places Keep names named,
+  // still with that name; a name the GM typed or changed is the GM's)
+  const places = new Set((plan?.features ?? []).filter((f) => f?.type === "place" && named(f.name) && (untouched(f) || kp[f.id] === f.name)).map((f) => f.id));
+  const names = isObj(plan?.land?.names) ? plan.land.names : {};
+  const land = new Set(Object.keys(names).filter((id) => named(names[id]) && kl[id] === names[id]));
+  return { places, land };
+}
+
+/**
+ * The names an overland plan keeps (Keep names) that a name set could make again: { places, features }, how many.
+ * Names the GM typed or changed aren't counted.
+ */
+export function keptNamesOf(plan) {
+  const { places, land } = keptIds(plan);
+  return { places: places.size, features: land.size };
+}
+
+/**
+ * The plan with a name set of the GM's copied into it ({ name, text, from: its library id or null }), its names now
+ * made by it. With rename, the names it kept (keptNamesOf) go too, so the set names those again; a place the GM
+ * renamed or changed keeps its name. Returns { plan } or { error }.
+ */
+export function withNameSet(plan, set, { rename = false } = {}) {
+  if (plan?.kind !== "region" || !isObj(plan.land)) return { error: "A name set is for an overland map (a region plan with land)." };
+  if (!set || typeof set.text !== "string" || !set.text.trim()) return { error: "That name set is empty." };
+  const next = structuredClone(plan);
+  next.land.nameSet = { name: typeof set.name === "string" && set.name.trim() ? set.name.trim() : "Name set", text: set.text, ...(set.from ? { from: set.from } : {}) };
+  next.land.nameStyle = "custom";
+  if (rename) {
+    const { places, land } = keptIds(plan);
+    for (const f of next.features ?? []) {
+      if (f?.type !== "place" || !places.has(f.id)) continue;
+      const generated = untouched(f);
+      delete f.name;
+      if (generated) f.made = madeMark(f);
+    }
+    if (isObj(next.land.names)) for (const id of land) delete next.land.names[id];
+    delete next.land.keptNames;
+  }
   return { plan: next };
 }
 

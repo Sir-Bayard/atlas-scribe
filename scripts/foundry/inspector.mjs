@@ -217,7 +217,7 @@ export function underlayHTML(u, { working = false } = {}) {
 }
 
 /** The plan's own settings: name, season, ground, size and scale, then the scene it's made into. */
-export function planHTML(plan, { working = false, fonts = [] } = {}) {
+export function planHTML(plan, { working = false, fonts = [], nameSets = [] } = {}) {
   const fields = planFieldsOf(plan);
   const main = fields.filter((f) => f.group !== "scene");
   const scene = fields.filter((f) => f.group === "scene");
@@ -226,7 +226,7 @@ export function planHTML(plan, { working = false, fonts = [] } = {}) {
         <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
         <span class="as-pv-name"><strong>Plan settings</strong><em>${esc(plan.name ?? plan.id ?? "")}</em></span>
       </header>
-      ${overlandActionsHTML(plan, working)}
+      ${overlandActionsHTML(plan, working, nameSets)}
       <div class="as-pv-fields">
         ${groupsHTML(main, working, fonts)}
         <details class="as-pv-more" ${scene.some((f) => f.value !== undefined) ? "open" : ""}><summary>Scene</summary>${scene.map((f) => fieldHTML(f, working, fonts)).join("")}</details>
@@ -235,13 +235,21 @@ export function planHTML(plan, { working = false, fonts = [] } = {}) {
 }
 
 /** An overland plan's own actions in its Plan panel: place (or reroll) its towns and roads, and keep its names. */
-function overlandActionsHTML(plan, working) {
+function overlandActionsHTML(plan, working, nameSets = []) {
   if (plan?.kind !== "region" || !plan?.land || typeof plan.land !== "object") return "";
   const dis = working ? "disabled" : "";
   const made = hasMadePlaces(plan);
-  return `<div class="as-pv-tools">
+  // (the map's own name set: its name, and whether the library's copy has changed since)
+  const ns = plan.land.nameSet && typeof plan.land.nameSet.text === "string" ? plan.land.nameSet : null;
+  const lib = ns?.from ? nameSets.find((s) => s.id === ns.from) : null;
+  const changed = lib && lib.text !== ns.text;
+  const nameLine = `<p class="as-pv-hint">${ns ? `Name set: <strong>${esc(ns.name ?? "Name set")}</strong>${plan.land.nameStyle === "custom" ? "" : " (not used: Names is set to another style)"}${changed ? " · changed in the library since" : ""}` : "Names follow the Names setting below, or a name set of your own."}</p>`;
+  return `${nameLine}<div class="as-pv-tools">
+      <button type="button" data-action="asNameSets"${labelAttr("Your own naming rules: write them, check them, and use one on this map")} ${dis}><i class="fa-solid fa-signature" aria-hidden="true"></i> Name sets</button>
+      ${changed ? `<button type="button" data-action="asNameSetUpdate"${labelAttr("Copy the library's version of this name set into the plan; names it makes may change")} ${dis}><i class="fa-solid fa-rotate" aria-hidden="true"></i> Update from library</button>` : ""}
+    </div><div class="as-pv-tools">
       <button type="button" data-action="asPlaceTowns"${labelAttr(made ? "Place them again: the towns, roads and bridges the generator made and you haven't changed are replaced; any you moved, renamed or placed stay, and the new ones join them" : "Towns, villages, castles, ruins, roads and bridges placed where people would build them; they're kept in the plan, so they stay put")} ${dis}><i class="fa-solid ${made ? "fa-dice" : "fa-city"}" aria-hidden="true"></i> ${made ? "Reroll places" : "Place towns and roads"}</button>
-      <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-signature" aria-hidden="true"></i> Keep the names</button>
+      <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Keep the names</button>
     </div>`;
 }
 

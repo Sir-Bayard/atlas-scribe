@@ -473,14 +473,16 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
       if (R && idx >= 0) {
         const up = R.nodes[Math.max(0, idx - 3)], down = idx + 3 < R.nodes.length ? R.nodes[idx + 3] : R.to;
         const fr = riverF[rn] / T;
-        river = { size: fr < 3 ? "small" : fr < 15 ? "medium" : "large", in: up !== rn ? bearing(U(up)) : null, out: down >= 0 && down !== rn ? bearing(U(down)) : null };
+        river = { size: fr < 3 ? "small" : fr < 15 ? "medium" : "large", in: up !== rn ? bearing(U(up)) : null, out: down >= 0 && down !== rn ? bearing(U(down)) : null, id: R.id };
       }
     }
     // the coast: the nearest sea within a few steps
     let sea = -1, sd = Infinity; within(x[i], y[i], Math.max(3, 3 * step), (j) => { if (!landMask[j]) { const d = sq(x[j] - x[i]) + sq(y[j] - y[i]); if (d < sd || (d === sd && j < sea)) { sd = d; sea = j; } } });
     // its roads: each road leaving it, the way it heads a few steps out
     const roads = (roadsAt.get(i) ?? []).map((pts) => bearing(pts[Math.min(pts.length - 1, 3)])).sort((a, b) => a - b);
-    return { river, coast: sea >= 0 ? bearing(U(sea)) : null, roads: [...new Set(roads)], biome: biomeOf(i), ground: h[i] < 0.16 ? "low" : h[i] < 0.45 ? "hills" : "high" };
+    // (and what a name might say of it: rivers meeting there, a lake's shore, the foot of a pass)
+    return { river, coast: sea >= 0 ? bearing(U(sea)) : null, roads: [...new Set(roads)], biome: biomeOf(i), ground: h[i] < 0.16 ? "low" : h[i] < 0.45 ? "hills" : "high",
+      ...(near1(junction, i) && river ? { confluence: true } : {}), ...(shore[i] > 0.5 ? { lake: true } : {}), ...(passFoot[i] ? { pass: true } : {}) };
   }
   const roadsOut = features.filter((q) => q.type === "road"), crossOut = features.filter((q) => q.type === "crossing");
   return {

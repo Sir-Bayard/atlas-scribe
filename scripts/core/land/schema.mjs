@@ -2,6 +2,7 @@
  * The `land` block of an overland plan: its defaults and its checks, and the painted terrain feature classes. Kept
  * apart from the generator so plan.mjs and check.mjs can use it without loading the generator. Pure.
  */
+import { parseNameSet } from "./namesets.mjs";
 
 /** The generator's version: a change that moves land bumps it (plans record it as land.gen). */
 export const GEN = 1;
@@ -12,7 +13,7 @@ export const LAND_AMOUNTS = ["few", "some", "many"];
 export const LAND_AGES = ["young", "mature", "old"];
 export const LAND_SIDES = ["north", "south", "east", "west", "auto"];
 /** How invented names sound: English countryside, English places with older-sounding features, or one invented tongue. */
-export const NAME_STYLES = ["english", "mixed", "invented"];
+export const NAME_STYLES = ["english", "mixed", "invented", "custom"];
 /** The intent layers a plan may carry (8-bit gray rasters over the context frame). */
 export const LAYER_NAMES = ["relief", "rock", "water", "climateWet", "climateWarm", "cover", "zones", "lock"];
 /** Painted terrain classes: range is drawn along a path, peak at a point, the rest as shapes. */
@@ -37,7 +38,11 @@ export function normalizeLand(land = {}) {
   L.volcanic = L.volcanic === true;
   L.zones = Array.isArray(L.zones) ? L.zones : [];
   L.names = L.names && typeof L.names === "object" && !Array.isArray(L.names) ? L.names : {};
+  // (what Keep names kept, so a name set can name it again: { places, land }, id to name)
+  if (!(L.keptNames && typeof L.keptNames === "object" && !Array.isArray(L.keptNames))) delete L.keptNames;
   L.nameStyle = NAME_STYLES.includes(L.nameStyle) ? L.nameStyle : "english";
+  // (a GM's own name set, copied in from the world's library: { name, text, from })
+  L.nameSet = L.nameSet && typeof L.nameSet === "object" && !Array.isArray(L.nameSet) && typeof L.nameSet.text === "string" ? L.nameSet : null;
   L.towns = LAND_AMOUNTS.includes(L.towns) ? L.towns : "some";
   L.layers ??= null;
   L.keep ??= null;
@@ -50,7 +55,7 @@ export function checkLand(raw) {
   const err = (field, message) => out.push({ level: "error", field: `land.${field}`, message });
   const warn = (field, message) => out.push({ level: "warning", field: `land.${field}`, message });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { err("", "land should be an object, like { type: \"continents\" }."); return out; }
-  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "nameStyle", "towns", "keep"]);
+  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "keep"]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
@@ -66,6 +71,11 @@ export function checkLand(raw) {
   if (raw.wind !== undefined && raw.wind !== "auto" && !(Number.isFinite(raw.wind) && raw.wind >= 0 && raw.wind <= 360)) err("wind", "land.wind must be auto or a heading in degrees (the direction the wind comes from: 270 is a west wind).");
   if (raw.rain !== undefined && !["drier", "normal", "wetter"].includes(raw.rain)) err("rain", "land.rain must be drier, normal or wetter.");
   if (raw.nameStyle !== undefined && !NAME_STYLES.includes(raw.nameStyle)) warn("nameStyle", `land.nameStyle should be one of ${NAME_STYLES.join(", ")}; English names are used.`);
+  if (raw.nameStyle === "custom" && !(raw.nameSet && typeof raw.nameSet.text === "string")) warn("nameSet", "The map's names are set to a name set of its own, but it has none (land.nameSet); English names are used. Pick one in Name sets.");
+  if (raw.nameSet !== undefined && raw.nameSet !== null) {
+    if (typeof raw.nameSet !== "object" || typeof raw.nameSet.text !== "string") warn("nameSet", "land.nameSet should be { name, text }; it's left out.");
+    else for (const p of parseNameSet(raw.nameSet.text).problems) warn("nameSet", `Name set${raw.nameSet.name ? ` "${raw.nameSet.name}"` : ""}${p.line ? `, line ${p.line}` : ""}: ${p.message}`);
+  }
   if (raw.names !== undefined && (typeof raw.names !== "object" || raw.names === null || Array.isArray(raw.names))) warn("names", "land.names should be { feature id: name }; it's left out.");
   if (raw.towns !== undefined && !LAND_AMOUNTS.includes(raw.towns)) warn("towns", "land.towns should be few, some or many; some are placed.");
   for (const k of ["rivers", "lakes"]) if (raw[k] !== undefined && !LAND_AMOUNTS.includes(raw[k])) err(k, `land.${k} must be few, some or many.`);

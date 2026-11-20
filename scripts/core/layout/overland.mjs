@@ -65,9 +65,9 @@ export function compactLand(L) {
 let lastLand = null;
 /** Lets go of the land kept for the next layout (a worker's forget, or a layout of another kind of map). */
 export function forgetLand() { lastLand = null; }
-/** What the land is made from: its settings (not the names given its features, their style or how many towns), seed, size, grid, picture scale, painted terrain and water. */
+/** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, nameStyle, towns, ...landIn } = plan.land ?? {};
+  const { names, keptNames, nameStyle, nameSet, towns, ...landIn } = plan.land ?? {};
   return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water"))]);
 }
 

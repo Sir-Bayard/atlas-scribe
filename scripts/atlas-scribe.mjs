@@ -15,6 +15,10 @@ import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt, forgetBroken, forgetUnloadable } from "./foundry/art/index.mjs";
 import { folderIndex, forget as forgetFolders, forgetChoices } from "./foundry/art/folders.mjs";
 import { ArtMenu, artWindow } from "./foundry/art-browser.mjs";
+import { nameSetsWindow, storedNameSets, saveNameSets, setUseHere, refreshNameSets } from "./foundry/name-sets.mjs";
+import { parseNameSet, sampleNames } from "./core/land/namesets.mjs";
+import { namer } from "./core/land/names.mjs";
+import { withNameSet } from "./core/edit.mjs";
 import { publish, stamp } from "./foundry/publish.mjs";
 import { AtlasScribeApp } from "./foundry/preview.mjs";
 import { filesWindow } from "./foundry/files-view.mjs";
@@ -683,6 +687,61 @@ const api = {
     return exclusive(() => worker.run("placeTowns", { plan, seed, density }));
   },
 
+  /** The world's name sets (a GM's own naming rules for overland maps): [{ id, name, text }]. */
+  nameSets() {
+    requireGM();
+    return storedNameSets();
+  },
+
+  /** Reads a name set's text: { ok, problems, samples: { places, features } } (samples only when it makes names). */
+  checkNameSet(text) {
+    const { set, problems } = parseNameSet(text);
+    return { ok: !!set && !problems.some((p) => p.level === "error"), problems, samples: set ? sampleNames(set, namer, 1) : null };
+  },
+
+  /** Saves a name set to the world's library ({ id?, text }; its name comes from its name: line). Returns its id. */
+  async saveNameSet({ id = null, text } = {}) {
+    requireGM();
+    const { set, problems } = parseNameSet(text);
+    if (!set) throw new Error(`AtlasScribe: the name set makes no names: ${problems.map((p) => p.message).join(" ")}`);
+    if (id !== null && (typeof id !== "string" || !id.trim())) throw new Error("AtlasScribe: a name set's id is a string (leave it out for a new set)");
+    const list = storedNameSets(), sid = id ?? foundry.utils.randomID(), item = { id: sid, name: set.name ?? "Name set", text };
+    const k = list.findIndex((s) => s.id === sid);
+    if (k >= 0) list[k] = item; else list.push(item);
+    await saveNameSets(list);
+    return sid;
+  },
+
+  /** Takes a name set out of the world's library (maps keep their own copies). */
+  async deleteNameSet(id) {
+    requireGM();
+    await saveNameSets(storedNameSets().filter((s) => s.id !== id));
+  },
+
+  /**
+   * An overland plan with a name set of the library (by id or name) or given as { name, text } copied into it; with
+   * rename, the names it kept (Keep names) are made again by the set. Returns the plan.
+   */
+  useNameSet(input, set, { rename = false } = {}) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    const lib = typeof set === "string" ? storedNameSets().find((s) => s.id === set || s.name === set) : null;
+    if (typeof set === "string" && !lib) throw new Error(`AtlasScribe: the library has no name set "${set}"`);
+    const use = lib ? { name: lib.name, text: lib.text, from: lib.id } : set;
+    const bad = parseNameSet(use?.text ?? "").problems.find((p) => p.level === "error");
+    if (bad) throw new Error(`AtlasScribe: that name set can't name a map: ${bad.message}`);
+    const res = withNameSet(plan, use, { rename });
+    if (res.error) throw new Error(`AtlasScribe: ${res.error}`);
+    return res.plan;
+  },
+
+  /** Opens the Name sets window. */
+  async openNameSets() {
+    requireGM();
+    return nameSetsWindow.open();
+  },
+
   /** The names an overland plan's map makes, kept in the plan so they stay when the land is made again. Returns { plan, places, features }. */
   async keepNames(input) {
     requireGM();
@@ -809,6 +868,8 @@ const host = {
   summary: (plan) => api.summary(plan),
   placeTowns: (plan, options) => api.placeTowns(plan, options),
   keepNames: (plan) => api.keepNames(plan),
+  nameSets: () => storedNameSets(),
+  openNameSets: () => api.openNameSets(),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)
   last: () => {
     try {
@@ -888,6 +949,8 @@ Hooks.once("init", () => {
   // (JSON: [{ source, path, bucket }]; empty until the GM sets a list, meaning FA Nexus's folder when it exists)
   game.settings.register(MOD, "artFolders", { scope: "world", config: false, type: String, default: "", onChange: () => { forgetFolders(); forgetUnloadable(); } });
   // (JSON: art chosen by hand, { role: { files, folders, px, all } }, and filename rules, [{ pattern, role, px }])
+  // (the world's name sets: [{ id, name, text }], foundry/name-sets.mjs)
+  game.settings.register(MOD, "nameSets", { scope: "world", config: false, type: String, default: "[]", onChange: () => { if (theApp?.rendered) theApp.render(); refreshNameSets(); } });
   game.settings.register(MOD, "artRoles", { scope: "world", config: false, type: String, default: "", onChange: () => { forgetChoices(); forgetUnloadable(); } });
   game.settings.register(MOD, "artRules", { scope: "world", config: false, type: String, default: "", onChange: () => { forgetChoices(); forgetUnloadable(); } });
   game.settings.registerMenu(MOD, "artMenu", {
@@ -1011,6 +1074,7 @@ Hooks.on("renderSceneDirectory", (app, html) => {
 });
 
 Hooks.once("ready", () => {
+  setUseHere((set) => theWindow().useNameSet(set));
   const module = game.modules.get(MOD);
   module.api = api;
   Hooks.callAll(`${MOD}.ready`, api);

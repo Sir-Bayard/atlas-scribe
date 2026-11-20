@@ -7,6 +7,7 @@
  * the rest over their middle. Pure.
  */
 import { namer } from "../land/names.mjs";
+import { parseNameSet, usesRiver } from "../land/namesets.mjs";
 import { readable } from "../labels.mjs";
 import { Heap } from "../land/heap.mjs";
 
@@ -39,7 +40,9 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
   const COLOR = LOOKS[scene.labelLook] ?? LOOKS.bold;
   const placeColor = COLOR.place ?? (/^#[0-9a-f]{6}$/i.test(scene.labelColor ?? "") ? scene.labelColor : "#13202e");
   const placeFont = scene.labelFont && scene.labelFont !== "Signika" ? scene.labelFont : FONT.land;
-  const nm = namer(plan.land?.nameStyle, Number.isFinite(plan.land?.seed) ? plan.land.seed : plan.seed);
+  // (a GM's own name set: read once for its text)
+  const set = plan.land?.nameStyle === "custom" && typeof plan.land?.nameSet?.text === "string" ? setOf(plan.land.nameSet.text) : null;
+  const nm = namer(set ? "custom" : plan.land?.nameStyle, Number.isFinite(plan.land?.seed) ? plan.land.seed : plan.seed, { set });
   const given = plan.land?.names && typeof plan.land.names === "object" ? plan.land.names : {};
   const byId = new Map((plan.features ?? []).map((q) => [q.id, q]));
   const clean = (s) => (typeof s === "string" && s.trim() ? s.replace(/\s+/g, " ").trim() : null);
@@ -52,6 +55,26 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
   const nearest = (x, y) => { let b = -1, bd = Infinity; const cx = Math.floor(x / cell), cy = Math.floor(y / cell); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (const i of buckets.get(cx + dx + (cy + dy) * gw) ?? []) { const d = (land.x[i] - x) ** 2 + (land.y[i] - y) ** 2; if (d < bd || (d === bd && i < b)) { bd = d; b = i; } } return b; };
 
   // ---- what's to be named ----
+  const inv = (land.inventory ?? []).filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
+  const mapArea = f.mapW * f.mapH;
+  // (each feature named once: a river a place's name needs is named then, and keeps that name)
+  const madeNames = new Map();
+  const named = (q, kind, info = {}) => {
+    if (madeNames.has(q.id)) return madeNames.get(q.id);
+    const near = ["bay", "lake", "marsh", "cape"].includes(kind) ? nearTown(q) : null;
+    const name = clean(given[q.id]) ?? nm.feature(kind, { ...info, near }, q.id);
+    madeNames.set(q.id, name);
+    return name;
+  };
+  // (a place's river by name, for a name set whose word parts name it: Inver-something)
+  const riverOf = set && usesRiver(set) ? (id) => { const q = inv.find((r) => r.kind === "river" && r.river === id); return q ? named(q, "river") : null; } : null;
+  const nearTown = (q) => {
+    const [u, v] = U(q.x, q.y);
+    let best = null, bd = (0.09 * side) ** 2;
+    for (const p of places) if (p.class === "city" || p.class === "town" || p.class === "village") { const d = (p.x - u) ** 2 + (p.y - v) ** 2; if (d < bd) { bd = d; best = placeNames.get(p.id); } }
+    // (its plain name only: "Fenford", not "Fenford Keep")
+    return best && /^\p{Lu}\p{Ll}+$/u.test(best) ? best : null;
+  };
   const want = [];
   // (a place past the map's edge, or under the key, keeps its name but gets no label)
   const places = items.filter((i) => i.kind === "place");
@@ -61,25 +84,13 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
   for (const p of places.slice().sort((a, b) => rank(a.class) - rank(b.class) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const raw = byId.get(p.from ?? p.id);
     const site = raw?.site && typeof raw.site === "object" ? { ...raw.site, mouth: !!raw.site.river && raw.site.coast != null } : {};
+    if (riverOf && site.river?.id !== undefined) site.riverName = riverOf(site.river.id);
     const name = clean(raw?.name) ?? clean(p.name) ?? nm.place(p.class, site, p.id);
     placeNames.set(p.id, name);
     const cls = LABEL_PX[p.class] ? p.class : "place";
     if (shown(p)) want.push({ id: `@place:${p.id}`, kind: cls, text: name, place: p, px: LABEL_PX[cls] });
   }
   // features: by kind, the biggest first, with limits so a map isn't flooded with small ones
-  const inv = (land.inventory ?? []).filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
-  const mapArea = f.mapW * f.mapH;
-  const named = (q, kind, info = {}) => {
-    const near = ["bay", "lake", "marsh", "cape"].includes(kind) ? nearTown(q) : null;
-    return clean(given[q.id]) ?? nm.feature(kind, { ...info, near }, q.id);
-  };
-  const nearTown = (q) => {
-    const [u, v] = U(q.x, q.y);
-    let best = null, bd = (0.09 * side) ** 2;
-    for (const p of places) if (p.class === "city" || p.class === "town" || p.class === "village") { const d = (p.x - u) ** 2 + (p.y - v) ** 2; if (d < bd) { bd = d; best = placeNames.get(p.id); } }
-    // (its plain name only: "Fenford", not "Fenford Keep")
-    return best && /^[A-Z][a-z]+$/.test(best) ? best : null;
-  };
   const kindsOf = (k) => inv.filter((q) => q.kind === k).sort((a, b) => (b.size ?? 0) - (a.size ?? 0) || (a.id < b.id ? -1 : 1));
   for (const q of kindsOf("sea")) { const big = q.size > 0.2 * mapArea && (f.scale === "continent" || f.scale === "world"); want.push({ id: `@land:${q.id}`, kind: big ? "ocean" : "sea", text: named(q, "sea", { big }), q }); }
   if (f.scale === "continent" || f.scale === "world") for (const q of kindsOf("land")) want.push({ id: `@land:${q.id}`, kind: "land", text: named(q, "land"), q, caps: true });
@@ -178,8 +189,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
     return [at[0] + dx, at[1] + dy];
   };
   const labels = [];
-  // (each feature's name as made, before capitals: for keepNames)
-  const featureNames = new Map(want.filter((x) => x.q).map((x) => [x.q.id, x.text]));
+  // (each feature's name as made, before capitals, labeled or not: for keepNames)
+  const featureNames = madeNames;
   for (const L of want.sort((a, b) => rank(a.kind) - rank(b.kind))) {
     const size = em(L.px ?? LABEL_PX[L.kind] ?? 20), text = L.caps ? L.text.toUpperCase() : L.text;
     const w = text.length * size * (L.caps ? 0.66 : 0.5), h = size * 1.2;
@@ -227,6 +238,13 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
     });
   }
   return { labels, placeNames, featureNames };
+}
+
+// (name sets as read, by their text: a few kept)
+const SETS = new Map();
+function setOf(text) {
+  if (!SETS.has(text)) { if (SETS.size > 8) SETS.delete(SETS.keys().next().value); SETS.set(text, parseNameSet(text).set); }
+  return SETS.get(text);
 }
 
 /** A river's main stem as a line in map units, from the land's rivers. */

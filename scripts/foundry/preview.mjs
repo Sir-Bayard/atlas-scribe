@@ -9,7 +9,7 @@ import { normalize, LABEL_SIZES } from "../core/plan.mjs";
 import { estimatePlots, BIG_PLOTS } from "../core/check.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
-import { featureOf, setField, setPlanField, deleteFeature } from "../core/edit.mjs";
+import { featureOf, setField, setPlanField, deleteFeature, withNameSet, keptNamesOf } from "../core/edit.mjs";
 import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML, battleHTML, battleSizeText, rerollButtons, kindOf } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
@@ -109,6 +109,8 @@ export class AtlasScribeApp extends Base {
       asPlaceMap: AtlasScribeApp.#onPlaceMap,
       asPlaceTowns: AtlasScribeApp.#onPlaceTowns,
       asKeepNames: AtlasScribeApp.#onKeepNames,
+      asNameSets: AtlasScribeApp.#onNameSets,
+      asNameSetUpdate: AtlasScribeApp.#onNameSetUpdate,
       asPlan: AtlasScribeApp.#onPlan,
       asPin: AtlasScribeApp.#onPin,
       asUnder: AtlasScribeApp.#onUnder,
@@ -502,7 +504,7 @@ export class AtlasScribeApp extends Base {
         </div>
         ${this.#tool?.id === "battle" ? battleHTML(this.#battleState())
           : this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working, kind: this.#plan?.kind ?? "settlement" })
-          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices() })
+          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices(), nameSets: this.#host.nameSets?.() ?? [] })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
           : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices() })
@@ -1265,6 +1267,52 @@ export class AtlasScribeApp extends Base {
   /** An overland plan: the names its map made written into it. */
   static async #onKeepNames() {
     await this.#placeJob((plan) => this.#host.keepNames(plan), (res) => res.places + res.features ? `AtlasScribe: kept ${res.places} place names and ${res.features} names of the land in the plan. They stay now when the land changes.` : "AtlasScribe: every name is already in the plan.");
+  }
+
+  /** The Name sets window (the world's library of naming rules). */
+  static #onNameSets() {
+    this.#host.openNameSets?.();
+  }
+
+  /** The library's newer copy of the map's name set, copied into the plan. */
+  static async #onNameSetUpdate() {
+    const ns = this.#plan?.land?.nameSet, lib = ns?.from ? (this.#host.nameSets?.() ?? []).find((s) => s.id === ns.from) : null;
+    if (!lib) return;
+    const rename = await this.#renameKept(lib.name);
+    if (rename === null) return;
+    await this.#apply((plan) => withNameSet(plan, { name: lib.name, text: lib.text, from: lib.id }, { rename }));
+  }
+
+  /**
+   * When the open plan keeps names (Keep names), asks whether a name set should name those again: true, false to keep
+   * them, null when the GM closed the question. True with nothing kept.
+   */
+  async #renameKept(setName) {
+    const { places, features } = keptNamesOf(this.#plan);
+    if (!places && !features) return true;
+    const what = [places ? `${places} place name${places === 1 ? "" : "s"}` : "", features ? `${features} name${features === 1 ? "" : "s"} of the land` : ""].filter(Boolean).join(" and ");
+    return foundry.applications.api.DialogV2.wait({
+      window: { title: "AtlasScribe: kept names" },
+      content: `<p>This map keeps ${esc(what)} in its plan, so they stay as they are. Should ${esc(setName)} name them again? Names you typed or changed yourself stay either way.</p>`,
+      buttons: [
+        { action: "rename", label: "Name them again", icon: "fa-solid fa-signature", default: true, callback: () => true },
+        { action: "keep", label: "Keep them", icon: "fa-solid fa-lock", callback: () => false },
+      ],
+      rejectClose: false,
+    }).then((r) => (typeof r === "boolean" ? r : null));
+  }
+
+  /**
+   * A name set copied into the open plan, its names now made by it (from the Name sets window). Returns true when
+   * it's applied, false when there's no overland plan open.
+   */
+  async useNameSet(set) {
+    if (!this.rendered || this.#plan?.kind !== "region" || !this.#plan?.land) { note.warn("AtlasScribe: open an overland map in AtlasScribe first."); return false; }
+    const rename = await this.#renameKept(set?.name ?? "the name set");
+    if (rename === null) return false;
+    await this.#apply((plan) => withNameSet(plan, set, { rename }));
+    if (this.rendered) this.render();
+    return true;
   }
 
   /** Runs a job that gives back the plan changed ({ plan, ... }), then shows it as one step; told() says what it did. */

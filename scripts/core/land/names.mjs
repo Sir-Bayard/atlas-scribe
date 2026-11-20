@@ -9,6 +9,7 @@
  */
 import { rng } from "../rng.mjs";
 import { NAME_STYLES } from "./schema.mjs";
+import { wordMaker, keepsRules, withElement, genitiveOf, SITE_ELEMENTS } from "./namesets.mjs";
 export { NAME_STYLES };
 
 // ---- English countryside ----
@@ -91,10 +92,13 @@ function tongue(seed) {
  * map. kind: a place's class (city, town, village, castle, ruin...) or an inventory feature's kind (sea, bay, lake,
  * river, range, forest, desert, marsh, island, cape, land). site: a place's site facts (river, coast, ground, biome).
  * info: { size, high, near (a nearby place's name), big } for a feature. key: a stable string (the id), so a name
- * doesn't move when other names change, except to step past one already taken.
+ * doesn't move when other names change, except to step past one already taken. style "custom" with options.set (a
+ * parsed name set, namesets.mjs) makes names by the GM's own rules; a site's riverName is its river's name, for an
+ * element that names it.
  */
-export function namer(style = "english", seed = 1) {
-  const st = NAME_STYLES.includes(style) ? style : "english";
+export function namer(style = "english", seed = 1, { set = null } = {}) {
+  if (style === "custom" && set) return customNamer(set, seed);
+  const st = NAME_STYLES.includes(style) && style !== "custom" ? style : "english";
   const T = st === "english" ? null : tongue(seed);
   const used = new Set();
   const unique = (key, make) => {
@@ -166,6 +170,105 @@ export function namer(style = "english", seed = 1) {
           case "land": return inventedFeatures ? root() : r.pick([`the ${r.pick(["West", "East", "North", "South", "Middle", "High", "Far"])}lands`, `${r.pick(FIRST)}land`]);
           default: return null;
         }
+      });
+    },
+  };
+}
+
+// ---- a GM's name set (namesets.mjs) ----
+// (the patterns a kind of thing takes when the set gives none: plain words anyone can read)
+const COMMON = {
+  city: ["{name}"], town: ["{name}"], village: ["{name}"], hamlet: ["{name}"], castle: ["{name} Castle"], ruin: ["Ruins of {name}"], tower: ["{name} Tower"],
+  temple: ["{name} Shrine"], inn: ["{name}"], mine: ["{name} Mine"],
+  sea: ["the {name} Sea", "the Sea of {name}"], ocean: ["the {name} Ocean"], bay: ["{name} Bay", "the Bay of {name}"], lake: ["Lake {name}"], river: ["the {name}", "River {name}"],
+  hills: ["the {name} Hills"], mountains: ["the {name} Mountains"], range: ["the {name} Range"], forest: ["the {name} Forest"], desert: ["the {name} Waste"], marsh: ["the {name} Marsh"],
+  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], land: ["{name}"],
+};
+
+function customNamer(set, seed) {
+  const used = new Set();
+  const flat = (w) => String(w).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  // (a name the set avoids is avoided as a word too: not "Baba Castle" when Baba is avoided)
+  const banned = new Set((set.avoid?.names ?? []).map(flat));
+  // (each made word once on a map: not "Kefeld" and "Kefeld Castle")
+  const roots = new Set();
+  const wordsOf = (n) => flat(n).split(/[\s'-]+/).filter((w) => w.length >= 3 && !["the", "of"].includes(w));
+  const check = (w) => keepsRules(set, w) && !rude(flat(w)) && !known(flat(w)) && !roots.has(flat(w)) && !banned.has(flat(w));
+  let lastRoot = null;
+  const make0 = wordMaker(set, check), make = (r) => (lastRoot = make0(r));
+  // (the bank: each list in an order of its own for the map; a place takes the first name free from where its key
+  // points, so its name doesn't move when another place's changes; a class's or kind's own list before the general one)
+  const banks = new Map();
+  const bank = (key) => { if (!banks.has(key)) { const list = (set.names?.[key] ?? []).filter((n) => !banned.has(flat(n))); banks.set(key, rng(seed, "names", "bank", key).shuffle(list.slice())); } return banks.get(key); };
+  const hash = (t) => { let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h; };
+  const fromBank = (keys, key) => {
+    for (const k of keys) {
+      const list = bank(k), at = hash(`${k}|${key}`);
+      for (let i = 0; i < list.length; i++) { const n = list[(at + i) % list.length]; if (!used.has(n)) { used.add(n); for (const w of wordsOf(n)) roots.add(w); return n; } }
+    }
+    return null;
+  };
+  const ok = (nm) => nm && !used.has(nm) && !banned.has(flat(nm));
+  const unique = (key, makeOne) => {
+    for (let k = 0; k < 40; k++) { lastRoot = null; const nm = makeOne(rng(seed, "names", "custom", key, k)); if (ok(nm)) { used.add(nm); if (lastRoot) roots.add(flat(lastRoot)); return nm; } }
+    let k = 2, base = makeOne(rng(seed, "names", "custom", key, "last")) ?? set.name ?? "Unnamed"; while (used.has(`${base} ${k}`)) k++;
+    used.add(`${base} ${k}`); return `${base} ${k}`;
+  };
+  const pattern = (r, kind, name) => { const own = set.kinds?.[kind], list = own?.length ? own : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };
+  // (a word that took one of the set's endings gives it up for a suffix that says more: not Bricadunmagos)
+  const endings = (set.sounds?.endings ?? []).slice().sort((a, b) => b.length - a.length);
+  // (a word that's little more than its ending can't give it up: null)
+  const bare = (root, e) => {
+    if (e.type !== "suffix") return root;
+    const end = endings.find((x) => root.toLowerCase().endsWith(x));
+    if (!end) return root;
+    return [...root].length - [...end].length >= 3 ? root.slice(0, root.length - end.length) : null;
+  };
+  // (a feature never takes an element that names a place's river)
+  const elementFor = (key, scope) => (set.elements?.[key] ?? []).filter((e) => (!e.only || e.only === scope) && !(scope === "feature" && /\{river/.test(e.text)));
+  return {
+    take(name) { used.add(name); for (const w of wordsOf(name)) roots.add(w); },
+    place(kind, site = {}, key) {
+      // (an inn's sign in plain words, as travelers need; never a name from the bank)
+      if (kind !== "inn" || set.inns === "local") { const banked = fromBank([kind, "places"], key); if (banked) return banked; }
+      if (kind === "inn" && set.inns !== "local") return unique(`place:${key}`, (r) => `The ${r.pick(["Gray", "Red", "Old", "Laughing", "Drowsy", "Golden"])} ${r.pick(["Stag", "Lantern", "Goose", "Hound", "Anchor", "Wheel"])}`);
+      return unique(`place:${key}`, (r) => {
+        const root = make(r);
+        if (!root) return null;
+        // (the most telling thing about its site the set has a word part for, most of the time)
+        let name = root;
+        // (not on a place whose kind has a pattern of its own, a castle's "{name}borg": one word part a name is enough)
+        const plainKind = (set.kinds?.[kind] ?? COMMON[kind] ?? ["{name}"]).every((t) => t === "{name}");
+        const key0 = Object.keys(SITE_ELEMENTS).find((k) => SITE_ELEMENTS[k](site) && elementFor(k, "place").length);
+        if (key0 && plainKind && r.chance(0.75)) {
+          const e = r.pick(elementFor(key0, "place"));
+          const river = site.riverName ? site.riverName.replace(/^(the|river)\s+/i, "") : null;
+          // (a word that's little more than its ending: another word is made)
+          const b = bare(root, e);
+          if (!b) return null;
+          name = withElement(b, e, { river, riverGen: river ? genitiveOf(river, set.genitive) : null }) ?? root;
+        }
+        return pattern(r, kind, name);
+      });
+    },
+    feature(kind, info = {}, key) {
+      const kinds = kind === "range" ? [info.high ? "mountains" : "hills", "range"] : kind === "sea" && info.big ? ["ocean", "sea"] : [kind];
+      const banked = fromBank([...kinds, "features"], key);
+      if (banked) return banked;
+      return unique(`feature:${key}`, (r) => {
+        const root = make(r);
+        if (!root) return null;
+        const k = kinds.find((x) => elementFor(x, "feature").length);
+        if (k) {
+          const e = r.pick(elementFor(k, "feature")), b = bare(root, e);
+          if (!b) return null;
+          const named = withElement(b, e);
+          // (a suffix or prefix says what it is, and the set's own pattern for the kind, if it gives one, still applies;
+          // a pattern of words is the whole name)
+          return named && e.type !== "pattern" && set.kinds?.[k]?.length ? pattern(r, k, named) : named;
+        }
+        const pk = kinds.find((x) => set.kinds?.[x]) ?? kinds[0];
+        return pattern(r, pk, root);
       });
     },
   };

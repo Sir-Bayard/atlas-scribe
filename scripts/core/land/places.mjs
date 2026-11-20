@@ -77,23 +77,28 @@ function segDist(p, a, b) {
 /**
  * The names the map made, kept in the plan: each unnamed place takes its name (a generated one stays the
  * generator's, so Reroll places can still replace it), and each named feature of the land goes into land.names.
- * layout: layoutPlan(plan). Returns { plan, places, features } (how many names were kept of each).
+ * What it kept is noted in land.keptNames ({ places, land }: id to name), so a name set can name those again
+ * without touching a name the GM typed. layout: layoutPlan(plan). Returns { plan, places, features } (how many
+ * names were kept of each).
  */
 export function keepNames(plan, layout) {
   const next = structuredClone(plan);
   const byId = new Map((layout.items ?? []).filter((i) => i.kind === "place").map((i) => [i.from ?? i.id, i]));
   let places = 0, features = 0;
+  const was = next.land && typeof next.land.keptNames === "object" && next.land.keptNames ? next.land.keptNames : {};
+  const kept = { places: { ...(was.places ?? {}) }, land: { ...(was.land ?? {}) } };
   for (const f of next.features ?? []) {
     if (f.type !== "place" || (typeof f.name === "string" && f.name.trim())) continue;
     const name = byId.get(f.id)?.name;
     if (typeof name !== "string" || !name) continue;
-    const was = untouched(f);
+    const generated = untouched(f);
     f.name = name;
-    if (was) f.made = madeMark(f);
+    if (generated) f.made = madeMark(f);
+    else kept.places[f.id] = name;
     places++;
   }
   const names = next.land && typeof next.land.names === "object" && !Array.isArray(next.land.names) ? { ...next.land.names } : {};
-  for (const [id, name] of Object.entries(layout.landNames ?? {})) if (!(typeof names[id] === "string" && names[id].trim())) { names[id] = name; features++; }
-  if (next.land && typeof next.land === "object") next.land.names = names;
+  for (const [id, name] of Object.entries(layout.landNames ?? {})) if (!(typeof names[id] === "string" && names[id].trim())) { names[id] = name; kept.land[id] = name; features++; }
+  if (next.land && typeof next.land === "object") { next.land.names = names; next.land.keptNames = kept; }
   return { plan: next, places, features };
 }
