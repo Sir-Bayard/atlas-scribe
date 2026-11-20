@@ -9,7 +9,7 @@ import { crossings, distToPath, distToPoly, pt, thin } from "../quick.mjs";
 export function waterBeyond(ctx) {
   const { C, H, U, V, W, at, choices, cluster, features, nearCluster, r, roadHalf, roads, seed, theta, winter } = ctx;
   ctx.water = null;
-  if (choices.water !== "none") {
+  if (choices.water === "river" || choices.water === "stream") {
     const width = choices.water === "river" ? r.range(45, 70) : r.range(12, 18);
     const half = width / 25 / 2;
     const extent = Math.max(...cluster.flat().map((p) => Math.abs((p[0] - C[0]) * U[0] + (p[1] - C[1]) * U[1])));
@@ -17,19 +17,31 @@ export function waterBeyond(ctx) {
     const tries = [];
     for (const s of r.shuffle([1, -1])) tries.push({ q: (m) => at(s * (extent + m), 0), dir: theta + 90 });
     for (const s of r.shuffle([1, -1])) tries.push({ q: (m) => at(0, s * (sideExtent + m)), dir: theta });
-    for (let t = 0; t < tries.length * 4 && !ctx.water; t++) {
-      const tr = tries[t % tries.length];
+    // (the way the region's river runs, when it gives it: beside the town on either side, running that way, its
+    // line beginning upstream)
+    const flow = ctx.dirs?.flow ?? null;
+    if (flow !== null) {
+      const F = [Math.cos((flow * Math.PI) / 180), Math.sin((flow * Math.PI) / 180)], N = [-F[1], F[0]];
+      const across = Math.max(...cluster.flat().map((p) => Math.abs((p[0] - C[0]) * N[0] + (p[1] - C[1]) * N[1])));
+      // (and if no line that way finds room, the seed's own tries after)
+      const own = tries.splice(0, tries.length);
+      for (const s of [1, -1]) tries.push({ q: (m) => [C[0] + N[0] * s * (across + m), C[1] + N[1] * s * (across + m)], dir: flow, given: true });
+      tries.after = own;
+    }
+    for (let pass = 0, list = tries; list && !ctx.water; pass++, list = pass === 1 ? tries.after : null)
+    for (let t = 0; t < list.length * 4 && !ctx.water; t++) {
+      const tr = list[t % list.length];
       const q = tr.q(half + r.range(4, 8));
       if (q[0] < 3 || q[1] < 3 || q[0] > W - 3 || q[1] > H - 3) continue;
-      const deg = tr.dir + r.range(-12, 12);
+      const deg = tr.dir + r.range(-12, 12) * (tr.given ? 0.4 : 1);
       // Bending as it goes (gentler on each round of tries, so it still finds room beside the town)
-      const bd = bends(r, Math.min(W, H) * 0.45), calm = [1, 0.7, 0.45, 0.2][Math.floor(t / tries.length)];
+      const bd = bends(r, Math.min(W, H) * 0.45), calm = [1, 0.7, 0.45, 0.2][Math.floor(t / list.length)];
       bd.swing *= calm;
       bd.swing2 *= calm;
       const path = thin(meander(q, (deg * Math.PI) / 180, W, H, bd), 0.08).map(pt);
       // (well across the map, not bending off it near a corner)
       // (on the last round, nearly straight, any length will do)
-      if (t < tries.length * 3 && path.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) : 0), 0) < Math.min(W, H) * 0.9) continue;
+      if (t < list.length * 3 && path.reduce((n, p, i) => n + (i ? Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) : 0), 0) < Math.min(W, H) * 0.9) continue;
       // Clear of every district and the green, banks and all
       const clear = (p) => !nearCluster(p, half + 1.5) && !(ctx.green && distToPoly(p, ctx.green) < half + 1.5);
       const dense = path.flatMap((p, i) => (i ? Array.from({ length: 6 }, (_, k) => [path[i - 1][0] + ((p[0] - path[i - 1][0]) * k) / 6, path[i - 1][1] + ((p[1] - path[i - 1][1]) * k) / 6]) : [p]));
@@ -65,6 +77,7 @@ export function waterBeyond(ctx) {
   const clearOfThings = (p, m) => !nearCluster(p, m) && !(ctx.green && distToPoly(p, ctx.green) < m)
     && roads.every((rd) => distToPath(p, rd.path) > roadHalf(rd) + m)
     && !(ctx.water && distToPath(p, ctx.water.path) < ctx.water.width / 25 / 2 + m)
+    && !(ctx.shore && ctx.inShore(p, m))
     && !millKeep.some((k) => (k.poly ? distToPoly(p, k.poly) < m : distToPath(p, k.path) < k.half + m)); ctx.clearOfThings = clearOfThings;
   const onMap = (p) => p[0] > 1 && p[1] > 1 && p[0] < W - 1 && p[1] < H - 1;
   const clearOf = (p, m) => clearOfThings(p, m) && onMap(p); ctx.clearOf = clearOf;

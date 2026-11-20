@@ -16,20 +16,21 @@ const Dialog = () => foundry.applications.api.DialogV2;
 
 /**
  * Quick Start: three tabs, a settlement, a battle map or a region, each described in words or chosen, and a name and seed for
- * both. tab: the tab shown first; seed: the seed offered; onTab(tab) when the GM switches. Resolves to the settlement's
- * options ({ ..., name, seed }), or { battle: brief }, or { region: options } (the classic local region), or
+ * both. tab: the tab shown first; seed: the seed offered; fill: a region's place to start the Settlement tab from
+ * (townFromPlace's { options, directions, facts }); onTab(tab) when the GM switches. Resolves to the settlement's
+ * options ({ ..., name, seed, directions when followed }), or { battle: brief }, or { region: options } (the classic local region), or
  * { land: options } (a generated kingdom, realm, continent or world, its name set from the library as nameSetId), or null.
  */
-export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }) {
+export async function quickDialog({ tab = "settlement", seed, fill = null, onTab = () => {} }) {
   const tabButton = (id, label) => `<button type="button" role="tab" id="as-qs-tab-${id}" aria-controls="as-qs-panel-${id}" data-qs-tab="${id}">${label}</button>`;
   const content = `<div class="atlas-scribe as-quick">
       <input type="hidden" name="tab" value="${tab}">
       <div class="as-qs-tabs" role="tablist" aria-label="What to make">${tabButton("settlement", "Settlement")}${tabButton("battle", "Battle Map")}${tabButton("region", "Region")}</div>
-      ${settlementTabHTML()}
+      ${settlementTabHTML(fill)}
       ${battleTabHTML()}
       ${regionTabHTML()}
       <div class="as-qs-two">
-        <div class="form-group"><label for="as-qs-name">Name</label><input type="text" id="as-qs-name" name="name" placeholder="Made up if empty"></div>
+        <div class="form-group"><label for="as-qs-name">Name</label><input type="text" id="as-qs-name" name="name" placeholder="Made up if empty" value="${esc(fill?.options?.name ?? "")}"></div>
         <div class="form-group"><label for="as-qs-seed">Seed</label><input type="number" id="as-qs-seed" name="seed" value="${seed}" min="1" step="1"></div>
       </div>
       <p class="hint">Everything it makes can be changed afterwards.</p>
@@ -58,7 +59,7 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
       windowKeys(el);
       root.querySelectorAll("[data-qs-tab]").forEach((b) => b.addEventListener("click", () => { showTab(root, b.dataset.qsTab); onTab(b.dataset.qsTab); }));
       battleTab = wireBattleTab(root.querySelector(".as-qs-battle"));
-      settlementTab = wireSettlementTab(root.querySelector(".as-qs-settlement"));
+      settlementTab = wireSettlementTab(root.querySelector(".as-qs-settlement"), fill?.options ?? null);
       wireRegionTab(root.querySelector(".as-qs-region"));
       showTab(root, tab);
     },
@@ -71,7 +72,12 @@ export async function quickDialog({ tab = "settlement", seed, onTab = () => {} }
           const names = el["l-names"].value, set = names.startsWith("set:") ? names.slice(4) : null;
           return { land: { ...Object.fromEntries(Object.keys(LAND_QUICK).filter((k) => k !== "names").map((k) => [k, k === "scale" ? el["r-scale"].value : el[`l-${k}`]?.value])), names: set ? "english" : names, ...(set ? { nameSetId: set } : {}), name: name.value, seed: Number(s.value) || seed } };
         }
-        if (button.form.elements.tab.value !== "battle") { settlementTab?.flush(); return { ...settlementTab?.options(), name: name.value, seed: s.value }; }
+        if (button.form.elements.tab.value !== "battle") {
+          settlementTab?.flush();
+          // (a region's place: the way its roads, river and shore lie, unless the GM unticked it)
+          const follow = fill?.directions && button.form.elements["s-follow"]?.checked;
+          return { ...settlementTab?.options(), name: name.value, seed: s.value, ...(follow ? { directions: fill.directions } : {}) };
+        }
         battleTab?.flush();
         return { battle: briefFromForm(button.form, Number(button.form.elements.seed.value) || seed) };
       } },

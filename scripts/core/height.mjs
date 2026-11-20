@@ -4,6 +4,7 @@
  * walkBlocked read those regions back as zones (any one unit), for the hook that sets a token's elevation and keeps a
  * walker off a cliff face and out of deep water. Pure.
  */
+import { titleCase } from "./titles.mjs";
 import { pointInPolygon, insidePoint } from "./geom.mjs";
 import { bands, difference, intersect, offset, union } from "./lots/poly.mjs";
 import { edgeSpan, shiftRight, resample } from "./layout/terrain.mjs";
@@ -26,7 +27,7 @@ export const OFF_GROUND = ["fly", "burrow"];
  */
 export const COST = { cliff: null, bank: 2, slope: 2, shallow: 2, deep: 3, ice: 2 };
 /** The words each region is named by in the scene's region list. */
-const FACE_NAME = { cliff: "Cliff face (climb)", bank: "Steep bank", slope: "Slope" };
+const FACE_NAME = { cliff: "Cliff Face (Climb)", bank: "Steep Bank", slope: "Slope" };
 
 /** Whether a point lies in a level or zone: inside an odd number of its rings (a ring inside another is a hole). */
 export function inRings(rings, p) {
@@ -85,7 +86,8 @@ export function heightRegions(layout) {
   levels.forEach((L, order) => {
     const polys = withHoles(clip(L.rings));
     if (!polys.length) return;
-    const what = L.bed ? `${L.waterClass === "river" ? "River" : L.waterClass === "canal" ? "Canal" : "Stream"} bed` : L.cut ? "Sunken road" : L.name ?? (L.elevation < 0 ? "Hollow" : "Rise");
+    // (a name the GM gave a rise or hollow is kept as written)
+    const what = L.bed ? `${L.waterClass === "river" ? "River" : L.waterClass === "canal" ? "Canal" : "Stream"} Bed` : L.cut ? "Sunken Road" : L.name ?? (L.elevation < 0 ? "Hollow" : "Rise");
     out.push({ kind: "ground", name: `${what} (${L.elevation} ft)`, polys, elevation: L.elevation, order, over: false });
   });
   // A bridge's deck: ground at its banks' height, over the bed it spans (a footbridge's as a road bridge's)
@@ -103,7 +105,7 @@ export function heightRegions(layout) {
     const band = bands([{ path: shiftRight(resample(e.path, 0.5), span / 2), half: span / 2 }]);
     const polys = withHoles(clip(offDecks(band)));
     const climb = e.style === "cliff" ? climbDC(e) : null;
-    if (polys.length) out.push({ kind: "face", name: climb ? `Cliff face (climb, DC ${climb})` : FACE_NAME[e.style] ?? "Bank", polys, style: e.style, bottom: e.low, top: e.high, cost: COST[e.style] ?? null, lines: e.style === "cliff" ? [e.path] : [], alone: !!e.line, climb });
+    if (polys.length) out.push({ kind: "face", name: climb ? `Cliff Face (Climb, DC ${climb})` : FACE_NAME[e.style] ?? "Bank", polys, style: e.style, bottom: e.low, top: e.high, cost: COST[e.style] ?? null, lines: e.style === "cliff" ? [e.path] : [], alone: !!e.line, climb });
   }
   const fords = items.filter((i) => i.kind === "crossing" && i.class === "ford" && Array.isArray(i.at)).map(deckOf);
   for (const w of items.filter((i) => i.kind === "water")) {
@@ -130,20 +132,20 @@ export function heightRegions(layout) {
     const name = w.class === "moat" ? "moat" : w.class ?? "water";
     if (w.frozen) {
       const polys = withHoles(clip(offDecks(area)));
-      if (polys.length) out.push({ kind: "ice", name: `Ice (${name})`, polys, top: surface, cost: COST.ice });
+      if (polys.length) out.push({ kind: "ice", name: titleCase(`Ice (${name})`), polys, top: surface, cost: COST.ice });
       continue;
     }
     // (ice along its banks: the shelves are ice, the water only the channel open between them)
     if (Array.isArray(w.shelves) && w.shelves.length) {
       const ice = withHoles(clip(offDecks(w.shelves)));
-      if (ice.length) out.push({ kind: "ice", name: `Ice (${name} banks)`, polys: ice, top: surface, cost: COST.ice });
+      if (ice.length) out.push({ kind: "ice", name: titleCase(`Ice (${name} banks)`), polys: ice, top: surface, cost: COST.ice });
       area = difference(area, w.shelves);
       if (deep.length) deep = difference(deep, w.shelves);
     }
     const shallow = withHoles(clip(offDecks(deep.length ? difference(area, deep) : area)));
-    if (shallow.length) out.push({ kind: "shallow", name: `Shallow water (${name})`, polys: shallow, top: surface, cost: COST.shallow });
+    if (shallow.length) out.push({ kind: "shallow", name: titleCase(`Shallow water (${name})`), polys: shallow, top: surface, cost: COST.shallow });
     const dp = deep.length ? withHoles(clip(offDecks(deep))) : [];
-    if (dp.length) out.push({ kind: "deep", name: `Deep water (${name}, swim)`, polys: dp, top: surface, cost: COST.deep });
+    if (dp.length) out.push({ kind: "deep", name: titleCase(`Deep water (${name}, swim)`), polys: dp, top: surface, cost: COST.deep });
   }
   return out;
 }

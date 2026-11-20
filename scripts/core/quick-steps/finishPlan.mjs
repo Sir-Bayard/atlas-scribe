@@ -14,14 +14,14 @@ export function finishPlan(ctx) {
   const top = Math.max(...cluster.flat().map((p) => -((p[0] - C[0]) * V[0] + (p[1] - C[1]) * V[1])));
   const spot = (u) => { const q = at(u, -(top + 1.3)); return [Math.max(3, Math.min(W - 3, q[0])), Math.max(1.5, Math.min(H - 1.5, q[1]))]; };
   const tries = [0, 6, -6, 10, -10, 14, -14, 18, -18].map(spot);
-  const labelAt = tries.find((q) => roads.every((rd) => distToPath(q, rd.path) > roadHalf(rd) + 1.2) && !(ctx.water && distToPath(q, ctx.water.path) < ctx.water.width / 25 / 2 + 1)) ?? tries[1];
+  const labelAt = tries.find((q) => roads.every((rd) => distToPath(q, rd.path) > roadHalf(rd) + 1.2) && !(ctx.water && distToPath(q, ctx.water.path) < ctx.water.width / 25 / 2 + 1) && !(ctx.shore && ctx.inShore(q, 1))) ?? tries.find((q) => !(ctx.shore && ctx.inShore(q, 1))) ?? tries[1];
 
   // A town with no green at its middle now and then keeps one in a district away from it (from a stream of its own)
   if (choices.size === "town" && choices.center !== "green") {
     const gr = rng(seed, "quick", "town-green");
     const away = districts.filter((d) => d.poly.length >= 3 && !pointInPolygon(C, d.poly)).sort((a, b) => area(b.poly) - area(a.poly));
     if (gr.next() < 0.4 && away.length) {
-      const at = placeGreen({ poly: away[0].poly, len: gr.range(6, 8), dep: gr.range(4, 5.5), roads, inWater: (q) => !!ctx.water && distToPath(q, ctx.water.path) < ctx.water.width / 25 / 2 + 1, r: gr.fork("place"), clear: 2 });
+      const at = placeGreen({ poly: away[0].poly, len: gr.range(6, 8), dep: gr.range(4, 5.5), roads, inWater: (q) => (!!ctx.water && distToPath(q, ctx.water.path) < ctx.water.width / 25 / 2 + 1) || (!!ctx.shore && ctx.inShore(q, 1)), r: gr.fork("place"), clear: 2 });
       if (at) features.push({ id: "town-green", type: "area", class: "park", style: "green", name: "The Green", ...at });
     }
   }
@@ -40,7 +40,7 @@ export function finishPlan(ctx) {
     features: [
       // (a paved place's main and cross roads are cobbled)
       ...roads.map((rd) => ({ id: rd.id, type: "road", class: rd.class, ...(paved && rd.class !== "lane" ? { surface: "cobble" } : {}), path: rd.path.map(pt) })),
-      ...features.filter((f) => f.type === "water" || f.type === "crossing"),
+      ...features.filter((f) => f.type === "water" || f.type === "crossing" || f.type === "dock"),
       ...features.filter((f) => f.type === "square"),
       ...districts.map((d) => ({ id: d.id, type: "district", profile: d.profile, ...(Object.keys(notables).length ? { notables } : {}), shape: d.poly })),
       ...(ctx.walled ? [ctx.walled] : []),

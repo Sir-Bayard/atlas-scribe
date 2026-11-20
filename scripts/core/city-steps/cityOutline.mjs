@@ -30,6 +30,21 @@ export function cityOutline(ctx) {
       if (water === "estuary") ctx.riverAngle = ctx.seaward + sp.range(-0.3, 0.3);
     }
   }
+  // (the region's own directions, when it gives them: its sea or lake on that side, its river running that way)
+  const D = ctx.dirs;
+  if (D && (water === "coast" || water === "estuary") && D.coast !== null) {
+    // (a river mouth's river turns with its sea, so it still reaches it)
+    const turn = (D.coast * Math.PI) / 180 - ctx.seaward;
+    ctx.seaward += turn;
+    if (water === "estuary") ctx.riverAngle += turn;
+  }
+  else if (D && water === "lake" && (D.lake ?? D.coast) !== null) ctx.seaward = ((D.lake ?? D.coast) * Math.PI) / 180;
+  // (a river mouth's given flow is kept within a right angle of its sea, so it runs out to it)
+  if (D && D.flow !== null && water === "river") ctx.riverAngle = (D.flow * Math.PI) / 180;
+  if (D && D.flow !== null && water === "estuary") {
+    const f = (D.flow * Math.PI) / 180, off = Math.atan2(Math.sin(f - ctx.seaward), Math.cos(f - ctx.seaward));
+    ctx.riverAngle = ctx.seaward + Math.max(-0.5, Math.min(0.5, off));
+  }
   // (a city on a promontory sits a little out to sea from the map's middle, so there's room for the country behind)
   const C = shape === "promontory" ? add(C0, mul(dirOf(ctx.seaward), R * 0.25)) : C0; ctx.C = C;
 

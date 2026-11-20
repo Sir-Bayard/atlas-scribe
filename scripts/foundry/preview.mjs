@@ -25,6 +25,7 @@ import { esc, note, FP, MOD, labelAttr } from "./util.mjs";
 import { overlaySVG, draftSVG, battleBoxSVG, underStyle, pickableLabel } from "./overlay.mjs";
 import { regionPlan } from "../core/quick-region.mjs";
 import { landPlan } from "../core/quick-land.mjs";
+import { townFromPlace } from "../core/place-town.mjs";
 import { storedNameSets } from "./name-sets.mjs";
 import { quickDialog, openDialog, importDialog, confirmSaveOver, confirmDrop, confirmDraft, summaryDialog } from "./plan-files-ui.mjs";
 import { rememberWindow } from "../kit/window-memory.mjs";
@@ -1743,17 +1744,24 @@ export class AtlasScribeApp extends Base {
   #quickTab = "settlement";
 
   /**
-   * A region's place made a map of its own: a city, town, village or hamlet by Quick Start at its size, a castle by the
-   * battle map's Castle site, named as the place and seeded from the region and the place, so it comes out the same.
+   * A region's place made a map of its own (Make This Town): a city, town, village or hamlet opens Quick Start filled
+   * in from what the region shows of it (its size, name, water, roads and the way each lies, the land around it), to
+   * change before making; a castle is made at once by the battle map's Castle site. Each is seeded from the region and
+   * the place, so it comes out the same.
    */
   static async #onPlaceMap(event, target) {
     const f = featureOf(this.#plan, target.dataset.id);
-    if (!f || this.#working || !(await this.#mayDiscard())) return;
+    if (!f || this.#working) return;
+    // (the name the map shows for it: its own, else the one the map made)
+    const shown = (this.#result?.labels ?? []).find((l) => l.id === `@place:${f.id}`)?.text ?? null;
+    const town = townFromPlace(this.#plan, f, { name: shown });
+    if (town) return this.#quickStart({ fill: town });
+    if (!(await this.#mayDiscard())) return;
     const seed = Number(f.seed) || 1 + (Math.abs([...`${this.#plan.seed}:${f.id}`].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)) % 999999);
     const before = this.#plan;
     if (!(await this.#mayReplace(before))) return;
     try {
-      const made = f.class === "castle" ? briefPlan({ site: "castle", seed, name: f.name ?? "" }) : this.#host.quick({ size: f.class, seed, ...(f.name ? { name: f.name } : {}), season: this.#plan.season });
+      const made = briefPlan({ site: "castle", seed, name: f.name ?? shown ?? "" });
       await this.show(made.plan);
       for (const n of made.notes ?? []) note.info(n);
     } catch (e) {
@@ -1763,12 +1771,22 @@ export class AtlasScribeApp extends Base {
 
   /** Quick Start: a few choices in a dialog, then a new plan in the window (not saved until Save). */
   static async #onQuick() {
-    if (this.#working || !(await this.#mayDiscard())) return;
+    return this.#quickStart();
+  }
+
+  /**
+   * Quick Start's dialog and what it makes. fill: a region's place to start from (townFromPlace's { options,
+   * directions, facts }): the Settlement tab opens filled in with it.
+   */
+  async #quickStart({ fill = null } = {}) {
+    // (from a region's place, its unsaved changes are asked about once the GM makes the town, not before the dialog)
+    if (this.#working || (!fill && !(await this.#mayDiscard()))) return;
     const before = this.#plan;
     const { LABELS } = this.#host.quickChoices;
-    const seed = 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
-    const chosen = await quickDialog({ tab: ["battle", "region"].includes(this.#quickTab) ? this.#quickTab : "settlement", seed, onTab: (t) => { this.#quickTab = t; } });
+    const seed = fill?.options?.seed ?? 1 + Math.floor(Math.random() * 999999); // only a starting point: the plan keeps it, so it draws the same every time
+    const chosen = await quickDialog({ tab: fill ? "settlement" : ["battle", "region"].includes(this.#quickTab) ? this.#quickTab : "settlement", seed, fill, onTab: (t) => { this.#quickTab = t; } });
     if (!chosen) return;
+    if (fill && !(await this.#mayDiscard())) return;
     // A generated region: its plan into the window, then its towns, roads and bridges placed on its land
     if (chosen.land) {
       if (!(await this.#mayReplace(before))) return;
@@ -1831,7 +1849,8 @@ export class AtlasScribeApp extends Base {
     // (a temple, inn or smithy is placed when the map is laid out, which notes one that doesn't fit)
     const NAMES = { cemetery: "a cemetery", watermill: "a watermill", windmill: "a windmill", walled: "a wall", citadel: "a citadel" };
     const got = choices?.has ?? choices?.outside ?? {};
-    const missed = Object.entries({ ...opts.has, ...opts.outside }).filter(([k, v]) => v === true && got[k] === false && NAMES[k]).map(([k]) => NAMES[k]);
+    // (a watermill by a sea or a lake is said by the plan's own notes: no seed would fit one)
+    const missed = Object.entries({ ...opts.has, ...opts.outside }).filter(([k, v]) => v === true && got[k] === false && NAMES[k] && !(k === "watermill" && ["coast", "lake"].includes(choices?.water))).map(([k]) => NAMES[k]);
     if (missed.length) note.info(`No room was found for ${missed.length > 1 ? `${missed.slice(0, -1).join(", ")} and ${missed.at(-1)}` : missed[0]} here, so the plan is made without ${missed.length > 1 ? "them" : "it"}. A new seed may fit ${missed.length > 1 ? "them" : "it"}.`);
     for (const n of notesOf ?? []) note.info(n);
     try {

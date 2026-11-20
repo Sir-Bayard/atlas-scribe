@@ -4,10 +4,11 @@
  * reshaping, render and publish) works on it as on any other. Every choice left out is picked from the seed, and the
  * same choices and seed always give the same plan. Pure: runs anywhere. Numbers are in squares (25 ft).
  */
+import { readDirections } from "./directions.mjs";
 import { rng } from "./rng.mjs";
 import { PLAN_VERSION } from "./plan.mjs";
 import { cityPlan, RIVER_FORMS, CITY_SHAPES, SHAPE_WATER } from "./quick-city.mjs";
-import { readChoices, roadsAndDistricts, wallsAndCenter, waterBeyond, millsAndCemetery, farmsAndFields, woodsAndCliffs, finishPlan, highGround } from "./quick-steps/index.mjs";
+import { readChoices, roadsAndDistricts, shoreSide, wallsAndCenter, waterBeyond, millsAndCemetery, farmsAndFields, woodsAndCliffs, finishPlan, highGround } from "./quick-steps/index.mjs";
 
 /** The choices Quick Start offers, the first of each being the one shown first. */
 export const QUICK = {
@@ -33,6 +34,8 @@ export const QUICK_ANY = ["river", "shape"];
  * earlier seeds' plans stay the same).
  */
 export const PICK = { size: ["village", "hamlet", "town"], water: ["river", "stream", "none"], center: ["square", "green", "none"] };
+/** The shores a village or town can stand on when asked (never picked by the seed, so earlier seeds' plans stay the same). */
+export const SHORES = ["coast", "lake"];
 export const CITIES = ["city", "metropolis"];
 
 /** The centers each size can have (the dialog grays out the rest). */
@@ -55,7 +58,7 @@ export const OUTSIDE = ["citadel", "oldWall", "suburbs", "cemetery", "mills"];
 export function quickLacks(size) {
   const city = CITIES.includes(size), lacks = {};
   for (const c of QUICK.center) if (!CENTERS[size]?.includes(c)) (lacks.center ??= {})[c] = city ? "A city's center is a square, a green or a landmark beside a square" : c === "well" ? "" : "A cathedral or a palace is a city's";
-  if (!city) for (const w of ["coast", "lake", "estuary"]) (lacks.water ??= {})[w] = "A city's (a village or town by the sea or a lake gets a river)";
+  if (!city) (lacks.water ??= {}).estuary = "A city's (a village or town by the sea is on its coast)";
   if (city) (lacks.water ??= {}).stream = "A city's water is a river at least";
   if (size === "city") (lacks.outside ??= {}).oldWall = "A metropolis's (its old town's wall inside the new)";
   if (!city) { lacks.river = "A city's"; lacks.shape = "A city's"; }
@@ -66,7 +69,7 @@ export function quickLacks(size) {
 export const QUICK_LABELS = {
   size: { hamlet: "A hamlet (a handful of houses)", village: "A village", town: "A town", city: "A walled city (wards)", metropolis: "A metropolis (two walls, many wards)" },
   season: { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" },
-  water: { river: "A river", stream: "A stream", coast: "A sea coast and harbor (a city)", lake: "A lake shore (a city)", estuary: "A river meeting the sea (a city)", none: "No water" },
+  water: { river: "A river", stream: "A stream", coast: "A sea coast", lake: "A lake shore", estuary: "A river meeting the sea (a city)", none: "No water" },
   roads: { crossroads: "A crossroads", through: "A road through", fork: "A fork in the road" },
   center: { square: "A market square", green: "A village green", none: "Neither", well: "A well", cathedral: "A cathedral by the square", palace: "A palace by the square" },
   surroundings: { mixed: "Farms and woods", farmland: "Farmland", woodland: "Woodland", open: "Open ground" },
@@ -226,7 +229,7 @@ export function quickPlan(options = {}) {
       notes.push(`A ${shapeWord(options.shape)} outline ${by}, so this city's outline is ${shapeWord(used.shape)}.`);
     }
     if (RIVER_FORMS.includes(options.river) && used.water && !["river", "estuary"].includes(used.water)) notes.push(`A river's form (${options.river}) needs a river, and this city has ${WATER_WORD[used.water] ?? used.water}, so it's left out.`);
-  } else if (used.size && ["coast", "lake", "estuary"].includes(options.water)) notes.push(`The ${options.water === "coast" ? "sea" : options.water === "lake" ? "lake shore" : "river mouth"} is a city's; a village or town gets a river instead.`);
+  } else if (used.size && options.water === "estuary") notes.push("A river mouth is a city's; a village or town gets a river instead (or ask for the sea coast).");
   return { ...out, notes };
 }
 
@@ -235,6 +238,7 @@ function quickPlanOf(options) {
   const readChoicesDone = readChoices(ctx);
   if (readChoicesDone !== undefined) return readChoicesDone;
   roadsAndDistricts(ctx);
+  shoreSide(ctx);
   wallsAndCenter(ctx);
   waterBeyond(ctx);
   millsAndCemetery(ctx);
@@ -250,7 +254,7 @@ export function cityQuick(choices, seed, options) {
   // each true or false, else as the seed has it)
   const quarters = Array.isArray(options.quarters) ? QUARTERS.filter((q) => options.quarters.includes(q)) : null;
   const outside = Object.fromEntries(OUTSIDE.filter((k) => options.outside?.[k] === true || options.outside?.[k] === false).map((k) => [k, options.outside[k]]));
-  const made = cityPlan({ ...choices, ...(quarters ? { quarters } : {}), ...outside }, seed);
+  const made = cityPlan({ ...choices, ...(quarters ? { quarters } : {}), ...outside }, seed, readDirections(options.directions));
   const name = String(options.name ?? "").trim() || placeName(rng(seed, "quick", "name"), choices.water);
   const winter = choices.season === "winter";
   const plan = {

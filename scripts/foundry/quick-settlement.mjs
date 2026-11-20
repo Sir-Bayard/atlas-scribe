@@ -24,10 +24,19 @@ const yesNo = (name, title) => `<div class="form-group" data-field="${name}"><la
 // (a box's why, when it's grayed out, is shown beside its name)
 const box = (name, label) => `<label><input type="checkbox" name="${name}"> ${esc(titleCase(label))}<span class="as-why"></span></label>`;
 
-/** The tab's HTML. */
-export function settlementTabHTML() {
+/**
+ * The tab's HTML. fill: a region's place it starts from (townFromPlace's): what the region shows of it, and a box to
+ * follow the way its roads, river and shore lie.
+ */
+export function settlementTabHTML(fill = null) {
   const L = QUICK_LABELS;
+  const article = (w) => (/^[aeiou]/i.test(w) ? "An" : "A");
+  const from = fill ? `<div class="as-qs-from" role="note">
+      <p class="hint"><strong>From the region map:</strong> ${esc(`${article(fill.options.size)} ${fill.options.size}${fill.facts.length ? ` ${fill.facts.join(", ")}` : ""}.`)} Change anything below before making it.</p>
+      ${fill.directions ? `<label data-tooltip-text="Its roads leave, its river runs and its sea or lake lies the way the region map shows them"><input type="checkbox" name="s-follow" checked> Follow the Map's Directions</label>` : ""}
+    </div>` : "";
   return `<section class="as-qs-settlement" data-tab="settlement" id="as-qs-panel-settlement" role="tabpanel" aria-labelledby="as-qs-tab-settlement">
+    ${from}
     <div class="form-group stacked"><label for="as-qs-describe">Describe It (Optional)</label><textarea id="as-qs-describe" name="s-describe" rows="3" placeholder="A walled port city with a cathedral, a citadel and no slums; a village called 'Ashby' with a green, a mill and an inn, in winter; a fortified town on a river among farms and woods..."></textarea></div>
     <div class="as-qs-chips" aria-live="polite"></div>
     <div class="as-qs-two">
@@ -47,7 +56,8 @@ export function settlementTabHTML() {
 /** What a village's or town's buildings and places are when left to it: true, false, or null (now and then). */
 function hasDefaults(size, water, surroundings) {
   if (!size) return { ...Object.fromEntries(HAS.map((k) => [k, null])), walled: false };
-  const hamlet = size === "hamlet", wet = water && water !== "none";
+  // (a watermill needs running water: a river or a stream, not a sea or a lake)
+  const hamlet = size === "hamlet", wet = water === "river" || water === "stream";
   const fieldy = !surroundings ? null : surroundings === "farmland" || surroundings === "mixed";
   return {
     temple: !hamlet, inn: !hamlet, smithy: hamlet ? null : true,
@@ -64,7 +74,7 @@ function hasDefaults(size, water, surroundings) {
  * { flush, options }: flush reads a description still waiting; options() gives Quick Start's options from the form
  * (name and seed aside).
  */
-export function wireSettlementTab(root) {
+export function wireSettlementTab(root, fill = null) {
   const form = root.closest("form") ?? root;
   const text = root.querySelector('[name="s-describe"]'), chips = root.querySelector(".as-qs-chips");
   const el = (n) => form.elements[n];
@@ -112,7 +122,7 @@ export function wireSettlementTab(root) {
       if (s.selectedOptions[0]?.disabled) s.value = firstOf(s);
     }
     // (a choice that's all a city's says so in place of Any)
-    const anyText = (s, t) => { s.options[[...s.options].findIndex((o) => !o.value)].textContent = t || "Any (by the seed)"; };
+    const anyText = (s, t) => { s.options[[...s.options].findIndex((o) => !o.value)].textContent = t || "Any (by the Seed)"; };
     for (const k of ["river", "shape"]) {
       const w = lacks[k], s = el(`s-${k}`);
       s.disabled = !!w;
@@ -124,7 +134,8 @@ export function wireSettlementTab(root) {
     // A village's or town's buildings and places: said or set, else the size's own (now-and-then ones half-checked)
     const def = hasDefaults(size || null, water || null, sur || null);
     for (const k of HAS) {
-      const b = el(`s-h-${k}`), off = k === "watermill" && water === "none" ? "needs a river or stream" : "";
+      // (a watermill needs running water: not with no water, nor on a sea coast or a lake shore alone)
+      const b = el(`s-h-${k}`), off = k === "watermill" && ["none", "coast", "lake"].includes(water) ? "needs a river or stream" : "";
       const v = known(`has.${k}`) ? !!value(`has.${k}`) : def[k];
       b.indeterminate = v === null && !off;
       b.checked = !off && v === true;
@@ -223,6 +234,8 @@ export function wireSettlementTab(root) {
     apply();
   });
   el("name")?.addEventListener("input", () => setHand("name", el("name").value));
+  // (a region's place: its choices as if set by hand, so the Describe box can still change them)
+  if (fill) for (const k of ["size", "season", "water", "roads", "surroundings", "river", "high", "name"]) if (fill[k] !== undefined && fill[k] !== null) setHand(k, fill[k]);
   draw();
 
   /** Quick Start's options from the form: choices on Any, and boxes neither said nor set by hand, left out. */

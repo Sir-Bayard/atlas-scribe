@@ -26,6 +26,8 @@ export function woodsAndCliffs(ctx) {
     if (![c, ...blob].every((p) => clearOfThings(p, 1))) continue;
     // nor a road or the water running through its middle, between the points tested above
     if ([...roads.map((rd) => rd.path), ...(ctx.water ? [ctx.water.path] : [])].some((path) => densify(path, 0.5).some((q) => inside(q, blob)))) continue;
+    // (nor the sea or a lake under it: a blob around a bay)
+    if (ctx.shore && ctx.shore.poly.some((q) => inside(q, blob))) continue;
     if (!clearOf(c, rad * 0.8)) continue;
     if (woods.some((w) => Math.hypot(w.c[0] - c[0], w.c[1] - c[1]) < w.rad + rad + (woodland ? 0.5 : 2))) continue;
     if (farms.some((f) => Math.hypot(f.c[0] - c[0], f.c[1] - c[1]) < rad * 1.2 + f.size)) continue;

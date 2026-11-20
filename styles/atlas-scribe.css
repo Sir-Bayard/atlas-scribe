@@ -805,3 +805,7 @@
 .atlas-scribe.as-quick .as-qs-more { margin: 0.2rem 0 0.4rem; }
 .atlas-scribe.as-quick .as-qs-more summary { cursor: pointer; font-size: 0.9em; opacity: 0.85; margin-bottom: 0.3rem; }
 .atlas-scribe .as-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* Make This Town: what the region map shows of the place, above the Settlement tab's choices */
+.atlas-scribe.as-quick .as-qs-from { margin: 0 0 0.5rem; padding: 0.4rem 0.55rem; border-left: 3px solid var(--color-border-highlight, #ff6400); background: rgba(0, 0, 0, 0.12); border-radius: 3px; }
+.atlas-scribe.as-quick .as-qs-from p { margin: 0 0 0.3rem; }
+.atlas-scribe.as-quick .as-qs-from label { display: inline-flex; align-items: center; gap: 0.35rem; }

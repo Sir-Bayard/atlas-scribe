@@ -129,7 +129,7 @@ export function readPlace(text = "", opts = {}) {
   const water = wh.filter((x) => !x.no).sort((a, b) => a.at - b.at || (b.end - b.at) - (a.end - a.at))[0]?.value ?? (wh.some((x) => x.no) || noWater ? "none" : null);
   mark(["inland", "dry", "water"]);
   if (water) {
-    if (!city && ["coast", "lake", "estuary"].includes(water)) skipped.push({ label: water === "coast" ? "the sea" : water, why: "A sea coast, a lake or an estuary is a city's (a village or town by the sea or a lake gets a river)" });
+    if (!city && water === "estuary") skipped.push({ label: water, why: "A river mouth is a city's (a village or town by the sea is on its coast: say \"by the sea\")" });
     else if (city && water === "stream") { choices.water = "river"; chip("water", "river", QUICK_LABELS.water.river); }
     else { choices.water = water; chip("water", water, QUICK_LABELS.water[water].replace(/ \(a city\)$/, "")); }
   }

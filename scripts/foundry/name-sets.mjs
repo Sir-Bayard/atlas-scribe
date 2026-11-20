@@ -27,7 +27,7 @@ export async function saveNameSets(list) {
 export const setNameOf = (text, fallback = "Name Set") => parseNameSet(text).set?.name ?? fallback;
 
 /** A new set's text: every part shown, with a line saying what it's for. */
-export const NEW_SET = `name: New name set
+export const NEW_SET = `name: New Name Set
 # The sound of its names: spelled out here, or leave sounds out and list 30 or more examples
 sounds:
   onsets: b d g k l m n r s t v br dr gr st

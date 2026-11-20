@@ -159,10 +159,11 @@ export function simplify(path, tol) {
 
 /**
  * The city's plan pieces: { W, H, features, label, center, px }. choices: Quick Start's (size city or metropolis,
- * water from CITY_WATER, river, shape, roads, center, surroundings, season); seed: the plan's.
+ * water from CITY_WATER, river, shape, roads, center, surroundings, season); seed: the plan's; dirs: the way its roads,
+ * river and shore lie (directions.mjs readDirections), or null.
  */
-export function cityPlan(choices, seed) {
-  const ctx = { choices, seed };
+export function cityPlan(choices, seed, dirs = null) {
+  const ctx = { choices, seed, dirs };
   cityOutline(ctx);
   cityWater(ctx);
   cliffAndGates(ctx);

@@ -12,6 +12,8 @@ export function millsAndCemetery(ctx) {
     const mr = r.fork("mills");
     const autoWater = ctx.water && (choices.size !== "hamlet" || mr.chance(0.5));
     const wantWater = ctx.water && (has.watermill ?? autoWater);
+    // (by a sea or a lake there's no running water to turn one)
+    if (has.watermill === true && ctx.shore && !ctx.water) (ctx.notes ??= []).push(`A watermill needs a river or a stream, and this place's water is ${ctx.shore.cls === "sea" ? "the sea" : "a lake"}, so it has none.`);
     if (wantWater) {
       const ok = (p, m) => p[0] > 2 && p[1] > 2 && p[0] < W - 2 && p[1] < H - 2 && !nearCluster(p, m + 0.5) && !(ctx.green && distToPoly(p, ctx.green) < m)
         && roads.every((rd) => distToPath(p, rd.path) > roadHalf(rd) + m + 3) && distToPath(p, ctx.water.path) > ctx.water.width / 25 / 2 + 0.9;

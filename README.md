@@ -58,7 +58,7 @@ You can also drag a box on a town map with the **Battle Map** tool, then click *
 
 ## Region maps and imports
 
-- **A region:** Quick Start's **Region** tab makes a map miles across, with towns, villages, castles and the roads between them, woods, hills and mountains. Pick a place on it and click **Make its map** to start that place's own plan.
+- **A region:** Quick Start's **Region** tab makes a map miles across, with towns, villages, castles and the roads between them, woods, hills and mountains. Pick a town, village or hamlet on it and click **Make This Town**: Quick Start opens filled in with what the region shows of it (its size, name, river, coast or lake, roads and the way each runs, its hills and the land around it), for you to change before making it. A castle's **Make This Castle** makes its battle map.
 - **Other tools' maps:** **Import** opens a Watabou city or village (its JSON) as a starting plan, or a Universal VTT file (.dd2vtt, .uvtt, .df2vtt) with its walls and image. A scene's menu in the sidebar has **Export as Universal VTT**.
 - **Examples:** [a village](examples/village-edrics-cross.json), [a city](examples/city-kestrelmouth.json) and [an inn](examples/inn-lantern-and-oar.json) to download and open with **Import**.
 

@@ -1,13 +1,26 @@
 // One step of making a plan from Quick Start's choices (quick.mjs, quickPlan): ctx holds what the steps share.
 import { ROAD_FT, add, clipToMap, dirOf, distToSeg, mul, outline, pt, wander } from "../quick.mjs";
+import { mainRoad } from "../directions.mjs";
+import { rng } from "../rng.mjs";
 
 /**
  * The center, and the main road's direction (mostly across the map's long side)
  */
 export function roadsAndDistricts(ctx) {
-  const { H, S, W, choices, r } = ctx;
-  const C = [W / 2 + r.range(-0.08, 0.08) * W, H / 2 + r.range(-0.08, 0.08) * H]; ctx.C = C;
-  const theta = r.range(-30, 30) + (choices.size !== "town" && r.chance(0.25) ? 90 : 0); ctx.theta = theta; // a town runs along the long side
+  const { H, S, W, choices, r, dirs } = ctx;
+  const C0 = [W / 2 + r.range(-0.08, 0.08) * W, H / 2 + r.range(-0.08, 0.08) * H];
+  // (a village or town by the sea or a lake: the side the water lies, the region's or one from a stream of its own,
+  // and the place moved a little away from it, so the water has room on the map)
+  const shore = choices.water === "coast" || choices.water === "lake";
+  if (shore) ctx.shoreAt = (choices.water === "lake" ? dirs?.lake ?? dirs?.coast : dirs?.coast ?? dirs?.lake) ?? rng(ctx.seed, "quick", "shore-side").pick([-90, 0, 90, 180]) + rng(ctx.seed, "quick", "shore-turn").range(-25, 25);
+  const away = shore ? { hamlet: 4, village: 5, town: 7 }[choices.size] ?? 5 : 0;
+  const C = shore ? add(C0, mul(dirOf(ctx.shoreAt), -away)) : C0; ctx.C = C;
+  // (the roads' own directions when a region gives them: the two most nearly opposite are the main road, through the
+  // place; the draws are made either way, so the rest of the map draws as it would)
+  const given = mainRoad(dirs?.roads);
+  const theta0 = r.range(-30, 30) + (choices.size !== "town" && r.chance(0.25) ? 90 : 0); // a town runs along the long side
+  // (by the water with no roads given, the main road runs along the shore)
+  const theta = given.main.length ? given.main[0] : shore ? ctx.shoreAt + 90 + ((((theta0 + 45) % 90) + 90) % 90 - 45) * 0.4 : theta0; ctx.theta = theta;
   const U = dirOf(theta), V = [-U[1], U[0]]; ctx.V = V; ctx.U = U;
   const at = (u, v) => add(add(C, mul(U, u)), mul(V, v)); ctx.at = at;
 
@@ -16,17 +29,19 @@ export function roadsAndDistricts(ctx) {
   const join = (a, b) => [...[...a].reverse(), ...b.slice(1)]; // two arms into one road through the center
   const hold = S.square + 3; // straight near the center, so the roads meet the square squarely
   const roads = []; ctx.roads = roads;
-  const mainA = arm(theta, hold), mainB = arm(theta + 180 + r.range(-8, 8), hold);
+  const mainA = arm(theta, hold), turnB = r.range(-8, 8), mainB = arm(given.main.length > 1 ? given.main[1] : theta + 180 + turnB, hold);
   const arms = [mainA, mainB]; ctx.arms = arms; // every road leaving the center
+  // (a road the region gives, else the seed's)
+  const next = (deg) => (given.rest.length ? given.rest.shift() : deg);
   if (choices.roads === "fork") {
-    const branch = arm(theta + 180 + r.range(35, 55) * (r.chance(0.5) ? 1 : -1), hold);
+    const branch = arm(next(theta + 180 + r.range(35, 55) * (r.chance(0.5) ? 1 : -1)), hold);
     arms.push(branch);
     roads.push({ id: "main-road", class: S.main, path: join(mainA, mainB) });
     roads.push({ id: "branch-road", class: S.cross, path: [...branch].reverse() });
   } else {
     roads.push({ id: "main-road", class: S.main, path: join(mainA, mainB) });
     if (choices.roads === "crossroads") {
-      const c1 = arm(theta + 90 + r.range(-20, 20), hold), c2 = arm(theta - 90 + r.range(-20, 20), hold);
+      const c1 = arm(next(theta + 90 + r.range(-20, 20)), hold), c2 = arm(next(theta - 90 + r.range(-20, 20)), hold);
       arms.push(c1, c2);
       roads.push({ id: "cross-road", class: S.cross, path: join(c1, c2) });
     }

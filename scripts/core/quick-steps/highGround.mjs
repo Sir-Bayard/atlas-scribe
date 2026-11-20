@@ -30,7 +30,7 @@ export function highGround(ctx) {
     for (let d = 1; d <= most; d += 1) {
       const p = pts(side, t, d);
       if (kept.some((poly) => inside(p, poly) || distToPoly(p, poly) < 2.5)) return d - 2.5;
-      if (water.some((w) => (Array.isArray(w.path) ? distToPath(p, w.path) < 3 : false))) return d - 3;
+      if (water.some((w) => (Array.isArray(w.path) ? distToPath(p, w.path) < 3 : w.shape ? inside(p, w.shape) || distToPoly(p, w.shape) < 3 : false))) return d - 3;
       if (mills.some((k) => (k.poly ? distToPoly(p, k.poly) < 3 : distToPath(p, k.path) < k.half + 3))) return d - 3;
     }
     return most;

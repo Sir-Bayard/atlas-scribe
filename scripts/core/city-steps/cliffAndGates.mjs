@@ -81,8 +81,10 @@ export function cliffAndGates(ctx) {
   };
   const roads = []; ctx.roads = roads;
   for (const share of ctx.cliff ? [0.6, 0.5, 0.4, 0.3, 0.22, 0.15] : [0.6, 0.5, 0.4, 0.3]) { // (closer together where a cliff leaves less room)
+    // (the region's roads first, each as near its own direction as a gate can be; then the seed's)
+    const wanted = (ctx.dirs?.roads ?? []).map((d) => (d * Math.PI) / 180);
     for (let t = 0; t < 300 && roads.length < gateCount; t++) {
-      const a = r.next() * TAU;
+      const a = t < wanted.length * 3 ? wanted[t % wanted.length] + [0, 0.12, -0.12][Math.floor(t / wanted.length)] : r.next() * TAU;
       if (blocked(a) || roads.some((g) => apart(g.angle, a) < (TAU / gateCount) * share)) continue;
       const path = roadAt(a);
       if ((ctx.sea || ctx.lake) && densify(path, 0.5).some((p) => inside(p, ctx.sea ?? ctx.lake))) continue;

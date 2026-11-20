@@ -480,9 +480,11 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
     let sea = -1, sd = Infinity; within(x[i], y[i], Math.max(3, 3 * step), (j) => { if (!landMask[j]) { const d = sq(x[j] - x[i]) + sq(y[j] - y[i]); if (d < sd || (d === sd && j < sea)) { sd = d; sea = j; } } });
     // its roads: each road leaving it, the way it heads a few steps out
     const roads = (roadsAt.get(i) ?? []).map((pts) => bearing(pts[Math.min(pts.length - 1, 3)])).sort((a, b) => a - b);
+    // (the way to its lake's shore: toward the lake nodes beside it, taken together)
+    const lakeSideOf = (n) => { let sx = 0, sy = 0; for (let k = indptr[n]; k < indptr[n + 1]; k++) { const j = indices[k]; if (lake[j] && landMask[j]) { sx += x[j] - x[n]; sy += y[j] - y[n]; } } return sx || sy ? bearing([at[0] + sx, at[1] + sy]) : null; };
     // (and what a name might say of it: rivers meeting there, a lake's shore, the foot of a pass)
     return { river, coast: sea >= 0 ? bearing(U(sea)) : null, roads: [...new Set(roads)], biome: biomeOf(i), ground: h[i] < 0.16 ? "low" : h[i] < 0.45 ? "hills" : "high",
-      ...(near1(junction, i) && river ? { confluence: true } : {}), ...(shore[i] > 0.5 ? { lake: true } : {}), ...(passFoot[i] ? { pass: true } : {}) };
+      ...(near1(junction, i) && river ? { confluence: true } : {}), ...(shore[i] > 0.5 ? { lake: true, lakeSide: lakeSideOf(i) } : {}), ...(passFoot[i] ? { pass: true } : {}) };
   }
   const roadsOut = features.filter((q) => q.type === "road"), crossOut = features.filter((q) => q.type === "crossing");
   return {

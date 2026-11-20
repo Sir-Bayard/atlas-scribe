@@ -60,7 +60,8 @@ export function wallsAndCenter(ctx) {
       const gc = add(C, mul(D, off));
       const g = outline(clipToMap([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => pt(add(add(gc, mul(U, (a * gw) / 2)), mul(V, (b * gd) / 2)))), W, H));
       const edge = g.flatMap((p, i) => { const q = g[(i + 1) % g.length]; return [0, 0.25, 0.5, 0.75].map((t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); });
-      if (g.length >= 3 && roads.every((rd) => edge.every((p) => distToPath(p, rd.path) > roadHalf(rd) + 0.4) && rd.path.every((p) => !inside(p, g)))) ctx.green = g;
+      // (and off a sea or lake beside the place)
+      if (g.length >= 3 && roads.every((rd) => edge.every((p) => distToPath(p, rd.path) > roadHalf(rd) + 0.4) && rd.path.every((p) => !inside(p, g))) && !(ctx.shore && [...g, ...edge].some((p) => ctx.inShore(p, 1)))) ctx.green = g;
     }
     if (ctx.green) features.push({ id: "green", type: "area", class: "park", style: "green", shape: ctx.green });
   }
