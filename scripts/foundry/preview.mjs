@@ -1265,7 +1265,7 @@ export class AtlasScribeApp extends Base {
 
   /** An overland plan: towns and roads placed (or placed again) by the generator, one step Undo takes back. */
   static async #onPlaceTowns() {
-    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}. Undo takes them back.`);
+    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realms` : ""}. Undo takes them back.`);
   }
 
   /** An overland plan: the names its map made written into it. */
@@ -1799,7 +1799,7 @@ export class AtlasScribeApp extends Base {
         for (const n of notes) note.info(n);
         const drawn = await this.show(plan);
         // (towns from the plan's own seed, so the same seed and choices make the same map; Reroll places varies them)
-        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges. Reroll Places in the Plan panel places them again; Undo takes them off.`);
+        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.realms ? ` in ${res.realms} realms` : ""}. Reroll Places in the Plan panel places them again; Undo takes them off.`);
         else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place Towns and Roads in the Plan panel once it draws.");
       } catch (e) {
         note.error(e.message);

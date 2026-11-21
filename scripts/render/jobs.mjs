@@ -8,6 +8,7 @@ import { forgetLand } from "../core/layout/overland.mjs";
 import { pinnables } from "../core/pin.mjs";
 import { zoomPlan } from "../core/zoom.mjs";
 import { placeTowns, keepNames } from "../core/land/places.mjs";
+import { placeRealms } from "../core/land/realms.mjs";
 import { normalize } from "../core/plan.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
 import * as sketch from "./styles/sketch.mjs";
@@ -89,7 +90,25 @@ export const jobs = {
     const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.9 * p, l) });
     progress(0.92, "Placing towns and roads");
     const { plan: out, added, removed, notes } = placeTowns(plan, layout.land, { seed, density });
+    // (realms ruled from the new towns, when the plan asks for them or still has some the generator made)
+    const count = out.land?.realms;
+    if (["few", "some", "many"].includes(count) || out.features.some((f) => f.type === "realm")) {
+      progress(0.97, "Placing realms");
+      const R = placeRealms(out, layout.land, { count: count ?? "none", seed });
+      return { plan: R.plan, added, removed, notes: [...notes, ...R.notes], realms: R.added };
+    }
     return { plan: out, added, removed, notes };
+  },
+
+  /**
+   * Realms placed on an overland plan's land (land/realms.mjs placeRealms), in place of the generator's own the GM
+   * hasn't changed. count: few, some or many (the plan's land.realms when left out). Returns { plan, added, removed,
+   * notes }.
+   */
+  async placeRealms({ plan, seed, count = null }, progress) {
+    const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.9 * p, l) });
+    progress(0.95, "Placing realms");
+    return placeRealms(plan, layout.land, { count: count ?? normalize(plan).land?.realms ?? "some", seed });
   },
 
   /** The names an overland plan's map makes, kept in the plan (land/places.mjs keepNames). Returns { plan, places, features }. */

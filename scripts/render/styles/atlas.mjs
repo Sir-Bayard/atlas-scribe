@@ -45,8 +45,22 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
   for (const p of places) {
     if (!near([[p.x, p.y]])) continue;
     placeMark(g, X(p.x), Y(p.y), p.class, u);
+    // (a realm's capital crowned above its mark)
+    if (p.capital && layout.showRealms !== false) crownMark(g, X(p.x), Y(p.y) - (CROWN_LIFT[p.class] ?? 14) * u, u);
   }
   g.restore();
+}
+
+// (how far above a place's middle its crown sits, by its mark's size)
+const CROWN_LIFT = { city: 24, town: 20, village: 15, hamlet: 13, castle: 21 };
+
+/** A capital's crown: three points on a band, gold with an ink edge, its middle at (x, y). Shared with the map's key. */
+export function crownMark(g, x, y, u) {
+  const s = u * 1.6;
+  g.beginPath();
+  g.moveTo(x - 8 * s, y + 4 * s); g.lineTo(x - 9 * s, y - 4 * s); g.lineTo(x - 4.5 * s, y); g.lineTo(x, y - 6 * s); g.lineTo(x + 4.5 * s, y); g.lineTo(x + 9 * s, y - 4 * s); g.lineTo(x + 8 * s, y + 4 * s); g.closePath();
+  g.fillStyle = "rgba(214,168,52,1)"; g.fill();
+  g.strokeStyle = INK; g.lineWidth = 1.5 * u; g.lineJoin = "round"; g.stroke();
 }
 
 /** Strokes a road of a class: path() builds the path (called once a pass). Shared with the map's key. */

@@ -323,10 +323,11 @@ export const TYPES = {
     },
   },
   realm: {
-    // Reserved for realms and borders on overland maps (not drawn in this version)
-    geometry: "shape",
+    // A realm on an overland map: its crown, on its capital (capital: the place's id); its land is grown from the
+    // crowns at every layout (core/land/realms.mjs), so moving a crown redraws the borders
+    geometry: "point",
     classes: ["realm"],
-    fields: { name: str(), color: str(null), capital: str(null) },
+    fields: { name: str(), color: str(null), capital: str(null), made: { kind: "data", default: null } },
   },
   prop: {
     geometry: "point",
@@ -409,7 +410,7 @@ export const PROFILES = ["hamlet", "village", "town", "city"];
 export const OLD_PROFILES = { roadside: "hamlet", core: "city" };
 
 /** Classes a type accepts but this version doesn't draw yet (kept in the plan, left off the map). */
-export const NOT_DRAWN_YET = { area: [], realm: ["realm"] };
+export const NOT_DRAWN_YET = { area: [] };
 
 /** Top-level words this version knows. */
 export const SEASONS = ["spring", "summer", "autumn", "winter"];

@@ -716,6 +716,21 @@ const api = {
     return exclusive(() => worker.run("placeTowns", { plan, seed, density }));
   },
 
+  /**
+   * Realms on an overland plan's land, ruled from its cities and towns, in place of the generator's own the GM hasn't
+   * changed (renamed, recolored or moved ones are kept). options: { seed (a new one moves them), count: few, some or
+   * many (the plan's land.realms when left out; none takes the generator's away) }. Returns { plan, added, removed,
+   * notes }.
+   */
+  async placeRealms(input, { seed = 1 + Math.floor(Math.random() * 2147483645), count = null } = {}) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    if (plan.kind !== "region" || !plan.land || typeof plan.land !== "object") throw new Error("AtlasScribe: realms are placed on an overland map (a region plan with land)");
+    planOrThrow(plan);
+    return exclusive(() => worker.run("placeRealms", { plan, seed, count }));
+  },
+
   /** The world's name sets (a GM's own naming rules for overland maps): [{ id, name, text }]. */
   nameSets() {
     requireGM();
@@ -896,6 +911,7 @@ const host = {
   openFiles: () => api.openFiles(),
   summary: (plan) => api.summary(plan),
   placeTowns: (plan, options) => api.placeTowns(plan, options),
+  placeRealms: (plan, options) => api.placeRealms(plan, options),
   keepNames: (plan) => api.keepNames(plan),
   nameSets: () => storedNameSets(),
   openNameSets: () => api.openNameSets(),

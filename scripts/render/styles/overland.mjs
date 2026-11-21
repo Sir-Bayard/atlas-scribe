@@ -287,7 +287,8 @@ const keyBox = (layout) => { const k = keyOf(layout); if (!k) return null; const
 
 export function layers(layout) {
   if (!layout.overland || !(layout.items ?? []).some((i) => i.kind === "place" || i.kind === "way" || i.kind === "crossing")) return [];
-  return [{ name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
+  // (realms under the places: their wash and borders, so the GM can hide them and keep the towns)
+  return [...(layout.realms?.list?.length ? [{ name: "realms", shown: layout.showRealms !== false }] : []), { name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
 }
 
 /**
@@ -297,6 +298,11 @@ export function layers(layout) {
  */
 export function paint(ctx) {
   const { g, W, H, x0, y0, pp, layout: L, progress = () => {}, layer } = ctx;
+  if (layer === "realms") {
+    paintRealms(ctx, L, prepared(L, pp), Math.max(L.size.squares[0], L.size.squares[1]) * pp);
+    progress(1, "Done");
+    return;
+  }
   if (layer === "places") {
     const [MW0, MH0] = L.size.squares;
     drawAtlas(ctx, L, prepared(L, pp).rivers, Math.max(MW0, MH0) * pp);
@@ -383,10 +389,76 @@ export function paint(ctx) {
   // paper: a vignette at the map's edge and grain; then roads, crossings and places as atlas markers, crisp on top
   paper(ctx, MW, MH);
   progress(0.85, "Places");
+  if (layer !== "ground" && L.showRealms !== false && L.realms?.list?.length) paintRealms(ctx, L, S, outPx);
   if (layer !== "ground" && L.places !== false) drawAtlas(ctx, L, S.rivers, outPx);
   // (the dressing on the ground, unless it's a layer of its own over the places)
   if (L.dressing && !(layer === "ground" && layers(L).some((q) => q.name === "dressing"))) dress(ctx, P, { miles: true });
   progress(1, "Done");
+}
+
+// (each layout's realm wash, worked out once: a picture over the realm grid, each realm's color faint in its middle
+// and stronger toward its borders)
+const WASH = new WeakMap();
+function realmWash(L) {
+  const R = L.realms;
+  if (WASH.has(R)) return WASH.get(R);
+  const { w, h, ids } = R.grid, d = new Float32Array(w * h).fill(1e9);
+  for (let k = 0; k < w * h; k++) {
+    const c = k % w, me = ids[k];
+    if (me < 0) continue;
+    // (a border cell: beside another realm or the wilds, not the sea)
+    const nb = [c > 0 ? ids[k - 1] : me, c < w - 1 ? ids[k + 1] : me, k >= w ? ids[k - w] : me, k < w * (h - 1) ? ids[k + w] : me];
+    if (nb.some((o) => o !== me && o !== -1)) d[k] = 0;
+  }
+  for (let pass = 0; pass < 2; pass++) for (let s = 0; s < w * h; s++) {
+    const k = pass ? w * h - 1 - s : s, c = k % w;
+    if (ids[k] < 0) continue;
+    const a = pass ? [c < w - 1 ? k + 1 : -1, k < w * (h - 1) ? k + w : -1] : [c > 0 ? k - 1 : -1, k >= w ? k - w : -1];
+    for (const j of a) if (j >= 0 && ids[j] === ids[k] && d[j] + 1 < d[k]) d[k] = d[j] + 1;
+  }
+  const img = new OffscreenCanvas(w, h), g = img.getContext("2d"), id = g.createImageData(w, h);
+  const hex = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
+  const cols = R.list.map((q) => (/^#[0-9a-f]{6}$/i.test(q.color ?? "") ? hex(q.color) : [140, 120, 100]));
+  const band = Math.max(2, Math.round(Math.max(w, h) / 90));
+  for (let k = 0; k < w * h; k++) {
+    const me = ids[k];
+    if (me < 0 || !cols[me]) continue;
+    const a = 0.13 + 0.3 * Math.exp(-d[k] / band);
+    id.data.set([...cols[me], Math.round(255 * a)], 4 * k);
+  }
+  g.putImageData(id, 0, 0);
+  WASH.set(R, img);
+  return img;
+}
+
+/**
+ * The realms: each realm's land washed in its color, stronger by its borders, and the borders as dashed lines in the
+ * map's ink on a pale halo, all on the land only (not the sea or lakes).
+ */
+function paintRealms(ctx, L, S, outPx) {
+  const { g, W, H, x0, y0, pp } = ctx, R = L.realms, m = ctx.mask;
+  const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
+  const target = m ? m.getContext("2d") : g;
+  if (m) { target.setTransform(1, 0, 0, 1, 0, 0); target.globalCompositeOperation = "source-over"; target.clearRect(0, 0, W, H); }
+  target.imageSmoothingEnabled = true; target.imageSmoothingQuality = "high";
+  target.drawImage(realmWash(L), 0, 0, R.grid.w, R.grid.h, X(0), Y(0), R.grid.w * R.grid.cell * pp, R.grid.h * R.grid.cell * pp);
+  // the borders: a pale halo, then the dashed ink
+  const u = outPx / 3600;
+  target.lineCap = "round"; target.lineJoin = "round";
+  const tx1 = x0 + W / pp, ty1 = y0 + H / pp, pad = 1;
+  const near = (pts) => pts.some(([x, y]) => x >= x0 - pad && y >= y0 - pad && x <= tx1 + pad && y <= ty1 + pad);
+  const path = (pts) => { target.beginPath(); pts.forEach(([x, y], i) => (i ? target.lineTo(X(x), Y(y)) : target.moveTo(X(x), Y(y)))); };
+  for (const [stroke, width, dash] of [["rgba(252,246,232,0.7)", 7 * u, []], ["rgba(58,40,30,0.85)", 3.2 * u, [11 * u, 5 * u, 2.5 * u, 5 * u]]]) {
+    target.strokeStyle = stroke; target.lineWidth = Math.max(1, width); target.setLineDash(dash);
+    for (const b of R.borders) { if (!near(b)) continue; path(b); target.stroke(); }
+  }
+  target.setLineDash([]);
+  if (m) {
+    target.globalCompositeOperation = "destination-in";
+    target.drawImage(S.landImg, 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);
+    target.globalCompositeOperation = "source-over";
+    g.drawImage(m, 0, 0);
+  }
 }
 
 /** Marsh tufts and dune ripples, at full size, where the biome raster says. */

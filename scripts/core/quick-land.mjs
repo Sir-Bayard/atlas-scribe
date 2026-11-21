@@ -22,6 +22,7 @@ export const LAND_QUICK = {
   span: ["poles", "north", "south", "equator"],
   mountains: ["any", "none", "few", "some", "many"],
   towns: ["some", "few", "many"],
+  realms: ["none", "few", "some", "many"],
   grid: ["hex", "square"],
   size: ["medium", "small", "large"],
   names: ["english", "mixed", "invented"],
@@ -49,6 +50,7 @@ export const LAND_QUICK_LABELS = {
   span: { poles: "Pole to pole", north: "Northern half", south: "Southern half", equator: "Across the equator" },
   mountains: { any: "Any", none: "None", few: "Few", some: "Some", many: "Many" },
   towns: { few: "Few", some: "Some", many: "Many" },
+  realms: { none: "None", few: "Few", some: "Some", many: "Many" },
   grid: { hex: "Hexes", square: "Squares" },
   size: { small: "Small (2,048 px)", medium: "Medium (4,096 px)", large: "Large (8,192 px, slower)" },
   names: { english: "English countryside", mixed: "English places, older features", invented: "One invented tongue" },
@@ -81,7 +83,7 @@ const CLIMATES_ANY = ["temperate", "temperate", "temperate", "cold", "warm", "ar
 
 /**
  * The plan. options: { scale, type, seaSide, climate, hemisphere, span (a world's), mountains, towns, grid, size,
- * names, season, age, plates, coast, wind, rain, rivers, lakes, plateaus, volcanic, nameSet ({ name, text, from }: a
+ * names, season, realms, age, plates, coast, wind, rain, rivers, lakes, plateaus, volcanic, nameSet ({ name, text, from }: a
  * set from the library, used for the names), name, seed }.
  * Returns { plan, choices, notes }.
  */
@@ -118,6 +120,7 @@ export function landPlan(options = {}) {
   if (c.rain !== "normal") land.rain = c.rain;
   if (c.rivers !== "some") land.rivers = c.rivers;
   if (c.lakes !== "some") land.lakes = c.lakes;
+  if (c.realms !== "none") land.realms = c.realms;
   if (c.plateaus === "yes") land.plateaus = true;
   if (c.volcanic === "yes") land.volcanic = true;
   // Latitudes: a world's span (the northern half is the generator's own: no setting), a smaller map's hemisphere

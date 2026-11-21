@@ -12,7 +12,7 @@ import { readable } from "../labels.mjs";
 import { Heap } from "../land/heap.mjs";
 
 /** Each label's font size in pixels on a picture 3600 px on its long side (larger pictures, larger labels alike). */
-export const LABEL_PX = { city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19 };
+export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19 };
 // (each mark's half size, in the same pixels as the markers: the label sits beside it)
 const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6 };
 const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river"]);
@@ -21,7 +21,7 @@ const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river"]);
 const LOOKS = { bold: { water: "#e8f3ff", land: "#fff8ec", place: "#ffffff" }, ink: { water: "#1d4a6e", land: "#4b3621", place: null } };
 const FONT = { water: "Amiri", land: "Vollkorn" };
 // (the order labels are placed in: the first placed keeps its spot, later ones step around it)
-const ORDER = ["ocean", "sea", "land", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "forest", "desert", "marsh", "island", "village", "cape", "ruin", "tower", "temple", "inn", "mine", "hamlet", "place"];
+const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "forest", "desert", "marsh", "island", "village", "cape", "ruin", "tower", "temple", "inn", "mine", "hamlet", "place"];
 
 /**
  * plan: the normalized plan; land: the layout's compact land; items: the layout's items so far; keepOut: boxes in map
@@ -30,7 +30,7 @@ const ORDER = ["ocean", "sea", "land", "range", "city", "town", "river", "bigLak
  * placeNames: Map(place id -> name), featureNames: Map(inventory id -> name, for each named feature) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
-export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } = {}) {
+export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [] } = {}) {
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu, side = Math.max(MW, MH);
   const em = (px) => (px * side) / 3600;
@@ -89,6 +89,14 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
     placeNames.set(p.id, name);
     const cls = LABEL_PX[p.class] ? p.class : "place";
     if (shown(p)) want.push({ id: `@place:${p.id}`, kind: cls, text: name, place: p, px: LABEL_PX[cls] });
+  }
+  // realms: each name in wide spaced capitals over the heart of its land (its spot, the farthest from its borders),
+  // smaller for a small realm so it stays inside it
+  for (const R of realms) {
+    if (!R.spot || !R.name) continue;
+    const letters = R.name.toUpperCase().replace(/\s+/g, " ").length, full = em(LABEL_PX.realm);
+    const fits = (2 * R.room) / Math.max(1, letters * 0.66 * 1.4);
+    want.push({ id: `@realm:${R.id}`, kind: "realm", text: R.name, spot: R.spot, caps: true, spaced: true, px: Math.max(22, Math.min(LABEL_PX.realm, (LABEL_PX.realm * Math.min(full, fits)) / full)) });
   }
   // features: by kind, the biggest first, with limits so a map isn't flooded with small ones
   const kindsOf = (k) => inv.filter((q) => q.kind === k).sort((a, b) => (b.size ?? 0) - (a.size ?? 0) || (a.id < b.id ? -1 : 1));
@@ -192,8 +200,10 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
   // (each feature's name as made, before capitals, labeled or not: for keepNames)
   const featureNames = madeNames;
   for (const L of want.sort((a, b) => rank(a.kind) - rank(b.kind))) {
-    const size = em(L.px ?? LABEL_PX[L.kind] ?? 20), text = L.caps ? L.text.toUpperCase() : L.text;
-    const w = text.length * size * (L.caps ? 0.66 : 0.5), h = size * 1.2;
+    const size = em(L.px ?? LABEL_PX[L.kind] ?? 20), caps = L.caps ? L.text.toUpperCase() : L.text;
+    // (a realm's letters spread with thin spaces, its words with wider ones, as an atlas sets a country's name)
+    const text = L.spaced ? caps.split(" ").map((w0) => [...w0].join("\u2009")).join("\u2002") : caps;
+    const w = caps.length * size * (L.caps ? 0.66 : 0.5) * (L.spaced ? 1.4 : 1), h = size * 1.2;
     let at = null, angle = 0;
     if (L.place) {
       const p = L.place, r = em(MARK_PX[p.class] ?? 4.4), gap = size * 0.25;
@@ -218,6 +228,10 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
         if (!r?.length) continue;
         at = fit(r[Math.floor(r.length / 2)], w, h, 0);
       }
+    } else if (L.kind === "realm") {
+      // (over its spot, or a little off it where another label is)
+      const step = h * 1.2, b = L.spot;
+      at = least([b, [b[0], b[1] - step], [b[0], b[1] + step], [b[0] - w * 0.25, b[1]], [b[0] + w * 0.25, b[1]]].map((s) => ({ at: fit(s, w, h, 0) })), w, h).at;
     } else {
       const open = ["sea", "ocean", "lake", "bigLake"].includes(L.kind) ? openWater(L.q, (L.kind === "lake" || L.kind === "bigLake") && !L.shut) : null;
       const step = h * 1.1;
@@ -229,7 +243,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [] } 
     if (!inside(at[0], at[1])) continue;
     // (a feature's name that could only go over the compass rose, the scale bar, the cartouche or a place's mark is left
     // off: the GM can add it; a place's stays, beside its mark)
-    if (!L.place && (onDressing(at, angle, w, h) > 0.15 || onMarks(at, angle, w, h) > 0)) continue;
+    // (a realm's name spans its land as an atlas's does, over the towns in it: only the dressing keeps it off)
+    if (!L.place && (onDressing(at, angle, w, h) > 0.15 || (L.kind !== "realm" && onMarks(at, angle, w, h) > 0))) continue;
     boxes.push(boxOf(at, angle, w, h));
     const water = WATER.has(L.kind);
     labels.push({

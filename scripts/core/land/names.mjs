@@ -171,12 +171,30 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
           case "island": { const w = root(r.pick(FIRST)); return r.pick([`${w} Isle`, `the Isle of ${w}`, inventedFeatures ? `${w}` : `${w}holm`]); }
           case "cape": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Head`, `${w} Point`, `Cape ${w}`, inventedFeatures || near ? `${w} Point` : `${w}ness`]); }
           case "land": return inventedFeatures ? root() : r.pick([`the ${r.pick(["West", "East", "North", "South", "Middle", "High", "Far"])}lands`, `${r.pick(FIRST)}land`]);
+          case "realm": {
+            // (a realm: its rank's word, and a name of its own, or now and then its capital's; info.rank great, middle
+            // or small)
+            // (one s where two meet, Kingshire, and no "march" or "king" twice: not the Reedmarch March or the Kingdom
+            // of Kingsdale)
+            const a = r.pick(FIRST), b = r.pick(REALM_ENDS);
+            const w = near ?? (inventedFeatures ? root() : /s$/i.test(a) && b[0] === "s" ? a + b.slice(1) : a + b);
+            const forms = (REALM_FORMS[info.rank] ?? REALM_FORMS.middle).filter((t) => !(/march/i.test(w) && /March/.test(t)) && !(/king/i.test(w) && /Kingdom/.test(t)));
+            return r.pick(forms.length ? forms : ["{name}"]).replace("{name}", w);
+          }
           default: return null;
         }
       });
     },
   };
 }
+
+/** A realm's name by its rank: the great ones kingdoms, the small ones marches, counties and baronies. */
+const REALM_FORMS = {
+  great: ["the Kingdom of {name}", "{name}", "the Kingdom of {name}"],
+  middle: ["the Duchy of {name}", "the Kingdom of {name}", "the Principality of {name}", "{name}"],
+  small: ["the {name} March", "the County of {name}", "the Barony of {name}", "the March of {name}"],
+};
+const REALM_ENDS = ["mark", "land", "shire", "wold", "dale", "moor", "reach", "march"];
 
 // ---- a GM's name set (namesets.mjs) ----
 // (the patterns a kind of thing takes when the set gives none: plain words anyone can read)
@@ -185,7 +203,7 @@ const COMMON = {
   temple: ["{name} Shrine"], inn: ["{name}"], mine: ["{name} Mine"],
   sea: ["the {name} Sea", "the Sea of {name}"], ocean: ["the {name} Ocean"], bay: ["{name} Bay", "the Bay of {name}"], lake: ["Lake {name}"], river: ["the {name}", "River {name}"],
   hills: ["the {name} Hills"], mountains: ["the {name} Mountains"], range: ["the {name} Range"], forest: ["the {name} Forest"], desert: ["the {name} Waste"], marsh: ["the {name} Marsh"],
-  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], land: ["{name}"],
+  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], land: ["{name}"], realm: ["the Kingdom of {name}", "{name}"],
 };
 
 function customNamer(set, seed) {

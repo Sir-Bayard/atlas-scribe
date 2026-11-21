@@ -3,7 +3,7 @@
  * the overland painted styles, and an overland map's key (the map's name is a tile of its own: title.mjs).
  */
 import { compassOf, scaleBarOf, keyOf } from "../../core/dressing.mjs";
-import { placeMark, strokeRoad, crossingMark } from "./atlas.mjs";
+import { placeMark, strokeRoad, crossingMark, crownMark } from "./atlas.mjs";
 
 /**
  * Map dressing: a ruled frame, a compass rose and a scale bar (in feet, or miles on an overland map), each in the
@@ -109,6 +109,12 @@ export function paintKey(ctx, P, { miles = true } = {}) {
     const mx = X(col.x + u * 1.9), my = Y(e.y);
     if (e.kind === "place") placeMark(g, mx, my, e.cls, mu);
     else if (e.kind === "way") strokeRoad(g, e.cls, mu, () => { g.beginPath(); g.moveTo(X(col.x + u * 0.2), my); g.lineTo(X(col.x + u * 3.6), my); });
+    else if (e.kind === "realm" && e.cls === "capital") { placeMark(g, mx, my + 3 * mu, "town", mu * 0.8); crownMark(g, mx, my - 9 * mu, mu); }
+    else if (e.kind === "realm") {
+      // (a realm's border as the map draws it: the halo, then the dashed ink)
+      for (const [st, wd, dash] of [["rgba(252,246,232,0.7)", 7 * mu, []], ["rgba(58,40,30,0.85)", 3.2 * mu, [11 * mu, 5 * mu, 2.5 * mu, 5 * mu]]]) { g.strokeStyle = st; g.lineWidth = Math.max(1, wd); g.setLineDash(dash); g.beginPath(); g.moveTo(X(col.x + u * 0.2), my); g.lineTo(X(col.x + u * 3.6), my); g.stroke(); }
+      g.setLineDash([]);
+    }
     else {
       // (a bit of river under a bit of road, and the crossing's mark on them)
       g.strokeStyle = "rgba(58,104,150,0.95)"; g.lineWidth = 3 * mu; g.beginPath(); g.moveTo(mx, Y(e.y - u * 1.1)); g.lineTo(mx, Y(e.y + u * 1.1)); g.stroke();

@@ -47,6 +47,8 @@ export function normalizeLand(land = {}) {
   // (a GM's own name set, copied in from the world's library: { name, text, from })
   L.nameSet = L.nameSet && typeof L.nameSet === "object" && !Array.isArray(L.nameSet) && typeof L.nameSet.text === "string" ? L.nameSet : null;
   L.towns = LAND_AMOUNTS.includes(L.towns) ? L.towns : "some";
+  // (how many realms Place Towns and Roads and Reroll Realms make: none unless asked, so earlier plans keep none)
+  L.realms = ["none", ...LAND_AMOUNTS].includes(L.realms) ? L.realms : "none";
   L.layers ??= null;
   L.keep ??= null;
   return L;
@@ -58,7 +60,7 @@ export function checkLand(raw) {
   const err = (field, message) => out.push({ level: "error", field: `land.${field}`, message });
   const warn = (field, message) => out.push({ level: "warning", field: `land.${field}`, message });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { err("", "land should be an object, like { type: \"continents\" }."); return out; }
-  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "hemisphere", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "keep"]);
+  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "hemisphere", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "realms", "keep"]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
@@ -82,6 +84,7 @@ export function checkLand(raw) {
   }
   if (raw.names !== undefined && (typeof raw.names !== "object" || raw.names === null || Array.isArray(raw.names))) warn("names", "land.names should be { feature id: name }; it's left out.");
   if (raw.towns !== undefined && !LAND_AMOUNTS.includes(raw.towns)) warn("towns", "land.towns should be few, some or many; some are placed.");
+  if (raw.realms !== undefined && !["none", ...LAND_AMOUNTS].includes(raw.realms)) warn("realms", "land.realms should be none, few, some or many; none are made.");
   for (const k of ["rivers", "lakes"]) if (raw[k] !== undefined && !LAND_AMOUNTS.includes(raw[k])) err(k, `land.${k} must be few, some or many.`);
   for (const k of ["plateaus", "volcanic"]) if (raw[k] !== undefined && typeof raw[k] !== "boolean") err(k, `land.${k} must be true or false.`);
   if (raw.seed !== undefined && raw.seed !== null && !Number.isInteger(raw.seed)) err("seed", "land.seed must be a whole number, or null for the plan's seed.");

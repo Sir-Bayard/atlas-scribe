@@ -12,6 +12,7 @@ import { extentOf } from "../land/units.mjs";
 import { sample } from "../land/field.mjs";
 import { BIOMES } from "../land/biome.mjs";
 import { LAKE_BIOME, SEA_BIOME } from "../land/raster.mjs";
+import { realmsOf, growRealms, realmGrid, realmReach } from "../land/realms.mjs";
 
 /** The biome index for a painted zone's own (custom) biome. */
 export const CUSTOM_BIOME = 253;
@@ -67,7 +68,7 @@ let lastLand = null;
 export function forgetLand() { lastLand = null; }
 /** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, keptNames, nameStyle, nameSet, towns, ...landIn } = plan.land ?? {};
+  const { names, keptNames, nameStyle, nameSet, towns, realms, ...landIn } = plan.land ?? {};
   return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water"))]);
 }
 
@@ -90,6 +91,17 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     if (f.type === "road" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "way", id: f.id, from: f.id, class: f.class, path: f.path, width: REGION_WIDTHS[f.class] ?? 0.12 });
     else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null });
     else if (f.type === "crossing" && Array.isArray(f.at)) items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], angle: f.angle ?? 0 });
+  }
+  // Realms: grown from their crowns over the land; each capital's mark crowned
+  const realmList = realmsOf(plan);
+  let realms = null;
+  if (realmList.length) {
+    const count = ["few", "some", "many"].includes(plan.land?.realms) ? plan.land.realms : "some";
+    const { owner } = growRealms(land, realmList, { reach: realmReach(land, count) });
+    const G = realmGrid(land, owner, realmList.length);
+    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders };
+    const caps = new Set(realmList.map((q) => q.capital).filter(Boolean));
+    for (const it of items) if (it.kind === "place" && caps.has(it.id)) it.capital = true;
   }
   // (how much of each corner is land, for the dressing: nw, ne, sw, se)
   const cornerLand = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([cx, cy]) => {
@@ -115,7 +127,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false };
   const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
   const keyBox = keyOf(shape);
-  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [] });
+  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [] });
   for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
   // places standing in water and roads running through it (a GM's edit, or land that changed under them)
   { const fr = L.frame;
@@ -140,6 +152,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     size,
     season: plan.season ?? "summer", style: "painted",
     title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
+    realms, showRealms: plan.output?.realms !== false,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...labelsOf(plan), ...named.labels], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
 }

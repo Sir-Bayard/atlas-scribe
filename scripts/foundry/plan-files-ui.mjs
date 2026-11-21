@@ -104,6 +104,7 @@ function regionTabHTML() {
     type: "The shape of the land and sea",
     seaSide: "Where the open sea lies, for a coast or a peninsula",
     towns: "How many towns, villages and castles are placed (Reroll Places in the Plan panel places them again)",
+    realms: "Kingdoms ruled from the biggest towns, their borders along ranges, rivers and coasts; a few large ones or many small",
     size: "The picture's long side; a bigger map takes longer to draw",
     age: "Young land has sharp, high ranges; old land is worn down to hills",
     plates: "How many plates the land is built from: more makes more, shorter ranges",
@@ -121,7 +122,7 @@ function regionTabHTML() {
       <div class="form-group"><label for="as-qr-scale">Scale</label><select id="as-qr-scale" name="r-scale">${[...LAND_QUICK.scale, "local"].map((v) => `<option value="${v}"${v === lastScale ? " selected" : ""}>${esc(titleCase(v === "local" ? "Local (40 to 80 mi, the classic region)" : LAND_QUICK_LABELS.scale[v]))}</option>`).join("")}</select></div>
       <div data-for="land">
         <p class="hint">Land, rivers and climate made by the generator, then towns, villages, castles, roads and names placed on it. Each town's own map can be made from it.</p>
-        <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea Side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("hemisphere", "Hemisphere", tips.hemisphere)}${land("span", "Latitudes", tips.span)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
+        <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea Side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("hemisphere", "Hemisphere", tips.hemisphere)}${land("span", "Latitudes", tips.span)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("realms", "Realms", tips.realms)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
         <details class="as-qs-more"><summary>More</summary><div class="as-qs-two">${LAND_MORE.map((k) => land(k, { age: "Age", plates: "Plates", coast: "Coast", wind: "Wind", rain: "Rain", rivers: "Rivers", lakes: "Lakes", plateaus: "Plateaus", volcanic: "Volcanic" }[k], tips[k])).join("")}</div></details>
       </div>
       <div data-for="local" hidden>

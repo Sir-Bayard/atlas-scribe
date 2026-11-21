@@ -13,6 +13,7 @@ export const KEY_ENTRIES = [
   { kind: "place", cls: "ruin", text: "Ruin" },
   { kind: "way", cls: "highway", text: "Highway" }, { kind: "way", cls: "street", text: "Road" }, { kind: "way", cls: "track", text: "Track" },
   { kind: "crossing", cls: "bridge", text: "Bridge" }, { kind: "crossing", cls: "footbridge", text: "Footbridge" }, { kind: "crossing", cls: "ford", text: "Ford" },
+  { kind: "realm", cls: "border", text: "Border" }, { kind: "realm", cls: "capital", text: "Capital" },
 ];
 // (sizes in the dressing's unit: letters, a row, the symbol's column, the padding, the gap between the columns, the
 // heading, the scale bar's part at the foot, and the inset from the map's edge)
@@ -36,7 +37,8 @@ const KEY_MEMO = new WeakMap();
 function keyFor(L, miles) {
   if (!L.dressing || !L.overland || L.legend === false || L.places === false || !(L.size?.squares?.[0] > 0)) return null;
   const items = L.items ?? [];
-  const has = (kind, cls) => items.some((i) => i.kind === kind && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls)));
+  const realms = L.showRealms !== false && L.realms?.list?.length > 0;
+  const has = (kind, cls) => (kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === kind && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
   const shown = KEY_ENTRIES.filter((e) => has(e.kind, e.cls));
   if (!shown.some((e) => e.kind === "place" || e.kind === "way")) return null;
   const [mw, mh] = L.size.squares;
