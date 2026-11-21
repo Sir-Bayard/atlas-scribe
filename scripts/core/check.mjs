@@ -220,6 +220,20 @@ export function checkPlan(raw) {
     }
   }
 
+  // Realms: on an overland map, each ruled from a place on the map (its capital taken out, the crown stays where it
+  // was, uncrowned), no two from one spot (the second would have no land), and colored with a #rrggbb color
+  const realmList = plan.features.filter((f) => f.type === "realm");
+  if (realmList.length && !overland) for (const f of realmList) warn(f.id, "type", `The realm "${f.name ?? f.id}" is drawn on overland maps only; it stays in the plan but won't appear on this map.`);
+  for (const f of realmList.filter((f) => typeof f.capital === "string")) {
+    const seat = plan.features.find((q) => q.id === f.capital);
+    if (!seat || seat.type !== "place") warn(f.id, "capital", `The realm "${f.name ?? f.id}" is ruled from "${f.capital}", which isn't a place on the map any more; its land is still grown from where its capital stood. Pick another Capital, or Reroll Realms.`);
+  }
+  realmList.forEach((f, k) => {
+    const twin = realmList.slice(0, k).find((q) => (typeof f.capital === "string" && q.capital === f.capital) || (isPoint(f.at) && isPoint(q.at) && Math.hypot(f.at[0] - q.at[0], f.at[1] - q.at[1]) < 0.05));
+    if (twin) warn(f.id, "capital", `The realm "${f.name ?? f.id}" is ruled from the same place as "${twin.name ?? twin.id}", so it has no land of its own. Pick another Capital.`);
+    if (typeof f.color === "string" && !/^#[0-9a-f]{6}$/i.test(f.color)) warn(f.id, "color", `The realm "${f.name ?? f.id}" has the color "${f.color}"; give it a color like #3a6fb0.`);
+  });
+
   // Cliffs: long enough to read as one, and no road climbs one
   // (anywhere on its face: across it or along it; a road ending at its top edge is fine)
   for (const f of cliffsOf(plan)) {
@@ -363,7 +377,9 @@ function checkFeature(f, where, raw, { err, warn, w, h, overland = false }) {
 
   const g = t.geometry;
   const need = (ok, field, message) => (ok ? true : (err(f.id, field, message), false));
-  if (g === "point" && !(f.type === "label" && typeof f.of === "string" && f.of)) need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y]${f.type === "label" ? " (or of: the id of the district, area or landmark it names)" : ""}.`);
+  // (a realm with no crown, as plans before 1.3 kept one, by its shape: left out, not refused)
+  if (f.type === "realm" && !isPoint(f.at)) warn(f.id, "at", `The realm "${where}" has no crown (at: [x, y], on its capital), so it's left off the map. Give it a Capital in the window, or Place Realms.`);
+  else if (g === "point" && !(f.type === "label" && typeof f.of === "string" && f.of)) need(isPoint(f.at), "at", `"${where}" needs a position: at: [x, y]${f.type === "label" ? " (or of: the id of the district, area or landmark it names)" : ""}.`);
   if (g === "path") need(isPath(f.path), "path", `"${where}" needs a path of two or more points: path: [[x, y], [x, y], ...].`);
   if (g === "shape") checkShape(f.shape, where, "shape", need);
   if (g === "path|shape") {

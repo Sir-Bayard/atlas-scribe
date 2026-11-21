@@ -80,6 +80,24 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
       out.push(`- **${named(d)}**${d.character ? ` (${d.character})` : ""}: ${plural(houses, KINDS.building)}, ${plural(streets, KINDS.way)}${uses.length ? `; ${uses.slice(0, 8).join(", ")}` : ""}`);
     }
   }
+  // An overland map's realms: each one's capital, and the places in its land
+  const realms = layout?.realms?.list ?? [], G = layout?.realms?.grid;
+  if (realms.length && G) {
+    out.push("", "## Realms", "");
+    const held = realms.map(() => ({}));
+    for (const i of items.filter((x) => x.kind === "place")) {
+      const c = Math.floor(i.x / G.cell), r = Math.floor(i.y / G.cell);
+      const k = c >= 0 && r >= 0 && c < G.w && r < G.h ? G.ids[r * G.w + c] : -1;
+      if (k >= 0 && held[k]) held[k][i.class] = (held[k][i.class] ?? 0) + 1;
+    }
+    const PLACE_WORDS = { city: ["city", "cities"], town: ["town", "towns"], village: ["village", "villages"], hamlet: ["hamlet", "hamlets"], castle: ["castle", "castles"], ruin: ["ruin", "ruins"], tower: ["tower", "towers"], temple: ["temple", "temples"], inn: ["inn", "inns"], mine: ["mine", "mines"] };
+    realms.forEach((q, k) => {
+      const seat = feats.find((f) => f.id === q.capital);
+      const what = Object.keys(PLACE_WORDS).filter((c) => held[k][c]).map((c) => plural(held[k][c], PLACE_WORDS[c]));
+      const seatName = seat ? (typeof seat.name === "string" && seat.name.trim() ? seat.name : (layout?.labels ?? []).find((l) => l.id === `@place:${seat.id}`)?.text ?? seat.id) : null;
+      out.push(`- **${q.name ?? q.id}**${seatName ? `, ruled from ${seatName}` : ""}${what.length ? `: ${what.join(", ")}` : ""}`);
+    });
+  }
   // The rest of the plan's features by type
   const battleOnly = plan.kind === "battle" ? feats : [];
   const groups = [
@@ -107,7 +125,7 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
       out.push(`- ${named(f)}${what && what !== named(f) ? ` (${what})` : ""}${walls ? `: ${walls}` : ""}`);
     }
   }
-  const labels = (layout?.labels ?? []).filter((l) => !l.gen), made = (layout?.labels ?? []).filter((l) => l.gen);
+  const labels = (layout?.labels ?? []).filter((l) => !l.gen), made = (layout?.labels ?? []).filter((l) => l.gen && !String(l.id).startsWith("@realm:")); // (realms are listed above)
   if (labels.length) out.push("", "## Labels", "", ...labels.map((l) => `- ${l.text}`));
   // (an overland map's names, its places' and its land's, as a gazetteer)
   if (made.length) out.push("", "## Names on the map", "", ...made.map((l) => `- ${l.id.startsWith("@land:") ? l.text.replace(/^THE /, "the ").replace(/\b([A-Z])([A-Z']+)\b/g, (m, a, b) => a + b.toLowerCase()).replace(/ Of /g, " of ") : l.text}`));

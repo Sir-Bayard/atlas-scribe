@@ -28,8 +28,9 @@ export const untouched = (f) => typeof f?.made === "string" && f.made === madeMa
 export const hasMadePlaces = (plan) => (plan?.features ?? []).some((f) => typeof f?.made === "string");
 
 /**
- * Which of the generator's untouched features must still stay: those a label follows (its `of`), and the places at the
- * ends of a road that stays (so it still runs between places). Returns a Set of ids.
+ * Which of the generator's untouched features must still stay: those a label follows (its `of`), the places at the
+ * ends of a road that stays (so it still runs between places), and the capital of a realm the GM changed (so it's
+ * still ruled from a place). Returns a Set of ids.
  */
 export function stillNeeded(features) {
   const need = new Set((features ?? []).filter((f) => f?.type === "label" && typeof f.of === "string").map((f) => f.of));
@@ -37,6 +38,7 @@ export function stillNeeded(features) {
   const kept = (f) => !untouched(f) || need.has(f.id);
   for (const r of (features ?? []).filter((f) => f?.type === "road" && Array.isArray(f.path) && f.path.length >= 2 && kept(f)))
     for (const p of features) if (p?.type === "place" && untouched(p) && (at(p.at, r.path[0]) || at(p.at, r.path[r.path.length - 1]))) need.add(p.id);
+  for (const q of (features ?? []).filter((f) => f?.type === "realm" && typeof f.capital === "string" && !untouched(f))) need.add(q.capital);
   return need;
 }
 
@@ -49,7 +51,8 @@ export function stillNeeded(features) {
 export function placeTowns(plan, land, { seed = 1, density = null } = {}) {
   const all = plan.features ?? [];
   const need = stillNeeded(all);
-  const keep = all.filter((f) => !untouched(f) || need.has(f.id));
+  // (realms are left to placeRealms, which rules them again from the new towns: render/jobs.mjs)
+  const keep = all.filter((f) => f?.type === "realm" || !untouched(f) || need.has(f.id));
   const gone = all.filter((f) => !keep.includes(f)).map((f) => f.id);
   const full = normalize({ ...plan, features: keep });
   const out = settle(land, full, { seed, density: density ?? full.land?.towns ?? "some", reserve: gone });

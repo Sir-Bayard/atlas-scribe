@@ -45,14 +45,12 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
   for (const p of places) {
     if (!near([[p.x, p.y]])) continue;
     placeMark(g, X(p.x), Y(p.y), p.class, u);
-    // (a realm's capital crowned above its mark)
-    if (p.capital && layout.showRealms !== false) crownMark(g, X(p.x), Y(p.y) - (CROWN_LIFT[p.class] ?? 14) * u, u);
   }
   g.restore();
 }
 
-// (how far above a place's middle its crown sits, by its mark's size)
-const CROWN_LIFT = { city: 24, town: 20, village: 15, hamlet: 13, castle: 21 };
+// (how far above a place's middle a realm's crown sits, by its mark's size; drawn with the realms: overland.mjs)
+export const CROWN_LIFT = { city: 24, town: 20, village: 15, hamlet: 13, castle: 21 };
 
 /** A capital's crown: three points on a band, gold with an ink edge, its middle at (x, y). Shared with the map's key. */
 export function crownMark(g, x, y, u) {

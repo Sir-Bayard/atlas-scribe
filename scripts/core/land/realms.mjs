@@ -75,9 +75,11 @@ export function growRealms(land, crowns, { reach = Infinity, spacing = Number.is
   for (const R of land.rivers ?? []) for (const i of R.nodes ?? []) if (F[i] > riverF[i]) { riverF[i] = F[i]; riverId[i] = R.id; }
   const heap = new Heap(4096);
   const by = new Int16Array(n).fill(-1);
+  const seats = crowns.map(() => -1);
   crowns.forEach((c, k) => {
     const i = nearest(c.at[0], c.at[1], (j) => !wet(j));
     if (i < 0) return;
+    seats[k] = i;
     if (cost[i] > 0) { cost[i] = 0; by[i] = k; heap.push(0, i); }
   });
   while (heap.size) {
@@ -105,12 +107,16 @@ export function growRealms(land, crowns, { reach = Infinity, spacing = Number.is
   for (let i = 0; i < n; i++) owner[i] = wet(i) ? -1 : by[i] >= 0 && cost[i] <= reach ? by[i] : -2;
   // (a piece of a realm cut off from its crown on its own landmass, a sliver past another realm, goes to the realm
   // around it most)
-  tidy(land, owner);
+  tidy(land, owner, seats);
   return { owner, cost };
 }
 
-/** Pieces of a realm with no crown in them, on a landmass the realm holds elsewhere, given to their biggest neighbor. */
-function tidy(land, owner) {
+/**
+ * Pieces of a realm cut off from the piece its crown is in, on land another realm touches, given to the realm that
+ * touches them most; a piece nothing else touches on land (an island, land reached across a bay) stays. seats: each
+ * realm's crown node (-1: none; its biggest piece then stands for it).
+ */
+export function tidy(land, owner, seats = []) {
   const { n, indptr, indices } = land;
   const comp = new Int32Array(n).fill(-1), sizes = [], ownerOf = [];
   let c = 0;
@@ -120,11 +126,12 @@ function tidy(land, owner) {
     while (stack.length) { const i = stack.pop(); size++; for (let q = indptr[i]; q < indptr[i + 1]; q++) { const j = indices[q]; if (comp[j] < 0 && owner[j] === owner[s]) { comp[j] = c; stack.push(j); } } }
     sizes.push(size); ownerOf.push(owner[s]); c++;
   }
-  // (each realm's biggest piece stays; a smaller piece stays only if nothing else touches it on land: an island)
-  const biggest = new Map();
-  for (let k = 0; k < c; k++) if (!biggest.has(ownerOf[k]) || sizes[k] > sizes[biggest.get(ownerOf[k])]) biggest.set(ownerOf[k], k);
+  // (each realm's main piece: the one its crown is in, else its biggest)
+  const main = new Map();
+  for (let k = 0; k < c; k++) if (!main.has(ownerOf[k]) || sizes[k] > sizes[main.get(ownerOf[k])]) main.set(ownerOf[k], k);
+  seats.forEach((i, k) => { if (i >= 0 && owner[i] === k) main.set(k, comp[i]); });
   for (let k = 0; k < c; k++) {
-    if (biggest.get(ownerOf[k]) === k) continue;
+    if (main.get(ownerOf[k]) === k) continue;
     const touch = new Map();
     for (let i = 0; i < n; i++) if (comp[i] === k) for (let q = indptr[i]; q < indptr[i + 1]; q++) { const j = indices[q]; if (owner[j] >= 0 && owner[j] !== ownerOf[k]) touch.set(owner[j], (touch.get(owner[j]) ?? 0) + 1); }
     if (!touch.size) continue;
@@ -271,12 +278,13 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
   const r = rng(seed, "realms");
   const S = realmSpacing(land, count) / f.mpu; // (in map units)
   const kept = keep.filter((q) => q.type === "realm" && Array.isArray(q.at));
-  // candidates: the cities on the map, then its towns, the ones with most roads first
+  // candidates: the cities on the map, then its towns, the ones with most roads first, the seed choosing among
+  // the cities (so Reroll Realms moves the capitals, not only the names)
   const places = keep.filter((q) => q.type === "place" && Array.isArray(q.at) && q.at[0] >= 0 && q.at[1] >= 0 && q.at[0] <= MW && q.at[1] <= MH);
   const roads = keep.filter((q) => q.type === "road" && Array.isArray(q.path));
   const roadsAt = (p) => roads.filter((rd) => [rd.path[0], rd.path[rd.path.length - 1]].some((e) => Math.abs(e[0] - p.at[0]) < 0.05 && Math.abs(e[1] - p.at[1]) < 0.05)).length;
   const rank = { city: 2, town: 1 };
-  const cand = places.filter((p) => rank[p.class]).map((p) => ({ p, w: rank[p.class] * 10 + roadsAt(p) + r.next() * 0.5 })).sort((a, b) => b.w - a.w || (a.p.id < b.p.id ? -1 : 1));
+  const cand = places.filter((p) => rank[p.class]).map((p) => ({ p, w: rank[p.class] * 10 + roadsAt(p) + r.next() * 8 })).sort((a, b) => b.w - a.w || (a.p.id < b.p.id ? -1 : 1));
   // how many: the map's land over a realm's share of it
   let landCells = 0;
   for (let i = 0; i < land.n; i++) if (land.landMask[i] && !land.lake[i]) { const u = (land.x[i] - f.margin) / f.mpu, v = (land.y[i] - f.margin) / f.mpu; if (u >= 0 && v >= 0 && u <= MW && v <= MH) landCells++; }
@@ -322,7 +330,6 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
   const set = L.nameStyle === "custom" && typeof L.nameSet?.text === "string" ? parseNameSet(L.nameSet.text).set : null;
   const nm = set ? namer("custom", seed, { set }) : namer(L.nameStyle ?? "english", seed);
   for (const q of keep) if (typeof q.name === "string") nm.take(q.name);
-  for (const q of keep) if (q.type === "realm" && typeof q.name === "string") nm.take(q.name);
   const ids = new Set([...all.map((q) => q.id), ...gone]);
   let k = 0;
   const nextId = () => { do k++; while (ids.has(`realm-${k}`)); ids.add(`realm-${k}`); return `realm-${k}`; };

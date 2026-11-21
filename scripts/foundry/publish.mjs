@@ -258,7 +258,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       placed = true;
       if (oldLayers.length) await sceneById(sceneId).deleteEmbeddedDocuments("Tile", oldLayers);
     } catch (e) {
-      warnings.push(placed ? `The last map's places and roads couldn't be taken out (${e.message}); delete the old tile from the Tiles controls.` : `The places and roads couldn't be laid over the map (${e.message}).`);
+      warnings.push(placed ? `The last map's layers (its places and roads, realms, dressing or key) couldn't be taken out (${e.message}); delete the old tiles from the Tiles controls.` : `The map's layers (its places and roads, realms, dressing or key) couldn't be laid over it (${e.message}).`);
     }
   } else if (oldLayers.length) {
     // (kept over a map given by its path: shown or hidden as the plan now says, and said they may be out of date)

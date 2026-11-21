@@ -112,6 +112,7 @@ export class AtlasScribeApp extends Base {
       asWallIn: AtlasScribeApp.#onWallIn,
       asPlaceMap: AtlasScribeApp.#onPlaceMap,
       asPlaceTowns: AtlasScribeApp.#onPlaceTowns,
+      asPlaceRealms: AtlasScribeApp.#onPlaceRealms,
       asKeepNames: AtlasScribeApp.#onKeepNames,
       asNameSets: AtlasScribeApp.#onNameSets,
       asNameSetUpdate: AtlasScribeApp.#onNameSetUpdate,
@@ -511,7 +512,7 @@ export class AtlasScribeApp extends Base {
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices(), nameSets: this.#host.nameSets?.() ?? [] })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
-          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices() })
+          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices(), madeNames: this.#madeNames() })
           : `<div class="as-pv-list-bar"><button type="button" data-action="asEverything" aria-pressed="${this.#everything}" data-tooltip-text="Every feature in the plan, not only what a reroll redraws">Everything</button></div>
             <ul class="as-pv-list" tabindex="-1" data-focus-home data-keep-scroll="pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
@@ -846,6 +847,12 @@ export class AtlasScribeApp extends Base {
     if (point) return this.#select(point);
     const label = inLabel(near);
     if (label) return this.#select(label.id);
+    // (a realm's name, which the map made, picks the realm)
+    const realmName = this.#labelBoxes().filter((l) => l.id.startsWith("@realm:")).find((l) => {
+      const a = (-l.angle * Math.PI) / 180, dx = at[0] - l.at[0], dy = at[1] - l.at[1];
+      return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) <= l.hw && Math.abs(dx * Math.sin(a) + dy * Math.cos(a)) <= l.hh;
+    });
+    if (realmName && featureOf(this.#plan, realmName.id.slice(7))) return this.#select(realmName.id.slice(7));
     // A road, river or wall under the click (within its width, and at least 8 pixels) wins over the area around it
     let road = null, roadD = Infinity;
     for (const p of this.#paths()) {
@@ -882,7 +889,24 @@ export class AtlasScribeApp extends Base {
       if (d <= Math.max((w.width ?? 0) / 2, 6 / px) && d < streetD) { streetD = d; street = w.id; }
     }
     if (street) return this.#select(GEN + street);
-    this.#select(smallest(this.#features()));
+    // Nothing drawn there: the realm whose land it is, if any
+    this.#select(smallest(this.#features()) ?? this.#realmAt(at));
+  }
+
+  /** The names the drawing made for the plan's places, by id (a Map), or null when the drawing is of another plan. */
+  #madeNames() {
+    if (this.#stale || !this.#result?.labels) return null;
+    return new Map(this.#result.labels.filter((l) => String(l.id).startsWith("@place:")).map((l) => [l.id.slice(7), l.text]));
+  }
+
+  /** The realm whose land a point in squares is in, by the drawing's realm grid (or null). */
+  #realmAt(at) {
+    const R = this.#stale ? null : this.#result?.realms, G = R?.grid;
+    if (!G || !(G.cell > 0)) return null;
+    const c = Math.floor(at[0] / G.cell), r = Math.floor(at[1] / G.cell);
+    if (c < 0 || r < 0 || c >= G.w || r >= G.h) return null;
+    const k = G.ids[r * G.w + c], id = k >= 0 ? R.ids[k] : null;
+    return id && featureOf(this.#plan, id) ? id : null;
   }
 
   /** Picks a feature (or none): its handles show and its settings open in the side panel. */
@@ -1265,7 +1289,14 @@ export class AtlasScribeApp extends Base {
 
   /** An overland plan: towns and roads placed (or placed again) by the generator, one step Undo takes back. */
   static async #onPlaceTowns() {
-    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realms` : ""}. Undo takes them back.`);
+    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`);
+  }
+
+  /** An overland plan: realms ruled from its cities and towns (or ruled again), one step Undo takes back. */
+  static async #onPlaceRealms() {
+    await this.#placeJob((plan) => this.#host.placeRealms(plan), (res) => res.added || res.removed
+      ? `AtlasScribe: ${res.added} realm${res.added === 1 ? "" : "s"} ruled from the map's cities and towns${res.removed ? `, in place of ${res.removed} the generator had made` : ""}. Click a realm's name to change its name, color or capital; Undo takes them back.`
+      : "AtlasScribe: no realms were placed.");
   }
 
   /** An overland plan: the names its map made written into it. */
@@ -1799,7 +1830,7 @@ export class AtlasScribeApp extends Base {
         for (const n of notes) note.info(n);
         const drawn = await this.show(plan);
         // (towns from the plan's own seed, so the same seed and choices make the same map; Reroll places varies them)
-        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.realms ? ` in ${res.realms} realms` : ""}. Reroll Places in the Plan panel places them again; Undo takes them off.`);
+        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.realms ? ` in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Reroll Places in the Plan panel places them again; Undo takes them off.`);
         else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place Towns and Roads in the Plan panel once it draws.");
       } catch (e) {
         note.error(e.message);

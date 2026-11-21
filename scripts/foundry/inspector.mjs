@@ -121,10 +121,21 @@ export function rerollButtons(id, name, locked, working) {
  * The inspector for one feature: its kind, reroll and lock (for whatever a reroll can redraw: seeds.mjs rerollable),
  * its settings, Delete.
  */
-export function featureHTML(plan, id, { working = false, fonts = [] } = {}) {
+export function featureHTML(plan, id, { working = false, fonts = [], madeNames = null } = {}) {
   const f = featureOf(plan, id);
   if (!f) return "";
-  const fields = fieldsOf(plan, id);
+  // (a realm's capital choices: a place with no name of its own by the name the map made for it)
+  const RANK = { city: 0, town: 1, castle: 2, village: 3 };
+  const fields = fieldsOf(plan, id).map((x) => {
+    if (f.type !== "realm" || x.name !== "capital" || !madeNames) return x;
+    const names = Object.fromEntries(x.values.map((v) => {
+      const q = featureOf(plan, v), made = madeNames.get(v);
+      return [v, x.names[v] === v && made ? `${made} (${q?.class ?? "place"})` : x.names[v]];
+    }));
+    // (biggest first, then by the name shown)
+    const values = [...x.values].sort((a, b) => (RANK[featureOf(plan, a)?.class] ?? 9) - (RANK[featureOf(plan, b)?.class] ?? 9) || names[a].localeCompare(names[b]));
+    return { ...x, names, values };
+  });
   const locked = Array.isArray(plan.locked) && plan.locked.includes(id);
   const roll = rerollable(f)
     ? rerollButtons(id, f.name ?? id, locked, working)
@@ -240,6 +251,10 @@ function overlandActionsHTML(plan, working, nameSets = []) {
   if (plan?.kind !== "region" || !plan?.land || typeof plan.land !== "object") return "";
   const dis = working ? "disabled" : "";
   const made = hasMadePlaces(plan);
+  // (realms need a city or town to rule from)
+  const feats = Array.isArray(plan.features) ? plan.features : [];
+  const seats = feats.some((f) => f?.type === "place" && (f.class === "city" || f.class === "town"));
+  const realms = feats.some((f) => f?.type === "realm");
   // (the map's own name set: its name, and whether the library's copy has changed since)
   const ns = plan.land.nameSet && typeof plan.land.nameSet.text === "string" ? plan.land.nameSet : null;
   const lib = ns?.from ? nameSets.find((s) => s.id === ns.from) : null;
@@ -250,6 +265,7 @@ function overlandActionsHTML(plan, working, nameSets = []) {
       ${changed ? `<button type="button" data-action="asNameSetUpdate"${labelAttr("Copy the library's version of this name set into the plan; names it makes may change")} ${dis}><i class="fa-solid fa-rotate" aria-hidden="true"></i> Update From Library</button>` : ""}
     </div><div class="as-pv-tools">
       <button type="button" data-action="asPlaceTowns"${labelAttr(made ? "Place them again: the towns, roads and bridges the generator made and you haven't changed are replaced; any you moved, renamed or placed stay, and the new ones join them" : "Towns, villages, castles, ruins, roads and bridges placed where people would build them; they're kept in the plan, so they stay put")} ${dis}><i class="fa-solid ${made ? "fa-dice" : "fa-city"}" aria-hidden="true"></i> ${made ? "Reroll Places" : "Place Towns and Roads"}</button>
+      ${seats ? `<button type="button" data-action="asPlaceRealms"${labelAttr(realms ? "Rule them again from other cities and towns: the realms the generator made and you haven't changed are replaced; any you renamed, recolored or gave another capital stay" : "Realms ruled from the biggest cities and towns, their borders grown over the land along ranges and rivers (as many as Realms below says, else some)")} ${dis}><i class="fa-solid ${realms ? "fa-dice" : "fa-crown"}" aria-hidden="true"></i> ${realms ? "Reroll Realms" : "Place Realms"}</button>` : ""}
       <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Keep the Names</button>
     </div>`;
 }

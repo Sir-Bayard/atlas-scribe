@@ -12,6 +12,7 @@ import { BLOCKS } from "./layout/anchors.mjs";
 import { NAME_STYLES } from "./land/schema.mjs";
 import { SCALES, gridFor, extentOf, MILE_FT } from "./land/units.mjs";
 import { untouched, stillNeeded, madeMark } from "./land/places.mjs";
+import { REALM_COLORS } from "./land/realms.mjs";
 
 /** The characters that have a centerpiece. */
 const ANCHORED = new Set(Object.keys(BLOCKS));
@@ -143,8 +144,9 @@ export const FIELD_TEXT = {
   "terrain.color": { label: "Color", help: "For a biome of your own" },
   "terrain.reacts": { label: "The world reacts", help: "Off: paints this biome here and changes nothing else. On: changes the rain and temperature here, so rivers and nearby land follow. Regenerates the land." },
   "terrain.rot": { label: "Turned", help: "Degrees clockwise", more: true },
-  "realm.color": { label: "Color" },
-  "realm.capital": { label: "Capital", help: "The place it's ruled from" },
+  "realm.class": { hidden: true },
+  "realm.color": { label: "Color", kind: "color", help: "Its wash and border on the map; a realm the generator made never shares a color with a neighbor" },
+  "realm.capital": { label: "Capital", kind: "enum", required: true, help: "The place it's ruled from: its crown moves there, and its land is grown again from it, so the borders move too" },
   "area.feature": { label: "On the green", names: { pond: "a pond", well: "a well", maypole: "a maypole", cross: "a market cross", none: "nothing" }, help: "A village green's", auto: "by seed" },
   "area.layout": { label: "Walks", names: { quartered: "quartered", saltire: "saltire", "goose-foot": "goose foot", concentric: "concentric", canal: "long canal", compartments: "compartments" }, help: "A formal garden's", auto: "by seed" },
   "area.center": { label: "Center", names: { basin: "basin", fountain: "fountain", statue: "statue", sundial: "sundial", "rond-point": "rond-point" }, help: "A formal garden's", auto: "by seed" },
@@ -202,6 +204,17 @@ export const FIELD_TEXT = {
   "label.offset": { hidden: true },
 };
 
+const REALM_KINDS = ["none", "few", "some", "many"];
+
+/** The places a realm can be ruled from: the map's cities, towns, castles and villages, biggest first, its own capital among them. */
+function capitalChoices(plan, realm) {
+  const rank = { city: 0, town: 1, castle: 2, village: 3 };
+  // (not another realm's capital: two crowns on one place would be one realm)
+  const ruled = new Set((plan?.features ?? []).filter((q) => isObj(q) && q.type === "realm" && q.id !== realm.id && typeof q.capital === "string").map((q) => q.capital));
+  const seats = (plan?.features ?? []).filter((q) => isObj(q) && q.type === "place" && Array.isArray(q.at) && !ruled.has(q.id) && (rank[q.class] !== undefined || q.id === realm.capital));
+  return seats.sort((a, b) => (rank[a.class] ?? 9) - (rank[b.class] ?? 9) || String(a.name ?? a.id).localeCompare(String(b.name ?? b.id)));
+}
+
 /** The plan-wide settings, by path: what the "Plan" panel shows. */
 export const PLAN_FIELDS = [
   { path: "name", label: "Name", kind: "string" },
@@ -211,10 +224,12 @@ export const PLAN_FIELDS = [
   { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size; towns and roads the generator placed go (place them again), and what you placed keeps its spot on the map" },
   { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
+  { path: "land.realms", label: "Realms", kind: "enum", values: ["none", "few", "some", "many"], overland: true, required: true, auto: "none", help: "How many realms Place Realms (or Reroll Realms) rules from the map's cities and towns, and Reroll Places keeps when it moves them (None: it takes the generator's away). It also sets how far each realm reaches, so changing it moves the borders of realms already placed" },
   { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name Sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it. It's a tile of its own in the scene; the places it covers have no label" },
   { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label Color" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
+  { path: "output.realms", label: "Show realms", kind: "boolean", overland: true, auto: true, help: "Show the realms: their borders and color, their names and their capitals' crowns. Their borders, color and crowns are saved as a layer of their own under the places, in the scene a tile you can hide or show; their names are text on the scene, like the map's other names" },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },
@@ -259,7 +274,7 @@ export function fieldsOf(plan, id) {
   const kinds = f.type === "water" ? t.classes.filter((c) => (Array.isArray(f.path) ? RUNNING : BODIES).includes(c)) : t.classes;
   // (a kind's words where it has them: a region's "squeeze" is "a squeeze")
   const kindNames = textOf(f.type, "class").names;
-  if (t.classes) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0], ...(kindNames ? { names: kindNames } : {}) });
+  if (t.classes && !textOf(f.type, "class").hidden) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0], ...(kindNames ? { names: kindNames } : {}) });
   // Water drawn as a shape (a pond, a lake) has no width and nothing to straighten
   const shaped = f.type === "water" && !Array.isArray(f.path);
   for (const [name, spec] of Object.entries(t.fields)) {
@@ -281,7 +296,17 @@ export function fieldsOf(plan, id) {
     if (f.type === "district" && name === "gardens" && typeof value === "boolean") value = value ? null : 0; // older plans give true (its character's share)
     if (f.type === "district" && name === "profile" && Object.hasOwn(OLD_PROFILES, value)) value = OLD_PROFILES[value]; // an older plan's name for it
     if (f.type === "prop" && name === "species" && value !== undefined && value !== null) value = isConifer(value) ? "conifer" : "bare"; // "pine" is drawn, and shown, as a fir
+    // (a realm's capital: any city, town, village or castle on the map, by name)
+    if (f.type === "realm" && name === "capital") {
+      const seats = capitalChoices(plan, f);
+      // (a capital taken out of the plan, or none: shown as such, so picking any place is a change)
+      const there = seats.some((q) => q.id === value);
+      out.push({ name, label: txt.label, help: txt.help, kind: "enum", values: seats.map((q) => q.id), names: Object.fromEntries(seats.map((q) => [q.id, typeof q.name === "string" && q.name.trim() ? `${q.name} (${q.class})` : q.id])), unit: null, min: null, max: null, whole: false, value: there ? value : undefined, auto: value ? "Taken Out" : "None", more: false, required: true });
+      continue;
+    }
     let auto = txt.auto ?? (dflt === null || dflt === undefined ? null : dflt);
+    // (a realm left without a color is drawn in its turn's: the one shown)
+    if (f.type === "realm" && name === "color") { const k = (plan.features ?? []).filter((q) => isObj(q) && q.type === "realm" && Array.isArray(q.at)).indexOf(f); auto = REALM_COLORS[Math.max(0, k) % REALM_COLORS.length]; }
     if (f.type === "water" && name === "frozen" && dflt === null) auto = "in winter"; // a pond or lake left unset
     // A label's color and font fall back to the plan's; a name label's text to its feature's name
     if (f.type === "label" && name === "color") { const c = normalize(plan).output.scene.labelColor; auto = /^#[0-9a-f]{6}$/i.test(c ?? "") ? c : "#13202e"; }
@@ -377,6 +402,11 @@ export function setField(plan, id, name, raw) {
   // A river's width at each point (a Quick Start city's) gives way to a width or end width set in the window, which
   // would otherwise do nothing (not to one reset, or entered again as it was)
   if (g.type === "water" && (name === "width" || name === "endWidth") && value !== undefined && value !== f[name]) delete g.widths;
+  // A realm's capital: its crown moves onto it (its land is grown from the crown at the next layout)
+  if (g.type === "realm" && name === "capital" && value !== undefined) {
+    const seat = featureOf(next, value);
+    if (seat && Array.isArray(seat.at)) g.at = [...seat.at];
+  }
   // A wood's character and its tree count are two ways to say how thick it is: the one set last wins
   if (g.type === "area" && g.class === "woods" && value !== undefined) {
     if (name === "density") delete g.trees;
@@ -431,7 +461,9 @@ export function planFieldsOf(plan) {
   const fields = (!region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && !(p.path === "output.dressing" && !overland) && !(overland && p.path === "ground"))
     .map((p) => (p.path === "output.dressing" && overland ? { ...p, help: "A frame, a compass rose, a scale bar and the key painted on the map, and the map's name on a hidden tile" } : p))
     .map((p) => (p.path !== "size.ftPerSquare" ? p : overland ? { ...p, min: MILE_FT, max: 120 * MILE_FT, help: "A cell's width: 31680 is 6 miles (a kingdom), 211200 is 40 (a continent). Changing it changes the map's miles; Scale sets both" } : { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" }))).filter((p) => !p.overland || overland);
-  return fields.map((p) => ({ ...p, name: p.path, value: p.path === "@scale" ? scaleOf(plan) : getPath(plan, p.path), auto: p.path === "@scale" ? "custom" : getPath(full, p.path) ?? p.auto ?? null }));
+  // (Realms left unset: none, or some for a plan holding the generator's realms, as Reroll Places takes it)
+  const realmsAuto = (plan?.features ?? []).some((f) => f?.type === "realm" && untouched(f)) ? "some" : "none";
+  return fields.map((p) => ({ ...p, name: p.path, value: p.path === "@scale" ? scaleOf(plan) : getPath(plan, p.path), auto: p.path === "@scale" ? "custom" : p.path === "land.realms" && !REALM_KINDS.includes(plan?.land?.realms) ? realmsAuto : getPath(full, p.path) ?? p.auto ?? null }));
 }
 
 /** Which scale preset an overland plan is at (its size and cells as the preset makes them), or undefined. */

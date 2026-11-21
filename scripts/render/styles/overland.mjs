@@ -8,7 +8,7 @@
 import { PALETTE } from "./palette.mjs";
 import { dress, paintKey } from "./furniture.mjs";
 import { keyOf } from "../../core/dressing.mjs";
-import { drawAtlas } from "./atlas.mjs";
+import { drawAtlas, crownMark, CROWN_LIFT } from "./atlas.mjs";
 import { landRasters, boxBlur, fbm, chaikin, distance } from "../../core/land/raster.mjs";
 import { refineLand } from "../../core/land/refine.mjs";
 import { contours, smoothLine } from "../../core/land/vector.mjs";
@@ -459,6 +459,8 @@ function paintRealms(ctx, L, S, outPx) {
     target.globalCompositeOperation = "source-over";
     g.drawImage(m, 0, 0);
   }
+  // each capital's crown, above its mark (on this layer, so hiding the realms hides the crowns)
+  for (const p of L.items ?? []) if (p.kind === "place" && p.capital && near([[p.x, p.y]])) crownMark(g, X(p.x), Y(p.y) - (CROWN_LIFT[p.class] ?? 14) * u, u);
 }
 
 /** Marsh tufts and dune ripples, at full size, where the biome raster says. */

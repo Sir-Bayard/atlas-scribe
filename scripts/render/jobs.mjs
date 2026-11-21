@@ -7,8 +7,8 @@ import { layoutPlan } from "../core/layout/index.mjs";
 import { forgetLand } from "../core/layout/overland.mjs";
 import { pinnables } from "../core/pin.mjs";
 import { zoomPlan } from "../core/zoom.mjs";
-import { placeTowns, keepNames } from "../core/land/places.mjs";
-import { placeRealms } from "../core/land/realms.mjs";
+import { placeTowns, keepNames, untouched } from "../core/land/places.mjs";
+import { placeRealms, REALM_COUNTS } from "../core/land/realms.mjs";
 import { normalize } from "../core/plan.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
 import * as sketch from "./styles/sketch.mjs";
@@ -17,6 +17,9 @@ import * as overland from "./styles/overland.mjs";
 
 /** The last layout made here, kept so a paint of it needn't be sent it back from the page: { id, layout }. */
 let kept = null, nextId = 1;
+
+/** What the window needs to pick a realm by clicking its land: the realm ids and the layout's realm grid, or null when the map shows none. */
+export const realmPick = (layout) => (layout?.realms?.list?.length && layout.showRealms !== false ? { ids: layout.realms.list.map((q) => q.id), grid: layout.realms.grid } : null);
 
 export const jobs = {
   /**
@@ -68,7 +71,7 @@ export const jobs = {
     const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
     const counts = {};
     for (const i of layout.items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), counts, ms: Math.round(performance.now() - t0) };
+    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), realms: realmPick(layout), counts, ms: Math.round(performance.now() - t0) };
   },
 
   /**
@@ -91,10 +94,12 @@ export const jobs = {
     progress(0.92, "Placing towns and roads");
     const { plan: out, added, removed, notes } = placeTowns(plan, layout.land, { seed, density });
     // (realms ruled from the new towns, when the plan asks for them or still has some the generator made)
-    const count = out.land?.realms;
-    if (["few", "some", "many"].includes(count) || out.features.some((f) => f.type === "realm")) {
+    // (a plan with the generator's realms but no count, from a script, keeps some; one whose realms are all the GM's
+    // gets none added)
+    const count = out.land?.realms, has = out.features.some((f) => f.type === "realm" && untouched(f));
+    if (["few", "some", "many"].includes(count) || has) {
       progress(0.97, "Placing realms");
-      const R = placeRealms(out, layout.land, { count: count ?? "none", seed });
+      const R = placeRealms(out, layout.land, { count: REALM_COUNTS.includes(count) ? count : "some", seed });
       return { plan: R.plan, added, removed, notes: [...notes, ...R.notes], realms: R.added };
     }
     return { plan: out, added, removed, notes };
@@ -108,7 +113,11 @@ export const jobs = {
   async placeRealms({ plan, seed, count = null }, progress) {
     const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.9 * p, l) });
     progress(0.95, "Placing realms");
-    return placeRealms(plan, layout.land, { count: count ?? normalize(plan).land?.realms ?? "some", seed });
+    // (left out: the plan's own count, or some when it has none; the count used is written into the plan, so Reroll
+    // Places keeps as many)
+    const own = plan.land?.realms, n = REALM_COUNTS.includes(count) ? count : ["few", "some", "many"].includes(own) ? own : "some";
+    const res = placeRealms(plan, layout.land, { count: n, seed });
+    return { ...res, plan: { ...res.plan, land: { ...res.plan.land, realms: n } } };
   },
 
   /** The names an overland plan's map makes, kept in the plan (land/places.mjs keepNames). Returns { plan, places, features }. */
