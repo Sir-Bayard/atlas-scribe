@@ -10,8 +10,21 @@ export class WorkerClient {
   #pending = new Map();
   #inPage;
 
-  constructor({ inPage = () => false } = {}) {
+  #urlOf;
+
+  /** inPage: whether jobs run on the page; urlOf(path): a Data path as a URL the worker can fetch (a kept land's file). */
+  constructor({ inPage = () => false, urlOf = (p) => p } = {}) {
     this.#inPage = inPage;
+    this.#urlOf = urlOf;
+  }
+
+  /** The payload with what the worker needs to fetch for it: a kept land's file's URL. */
+  #withUrls(payload) {
+    const path = payload?.plan?.land?.keep?.path;
+    if (typeof path !== "string" || payload.keptUrl) return payload;
+    // (the hash on the URL, so a browser's cached copy of an older file of that name isn't used)
+    const hash = payload.plan.land.keep.hash;
+    try { const u = this.#urlOf(path); return { ...payload, keptUrl: hash ? `${u}${u.includes("?") ? "&" : "?"}h=${encodeURIComponent(hash)}` : u }; } catch { return payload; }
   }
 
   #start() {
@@ -48,6 +61,7 @@ export class WorkerClient {
 
   /** Runs a job in the worker (or on the page). onProgress(pct, label) is called as it goes. */
   run(type, payload = {}, { onProgress = null, transfer = [] } = {}) {
+    payload = this.#withUrls(payload);
     if (this.#inPage()) return this.#runHere(type, payload, onProgress);
     const w = this.#start();
     const id = this.#next++;
@@ -63,9 +77,10 @@ export class WorkerClient {
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject, onProgress });
       (async () => {
-        const { jobs } = await import("../render/jobs.mjs");
+        const { jobs, prepare } = await import("../render/jobs.mjs");
         const job = jobs[type];
         if (!job) throw new Error(`unknown job "${type}"`);
+        await prepare(payload);
         return structuredClone(await job(structuredClone(payload), (pct, label) => this.#pending.get(id)?.onProgress?.(pct, label)));
       })().then((result) => {
         const job = this.#pending.get(id);

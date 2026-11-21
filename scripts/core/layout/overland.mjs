@@ -13,6 +13,7 @@ import { sample } from "../land/field.mjs";
 import { BIOMES } from "../land/biome.mjs";
 import { LAKE_BIOME, SEA_BIOME } from "../land/raster.mjs";
 import { realmsOf, growRealms, realmGrid, realmReach } from "../land/realms.mjs";
+import { keptFor } from "../land/kept.mjs";
 
 /** The biome index for a painted zone's own (custom) biome. */
 export const CUSTOM_BIOME = 253;
@@ -69,7 +70,8 @@ export function forgetLand() { lastLand = null; }
 /** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
   const { names, keptNames, nameStyle, nameSet, towns, realms, ...landIn } = plan.land ?? {};
-  return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water"))]);
+  // (and whether a kept land's file was read: a land made without it isn't kept once the file comes)
+  return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]);
 }
 
 /** Lays out an overland plan (normalized). Returns the layout. */
@@ -81,12 +83,14 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   else {
     const full = generateLand(plan, { onProgress: (p, l) => progress(0.9 * p, l) });
     land = compactLand(full);
-    L = { problems: full.problems, attempt: full.attempt, frame: full.frame, grid: full.grid, landMask: full.landMask, lake: full.lake, g: { n: full.g.n, x: full.g.x, y: full.g.y, area: full.g.area } };
+    L = { problems: full.problems, keptError: full.keptError ?? null, attempt: full.attempt, frame: full.frame, grid: full.grid, landMask: full.landMask, lake: full.lake, g: { n: full.g.n, x: full.g.x, y: full.g.y, area: full.g.area } };
   }
   lastLand = { key, L, land };
   const [W, H] = extentOf(plan);
   const items = [];
   const notes = L.problems.map((p) => ({ level: "info", id: null, message: `The land is short of its kind here (${p.detail}); it was made ${L.attempt + 1 === 1 ? "once" : `${L.attempt + 1} times`} and the closest kept.` }));
+  // (a kept land whose file couldn't be had: made from its settings, and said)
+  if (L.keptError) notes.push({ level: "warning", id: null, message: `This map's kept land couldn't be read (${L.keptError}), so it was made from its settings and may differ. Put its file back at ${plan.land?.keep?.path ?? "its path"}, or Forget the Kept Land.` });
   for (const f of plan.features) {
     if (f.type === "road" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "way", id: f.id, from: f.id, class: f.class, path: f.path, width: REGION_WIDTHS[f.class] ?? 0.12 });
     else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null });
@@ -124,7 +128,8 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   // places so they keep off the marks, and off the dressing's corners)
   const title = typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null;
   const size = { squares: [W, H], ftPerSquare: plan.size.ftPerSquare, grid: plan.output?.grid === "hex" ? "hex" : "square", cells: plan.size.squares };
-  const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false };
+  // (the realms too: their key entries make the key taller, which can move it to another corner)
+  const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, realms, showRealms: plan.output?.realms !== false };
   const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
   const keyBox = keyOf(shape);
   const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [] });

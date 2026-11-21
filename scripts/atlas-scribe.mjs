@@ -10,6 +10,8 @@ import { importAny } from "./core/import.mjs";
 import { toUVTT } from "./core/uvtt.mjs";
 import { progressBar } from "./foundry/progress.mjs";
 import { readPlan, normalize } from "./core/plan.mjs";
+import { toDataUrl } from "./core/land/pngio.mjs";
+import { landSeedOf } from "./core/land/schema.mjs";
 import { checkPlan } from "./core/check.mjs";
 import { rerollPlan, setLocked } from "./core/seeds.mjs";
 import { resolveArt, forgetBroken, forgetUnloadable } from "./foundry/art/index.mjs";
@@ -33,7 +35,11 @@ import { MOD, note } from "./foundry/util.mjs";
 import { drawScene, SNAPSHOT } from "./foundry/snapshot.mjs";
 
 // (on the page instead when the Render in a worker setting is off: a browser or host where workers fail)
-const worker = new WorkerClient({ inPage: () => { try { return game.settings.get(MOD, "renderInWorker") === false; } catch { return false; } } });
+const worker = new WorkerClient({
+  inPage: () => { try { return game.settings.get(MOD, "renderInWorker") === false; } catch { return false; } },
+  // (a Data path, a kept land's file, as a URL the worker can fetch: the server's route prefix included)
+  urlOf: (path) => new URL(foundry.utils.getRoute(path), window.location.href).href,
+});
 
 /** The job running now: { canceled }, or null. */
 let job = null;
@@ -731,6 +737,28 @@ const api = {
     return exclusive(() => worker.run("placeRealms", { plan, seed, count }));
   },
 
+  /**
+   * Keeps an overland plan's land (Keep This Land): its heights saved under the output folder's lands/ folder (a JSON file
+   * holding the PNG),
+   * so later versions of AtlasScribe never move its coasts, ranges or rivers. Returns { plan (with land.keep), path }.
+   */
+  async keepLand(input) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    if (plan.kind !== "region" || !plan.land || typeof plan.land !== "object") throw new Error("AtlasScribe: only an overland map (a region plan with land) has a land to keep");
+    if (plan.land.keep) throw new Error("AtlasScribe: this land is already kept (Forget the Kept Land first)");
+    planOrThrow(plan);
+    const res = await exclusive(() => worker.run("keepLand", { plan }));
+    const base = `${outputFolder()}/lands`;
+    const dir = `${base}/${await freeDir(base, plan.id ?? plan.name ?? "land")}`;
+    // (as JSON holding the PNG: Foundry turns an uploaded PNG into WebP, which loses the 16-bit heights and the node block)
+    const path = await upload(dir, "land.json", new Blob([JSON.stringify({ atlasScribe: "kept-land", version: 1, gen: res.keep.gen, png: toDataUrl(res.bytes) })], { type: "application/json" }));
+    // (its seed written in, so a new plan seed later can't move the land the file was made from)
+    const seed = landSeedOf(plan);
+    return { plan: { ...plan, land: { ...plan.land, seed, keep: { path, ...res.keep } } }, path };
+  },
+
   /** The world's name sets (a GM's own naming rules for overland maps): [{ id, name, text }]. */
   nameSets() {
     requireGM();
@@ -912,6 +940,11 @@ const host = {
   summary: (plan) => api.summary(plan),
   placeTowns: (plan, options) => api.placeTowns(plan, options),
   placeRealms: (plan, options) => api.placeRealms(plan, options),
+  keepLand: (plan) => api.keepLand(plan),
+  // (a layer view of the land: { blob, width, height }; not one of the jobs that hold AtlasScribe busy, so the window's
+  // edits go on while it's made, and the worker takes it in turn)
+  landView: (plan, options) => worker.run("landView", { plan: readPlan(plan).plan ?? plan, ...options }),
+  layerViews: () => { try { return game.settings.get(MOD, "layerViews") === true; } catch { return false; } },
   keepNames: (plan) => api.keepNames(plan),
   nameSets: () => storedNameSets(),
   openNameSets: () => api.openNameSets(),
@@ -1073,6 +1106,15 @@ Hooks.once("init", () => {
     type: Number,
     choices: { 16384: "16384 px (Most Graphics Cards)", 8192: "8192 px", 4096: "4096 px" },
     default: 16384,
+  });
+  game.settings.register(MOD, "layerViews", {
+    name: "Layer Views",
+    hint: "Adds a view switch over overland maps in the AtlasScribe window: the land's shading, uplift, rain, temperature, water flow, biomes, plates and where towns score best, to see how the generator made it.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => { for (const app of foundry.applications.instances.values()) if (app.id === MOD && app.rendered) app.render(); },
   });
   game.settings.register(MOD, "renderInWorker", {
     name: "Render in a Worker",

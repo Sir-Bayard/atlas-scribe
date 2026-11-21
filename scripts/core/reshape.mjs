@@ -23,7 +23,7 @@ function clean(pts) {
 }
 
 /** The types whose paths can be reshaped. */
-const PATHS = new Set(["road", "water", "wall", "dock", "trail", "tether"]);
+const PATHS = new Set(["road", "water", "wall", "dock", "trail", "tether", "terrain"]);
 
 /**
  * A feature's shape as handles see it: { kind: "poly", pts } | { kind: "path", pts } | { kind: "circle", c, r } |
@@ -38,7 +38,8 @@ export function editableShape(f) {
   }
   // (a district, area, height or body of water; or a plan's own region, which has no seed but is reshaped the same)
   const region = isObj(f) && f.type === "region" && typeof f.id === "string";
-  if (!(rerollable(f) || region) || (Number(f.rot) || 0) !== 0) return null;
+  // (painted terrain on an overland map, a plateau or a biome zone, is reshaped the same)
+  if (!(rerollable(f) || region || (isObj(f) && f.type === "terrain")) || (Number(f.rot) || 0) !== 0) return null;
   const s = f.shape;
   if (Array.isArray(s)) {
     const pts = clean(s);

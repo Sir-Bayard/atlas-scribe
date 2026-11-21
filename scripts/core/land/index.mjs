@@ -7,7 +7,7 @@
  */
 import { frameOf, latitudeOf, scaleClass } from "./units.mjs";
 import { shapeField } from "./recipes.mjs";
-import { GEN, normalizeLand } from "./schema.mjs";
+import { GEN, normalizeLand, landSeedOf } from "./schema.mjs";
 import { makePoints, makeGraph, nodeGrid } from "./graph.mjs";
 import { distanceTo, atNodes } from "./field.mjs";
 import { upliftStage, SOLVER, components, landforms, scourHollows } from "./uplift.mjs";
@@ -19,6 +19,7 @@ import { biomeOf, BIOME_CLIMATE } from "./biome.mjs";
 import { rng, hashAt, hash128 } from "../rng.mjs";
 import { inventoryOf } from "./inventory.mjs";
 import { intentAtNodes, readIntent } from "./layers.mjs";
+import { keptFor, pointsHash } from "./kept.mjs";
 import { sample } from "./field.mjs";
 import { landProblems } from "./quality.mjs";
 
@@ -32,13 +33,24 @@ export const TRIES = 4;
  */
 export function generateLand(plan, opts = {}) {
   let best = null;
-  const tries = Math.max(1, opts.tries ?? TRIES);
+  // (a kept land is read back, not made: one try; one whose file can't be had is made from its settings, and says so)
+  if (opts.kept === undefined) {
+    const k = keptFor(plan);
+    opts = { ...opts, kept: k && !k.error ? k : null, keptError: k?.error ?? null };
+  }
+  // (a land pinned to a try, as the window does once terrain is painted on it, so painting shapes that land rather
+  // than tipping the checks over to another try)
+  const pinned = Number.isInteger(plan.land?.attempt) && plan.land.attempt >= 0 ? plan.land.attempt : null;
+  const tries = opts.kept || pinned !== null ? 1 : Math.max(1, opts.tries ?? TRIES);
+  // (a kept node block from this generator: made with the attempt it came from, so its points are the same)
+  const keptAttempt = opts.kept?.nodes && opts.kept.nodes.gen === GEN ? opts.kept.nodes.attempt : 0;
   // (the painted intent read once for every try)
   if (opts.intent === undefined) opts = { ...opts, intent: readIntent(plan, frameOf(plan)) };
   for (let attempt = 0; attempt < tries; attempt++) {
-    const L = generateOnce(plan, { ...opts, attempt, onProgress: (p, l) => opts.onProgress?.((attempt + p) / tries < 1 ? (attempt === 0 ? p : 0.9 + 0.1 * p) : p, attempt ? `${l} (try ${attempt + 1})` : l) });
+    const L = generateOnce(plan, { ...opts, attempt: opts.kept ? keptAttempt : pinned ?? attempt, onProgress: (p, l) => opts.onProgress?.((attempt + p) / tries < 1 ? (attempt === 0 ? p : 0.9 + 0.1 * p) : p, attempt ? `${l} (try ${attempt + 1})` : l) });
     L.inventory = inventoryOf(L);
-    L.problems = landProblems(L, L.inventory);
+    L.problems = opts.kept ? [] : landProblems(L, L.inventory);
+    L.keptError = opts.keptError ?? null;
     if (!best || L.problems.length < best.problems.length) best = L;
     if (!L.problems.length) break;
   }
@@ -54,7 +66,7 @@ export function generateLand(plan, opts = {}) {
 export function generateOnce(plan, opts = {}) {
   const progress = (p, l) => opts.onProgress?.(p, l);
   const land = normalizeLand(plan.land);
-  const seed = seedOf(Number.isFinite(land.seed) ? land.seed : plan.seed);
+  const seed = landSeedOf({ ...plan, land });
   const attempt = opts.attempt ?? 0;
   const r = rng(seed, "land", attempt);
   const frame = frameOf(plan);
@@ -67,7 +79,12 @@ export function generateOnce(plan, opts = {}) {
 
   // the graph: every point near land and inside the map, one in four far out at sea and in the margin
   progress(0.08, "Points");
-  const seaDist = distanceTo(shapeF, (i) => shapeF.data[i] > 0);
+  // (a land kept whole: read back exactly from its node block when this generator made it, its points made as they
+  // were; else from its height file, its own coast setting where the points are dense)
+  // (a lock area waits for 1.4's brushes: a kept land is always kept whole)
+  const keptWhole = !!opts.kept?.land;
+  const exactWanted = keptWhole && opts.kept.nodes?.gen === GEN;
+  const seaDist = keptWhole && !exactWanted ? distanceTo(opts.kept.land, (i) => opts.kept.land.data[i] > 0) : distanceTo(shapeF, (i) => shapeF.data[i] > 0);
   const pad = 0.03 * Math.max(frame.mapW, frame.mapH);
   const full = (x, y) => x > frame.margin - pad && y > frame.margin - pad && x < frame.margin + frame.mapW + pad && y < frame.margin + frame.mapH + pad && sampleLike(seaDist, x, y) < 60;
   let aFull = 0, aRest = 0;
@@ -90,9 +107,22 @@ export function generateOnce(plan, opts = {}) {
   }));
   progress(0.15, "Plates and ranges");
   // (a land kept whole takes no new plateaus or volcanoes: its heights are read back, and they'd only move its coast)
-  const up = upliftStage({ g, frame, land, seed: subSeed, r: r.fork("uplift"), shapeF, terrain, intent, keptWhole: !!opts.kept && !intent?.lock });
+  // (read back exactly, the plateaus and volcanoes are made again as they were: their hard rock and cones are the
+  // land's too, though its heights already hold them)
+  const up = upliftStage({ g, frame, land, seed: subSeed, r: r.fork("uplift"), shapeF, terrain, intent, keptWhole: !!opts.kept && !exactWanted });
   const { U, Uold, K, D, talus, landMask, outlet, fixedH } = up;
   const n = g.n;
+  // a land kept whole: its coast as kept (the nearest pixel of its file), whatever the recipe now makes
+  const exact = exactWanted && opts.kept.nodes.n === g.n && opts.kept.nodes.pos === pointsHash(g);
+  if (keptWhole) {
+    const KL = opts.kept.land;
+    for (let i = 0; i < n; i++) {
+      const px = Math.min(KL.w - 1, Math.max(0, Math.floor(g.x[i] / KL.cell))), py = Math.min(KL.h - 1, Math.max(0, Math.floor(g.y[i] / KL.cell)));
+      landMask[i] = exact ? opts.kept.nodes.mask[i] : KL.data[py * KL.w + px] > 0 ? 1 : 0;
+      outlet[i] = !landMask[i] || g.border[i] ? 1 : 0;
+      fixedH[i] = outlet[i] ? (landMask[i] ? 0.004 : 0) : 0;
+    }
+  }
 
   // heights: uplift against erosion; rain from the wind from 45% of the run on
   progress(0.25, "Mountains and valleys");
@@ -102,8 +132,10 @@ export function generateOnce(plan, opts = {}) {
   let fixed = null, allKept = false;
   if (opts.kept?.heights) {
     fixed = new Uint8Array(n);
-    allKept = !intent?.lock;
-    for (let i = 0; i < n; i++) if (landMask[i] && !outlet[i] && (allKept || intent.lock[i])) { fixed[i] = 1; h[i] = Math.max(0.0015, sample(opts.kept.heights, g.x[i], g.y[i])); }
+    allKept = true;
+    for (let i = 0; i < n; i++) if (landMask[i] && !outlet[i]) { fixed[i] = 1; h[i] = exact ? opts.kept.nodes.h[i] : Math.max(0.0015, sample(opts.kept.heights, g.x[i], g.y[i])); }
+    // (read back exactly: every node as it was, the map's edge and the sea too)
+    if (exact) h.set(opts.kept.nodes.h);
   }
   // climate as the painted intent asks: wetter, warmer, and zones whose world reacts
   const zoneTargets = [];
@@ -147,6 +179,10 @@ export function generateOnce(plan, opts = {}) {
   // (plateaus and volcanoes onto the eroded land, so erosion hasn't worn them away)
   if (!allKept && (up.plateau || up.cones)) landforms(g, h, landMask, fixed, up, mountains);
   if (!allKept && land.lakes === "many") scourHollows(g, h, landMask, fixed, up.distSea, r.fork("hollows"), frame);
+  // (the heights as the water finds them: what a kept land keeps, so it runs the same last steps and comes out the same)
+  const hPre = Float64Array.from(h);
+  // (a land read back exactly runs those last steps as it first did: nothing held)
+  const after = exact ? null : fixed;
   let np = fillRoute(g, h, outlet, w);
   const cl1 = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
   const rainW = new Float64Array(n);
@@ -160,8 +196,8 @@ export function generateOnce(plan, opts = {}) {
   const biggest = Math.max(0, ...components(g, inMap).areas);
   const fit = Math.min(1, Math.max(0.1, biggest / (0.25 * frame.mapW * frame.mapH)));
   const threshold = RIVER_CATCHMENT[scale] * mult * fit;
-  if (!allKept) valleyFloors(g, h, w, threshold * 1.5, landMask, fixed);
-  for (const fn of forced) holdForced(g, h, fn, fixed, outlet);
+  if (!allKept || exact) valleyFloors(g, h, w, threshold * 1.5, landMask, after);
+  for (const fn of forced) holdForced(g, h, fn, after, outlet);
   np = fillRoute(g, h, outlet, w);
   progress(0.8, "Rain and rivers");
   const climate = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
@@ -186,24 +222,18 @@ export function generateOnce(plan, opts = {}) {
   }
   progress(1, "Done");
   return {
-    gen: GEN, attempt, seed, frame, land, g, grid, shapeF, h, hf: Float64Array.from(w.hf), rec: Int32Array.from(w.rec),
+    gen: GEN, attempt, seed, frame, land, g, grid, shapeF, h, hPre, hf: Float64Array.from(w.hf), rec: Int32Array.from(w.rec),
     landMask, outlet, U, hard: up.hard, spines: up.spines, plates: up.plates, distSea: up.distSea,
     rain: climate.rain, temp: climate.temp, rainF: climate.rainF, tempF: climate.tempF,
     F: lk.F, lake: lk.lake, salt: lk.salt, lakes: lk.lakes, lakeId: lk.lakeId, rivers: rv.rivers, riverOf: rv.riverOf, marks,
-    biome, hypso, threshold, spacing: up.spacing, fixed, kept: !!opts.kept, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
+    biome, hypso, threshold, spacing: up.spacing, fixed, kept: !!opts.kept, keptExact: !!opts.kept && exact, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
     // (the volcanoes, [{ at: [x, y] frame miles, rad, ht }], when the land is volcanic)
     ...(up.cones ? { cones: up.cones.filter((c) => landMask[grid.nearest(c.at[0], c.at[1])]) } : {}),
   };
 }
 
-/** A plan's seed as a number: a word (check allows one) by its hash, so "alpha" and "beta" differ. */
 const isPoint = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]);
 const isPath = (a) => Array.isArray(a) && a.length >= 2 && a.every(isPoint);
-function seedOf(s) {
-  if (Number.isFinite(s)) return s;
-  if (typeof s === "string" && s) return hash128(s)[0] % 1000000;
-  return 1;
-}
 
 /** A field's value at (x, y), as field.sample (kept local so the hot loop above stays small). */
 function sampleLike(f, x, y) {

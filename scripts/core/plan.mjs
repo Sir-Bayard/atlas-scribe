@@ -319,7 +319,7 @@ export const TYPES = {
       biome: str(null, { only: ["biome"] }),
       color: str(null, { only: ["biome"] }),
       reacts: { kind: "boolean", default: false, only: ["biome"] },
-      rot: num(0, { unit: "deg" }),
+      rot: num(0, { unit: "deg", only: ["land", "sea", "basin", "plateau", "lowland", "hardness", "climate", "biome", "lock"] }),
     },
   },
   realm: {

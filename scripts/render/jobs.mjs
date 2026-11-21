@@ -10,6 +10,11 @@ import { zoomPlan } from "../core/zoom.mjs";
 import { placeTowns, keepNames, untouched } from "../core/land/places.mjs";
 import { placeRealms, REALM_COUNTS } from "../core/land/realms.mjs";
 import { normalize } from "../core/plan.mjs";
+import { generateLand } from "../core/land/index.mjs";
+import { makeKept, provideKept, missingKept, hasKept, forgetKept, keptFor } from "../core/land/kept.mjs";
+import { fromDataUrl } from "../core/land/pngio.mjs";
+import { landPicture } from "../core/land/debug.mjs";
+import { settle } from "../core/land/settle.mjs";
 import { paintLayout, styleOf } from "./painter.mjs";
 import * as sketch from "./styles/sketch.mjs";
 import * as region from "./styles/region.mjs";
@@ -20,6 +25,43 @@ let kept = null, nextId = 1;
 
 /** What the window needs to pick a realm by clicking its land: the realm ids and the layout's realm grid, or null when the map shows none. */
 export const realmPick = (layout) => (layout?.realms?.list?.length && layout.showRealms !== false ? { ids: layout.realms.list.map((q) => q.id), grid: layout.realms.grid } : null);
+
+/**
+ * Readies what a job's plan needs from outside before it's laid out: a kept land's file, fetched from the URL the page
+ * gave (keptUrl) and read into the store layouts use, once per file. A file that can't be fetched is noted, and the
+ * land is made from its settings with a note saying so.
+ */
+/** A kept land's file as fetched: the PNG inside its JSON ({ png: a data URL }), or PNG bytes as they are. */
+export function keptBytes(bytes) {
+  if (bytes[0] !== 0x7b) return bytes; // ("{": JSON)
+  try { const o = JSON.parse(new TextDecoder().decode(bytes)); return typeof o?.png === "string" ? fromDataUrl(o.png) : bytes; } catch { return bytes; }
+}
+
+export async function prepare(payload) {
+  const keep = payload?.plan?.land?.keep;
+  if (!keep || typeof keep !== "object" || typeof keep.path !== "string" || hasKept(keep)) return;
+  if (!payload.keptUrl) return missingKept(keep, "its file couldn't be reached");
+  // (a fetch that hangs gives up after 30 seconds, rather than hold the job)
+  const stop = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = stop ? setTimeout(() => stop.abort(), 30000) : null;
+  try {
+    const res = await fetch(payload.keptUrl, stop ? { signal: stop.signal } : undefined);
+    if (!res.ok) return missingKept(keep, `its file wasn't found at ${keep.path}`);
+    provideKept(keep, keptBytes(new Uint8Array(await res.arrayBuffer())));
+  } catch (e) {
+    missingKept(keep, e?.name === "AbortError" ? "its file took too long to fetch" : `its file couldn't be fetched (${e.message ?? e})`);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** The views the window's layer switch offers (beside the map itself). */
+export const LAND_VIEWS = ["shade", "uplift", "rain", "temp", "flow", "biome", "plates", "site"];
+
+// (the last full land made for a layer view, so switching views doesn't make it again)
+let viewLand = null;
+// (as the layout's own key: what the land is made from, and whether its kept file was read)
+const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
 
 export const jobs = {
   /**
@@ -35,7 +77,9 @@ export const jobs = {
   /** Lets go of the layout kept for a paint that won't come (a render that failed or stopped first). */
   async forget() {
     kept = null;
+    viewLand = null;
     forgetLand();
+    forgetKept();
     return true;
   },
 
@@ -71,7 +115,7 @@ export const jobs = {
     const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
     const counts = {};
     for (const i of layout.items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), realms: realmPick(layout), counts, ms: Math.round(performance.now() - t0) };
+    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), realms: realmPick(layout), landAttempt: Number.isInteger(layout.land?.attempt) ? layout.land.attempt : null, counts, ms: Math.round(performance.now() - t0) };
   },
 
   /**
@@ -124,5 +168,52 @@ export const jobs = {
   async keepNames({ plan }, progress) {
     const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.95 * p, l) });
     return keepNames(plan, layout);
+  },
+
+  /**
+   * A layer view of an overland plan's land (the window's view switch): view one of LAND_VIEWS, px the picture's width.
+   * Rivers are drawn over every view but flow and plates, the ranges' spines over uplift. Returns { blob (PNG), width,
+   * height }.
+   */
+  async landView({ plan, view = "shade", px = 1200 }, progress) {
+    if (!LAND_VIEWS.includes(view)) throw new Error(`there's no layer view "${view}"`);
+    const p = normalize(plan);
+    if (p.kind !== "region" || !p.land) throw new Error("layer views are of an overland map's land");
+    const key = viewKey(p);
+    if (viewLand?.key !== key) viewLand = { key, L: generateLand(p, { onProgress: (q, l) => progress(0.85 * q, l) }), site: null };
+    const L = viewLand.L;
+    if (view === "site" && !viewLand.site) {
+      progress(0.9, "Site scores");
+      const lay = layoutPlan(p);
+      viewLand.site = settle(lay.land, p, { density: p.land.towns ?? "some", seed: p.seed, scores: true }).scores ?? null;
+    }
+    progress(0.95, "Drawing the view");
+    const width = Math.max(64, Math.min(4096, Math.round(px)));
+    const pic = landPicture(L, view, width, false, { site: viewLand.site });
+    const c = new OffscreenCanvas(pic.width, pic.height), g = c.getContext("2d");
+    g.putImageData(new ImageData(pic.rgba, pic.width, pic.height), 0, 0);
+    g.lineCap = "round"; g.lineJoin = "round";
+    if (view !== "flow" && view !== "plates") {
+      g.strokeStyle = "rgba(40, 90, 160, 0.9)";
+      for (const R of pic.rivers) { g.lineWidth = Math.max(0.8, R[R.length - 1][2] * (width / 1200)); g.beginPath(); R.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); }
+    }
+    if (view === "uplift") {
+      g.strokeStyle = "rgba(60, 20, 20, 0.8)"; g.lineWidth = Math.max(1, 2 * (width / 1200));
+      for (const S of pic.spines) { g.beginPath(); S.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); }
+    }
+    return { blob: await c.convertToBlob({ type: "image/png" }), width: pic.width, height: pic.height };
+  },
+
+  /**
+   * A land kept (Keep This Land): the plan's land made from its settings, its heights as a 16-bit PNG with the
+   * generator's own node block (core/land/kept.mjs). Returns { bytes (Uint8Array, the PNG), keep } for the page to
+   * save beside the maps and write into the plan with its path.
+   */
+  async keepLand({ plan }, progress) {
+    const p = normalize(plan);
+    if (p.land?.keep) throw new Error("this land is already kept");
+    const L = generateLand(p, { kept: null, onProgress: (q, l) => progress(0.9 * q, l) });
+    progress(0.95, "Saving its heights");
+    return makeKept(L);
   },
 };

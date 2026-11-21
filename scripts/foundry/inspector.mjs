@@ -4,7 +4,7 @@
  * applies it with setField or setPlanField from core/edit.mjs. Builds HTML only; the window owns the events.
  */
 import { useLabel } from "../core/uses.mjs";
-import { fieldsOf, planFieldsOf, featureOf, wordsFor } from "../core/edit.mjs";
+import { fieldsOf, planFieldsOf, featureOf, wordsFor, KEPT_FIELDS } from "../core/edit.mjs";
 import { rerollable } from "../core/seeds.mjs";
 import { TOOLS } from "../core/draw.mjs";
 import { OLD_PROFILES } from "../core/plan.mjs";
@@ -27,6 +27,7 @@ export function kindOf(f) {
   if (f.type === "region") return ({ difficult: "difficult terrain", greater: "greater difficult terrain", hazard: "hazard", cover: "cover", squeeze: "squeeze", note: "note" })[f.class] ?? "region";
   if (f.type === "trail") return ({ foot: "footprints", hoof: "hoofprints", paw: "paw prints", wheel: "wheel ruts" })[f.class] ?? "trail";
   if (f.type === "tether") return "picket line";
+  if (f.type === "terrain") return ({ range: "mountain range", peak: f.volcanic ? "volcano" : "peak", plateau: "plateau", basin: "basin", lowland: "lowland", land: "land", sea: "sea", hardness: "hard rock", climate: "climate", biome: "biome zone", lock: "locked land" })[f.class] ?? "terrain";
   return f.type;
 }
 
@@ -107,8 +108,8 @@ function fieldHTML(field, disabled, fonts = []) {
 /** Settings in two groups: the usual ones, then the rest under "More". */
 function groupsHTML(fields, disabled, fonts) {
   const main = fields.filter((f) => !f.more), more = fields.filter((f) => f.more);
-  return `${main.map((f) => fieldHTML(f, disabled, fonts)).join("")}
-    ${more.length ? `<details class="as-pv-more" ${more.some((f) => f.value !== undefined) ? "open" : ""}><summary>More</summary>${more.map((f) => fieldHTML(f, disabled, fonts)).join("")}</details>` : ""}`;
+  return `${main.map((f) => fieldHTML(f, disabled || !!f.locked, fonts)).join("")}
+    ${more.length ? `<details class="as-pv-more" ${more.some((f) => f.value !== undefined) ? "open" : ""}><summary>More</summary>${more.map((f) => fieldHTML(f, disabled || !!f.locked, fonts)).join("")}</details>` : ""}`;
 }
 
 /** A feature's Reroll and Lock buttons (in the list and the inspector): named for it, Lock a toggle. */
@@ -229,10 +230,11 @@ export function underlayHTML(u, { working = false } = {}) {
 }
 
 /** The plan's own settings: name, season, ground, size and scale, then the scene it's made into. */
-export function planHTML(plan, { working = false, fonts = [], nameSets = [] } = {}) {
+export function planHTML(plan, { working = false, fonts = [], nameSets = [], landOpen = false } = {}) {
   const fields = planFieldsOf(plan);
-  const main = fields.filter((f) => f.group !== "scene");
+  const main = fields.filter((f) => f.group !== "scene" && f.group !== "land");
   const scene = fields.filter((f) => f.group === "scene");
+  const land = fields.filter((f) => f.group === "land");
   return `<section class="as-pv-insp" data-id="@plan">
       <header>
         <button type="button" data-action="asBack" data-tooltip-text="Back to the list" aria-label="Back to the list"><i class="fa-solid fa-arrow-left"></i></button>
@@ -240,10 +242,23 @@ export function planHTML(plan, { working = false, fonts = [], nameSets = [] } = 
       </header>
       ${overlandActionsHTML(plan, working, nameSets)}
       <div class="as-pv-fields">
-        ${groupsHTML(main, working, fonts)}
+        ${plan.land?.keep ? groupsHTML(main.map((f) => (KEPT_FIELDS.has(f.name) ? { ...f, locked: true } : f)), working, fonts) : groupsHTML(main, working, fonts)}
+        ${land.length ? `<details class="as-pv-more as-pv-land" ${landOpen ? "open" : ""}><summary>Land</summary>${landActionsHTML(plan, working)}${land.map((f) => fieldHTML(f, working || (!!plan.land?.keep && KEPT_FIELDS.has(f.name)), fonts)).join("")}</details>` : ""}
         <details class="as-pv-more" ${scene.some((f) => f.value !== undefined) ? "open" : ""}><summary>Scene</summary>${scene.map((f) => fieldHTML(f, working, fonts)).join("")}</details>
       </div>
     </section>`;
+}
+
+
+/** The Land group's actions: Reroll Land, and Keep This Land or Forget the Kept Land. */
+function landActionsHTML(plan, working) {
+  const dis = working ? "disabled" : "";
+  const kept = plan.land?.keep && typeof plan.land.keep === "object";
+  return `${kept ? `<p class="as-pv-hint">This land is kept: its shape stays as it is, whatever the generator does later. Rain, rivers and lakes still follow the settings below; its shape's settings wait until it's forgotten.</p>` : ""}<div class="as-pv-tools">
+      <button type="button" data-action="asRerollLand"${labelAttr(kept ? "Forget the kept land first" : "A new land of the same kind, from a new land seed; the generator's towns, roads and realms are placed again on it")} ${working || kept ? "disabled" : ""}><i class="fa-solid fa-dice" aria-hidden="true"></i> Reroll Land</button>
+      ${kept ? `<button type="button" data-action="asForgetLand"${labelAttr("Let the generator make this land from its settings again (the kept files stay in the world's folder)")} ${dis}><i class="fa-solid fa-lock-open" aria-hidden="true"></i> Forget the Kept Land</button>`
+        : `<button type="button" data-action="asKeepLand"${labelAttr("Save this land's heights as a file beside its maps, so later versions of AtlasScribe never move its coasts, ranges or rivers")} ${dis}><i class="fa-solid fa-lock" aria-hidden="true"></i> Keep This Land</button>`}
+    </div>`;
 }
 
 /** An overland plan's own actions in its Plan panel: place (or reroll) its towns and roads, and keep its names. */
@@ -294,6 +309,7 @@ const HOW = {
   cliff: "Click points along its top edge (double-click or Enter to finish). The drop is on your left as you go; its Drop setting turns it.",
   height: "Click each corner (double-click or Enter to finish), or drag a box. Battle maps only: its corners are rounded as ground lies, its edge is drawn as a cliff, bank or slope, and a token's elevation follows it.",
   point: "Click where it goes.",
+  range: "Click points along the range's spine (double-click or Enter to finish). The land is made again around it: the range, its foothills, and the rivers and rain that follow.",
   battle: "Drag a box over the area to fight in, or click to place one of the size picked below.",
 };
 
@@ -303,9 +319,10 @@ export function howText(tool, points) {
 }
 
 /** The drawing palette: a button per tool, the one in use lit, with how to use it and Finish and Cancel. */
-export function paletteHTML(tool, { points = 0, working = false, kind = "settlement" } = {}) {
-  // (a region's tools: places, its ground, roads and water; a battle map adds caves and dungeons to its ground)
-  const groups = kind === "region" ? [["Places", ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"]], ["Land", ["woods", "fields", "hills", "mountains", "marsh"]], ["Lines", ["highway", "road", "track"]], ["Water", ["river", "stream", "lake", "sea"]], ["Points", ["label"]]] : [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Ground", kind === "battle" ? ["rise", "hollow", "cave", "dungeon"] : ["rise", "hollow"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]], ["Lights and story props", kind === "battle" ? ["campfire", "brazier", "torch", "lamppost", "light", "cairn", "standing-stone", "sledge", "footprints", "hoofprints", "pawprints", "ruts", "tether", "horse", "mule", "ox"] : ["campfire", "brazier", "torch", "lamppost", "cairn", "standing-stone", "sledge"]], ...(kind === "battle" ? [["Regions", ["difficult", "greater", "hazard", "cover", "squeeze", "note"]]] : [])];
+export function paletteHTML(tool, { points = 0, working = false, kind = "settlement", overland = false, kept = false } = {}) {
+  // (a region's tools: places, its ground, roads and water; a battle map adds caves and dungeons to its ground; an
+  // overland map's ground is painted terrain the land is made to follow)
+  const groups = kind === "region" ? [["Places", ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"]], overland ? ["Shape the Land", ["t-range", "t-peak", "t-plateau", "t-basin", "t-lowland", "t-land", "t-sea", "t-hard", "t-climate", "t-biome"]] : ["Land", ["woods", "fields", "hills", "mountains", "marsh"]], ["Lines", ["highway", "road", "track"]], ["Water", ["river", "stream", "lake", "sea"]], ["Points", ["label"]]] : [["Areas", ["district", "woods", "fields", "park", "cemetery", "farmstead", "yard", "square"]], ["Buildings", ["building", "windmill", "watermill"]], ["Lines", ["road", "lane", "track", "wall", "hedge", "townwall", "palisade", "cliff"]], ["Ground", kind === "battle" ? ["rise", "hollow", "cave", "dungeon"] : ["rise", "hollow"]], ["Water", ["river", "stream", "pond", "lake", "sea", "quay", "pier", "boat", "ship"]], ["Points", ["bridge", "ford", "tree", "well", "cart", "fountain", "cross", "crane", "label"]], ["Lights and story props", kind === "battle" ? ["campfire", "brazier", "torch", "lamppost", "light", "cairn", "standing-stone", "sledge", "footprints", "hoofprints", "pawprints", "ruts", "tether", "horse", "mule", "ox"] : ["campfire", "brazier", "torch", "lamppost", "cairn", "standing-stone", "sledge"]], ...(kind === "battle" ? [["Regions", ["difficult", "greater", "hazard", "cover", "squeeze", "note"]]] : [])];
   const by = new Map(TOOLS.map((t) => [t.id, t]));
   const active = tool ? by.get(tool) : null;
   return `<section class="as-pv-insp as-pv-palette">
@@ -314,10 +331,14 @@ export function paletteHTML(tool, { points = 0, working = false, kind = "settlem
         <span class="as-pv-name"><strong>Draw</strong><em>${esc(active ? `a new ${active.label.toLowerCase()}` : "pick what to add")}</em></span>
       </header>
       <div class="as-pv-fields">
-        ${groups.map(([name, ids]) => `<p class="as-pv-group">${esc(titleCase(name))}</p><div class="as-pv-tools-grid">${ids.map((id) => {
-          const t = by.get(id);
-          return `<button type="button" data-action="asTool" data-tool="${esc(id)}" class="${tool === id ? "as-on" : ""}" ${working ? "disabled" : ""}><i class="fa-solid ${esc(t.icon)}"></i> ${esc(titleCase(t.label))}</button>`;
-        }).join("")}</div>`).join("")}
+        ${groups.map(([name, ids]) => {
+          // (a kept land's shape stays as kept: painted terrain waits until it's forgotten)
+          const wait = kept && name === "Shape the Land";
+          return `<p class="as-pv-group">${esc(titleCase(name))}</p>${wait ? `<p class="as-pv-hint">This land is kept, so painted terrain would change nothing yet. Forget the Kept Land (Plan Settings, Land) to shape it.</p>` : ""}<div class="as-pv-tools-grid">${ids.map((id) => {
+            const t = by.get(id);
+            return `<button type="button" data-action="asTool" data-tool="${esc(id)}" class="${tool === id ? "as-on" : ""}" ${working || wait ? "disabled" : ""}><i class="fa-solid ${esc(t.icon)}"></i> ${esc(titleCase(t.label))}</button>`;
+          }).join("")}</div>`;
+        }).join("")}
         ${active ? `<p class="as-pv-hint as-pv-how">${esc(howText(active, points))}</p>` : ""}
       </div>
       ${active && active.geometry !== "point" && active.geometry !== "box" ? `<div class="as-pv-tools">

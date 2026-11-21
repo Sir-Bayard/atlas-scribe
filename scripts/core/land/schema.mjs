@@ -3,6 +3,15 @@
  * apart from the generator so plan.mjs and check.mjs can use it without loading the generator. Pure.
  */
 import { parseNameSet } from "./namesets.mjs";
+import { hash128 } from "../rng.mjs";
+
+/** The number the land is made from: the land's own seed, else the plan's (a word hashed to a number). */
+export function landSeedOf(plan) {
+  const s = Number.isFinite(plan?.land?.seed) ? plan.land.seed : plan?.seed;
+  if (Number.isFinite(s)) return s;
+  if (typeof s === "string" && s) return hash128(s)[0] % 1000000;
+  return 1;
+}
 
 /** The generator's version: a change that moves land bumps it (plans record it as land.gen). */
 export const GEN = 1;
@@ -60,7 +69,7 @@ export function checkLand(raw) {
   const err = (field, message) => out.push({ level: "error", field: `land.${field}`, message });
   const warn = (field, message) => out.push({ level: "warning", field: `land.${field}`, message });
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) { err("", "land should be an object, like { type: \"continents\" }."); return out; }
-  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "hemisphere", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "realms", "keep"]);
+  const known = new Set(["gen", "type", "seaSide", "share", "mountains", "plates", "age", "plateaus", "volcanic", "coast", "climate", "hemisphere", "latitude", "wind", "rain", "rivers", "lakes", "seed", "margin", "layers", "zones", "names", "keptNames", "nameStyle", "nameSet", "towns", "realms", "keep", "attempt"]);
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
@@ -87,6 +96,7 @@ export function checkLand(raw) {
   if (raw.realms !== undefined && !["none", ...LAND_AMOUNTS].includes(raw.realms)) warn("realms", "land.realms should be none, few, some or many; none are made.");
   for (const k of ["rivers", "lakes"]) if (raw[k] !== undefined && !LAND_AMOUNTS.includes(raw[k])) err(k, `land.${k} must be few, some or many.`);
   for (const k of ["plateaus", "volcanic"]) if (raw[k] !== undefined && typeof raw[k] !== "boolean") err(k, `land.${k} must be true or false.`);
+  if (raw.attempt !== undefined && !(Number.isInteger(raw.attempt) && raw.attempt >= 0 && raw.attempt <= 9)) err("attempt", "land.attempt must be a whole number from 0 to 9 (which try of the land is kept while it's painted).");
   if (raw.seed !== undefined && raw.seed !== null && !Number.isInteger(raw.seed)) err("seed", "land.seed must be a whole number, or null for the plan's seed.");
   if (raw.zones !== undefined) {
     if (!Array.isArray(raw.zones)) err("zones", "land.zones must be a list.");

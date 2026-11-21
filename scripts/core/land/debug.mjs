@@ -13,6 +13,9 @@ const BIOME_RGB = {
   "seasonal-forest": [120, 145, 80], rainforest: [65, 115, 65], wetland: [110, 140, 120], "salt-flat": [235, 230, 210],
 };
 
+// (plates told apart: neighbors in this list differ in hue and lightness)
+const PLATE_RGB = [[214, 120, 90], [90, 150, 200], [220, 190, 90], [130, 180, 110], [170, 120, 190], [90, 190, 180], [200, 140, 160], [150, 150, 90], [110, 120, 200], [230, 160, 70], [120, 90, 70], [180, 200, 220]];
+
 const ramp = (v, stops) => {
   v = Math.min(1, Math.max(0, v));
   const k = Math.min(stops.length - 2, Math.floor(v * (stops.length - 1))), t = v * (stops.length - 1) - k;
@@ -20,11 +23,11 @@ const ramp = (v, stops) => {
 };
 
 /**
- * view: "shade" | "uplift" | "rain" | "temp" | "flow" | "biome" | "plates"; width (px); whole: the whole frame (else
- * the map). Returns { width, height, rgba (Uint8ClampedArray), toPx(x, y) frame miles -> px, rivers: [[[x, y, w]...]],
+ * view: "shade" | "uplift" | "rain" | "temp" | "flow" | "biome" | "plates" | "site" (site: { site } gives the scores);
+ * width (px); whole: the whole frame (else the map). Returns { width, height, rgba (Uint8ClampedArray), toPx(x, y) frame miles -> px, rivers: [[[x, y, w]...]],
  * spines: [[[x, y]...]] }.
  */
-export function landPicture(L, view = "shade", width = 320, whole = false) {
+export function landPicture(L, view = "shade", width = 320, whole = false, { site = null } = {}) {
   const fr = L.frame;
   const ox = whole ? 0 : fr.margin, oy = whole ? 0 : fr.margin, W = whole ? fr.W : fr.mapW, H = whole ? fr.H : fr.mapH;
   const s = W / width, height = Math.max(1, Math.round(H / s));
@@ -36,10 +39,14 @@ export function landPicture(L, view = "shade", width = 320, whole = false) {
   const hAt = (x, y) => hr[Math.min(height - 1, Math.max(0, y)) * width + Math.min(width - 1, Math.max(0, x))];
   let fmax = 1; if (view === "flow") for (let i = 0; i < L.g.n; i++) if (L.landMask[i] && L.F[i] > fmax) fmax = L.F[i];
   let umax = 1e-6; if (view === "uplift") for (let i = 0; i < L.g.n; i++) if (L.U[i] > umax) umax = L.U[i];
+  // (site: settle's base score at each node, from its lowest to its highest where anything is built)
+  let smin = Infinity, smax = -Infinity;
+  if (view === "site" && site) for (let i = 0; i < L.g.n; i++) if (site[i] > -Infinity) { if (site[i] < smin) smin = site[i]; if (site[i] > smax) smax = site[i]; }
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const j = node[y * width + x], o = (y * width + x) * 4;
     let c;
-    if (!L.landMask[j] && view !== "plates") c = [70, 110, 140];
+    // (the sea: blue on the map-like views, pale on the data views, so their wettest or highest land doesn't read as sea)
+    if (!L.landMask[j] && view !== "plates") c = view === "shade" || view === "biome" ? [70, 110, 140] : [214, 220, 226];
     else if (view === "shade" || view === "biome") {
       const base = view === "biome" ? BIOME_RGB[L.biome[j]] ?? [200, 0, 200] : ramp(hAt(x, y) / 1.1, [[120, 160, 100], [170, 175, 120], [190, 170, 135], [205, 200, 190], [250, 250, 250]]);
       // a quick hillshade from the northwest
@@ -53,7 +60,8 @@ export function landPicture(L, view = "shade", width = 320, whole = false) {
     else if (view === "rain") c = ramp(L.rain[j] / 2, [[214, 190, 130], [196, 196, 120], [120, 160, 90], [60, 120, 110], [40, 80, 120]]);
     else if (view === "temp") c = ramp(L.temp[j], [[240, 244, 250], [150, 180, 210], [200, 210, 150], [230, 180, 100], [210, 110, 60]]);
     else if (view === "flow") c = ramp(Math.log(1 + L.F[j]) / Math.log(1 + fmax), [[240, 240, 230], [150, 190, 220], [30, 80, 160]]);
-    else if (view === "plates") { const p = L.plates.plate[j]; const q = (p * 2654435761) >>> 0; c = [80 + (q % 140), 80 + ((q >> 8) % 140), 80 + ((q >> 16) % 140)]; if (!L.landMask[j]) c = c.map((v) => v * 0.6); }
+    else if (view === "site") c = site && site[j] > -Infinity && smax > smin ? ramp((site[j] - smin) / (smax - smin), [[60, 60, 70], [110, 80, 150], [210, 90, 90], [245, 190, 70], [255, 250, 200]]) : [150, 150, 145];
+    else if (view === "plates") { const p = L.plates.plate[j]; c = PLATE_RGB[((p % PLATE_RGB.length) + PLATE_RGB.length) % PLATE_RGB.length]; if (!L.landMask[j]) c = c.map((v) => v * 0.6); }
     rgba[o] = c[0]; rgba[o + 1] = c[1]; rgba[o + 2] = c[2]; rgba[o + 3] = 255;
   }
   const toPx = (x, y) => [(x - ox) / s, (y - oy) / s];

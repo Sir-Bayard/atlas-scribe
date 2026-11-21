@@ -53,7 +53,7 @@ export function spacingsOf(longMi) {
  * notes, stats }: features are new plan features in map units (places with `site`, roads, crossings), ids `city-1`,
  * `road-1`... clear of the plan's own ids.
  */
-export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, reserve = [] } = {}) {
+export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, reserve = [], scores = false } = {}) {
   const { n, x, y, indptr, indices, h, landMask, lake, rain, temp, F, threshold: T } = land;
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu;
@@ -489,6 +489,8 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
   const roadsOut = features.filter((q) => q.type === "road"), crossOut = features.filter((q) => q.type === "crossing");
   return {
     features: [...sited, ...roadsOut, ...crossOut], notes,
+    // (scores: each node's base site score, for the window's Site Score view; -Infinity where nothing is built)
+    ...(scores ? { scores: base } : {}),
     stats: { landArea, cities: cities.length, towns: towns.length, given: places.filter((p) => p.given).length, villages: villages.length, castles: castles.length, ruins: ruins.length, beyond: beyond.length, roads: roadsOut.length, bridges: nBridge.n, fords: nFord.n, spacing: sp },
   };
 }

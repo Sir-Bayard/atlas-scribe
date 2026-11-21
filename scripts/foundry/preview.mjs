@@ -9,7 +9,8 @@ import { normalize, LABEL_SIZES } from "../core/plan.mjs";
 import { estimatePlots, BIG_PLOTS } from "../core/check.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
-import { featureOf, setField, setPlanField, deleteFeature, withNameSet, keptNamesOf } from "../core/edit.mjs";
+import { featureOf, setField, setPlanField, deleteFeature, withNameSet, keptNamesOf, landMoved, drawnLandChanged } from "../core/edit.mjs";
+import { hasMadePlaces } from "../core/land/places.mjs";
 import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML, battleHTML, battleSizeText, rerollButtons, kindOf } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
@@ -74,6 +75,9 @@ function sizeWords(plan, extent) {
   return `${r1(extent[0])} by ${r1(extent[1])} squares`;
 }
 
+/** The window's layer views over an overland map: [value, label]. */
+const LAYER_VIEWS = [["map", "Map"], ["shade", "Shading"], ["uplift", "Uplift"], ["rain", "Rain"], ["temp", "Temperature"], ["flow", "Water Flow"], ["biome", "Biomes"], ["plates", "Plates"], ["site", "Site Score"]];
+
 export class AtlasScribeApp extends Base {
   static DEFAULT_OPTIONS = {
     id: "atlas-scribe",
@@ -113,6 +117,9 @@ export class AtlasScribeApp extends Base {
       asPlaceMap: AtlasScribeApp.#onPlaceMap,
       asPlaceTowns: AtlasScribeApp.#onPlaceTowns,
       asPlaceRealms: AtlasScribeApp.#onPlaceRealms,
+      asRerollLand: AtlasScribeApp.#onRerollLand,
+      asKeepLand: AtlasScribeApp.#onKeepLand,
+      asForgetLand: AtlasScribeApp.#onForgetLand,
       asKeepNames: AtlasScribeApp.#onKeepNames,
       asNameSets: AtlasScribeApp.#onNameSets,
       asNameSetUpdate: AtlasScribeApp.#onNameSetUpdate,
@@ -142,12 +149,19 @@ export class AtlasScribeApp extends Base {
   #draftTimer = null;
   #result = null;
   #url = null;
+  /** The layer view shown over an overland map ("map": none), and its picture's URL (null while it's made). */
+  #layerView = "map";
+  #layerUrl = null;
+  /** True while a layer view is made (not working: edits go on, and are applied as usual). */
+  #viewing = false;
   #error = null;
   #stale = false; // the picture is of another plan (a new plan that couldn't be drawn)
   #busy = false;
   #outlines = true;
   #view = null; // { k, tx, ty }: zoom and pan; null fits the map to the window
   #drag = null;
+  /** Whether the Plan panel's Land group is open. */
+  #landOpen = false;
   #resize = null;
   #drawing = null; // the draw in flight, so a new plan waits for it
   #shapes = false; // every corner handle shown
@@ -299,6 +313,9 @@ export class AtlasScribeApp extends Base {
         if (this.#url) URL.revokeObjectURL(this.#url);
         this.#url = URL.createObjectURL(result.blob);
         this.#result = result;
+        // (a layer view was of the plan before: it's made again for this one)
+        if (this.#layerUrl) { URL.revokeObjectURL(this.#layerUrl); this.#layerUrl = null; }
+        if (this.#layerView !== "map") setTimeout(() => this.#showLayer(this.#layerView), 0);
       }
       // Changes made while it drew are applied first and show then (rendering now would snap a moved slider back)
       if (!this.#queue.length) await this.render();
@@ -344,9 +361,11 @@ export class AtlasScribeApp extends Base {
   #paths() {
     const plan = normalize(this.#plan);
     const sq = plan.size.ftPerSquare || 25;
-    return plan.features.filter((f) => ["road", "water", "wall", "dock", "trail", "tether"].includes(f.type) && Array.isArray(f.path) && f.path.length >= 2)
+    return plan.features.filter((f) => ["road", "water", "wall", "dock", "trail", "tether", "terrain"].includes(f.type) && Array.isArray(f.path) && f.path.length >= 2)
+      // (a painted range: picked within a quarter of its core's width, at least a third of a square)
+      .map((f) => (f.type === "terrain" ? { ...f, path: f.path, _half: Math.min(1.5, Math.max(0.33, ((Number(f.width) || 30) * 5280) / sq / 4)) } : f))
       // (a cliff along the middle of its face, as wide as the face, so it's picked anywhere on it)
-      .map((f) => (f.type === "wall" && f.class === "cliff" ? { id: f.id, type: f.type, pts: offsetLine(f.path, (lowSign(f.side) * cliffWidth(f.height, sq)) / 2), half: cliffWidth(f.height, sq) / 2 } : { id: f.id, type: f.type, pts: f.path, half: f.type === "wall" ? 0.15 : f.type === "trail" || f.type === "tether" ? 0.3 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2 }));
+      .map((f) => (f.type === "wall" && f.class === "cliff" ? { id: f.id, type: f.type, pts: offsetLine(f.path, (lowSign(f.side) * cliffWidth(f.height, sq)) / 2), half: cliffWidth(f.height, sq) / 2 } : { id: f.id, type: f.type, pts: f.path, half: f._half ?? (f.type === "wall" ? 0.15 : f.type === "trail" || f.type === "tether" ? 0.3 : Math.max(Number(f.width) || 10, Number(f.endWidth) || 0, ...(Array.isArray(f.widths) ? f.widths.filter(Number.isFinite) : [])) / sq / 2) }));
   }
 
   /**
@@ -366,6 +385,7 @@ export class AtlasScribeApp extends Base {
       else if (f.type === "building") add(f.id, f.type, f.shape, f.rot ?? 0);
       else if (f.type === "landmark") for (const b of f.buildings ?? []) add(f.id, "landmark", b.shape, b.rot ?? 0);
       else if (f.type === "region") add(f.id, f.type, f.shape, f.rot ?? 0);
+      else if (f.type === "terrain" && f.shape) add(f.id, f.type, f.shape, f.rot ?? 0);
     }
     return out;
   }
@@ -401,7 +421,7 @@ export class AtlasScribeApp extends Base {
   /** Bridges, fords and props: points that can be clicked, [{ id, type, at }]. A bridge is where it was drawn (moved onto its road). */
   #points() {
     const drawn = new Map((this.#result?.crossings ?? []).map((c) => [c.id, c.at]));
-    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop" || f?.type === "place" || f?.type === "light") && Array.isArray(f.at))
+    return (this.#plan?.features ?? []).filter((f) => (f?.type === "crossing" || f?.type === "prop" || f?.type === "place" || f?.type === "light" || (f?.type === "terrain" && f.class === "peak")) && Array.isArray(f.at))
       .map((f) => ({ id: f.id, type: f.type, at: drawn.get(f.id) ?? f.at }));
   }
 
@@ -457,6 +477,7 @@ export class AtlasScribeApp extends Base {
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
+          ${this.#layerUrl && this.#layerView !== "map" ? `<img class="as-pv-layer" src="${this.#layerUrl}" width="${r.width}" height="${r.height}" alt="" draggable="false">` : ""}
           ${under && under.shown ? `<img class="as-pv-under" src="${esc(under.path)}" style="${underStyle(under.rect, r.width / MW, under.opacity)}" alt="" draggable="false">` : ""}
           <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${svg}</svg>
         </div>`
@@ -508,8 +529,8 @@ export class AtlasScribeApp extends Base {
           <button type="button" data-action="asRedo" ${this.#future.length && !this.#working ? "" : "disabled"} data-tooltip-text="The change Undo took back (Ctrl+Y)"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Redo</button>
         </div>
         ${this.#tool?.id === "battle" ? battleHTML(this.#battleState())
-          : this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working, kind: this.#plan?.kind ?? "settlement" })
-          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices(), nameSets: this.#host.nameSets?.() ?? [] })
+          : this.#palette ? paletteHTML(this.#tool?.id ?? null, { points: this.#tool?.points.length ?? 0, working: this.#working, kind: this.#plan?.kind ?? "settlement", overland: !!(this.#plan?.land && typeof this.#plan.land === "object"), kept: !!this.#plan?.land?.keep })
+          : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices(), nameSets: this.#host.nameSets?.() ?? [], landOpen: this.#landOpen })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
           : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices(), madeNames: this.#madeNames() })
@@ -521,6 +542,7 @@ export class AtlasScribeApp extends Base {
           <button type="button" data-action="asOutlines" class="${this.#outlines ? "as-on" : ""}"><i class="fa-solid fa-draw-polygon"></i> Outlines</button>
           <button type="button" data-action="asShapes" class="${this.#shapes ? "as-on" : ""}" data-tooltip-text="Drag corners and points to reshape districts, areas, roads, rivers, walls, ponds, lakes, seas and docks; drag the dot in a side's middle to add one; alt-click or right-click one to remove it" ${this.#busy ? "disabled" : ""}><i class="fa-solid fa-vector-square"></i> Shapes</button>
           <button type="button" data-action="asFit" data-tooltip-text="Fit the map to the window (or double-click it)"><i class="fa-solid fa-expand"></i> Fit</button>
+          ${r && this.#plan?.land && this.#host.layerViews?.() ? `<select data-layer-view aria-label="Layer View" data-tooltip-text="How the generator made the land: shading, uplift, rain, temperature, water flow, biomes, plates, or where towns score best (the Layer Views setting)" ${this.#working || this.#viewing ? "disabled" : ""}>${LAYER_VIEWS.map(([v, label]) => `<option value="${v}" ${v === this.#layerView ? "selected" : ""}>${label}</option>`).join("")}</select>` : ""}
           <button type="button" data-action="asUnder" class="${this.#inspect === "@underlay" ? "as-on" : ""}" data-tooltip-text="${under ? "The reference image under the sketch: see-through, move, scale, lock" : "Put an image under the sketch to trace over (a sketch, an old map)"}" ${this.#working ? "disabled" : ""}><i class="fa-solid fa-image"></i> Underlay</button>
         </div>
         <div class="as-pv-tools as-pv-scene">
@@ -716,6 +738,8 @@ export class AtlasScribeApp extends Base {
     });
     // A setting changed in the inspector: applied at once, and the map redrawn
     el.addEventListener("change", (ev) => {
+      // The layer view over an overland map
+      if (ev.target.dataset?.layerView !== undefined) return this.#showLayer(ev.target.value);
       // The Battle map tool's zoom: kept as the client setting, and the box's size said again
       if (ev.target.dataset?.battleZoom !== undefined) {
         Promise.resolve(this.#host.battleZoom?.set(Number(ev.target.value))).catch(() => {}).finally(() => this.#rezoomBattleBox());
@@ -752,6 +776,8 @@ export class AtlasScribeApp extends Base {
       if (this.#publishing || this.#saving) return this.render(); // put the input back: nothing changes while a scene is made
       this.#apply((plan) => (id === "@plan" ? setPlanField(plan, field, value) : setField(plan, id, field, value)));
     });
+    // (the Plan panel's Land group stays open or shut across redraws)
+    el.addEventListener("toggle", (ev) => { if (ev.target.classList?.contains("as-pv-land")) this.#landOpen = ev.target.open; }, true);
     el.addEventListener("pointercancel", () => {
       if (this.#edit) { this.#edit = null; this.render(); } // put the outline back
       stop();
@@ -787,6 +813,9 @@ export class AtlasScribeApp extends Base {
     this.#resize = null;
     if (this.#url) URL.revokeObjectURL(this.#url);
     this.#url = null;
+    if (this.#layerUrl) URL.revokeObjectURL(this.#layerUrl);
+    this.#layerUrl = null;
+    this.#layerView = "map";
     this.#result = null;
   }
 
@@ -871,7 +900,9 @@ export class AtlasScribeApp extends Base {
     };
     // A plan building or square; then a house or street the generator made (to pin); then the smallest wood, field
     // system, farm, pond, lake or district there
-    const minor = smallest(this.#minor());
+    // (painted terrain inside a realm is picked by its outline, so a click on the realm's land picks the realm)
+    const inRealm = this.#realmAt(at);
+    const minor = smallest(this.#minor().filter((f) => !(inRealm && f.type === "terrain")));
     if (minor) return this.#select(minor);
     // A building or square too small to hit at this zoom: the nearest one within 8 pixels of its outline
     let close = null, closeD = 8 / px;
@@ -891,6 +922,29 @@ export class AtlasScribeApp extends Base {
     if (street) return this.#select(GEN + street);
     // Nothing drawn there: the realm whose land it is, if any
     this.#select(smallest(this.#features()) ?? this.#realmAt(at));
+  }
+
+  /** Shows a layer view over the map ("map" takes it away): made by the worker for the plan as it is now. */
+  async #showLayer(view) {
+    this.#layerView = LAYER_VIEWS.some(([v]) => v === view) ? view : "map";
+    if (this.#layerUrl) { URL.revokeObjectURL(this.#layerUrl); this.#layerUrl = null; }
+    if (this.#layerView === "map" || !this.#plan?.land || !this.#result) return this.render();
+    // (while a drawing or a job runs, the view waits: it's made when the next drawing lands)
+    if (this.#working || this.#viewing) return this.render();
+    const plan = this.#plan, want = this.#layerView;
+    this.#viewing = true;
+    this.render();
+    try {
+      const res = await this.#host.landView(plan, { view: want, px: Math.min(2400, this.#result.width) });
+      if (this.rendered && this.#plan === plan && this.#layerView === want) this.#layerUrl = URL.createObjectURL(res.blob);
+    } catch (e) {
+      // (another job started meanwhile: the view waits for the next drawing; anything else is said)
+      if (!/already|busy/i.test(`${e.message ?? e}`)) { this.#error = `The layer view couldn't be made (${`${e.message ?? e}`.replace(/^AtlasScribe( worker)?: /, "")}).`; this.#layerView = "map"; }
+    }
+    this.#viewing = false;
+    if (!this.rendered) return;
+    if (this.#queue.length && !this.#working) return this.#flush();
+    this.render();
   }
 
   /** The names the drawing made for the plan's places, by id (a Map), or null when the drawing is of another plan. */
@@ -1115,6 +1169,18 @@ export class AtlasScribeApp extends Base {
 
   /** Changes the plan (keeping the old one for Undo) and draws it again. */
   async #change(plan) {
+    // A change that moves an overland map's land: the generator's towns, roads and realms placed again on the new
+    // land first (the GM's stay), so the change and the new places are one step
+    // Terrain painted (or a river drawn) on a land the checks may have made more than once: the land is pinned to
+    // the try shown, so the painting shapes this land rather than tipping the checks over to another
+    if (this.#plan && landMoved(this.#plan, plan) && plan.land && typeof plan.land === "object" && !Number.isInteger(plan.land.attempt) && Number.isInteger(this.#result?.landAttempt) && !this.#stale && drawnLandChanged(this.#plan, plan)) {
+      plan = { ...plan, land: { ...plan.land, attempt: this.#result.landAttempt } };
+    }
+    if (this.#plan && landMoved(this.#plan, plan) && hasMadePlaces(this.#plan)) {
+      const replaced = await this.#replaceOn(plan);
+      if (!replaced) return null;
+      plan = replaced;
+    }
     // (a change refused puts Redo back as it was)
     const future = this.#future;
     this.#remember();
@@ -1292,6 +1358,25 @@ export class AtlasScribeApp extends Base {
     await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`);
   }
 
+  /** An overland plan: a new land of the same kind, from a new land seed (its towns placed again: #change). */
+  static async #onRerollLand() {
+    if (!this.#plan?.land || this.#plan.land.keep) return;
+    const seed = 1 + Math.floor(Math.random() * 2147483645);
+    await this.#apply((plan) => { const land = { ...structuredClone(plan.land), seed }; delete land.attempt; return { plan: { ...structuredClone(plan), land } }; });
+  }
+
+  /** An overland plan: its land made from its settings again (the kept files stay where they are). */
+  static async #onForgetLand() {
+    if (!this.#plan?.land?.keep) return;
+    await this.#apply((plan) => { const next = structuredClone(plan); delete next.land.keep; return { plan: next }; });
+  }
+
+  /** An overland plan: its land's heights saved as a file beside its maps and the plan pointed at them. */
+  static async #onKeepLand() {
+    if (!this.#plan?.land || this.#plan.land.keep) return;
+    await this.#placeJob((plan) => this.#host.keepLand(plan), (res) => `AtlasScribe: kept this land as ${res.path}. Its coasts, ranges and rivers stay as they are now; Forget the Kept Land lets the generator make it again.`);
+  }
+
   /** An overland plan: realms ruled from its cities and towns (or ruled again), one step Undo takes back. */
   static async #onPlaceRealms() {
     await this.#placeJob((plan) => this.#host.placeRealms(plan), (res) => res.added || res.removed
@@ -1348,6 +1433,29 @@ export class AtlasScribeApp extends Base {
     await this.#apply((plan) => withNameSet(plan, set, { rename }));
     if (this.rendered) this.render();
     return true;
+  }
+
+  /**
+   * The generator's towns, roads and realms placed again on a plan whose land has changed (the plan's own seed, so the
+   * same change places them the same way). Returns the plan with them, or null when it couldn't be done (the error is
+   * shown and nothing changes).
+   */
+  async #replaceOn(plan) {
+    const from = this.#plan;
+    this.#placing = true;
+    this.#error = null;
+    this.render();
+    let res = null;
+    try {
+      res = await this.#host.placeTowns(plan, { seed: plan.seed });
+    } catch (e) {
+      this.#error = `${e.canceled ? "Stopped." : `${e.message ?? e}`.replace(/^AtlasScribe: /, "")} Nothing was changed.`;
+    }
+    this.#placing = false;
+    if (!this.rendered || this.#plan !== from || !res?.plan) { if (this.rendered) this.render(); return null; }
+    for (const n of res.notes ?? []) note.warn(`AtlasScribe: ${n?.message ?? n}`);
+    note.info(`AtlasScribe: the land changed, so its towns, roads and bridges were placed again (${res.added}${res.realms ? `, in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}); the ones you placed or changed stay. Undo takes the change back.`);
+    return res.plan;
   }
 
   /** Runs a job that gives back the plan changed ({ plan, ... }), then shows it as one step; told() says what it did. */

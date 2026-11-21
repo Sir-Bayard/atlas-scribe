@@ -6,7 +6,7 @@
  * Messages in:  { id, type, payload }
  * Messages out: { id, progress: { pct, label } } while working, then { id, result } or { id, error }.
  */
-import { jobs } from "./jobs.mjs";
+import { jobs, prepare } from "./jobs.mjs";
 
 // A message that can't be read (it failed to clone) would otherwise leave its job waiting forever
 self.onmessageerror = () => self.postMessage({ id: null, error: { message: "a message to the worker couldn't be read" } });
@@ -17,6 +17,7 @@ self.onmessage = async (event) => {
   if (!job) return self.postMessage({ id, error: { message: `unknown job "${type}"` } });
   const progress = (pct, label) => self.postMessage({ id, progress: { pct, label } });
   try {
+    await prepare(payload);
     const result = await job(payload ?? {}, progress);
     self.postMessage({ id, result }); // a Blob crosses by reference, so nothing needs transferring
   } catch (e) {

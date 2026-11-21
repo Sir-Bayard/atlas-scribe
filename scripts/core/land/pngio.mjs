@@ -104,3 +104,28 @@ export function fromDataUrl(url) {
   const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
   return u;
 }
+
+/** PNG bytes with a chunk of the caller's added before IEND (a private, ancillary type such as "asNd": readers skip it). */
+export async function withChunk(png, type, data, { deflate = true } = {}) {
+  const body = deflate ? await through(data, new CompressionStream("deflate")) : data;
+  const u = png instanceof Uint8Array ? png : new Uint8Array(png);
+  const iend = u.length - 12;
+  const extra = chunk(type, body);
+  const out = new Uint8Array(u.length + extra.length);
+  out.set(u.subarray(0, iend), 0); out.set(extra, iend); out.set(u.subarray(iend), iend + extra.length);
+  return out;
+}
+
+/** The data of a chunk of a type in PNG bytes (inflated when it was deflated), or null when there's none. */
+export function readChunk(png, type, { inflate = true, size = 0 } = {}) {
+  const u = png instanceof Uint8Array ? png : new Uint8Array(png);
+  let o = 8;
+  while (o + 8 <= u.length) {
+    const len = (u[o] << 24 | u[o + 1] << 16 | u[o + 2] << 8 | u[o + 3]) >>> 0;
+    const t = String.fromCharCode(u[o + 4], u[o + 5], u[o + 6], u[o + 7]);
+    if (t === type) { const d = u.subarray(o + 8, o + 8 + len); return inflate ? inflateSync(d, size || undefined) : d; }
+    if (t === "IEND") break;
+    o += 12 + len;
+  }
+  return null;
+}

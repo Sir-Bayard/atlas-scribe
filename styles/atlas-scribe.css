@@ -443,6 +443,16 @@
   stroke-width: 2.5px;
   stroke-dasharray: 6 3;
 }
+/* A layer view over an overland map (the Layer Views setting): the land as the generator made it, over the painted map */
+.atlas-scribe .as-pv-stage img.as-pv-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.atlas-scribe .as-pv-tools select[data-layer-view] {
+  flex: 1 1 100%;
+}
 /* The underlay: an image under the overlay to trace over, and while its panel is open a box to move and scale it */
 .atlas-scribe .as-pv-stage img.as-pv-under {
   position: absolute;

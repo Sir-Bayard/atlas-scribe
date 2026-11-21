@@ -9,10 +9,11 @@ import { TYPES, SURFACES, SEASONS, STYLES, ROOFS, OLD_PROFILES, RUNNING, BODIES,
 import { nameLabelsOf, cleanFont } from "./labels.mjs";
 import { CHARACTERS, CHARACTER_LABELS, characterOf } from "./character.mjs";
 import { BLOCKS } from "./layout/anchors.mjs";
-import { NAME_STYLES } from "./land/schema.mjs";
+import { NAME_STYLES, LAND_TYPES, LAND_AGES, LAND_AMOUNTS, GEN, landSeedOf, terrainGeometry } from "./land/schema.mjs";
 import { SCALES, gridFor, extentOf, MILE_FT } from "./land/units.mjs";
 import { untouched, stillNeeded, madeMark } from "./land/places.mjs";
 import { REALM_COLORS } from "./land/realms.mjs";
+import { BIOMES } from "./land/biome.mjs";
 
 /** The characters that have a centerpiece. */
 const ANCHORED = new Set(Object.keys(BLOCKS));
@@ -140,7 +141,7 @@ export const FIELD_TEXT = {
   "terrain.depth": { label: "Depth", help: "How far it sinks: a lake where it's wet, a salt flat where it's dry" },
   "terrain.wetter": { label: "Wetter", help: "More rain here (below 0, less)" },
   "terrain.warmer": { label: "Warmer", help: "Warmer here (below 0, colder)" },
-  "terrain.biome": { label: "Biome", help: "Painted here whatever the climate" },
+  "terrain.biome": { label: "Biome", kind: "enum", values: BIOMES, names: { "cold-steppe": "cold steppe", "temperate-forest": "temperate forest", "temperate-rainforest": "temperate rainforest", "hot-desert": "hot desert", "seasonal-forest": "seasonal forest", "salt-flat": "salt flat" }, help: "Painted here whatever the climate" },
   "terrain.color": { label: "Color", help: "For a biome of your own" },
   "terrain.reacts": { label: "The world reacts", help: "Off: paints this biome here and changes nothing else. On: changes the rain and temperature here, so rivers and nearby land follow. Regenerates the land." },
   "terrain.rot": { label: "Turned", help: "Degrees clockwise", more: true },
@@ -215,17 +216,67 @@ function capitalChoices(plan, realm) {
   return seats.sort((a, b) => (rank[a.class] ?? 9) - (rank[b.class] ?? 9) || String(a.name ?? a.id).localeCompare(String(b.name ?? b.id)));
 }
 
+/** The settings a kept land holds (its shape and size): refused while it's kept; its rain, rivers and lakes still apply. */
+export const KEPT_FIELDS = new Set(["land.type", "land.seaSide", "land.share", "land.mountains", "land.age", "land.plates", "land.plateaus", "land.volcanic", "land.coast", "land.seed", "@scale", "output.grid", "size.squares.0", "size.squares.1", "size.ftPerSquare"]);
+
+/**
+ * Whether a change moves an overland map's land, so the generator's towns, roads and realms are placed again on it:
+ * the land's settings (not its names, name style, towns, realms or whether it's kept), the seed, the size and grid,
+ * and its painted terrain and drawn water. False for a map with no land.
+ */
+export function landMoved(before, after) {
+  // (forgetting a kept land: it's made from its settings again, which moves it when terrain was painted while it was
+  // kept, or it was kept by another generator)
+  const keptBefore = isObj(before?.land?.keep), keptAfter = isObj(after?.land?.keep);
+  if (keptBefore && !keptAfter) return (after.features ?? []).some((f) => isObj(f) && f.type === "terrain") || before.land.keep.gen !== GEN;
+  // (painted terrain on a land kept in both: it waits until the land is forgotten, so it moves nothing yet)
+  const sameKeep = keptBefore && keptAfter && before.land.keep.hash === after.land.keep.hash && before.land.keep.path === after.land.keep.path;
+  const key = (plan) => {
+    if (!isObj(plan?.land)) return null;
+    const { names, keptNames, nameStyle, nameSet, towns, realms, keep, ...landIn } = plan.land;
+    // (the land's own seed, or the plan's when it has none: the same land either way)
+    landIn.seed = landSeedOf(plan);
+    return JSON.stringify([landIn, plan.size, plan.output?.grid ?? null, (plan.features ?? []).filter((f) => isObj(f) && ((f.type === "terrain" && !sameKeep) || f.type === "water"))]);
+  };
+  const a = key(before), b = key(after);
+  return a !== null && b !== null && a !== b;
+}
+
+/** Whether a change paints the land: its painted terrain or drawn water differ (not its settings). */
+export function drawnLandChanged(before, after) {
+  const drawn = (plan) => JSON.stringify((plan?.features ?? []).filter((f) => isObj(f) && (f.type === "terrain" || f.type === "water")));
+  return drawn(before) !== drawn(after);
+}
+
 /** The plan-wide settings, by path: what the "Plan" panel shows. */
 export const PLAN_FIELDS = [
   { path: "name", label: "Name", kind: "string" },
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
-  { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size; towns and roads the generator placed go (place them again), and what you placed keeps its spot on the map" },
+  { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size and the generator's towns, roads and realms are placed again on it; what you placed keeps its spot on the map" },
   { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
   { path: "land.realms", label: "Realms", kind: "enum", values: ["none", "few", "some", "many"], overland: true, required: true, auto: "none", help: "How many realms Place Realms (or Reroll Realms) rules from the map's cities and towns, and Reroll Places keeps when it moves them (None: it takes the generator's away). It also sets how far each realm reaches, so changing it moves the borders of realms already placed" },
   { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name Sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
+  // The land itself (an overland map's Land group): changing one makes the land again, and the generator's towns,
+  // roads and realms are placed again on it
+  { path: "land.type", label: "Land", kind: "enum", values: LAND_TYPES, overland: true, group: "land", required: true, names: { continents: "continents", supercontinent: "one great continent", archipelago: "many islands", island: "an island", arc: "an island arc", coastal: "a coast", landlocked: "no sea", peninsula: "a peninsula", "inland-sea": "an inland sea" }, help: "What kind of land the map shows" },
+  { path: "land.seaSide", label: "Sea side", kind: "enum", values: ["north", "south", "east", "west"], overland: true, group: "land", auto: "any, by the seed", help: "For a coast or a peninsula: the side the sea is on" },
+  { path: "land.share", label: "Land share", kind: "number", min: 0.05, max: 0.97, overland: true, group: "land", auto: "by its kind", help: "How much of the map is land, from 0.05 to 0.97" },
+  { path: "land.mountains", label: "Mountains", kind: "number", min: 0, max: 1, overland: true, group: "land", auto: 0.5, help: "From 0 (none) to 1 (many): how much of the land is hills and mountains" },
+  { path: "land.age", label: "Age", kind: "enum", values: LAND_AGES, overland: true, group: "land", auto: "mature", names: { young: "young (sharp)", mature: "mature", old: "old (worn down)" }, help: "Young mountains are sharp and high; old ones worn round and low" },
+  { path: "land.plates", label: "Plates", kind: "enum", values: LAND_AMOUNTS, numeric: true, overland: true, group: "land", auto: "by the map's size", help: "How many plates meet under the land: more plates, more ranges where they meet" },
+  { path: "land.plateaus", label: "Plateaus", kind: "boolean", overland: true, group: "land", auto: false, help: "High flat land behind the ranges" },
+  { path: "land.volcanic", label: "Volcanoes", kind: "boolean", overland: true, group: "land", auto: false, help: "Volcanic cones, with a lake in the crater where it's wet" },
+  { path: "land.coast", label: "Coast", kind: "number", min: 0, max: 1, overland: true, group: "land", auto: 0.5, help: "From 0 (smooth) to 1 (rugged, with inlets and fjords)" },
+  { path: "land.climate", label: "Climate", kind: "enum", values: ["temperate", "cold", "warm", "arid", "tropical", "auto"], overland: true, group: "land", auto: "temperate", names: { arid: "dry", auto: "by its latitude" }, help: "Sets the map's latitude and how wet it is (a world runs pole to pole whatever this says)" },
+  { path: "land.hemisphere", label: "Hemisphere", kind: "enum", values: ["north", "south"], overland: true, group: "land", auto: "north", names: { north: "northern", south: "southern" }, help: "Which side of the equator the map lies on: in the south, the cold is to the south" },
+  { path: "land.wind", label: "Wind", kind: "enum", values: ["270", "90", "0", "180"], numeric: true, overland: true, group: "land", auto: "by the latitude", names: { 270: "from the west", 90: "from the east", 0: "from the north", 180: "from the south" }, help: "Where the rain comes from: the land past a range from it is drier" },
+  { path: "land.rain", label: "Rain", kind: "enum", values: ["drier", "normal", "wetter"], overland: true, group: "land", auto: "normal" },
+  { path: "land.rivers", label: "Rivers", kind: "enum", values: LAND_AMOUNTS, overland: true, group: "land", auto: "some", help: "How many rivers are drawn (the land's water is the same)" },
+  { path: "land.lakes", label: "Lakes", kind: "enum", values: LAND_AMOUNTS, overland: true, group: "land", auto: "some" },
+  { path: "land.seed", label: "Land seed", kind: "number", step: 1, whole: true, min: 1, overland: true, group: "land", auto: "the plan's seed", help: "The land's own seed: Reroll Land sets a new one. Changing the plan's seed changes the land only when this is left empty" },
   { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it. It's a tile of its own in the scene; the places it covers have no label" },
   { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label Color" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
@@ -271,7 +322,10 @@ export function fieldsOf(plan, id) {
   // An unknown class is drawn as the type's first, so the window shows that
   const cls = t.classes ? (t.classes.includes(f.class) ? f.class : t.classes[0]) : undefined;
   // Water drawn along a path is a stream, river or canal; drawn as a shape, a pond, lake or sea
-  const kinds = f.type === "water" ? t.classes.filter((c) => (Array.isArray(f.path) ? RUNNING : BODIES).includes(c)) : t.classes;
+  // (painted terrain: kinds drawn the same way, a path, a point or a shape; a locked area waits for 1.4's brushes)
+  const kinds = f.type === "water" ? t.classes.filter((c) => (Array.isArray(f.path) ? RUNNING : BODIES).includes(c))
+    : f.type === "terrain" ? t.classes.filter((c) => c !== "lock" && terrainGeometry(c) === terrainGeometry(cls))
+    : t.classes;
   // (a kind's words where it has them: a region's "squeeze" is "a squeeze")
   const kindNames = textOf(f.type, "class").names;
   if (t.classes && !textOf(f.type, "class").hidden) out.push({ name: "class", label: "Kind", kind: "enum", values: kinds, value: cls, auto: t.classes[0], ...(kindNames ? { names: kindNames } : {}) });
@@ -463,7 +517,9 @@ export function planFieldsOf(plan) {
     .map((p) => (p.path !== "size.ftPerSquare" ? p : overland ? { ...p, min: MILE_FT, max: 120 * MILE_FT, help: "A cell's width: 31680 is 6 miles (a kingdom), 211200 is 40 (a continent). Changing it changes the map's miles; Scale sets both" } : { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" }))).filter((p) => !p.overland || overland);
   // (Realms left unset: none, or some for a plan holding the generator's realms, as Reroll Places takes it)
   const realmsAuto = (plan?.features ?? []).some((f) => f?.type === "realm" && untouched(f)) ? "some" : "none";
-  return fields.map((p) => ({ ...p, name: p.path, value: p.path === "@scale" ? scaleOf(plan) : getPath(plan, p.path), auto: p.path === "@scale" ? "custom" : p.path === "land.realms" && !REALM_KINDS.includes(plan?.land?.realms) ? realmsAuto : getPath(full, p.path) ?? p.auto ?? null }));
+  // (a numeric choice as text; a land choice that isn't in its list, such as an older plan's "auto", as left empty)
+  const shown = (p, v) => (p.numeric && typeof v === "number" ? String(v) : p.group === "land" && p.kind === "enum" && !p.numeric && v !== undefined && !p.values.includes(v) ? undefined : v);
+  return fields.map((p) => ({ ...p, name: p.path, ...(p.numeric && Number.isFinite(getPath(plan, p.path)) && !p.values.includes(String(getPath(plan, p.path))) ? { values: [...p.values, String(getPath(plan, p.path))] } : {}), value: p.path === "@scale" ? scaleOf(plan) : shown(p, getPath(plan, p.path)), auto: p.path === "@scale" ? "custom" : p.path === "land.realms" && !REALM_KINDS.includes(plan?.land?.realms) ? realmsAuto : p.group === "land" && p.auto !== undefined ? p.auto : shown(p, getPath(full, p.path)) ?? p.auto ?? null }));
 }
 
 /** Which scale preset an overland plan is at (its size and cells as the preset makes them), or undefined. */
@@ -501,8 +557,11 @@ function scaleFeature(f, sx, sy) {
 export function setPlanField(plan, path, raw) {
   const field = planFieldsOf(plan).find((p) => p.path === path);
   if (!field) return { error: `The plan has no setting "${path}".` };
-  const { value, error } = readValue(field, raw);
-  if (error) return { error };
+  if (isObj(plan?.land?.keep) && KEPT_FIELDS.has(path)) return { error: `This map's land is kept, so its ${field.label.toLowerCase()} stays as it is. Forget the Kept Land to change it.` };
+  const read = readValue(field, raw);
+  if (read.error) return { error: read.error };
+  // (a numeric choice, a wind's heading or a count of plates, is kept as a number)
+  const value = field.numeric && typeof read.value === "string" && read.value.trim() !== "" && Number.isFinite(Number(read.value)) ? Number(read.value) : read.value;
   const keys = path.split(".");
   const next = structuredClone(plan);
   // An overland map's scale: its size and cells from the preset; the generator's places go, the GM's keep their spot
@@ -540,6 +599,8 @@ export function setPlanField(plan, path, raw) {
     next.size.squares = sq;
     return { plan: next };
   }
+  // (a land setting changed: the land is made afresh, its try no longer pinned)
+  if (path.startsWith("land.") && field.group === "land" && isObj(next.land)) delete next.land.attempt;
   let o = next;
   for (const k of keys.slice(0, -1)) {
     if (!isObj(o[k])) o[k] = {};
