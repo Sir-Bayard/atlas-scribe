@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.3.0
+
+Overland maps: a kingdom, a continent or a whole world, its land made by simulation and painted like a hand-painted atlas, with its towns, roads, realms and names.
+
+**The land**
+- Quick Start's Region tab has four new scales: Kingdom (240 by 160 miles, 6 mile hexes), Realm (720 by 480), Continent (2,400 by 1,600) and World (7,200 by 4,800). The region of earlier versions is the Local scale.
+- The land is simulated: ranges rise where plates meet, rivers wear valleys into it, the side of a range the wind comes from gets the rain, rivers join on their way to the sea and never split, lakes fill their basins or dry to salt flats, and warmth and rain decide what grows.
+- Nine kinds of land (continents, one great continent, many islands, an island, an island arc, a coast, no sea, a peninsula, an inland sea), with mountains, age, plates, coast, climate, hemisphere, wind, rain, rivers, lakes, plateaus and volcanoes to choose. A world runs pole to pole unless told otherwise.
+- The same plan gives the same land every time.
+- Painted like a hand-painted map: forest, grassland, heath, desert, snow on the high peaks, calm lowlands, shallows and deep sea, with a frame, a compass rose, a scale bar in miles, a key and a title cartouche.
+
+**Towns, roads, realms and names**
+- Towns, villages, castles and ruins where people would build them (river mouths, sheltered harbors, good farmland, river crossings, the foot of a pass), with highways, roads, tracks, bridges and fords between them, drawn as atlas markers. Reroll Places places them again, keeping any you moved, renamed or changed.
+- Realms, if you want them: ruled from the biggest cities and towns, their borders grown along ranges, big rivers and coasts, drawn as dashed borders over a wash of color with a crown on each capital. Change a realm's name, color or capital; Reroll Realms keeps the ones you changed.
+- Names for every place, sea, bay, lake, river, range, forest, island and realm, in a style per map: the English countryside, English places with older-sounding names for the land's rivers, hills and seas, or one invented tongue. Keep the Names writes them into the plan.
+- Name Sets: your own naming rules as a short block of text (sounds or example names, names to use, word parts used where the land shows them, a pattern for each kind of place or feature, and what to avoid), kept in the world and copied into each map that uses one.
+- Make This Town: a place's Settlement Quick Start filled in from the map (its size, name, river, coast or lake and which side it's on, its roads and the way each runs, its hills), with Follow the Map's Directions to keep them. A castle's Make This Castle makes its battle map. On a local region, Make This Town replaces Make its map.
+
+**The window**
+- A Land group in Plan Settings with every land setting and Reroll Land. When the land changes, the towns, roads and realms the generator placed are placed again on it, and one Undo puts both back.
+- Keep This Land saves a land's heights in the output folder's `lands` folder and reads them back exactly, so later versions of AtlasScribe never move its coasts, ranges or rivers (and it draws faster). Forget the Kept Land lets the generator make it again.
+- Shape the Land tools: a mountain range drawn along its spine, a peak or volcano, and areas of plateau, basin, lowland, land, sea, hard rock, climate and biome, which the generator follows and blends in. A biome zone with The World Reacts changes the rain and warmth there too. A river you draw is cut into the land.
+- The Layer Views setting adds a view switch over overland maps: shading, uplift, rain, temperature, water flow, biomes, plates and where towns score best.
+- Places (on local regions too) and painted peaks can be dragged in the window; the roads that end at a place come along, and a realm's crown follows its capital.
+
+**The scene**
+- A grid of hexes or squares in miles. Towns and roads, realms, the key and the map dressing are tiles of their own, to hide or show. Names are text drawings, hidden until you show them, white or in map ink (Label Look).
+
+**Towns**
+- Quick Start's Water has a sea coast and a lake shore for a village, hamlet or town: the place sits back from the water, its main road along the shore, with a pier and boats at its landing.
+
+**Everywhere**
+- Labels with several words are in title case: buttons, field labels, menu choices, tabs, window titles and settings. Made names never start with a lowercase "the". Scene levels, regions and the animals' folder are renamed to match, and older scenes update.
+
 ## 1.2.1
 
 - An animal's token shows a Forgotten Adventures token through FA Nexus when it has one (a riding horse, a donkey or pony for a mule, an ox), at FA's own scale, so it matches the map's art; else the compendium creature's own token art; else the animal drawn from above, as before. FA Nexus is asked only with the Art from FA Nexus setting on, and not when Draw whole battle maps is on. A plain stand-in actor takes the FA token as its picture too.

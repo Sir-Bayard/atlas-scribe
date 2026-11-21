@@ -392,6 +392,7 @@ function checkFeature(f, where, raw, { err, warn, w, h, overland = false }) {
     else if (tg === "point") need(isPoint(f.at), "at", `"${where}" is a peak: it needs a position, at: [x, y].`);
     else checkShape(f.shape, where, "shape", need);
     if (!overland) warn(f.id, "type", `"${where}" is painted terrain, which only an overland map (a region plan with land) uses; it's ignored.`);
+    else if (f.class === "lock") warn(f.id, "class", `"${where}" is a lock area, which does nothing yet: a later version keeps the land under it.`);
   }
   if (g === "buildings") {
     if (need(Array.isArray(raw.buildings) && raw.buildings.length > 0, "buildings", `Landmark "${where}" needs a list of buildings.`))
@@ -455,7 +456,7 @@ function checkFeature(f, where, raw, { err, warn, w, h, overland = false }) {
     const far = f.type === "district" ? Math.ceil(Math.max(10, big / 4)) : f.type === "area" ? Math.max(20, big) : 10 * big;
     const mx = w * 0.1, my = h * 0.1;
     if (x1 < -mx || y1 < -my || x0 > w + mx || y0 > h + my) warn(f.id, "position", `"${where}" is entirely off the map.`);
-    else if (x0 < -far || y0 < -far || x1 > w + far || y1 > h + far) err(f.id, "position", `"${where}" reaches far past the edge of the map. Bring it within ${far} squares of the edge (only what's on the map is drawn).`);
+    else if (x0 < -far || y0 < -far || x1 > w + far || y1 > h + far) err(f.id, "position", `"${where}" reaches far past the edge of the map. Bring it within ${Math.ceil(far)} squares of the edge (only what's on the map is drawn).`);
   }
 }
 

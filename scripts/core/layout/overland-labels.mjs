@@ -8,7 +8,7 @@
  */
 import { namer } from "../land/names.mjs";
 import { parseNameSet, usesRiver } from "../land/namesets.mjs";
-import { readable } from "../labels.mjs";
+import { readable, cleanFont } from "../labels.mjs";
 import { Heap } from "../land/heap.mjs";
 
 /** Each label's font size in pixels on a picture 3600 px on its long side (larger pictures, larger labels alike). */
@@ -39,7 +39,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   const scene = plan.output?.scene ?? {};
   const COLOR = LOOKS[scene.labelLook] ?? LOOKS.bold;
   const placeColor = COLOR.place ?? (/^#[0-9a-f]{6}$/i.test(scene.labelColor ?? "") ? scene.labelColor : "#13202e");
-  const placeFont = scene.labelFont && scene.labelFont !== "Signika" ? scene.labelFont : FONT.land;
+  const ownFont = cleanFont(scene.labelFont), placeFont = ownFont && ownFont !== "Signika" ? ownFont : FONT.land;
   // (a GM's own name set: read once for its text)
   const set = plan.land?.nameStyle === "custom" && typeof plan.land?.nameSet?.text === "string" ? setOf(plan.land.nameSet.text) : null;
   const nm = namer(set ? "custom" : plan.land?.nameStyle, Number.isFinite(plan.land?.seed) ? plan.land.seed : plan.seed, { set });

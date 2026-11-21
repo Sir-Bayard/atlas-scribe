@@ -14,7 +14,7 @@ import { upliftStage, SOLVER, components, landforms, scourHollows } from "./upli
 import { workFor, fillRoute, accumulate, step } from "./solver.mjs";
 import { climateStage } from "./climate.mjs";
 import { remapHeights } from "./hypso.mjs";
-import { valleyFloors, lakesStage, riversStage, riverMarks, forcedNodes, holdForced, RIVER_CATCHMENT } from "./water.mjs";
+import { valleyFloors, lakesStage, riversStage, riverMarks, forcedNodes, holdForced, breachForced, RIVER_CATCHMENT } from "./water.mjs";
 import { biomeOf, BIOME_CLIMATE } from "./biome.mjs";
 import { rng, hashAt, hash128 } from "../rng.mjs";
 import { inventoryOf } from "./inventory.mjs";
@@ -46,14 +46,17 @@ export function generateLand(plan, opts = {}) {
   const keptAttempt = opts.kept?.nodes && opts.kept.nodes.gen === GEN ? opts.kept.nodes.attempt : 0;
   // (the painted intent read once for every try)
   if (opts.intent === undefined) opts = { ...opts, intent: readIntent(plan, frameOf(plan)) };
+  let made = 0;
   for (let attempt = 0; attempt < tries; attempt++) {
-    const L = generateOnce(plan, { ...opts, attempt: opts.kept ? keptAttempt : pinned ?? attempt, onProgress: (p, l) => opts.onProgress?.((attempt + p) / tries < 1 ? (attempt === 0 ? p : 0.9 + 0.1 * p) : p, attempt ? `${l} (try ${attempt + 1})` : l) });
+    made++;
+    const L = generateOnce(plan, { ...opts, attempt: opts.kept ? keptAttempt : pinned ?? attempt, onProgress: (p, l) => opts.onProgress?.(tries === 1 ? p : attempt === 0 ? 0.9 * p : 0.9 + (0.1 * (attempt - 1 + p)) / (tries - 1), attempt ? `${l} (try ${attempt + 1})` : l) });
     L.inventory = inventoryOf(L);
     L.problems = opts.kept ? [] : landProblems(L, L.inventory);
     L.keptError = opts.keptError ?? null;
     if (!best || L.problems.length < best.problems.length) best = L;
     if (!L.problems.length) break;
   }
+  best.tries = made;
   return best;
 }
 
@@ -146,7 +149,7 @@ export function generateOnce(plan, opts = {}) {
   }
   const climateIntent = intent && (intent.wet || intent.warm) ? { wet: intent.wet ?? null, warm: intent.warm ?? null } : null;
   const forced = (plan.features ?? []).filter((f) => f && f.type === "water" && f.class === "river" && isPath(f.path))
-    .map((f) => forcedNodes(f.path.map((p) => frame.toFrame(p)), grid.nearest, up.spacing));
+    .map((f) => forcedNodes(f.path.map((p) => frame.toFrame(p)), grid.nearest, up.spacing, g));
   const w = workFor(g);
   const steps = SOLVER.steps[up.age];
   const Ueff = new Float64Array(n);
@@ -199,13 +202,17 @@ export function generateOnce(plan, opts = {}) {
   if (!allKept || exact) valleyFloors(g, h, w, threshold * 1.5, landMask, after);
   for (const fn of forced) holdForced(g, h, fn, after, outlet);
   np = fillRoute(g, h, outlet, w);
+  // (a drawn river ending on rising ground: the least cut that lets it drain on, then the water routed again)
+  let cut = false;
+  for (const fn of forced) if (breachForced(g, h, w, fn, after, outlet)) cut = true;
+  if (cut) np = fillRoute(g, h, outlet, w);
   progress(0.8, "Rain and rivers");
   const climate = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
   const pxPerMile = (Number(plan.output?.pxPerSquare) || 100) / frame.mpu;
   const lk = lakesStage({ g, h, w, np, rain: climate.rain, temp: climate.temp, land: landMask, outlet, pxPerMile, amount: land.lakes });
   // (a flooded hollow too small to show as a lake is filled flat, as sediment would: rivers then never step uphill)
   for (let i = 0; i < n; i++) if (landMask[i] && !lk.lake[i] && !lk.salt[i] && lk.depth[i] > 0) h[i] = w.hf[i];
-  const rv = riversStage({ g, h, w, F: lk.F, land: landMask, lake: lk.lake, outlet, threshold, forced });
+  const rv = riversStage({ g, h, w, F: lk.F, land: landMask, lake: lk.lake, salt: lk.salt, outlet, threshold, forced });
   const marks = riverMarks(rv.rivers, up.hard);
 
   // biomes; wetland where flat, low ground carries a lot of water

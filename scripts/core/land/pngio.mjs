@@ -105,7 +105,7 @@ export function fromDataUrl(url) {
   return u;
 }
 
-/** PNG bytes with a chunk of the caller's added before IEND (a private, ancillary type such as "asNd": readers skip it). */
+/** PNG bytes with a chunk of the caller's added before IEND (a private, ancillary type such as "asND": readers skip it). */
 export async function withChunk(png, type, data, { deflate = true } = {}) {
   const body = deflate ? await through(data, new CompressionStream("deflate")) : data;
   const u = png instanceof Uint8Array ? png : new Uint8Array(png);
@@ -128,4 +128,12 @@ export function readChunk(png, type, { inflate = true, size = 0 } = {}) {
     o += 12 + len;
   }
   return null;
+}
+
+/** A layer PNG's size and kind from its header: { w, h } for an 8-bit gray picture, else null. */
+export function layerHeader(bytes) {
+  if (!bytes || bytes.length < 33 || bytes[12] !== 0x49 || bytes[13] !== 0x48 || bytes[14] !== 0x44 || bytes[15] !== 0x52) return null;
+  const u32 = (o) => ((bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3]) >>> 0;
+  if (bytes[24] !== 8 || bytes[25] !== 0 || bytes[28] !== 0) return null;
+  return { w: u32(16), h: u32(20) };
 }

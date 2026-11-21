@@ -1,8 +1,8 @@
 # AtlasScribe: Map Generator
 
-Maps for Foundry VTT, made in the game: villages, towns and walled cities, regions with their roads and places, and battle maps to fight on, caves and dungeons among them.
+Maps for Foundry VTT, made in the game: villages, towns and walled cities, kingdoms, continents and whole worlds with their towns and roads, and battle maps to fight on, caves and dungeons among them.
 
-You say what matters (the roads, the river, the square, the walls, what each district is like, an inn with a stage and a cellar of casks) and AtlasScribe fills in the rest: side streets, plots, houses, gardens, trees, rooms and furniture. Change anything on the map, reroll a district you don't like, lock the ones you do, and make it a scene. It needs no art: town maps are drawn in an illustrated style, and battle maps paint with the map art you have and draw whatever you don't.
+You say what matters (the roads, the river, the square, the walls, what each district is like, an inn with a stage and a cellar of casks) and AtlasScribe fills in the rest: side streets, plots, houses, gardens, trees, rooms and furniture. Change anything on the map, reroll a district you don't like, lock the ones you do, and make it a scene. It needs no art: town maps are drawn in an illustrated style, overland maps are painted like a hand-painted atlas, and battle maps paint with the map art you have and draw whatever you don't.
 
 It's system agnostic and for the GM. On battle maps it also follows the rules of Pathfinder Second Edition and D&D Fifth Edition.
 
@@ -23,6 +23,14 @@ A battle map made with no art at all, with its roofs on, as players see it from 
 The same thing in the inked look, a village street in autumn:
 
 ![A village street in autumn drawn in the inked look, with slate and shingle roofs, fenced yards and a temple](docs/images/battle-inked.jpg)
+
+A kingdom 240 miles across from Quick Start's Region tab, its land generated, with its towns, roads, bridges and names:
+
+![A generated coastal kingdom: forested hills and snowy peaks inland, a sea to the east, towns and roads in red, and a key](docs/images/kingdom.jpg)
+
+A realm 720 miles across, ruled by five realms whose borders follow its ranges and rivers:
+
+![A generated realm map with five realms, their borders dashed and washed in color, a crown on each capital and their names across their land](docs/images/realms.jpg)
 
 Quick Start, for a town or a battle map, from a few choices or a few words:
 
@@ -48,7 +56,7 @@ Enable AtlasScribe in your world. It needs Foundry 14 and works with any game sy
 ## Your first battle map
 
 1. In Quick Start, open the **Battle Map** tab.
-2. Pick a Site (Wilderness, Roadside building, Village or town street, Camp, Castle, Cave or Dungeon), the season, the time of day and what's scattered about, or describe it: "a roadside inn at night in spring with a stage, a cellar of casks and rooms upstairs".
+2. Pick a Site (Wilderness, Roadside Building, Village or Town Street, Camp, Castle, Cave, Dungeon), the season, the time of day and what's scattered about, or describe it: "a roadside inn at night in spring with a stage, a cellar of casks and rooms upstairs".
 3. **Make the Plan**, look it over in the window, then **Make Scene**.
 4. The scene has walls, doors and windows, rooms with furniture you can move, wagons and tents you can move too, horses and oxen as tokens, roofs that fade as a token walks in, floors above and cellars as levels, lights and regions for height and water, and a moonlit night when it's set at night.
 
@@ -56,9 +64,22 @@ On a battle map you can also sink a road between its banks, draw your own lights
 
 You can also drag a box on a town map with the **Battle Map** tool, then click **Make Battle Map**: that corner of town opens in the window as a battle map, its streets and notable buildings where they were, ready for Make Scene.
 
-## Region maps and imports
+## Your first overland map
 
-- **A region:** Quick Start's **Region** tab makes a map miles across, with towns, villages, castles and the roads between them, woods, hills and mountains. Pick a town, village or hamlet on it and click **Make This Town**: Quick Start opens filled in with what the region shows of it (its size, name, river, coast or lake, roads and the way each runs, its hills and the land around it), for you to change before making it. A castle's **Make This Castle** makes its battle map.
+1. In Quick Start, open the **Region** tab and pick a Scale: Kingdom (240 by 160 miles), Realm (720 by 480), Continent (2,400 by 1,600) or World.
+
+   ![The Region tab of Quick Start, set to a coastal realm with some realms](docs/images/quick-start-region.png)
+
+2. Pick the Land (a coast, an island, many islands, continents, an inland sea and more), the climate, how many mountains, towns and realms, and how names sound. A choice on Any lets the seed pick.
+3. **Make the Plan.** The land is simulated: ranges rise where plates meet, rivers wear their valleys and join on their way to the sea, the far side of a range from the wind is drier, and warmth and rain decide what grows. Towns, villages, castles and the roads between them go where people would build them, and everything gets a name.
+4. Plan Settings (the gear) has the land's own settings and **Reroll Land**, **Reroll Places** (it places the towns again) and **Place Realms**. Click a place to rename it, or drag it to move it; click a realm's name to rename or recolor it or give it another capital. What you change stays when you reroll. The Draw palette's **Shape the Land** tools draw a range, a peak, a sea or a biome for the land to follow.
+5. **Make Scene.** The scene has a grid of hexes (or squares) in miles, its towns, realms and key are tiles you can hide, and the names are hidden from players until you show them.
+
+**Keep This Land** saves a land you like, so a later version of AtlasScribe won't move its coasts, ranges or rivers. **Name Sets** let you write how your world's names sound. Click a city, town, village or hamlet and **Make This Town**: Quick Start opens filled in with what the map shows of it (its size, name, river, coast or lake, roads and the way each runs, its hills and the land around it), for you to change before making it. A castle's **Make This Castle** makes its battle map. Either one replaces the overland map in the window, so save the map first.
+
+## Local regions and imports
+
+- **A local region:** the Region tab's Local scale makes the classic region map, 40 to 80 miles across, with towns, villages, castles and the roads between them, woods, hills and mountains.
 - **Other tools' maps:** **Import** opens a Watabou city or village (its JSON) as a starting plan, or a Universal VTT file (.dd2vtt, .uvtt, .df2vtt) with its walls and image. A scene's menu in the sidebar has **Export as Universal VTT**.
 - **Examples:** [a village](examples/village-edrics-cross.json), [a city](examples/city-kestrelmouth.json) and [an inn](examples/inn-lantern-and-oar.json) to download and open with **Import**.
 
@@ -83,13 +104,13 @@ A map painted from someone's art is for your own table under that art's license.
 
 ## What it saves
 
-Maps, thumbnails and backups go into the folders set in Configure Settings (by default an `atlas-scribe` folder inside your world's folder). They build up as you remake scenes; the window's **Files** button shows each plan's files and which one its scene uses, and Foundry's file browser can delete the rest. Anyone logged in can fetch a file under Data if they know its path, so don't keep secrets in a map's name.
+Maps, thumbnails, backups and kept lands go into the folders set in Configure Settings (by default an `atlas-scribe` folder inside your world's folder). They build up as you remake scenes; the window's **Files** button shows each plan's files and which one its scene uses, and Foundry's file browser can delete the rest. Anyone logged in can fetch a file under Data if they know its path, so don't keep secrets in a map's name.
 
 AtlasScribe won't change a scene it didn't make unless a script publishes with `force: true`. That replaces the scene's grid, padding, fog, vision and environment as well as its picture (it's backed up first).
 
 ## Learn more
 
-The [guide](docs/guide.md) covers everything: the window and every tool, cities and their wards, battle maps, regions, art folders and manifests, and the API for scripts. A script should pass its own `seed` or `id`: otherwise every unnamed village gets the same id, and making a second one updates the first one's scene.
+The [guide](docs/guide.md) covers everything: the window and every tool, cities and their wards, battle maps, overland maps and name sets, art folders and manifests, and the API for scripts. A script should pass its own `seed` or `id`: otherwise every unnamed village gets the same id, and making a second one updates the first one's scene.
 
 ## Changes
 

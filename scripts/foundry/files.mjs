@@ -21,7 +21,7 @@ export async function ensureDir(path) {
 
 /** A free file name in a folder: name.ext, else name-2.ext, name-3.ext and so on. Lowercase, as Foundry stores it. */
 export async function freeName(dir, base, ext) {
-  const safe = String(base).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "map";
+  const safe = String(base).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "") || "map";
   await ensureDir(dir);
   const listing = await FP().browse("data", dir);
   const taken = new Set((listing.files ?? []).map((f) => decodeURIComponent(f.split("/").pop()).toLowerCase()));
@@ -32,7 +32,7 @@ export async function freeName(dir, base, ext) {
 
 /** A free folder name in a folder: name, else name-2, name-3 and so on (as freeName, for folders). */
 export async function freeDir(dir, base) {
-  const safe = String(base).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "folder";
+  const safe = String(base).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|-+$/g, "") || "folder";
   await ensureDir(dir);
   const listing = await FP().browse("data", dir);
   const taken = new Set((listing.dirs ?? []).map((f) => decodeURIComponent(f.split("/").pop()).toLowerCase()));

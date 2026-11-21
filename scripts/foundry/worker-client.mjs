@@ -11,11 +11,16 @@ export class WorkerClient {
   #inPage;
 
   #urlOf;
+  #altOf;
 
-  /** inPage: whether jobs run on the page; urlOf(path): a Data path as a URL the worker can fetch (a kept land's file). */
-  constructor({ inPage = () => false, urlOf = (p) => p } = {}) {
+  /**
+   * inPage: whether jobs run on the page; urlOf(path): a Data path as a URL the worker can fetch (a kept land's file);
+   * altOf(path): where else that file may be (this world's output folder), or null.
+   */
+  constructor({ inPage = () => false, urlOf = (p) => p, altOf = () => null } = {}) {
     this.#inPage = inPage;
     this.#urlOf = urlOf;
+    this.#altOf = altOf;
   }
 
   /** The payload with what the worker needs to fetch for it: a kept land's file's URL. */
@@ -24,7 +29,11 @@ export class WorkerClient {
     if (typeof path !== "string" || payload.keptUrl) return payload;
     // (the hash on the URL, so a browser's cached copy of an older file of that name isn't used)
     const hash = payload.plan.land.keep.hash;
-    try { const u = this.#urlOf(path); return { ...payload, keptUrl: hash ? `${u}${u.includes("?") ? "&" : "?"}h=${encodeURIComponent(hash)}` : u }; } catch { return payload; }
+    const withHash = (u) => (hash ? `${u}${u.includes("?") ? "&" : "?"}h=${encodeURIComponent(hash)}` : u);
+    try {
+      const alt = this.#altOf(path);
+      return { ...payload, keptUrl: withHash(this.#urlOf(path)), ...(alt && alt !== path ? { keptAlt: withHash(this.#urlOf(alt)) } : {}) };
+    } catch { return payload; }
   }
 
   #start() {

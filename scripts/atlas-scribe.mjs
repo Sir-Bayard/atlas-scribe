@@ -39,6 +39,9 @@ const worker = new WorkerClient({
   inPage: () => { try { return game.settings.get(MOD, "renderInWorker") === false; } catch { return false; } },
   // (a Data path, a kept land's file, as a URL the worker can fetch: the server's route prefix included)
   urlOf: (path) => new URL(foundry.utils.getRoute(path), window.location.href).href,
+  // (where a kept land's file would be in this world's output folder: a plan copied from another world, or a world
+  // that moved, finds its file there)
+  altOf: (path) => { try { const tail = String(path).split("/").slice(-3); return tail[0] === "lands" ? `${outputFolder()}/${tail.join("/")}` : null; } catch { return null; } },
 });
 
 /** The job running now: { canceled }, or null. */
@@ -792,7 +795,7 @@ const api = {
 
   /**
    * An overland plan with a name set of the library (by id or name) or given as { name, text } copied into it; with
-   * rename, the names it kept (Keep names) are made again by the set. Returns the plan.
+   * rename, the names it kept (Keep the Names) are made again by the set. Returns the plan.
    */
   useNameSet(input, set, { rename = false } = {}) {
     requireGM();
@@ -808,7 +811,7 @@ const api = {
     return res.plan;
   },
 
-  /** Opens the Name sets window. */
+  /** Opens the Name Sets window. */
   async openNameSets() {
     requireGM();
     return nameSetsWindow.open();

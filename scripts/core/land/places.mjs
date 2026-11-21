@@ -39,6 +39,10 @@ export function stillNeeded(features) {
   for (const r of (features ?? []).filter((f) => f?.type === "road" && Array.isArray(f.path) && f.path.length >= 2 && kept(f)))
     for (const p of features) if (p?.type === "place" && untouched(p) && (at(p.at, r.path[0]) || at(p.at, r.path[r.path.length - 1]))) need.add(p.id);
   for (const q of (features ?? []).filter((f) => f?.type === "realm" && typeof f.capital === "string" && !untouched(f))) need.add(q.capital);
+  // (the generator's bridges and fords on a road that stays, which the new roads won't cross again)
+  const keptRoads = (features ?? []).filter((f) => f?.type === "road" && Array.isArray(f.path) && f.path.length >= 2 && kept(f));
+  for (const c of (features ?? []).filter((f) => f?.type === "crossing" && untouched(f) && Array.isArray(f.at)))
+    if (keptRoads.some((r) => r.path.some((q, k) => k > 0 && segDist(c.at, r.path[k - 1], q) < 0.3))) need.add(c.id);
   return need;
 }
 
@@ -66,9 +70,11 @@ export function placeTowns(plan, land, { seed = 1, density = null } = {}) {
   for (const c of keep.filter((f) => f.type === "crossing" && Array.isArray(f.at) && !onRoad(f.at))) notes.push(`The ${c.class} "${c.name ?? c.id}" you kept isn't on a road any more; move it or delete it.`);
   for (const r of keep.filter((f) => f.type === "road" && Array.isArray(f.path) && f.path.length >= 2)) {
     const ends = [r.path[0], r.path[r.path.length - 1]];
-    if (!ends.some((e) => places.some((p) => near(p.at, e, 0.05)) || roads.some((o) => o !== r && o.path.some((q) => near(q, e, 0.05))))) notes.push(`The road "${r.name ?? r.id}" you kept no longer meets a place or another road; the new roads don't follow it.`);
+    if (!ends.some((e) => places.some((p) => near(p.at, e, 0.05)) || roads.some((o) => o !== r && o.path.some((q) => near(q, e, 0.05))))) notes.push(`The road "${r.name ?? r.id}" you kept no longer meets a place or another road.`);
   }
-  return { plan: { ...structuredClone(plan), features: [...structuredClone(keep), ...made] }, added: made.length, removed: gone.length, notes };
+  // (a kept place's site facts as the land is now, for Make This Town and its name)
+  const kept = structuredClone(keep).map((f) => (f.type === "place" && out.sites?.[f.id] ? { ...f, site: out.sites[f.id] } : f));
+  return { plan: { ...structuredClone(plan), features: [...kept, ...made] }, added: made.length, removed: gone.length, notes };
 }
 
 function segDist(p, a, b) {
@@ -79,7 +85,7 @@ function segDist(p, a, b) {
 
 /**
  * The names the map made, kept in the plan: each unnamed place takes its name (a generated one stays the
- * generator's, so Reroll places can still replace it), and each named feature of the land goes into land.names.
+ * generator's, so Reroll Places can still replace it), and each named feature of the land goes into land.names.
  * What it kept is noted in land.keptNames ({ places, land }: id to name), so a name set can name those again
  * without touching a name the GM typed. layout: layoutPlan(plan). Returns { plan, places, features } (how many
  * names were kept of each).

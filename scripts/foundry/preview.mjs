@@ -77,6 +77,8 @@ function sizeWords(plan, extent) {
 
 /** The window's layer views over an overland map: [value, label]. */
 const LAYER_VIEWS = [["map", "Map"], ["shade", "Shading"], ["uplift", "Uplift"], ["rain", "Rain"], ["temp", "Temperature"], ["flow", "Water Flow"], ["biome", "Biomes"], ["plates", "Plates"], ["site", "Site Score"]];
+/** Whether a plan is an overland map (a region with generated land). */
+const overlandPlan = (plan) => plan?.kind === "region" && !!plan?.land && typeof plan.land === "object";
 
 export class AtlasScribeApp extends Base {
   static DEFAULT_OPTIONS = {
@@ -160,7 +162,7 @@ export class AtlasScribeApp extends Base {
   #outlines = true;
   #view = null; // { k, tx, ty }: zoom and pan; null fits the map to the window
   #drag = null;
-  /** Whether the Plan panel's Land group is open. */
+  /** Whether Plan Settings' Land group is open. */
   #landOpen = false;
   #resize = null;
   #drawing = null; // the draw in flight, so a new plan waits for it
@@ -173,6 +175,7 @@ export class AtlasScribeApp extends Base {
   #preset = BATTLE.preset; // the Battle map tool's size for a click, in battle squares a side
   #zooming = false; // a battle map is being made from the box
   #placing = false; // towns and roads being placed, or names kept, on an overland plan
+  #placingWhat = null; // what the wait says while #placing
   #boxPreset = false; // the box was placed by a click, at the preset size
   #keys = null; // the keyboard listener while drawing (Enter, Esc, Backspace)
   #presses = null; // while drawing: notes whether the last press was in the window
@@ -263,6 +266,7 @@ export class AtlasScribeApp extends Base {
     this.#path = path;
     this.#selected = null;
     this.#inspect = null; // a new plan opens on its list (ids repeat between plans)
+    this.#layerView = "map";
     this.#endTool();
     this.#palette = false;
     this.#queue = [];
@@ -477,7 +481,7 @@ export class AtlasScribeApp extends Base {
     const map = r
       ? `<div class="as-pv-stage" style="width:${r.width}px;height:${r.height}px">
           <img src="${this.#url}" width="${r.width}" height="${r.height}" alt="" draggable="false">
-          ${this.#layerUrl && this.#layerView !== "map" ? `<img class="as-pv-layer" src="${this.#layerUrl}" width="${r.width}" height="${r.height}" alt="" draggable="false">` : ""}
+          ${this.#layerUrl && this.#layerView !== "map" && this.#host.layerViews?.() ? `<img class="as-pv-layer" src="${this.#layerUrl}" width="${r.width}" height="${r.height}" alt="" draggable="false">` : ""}
           ${under && under.shown ? `<img class="as-pv-under" src="${esc(under.path)}" style="${underStyle(under.rect, r.width / MW, under.opacity)}" alt="" draggable="false">` : ""}
           <svg class="as-pv-overlay ${this.#outlines ? "" : "as-off"} ${this.#shapes ? "as-shapes" : ""}" viewBox="0 0 ${MW} ${MH}" preserveAspectRatio="none">${svg}</svg>
         </div>`
@@ -497,9 +501,9 @@ export class AtlasScribeApp extends Base {
     const file = this.#path ? this.#path.split("/").pop() : null;
     const status = this.dirty ? (file ? `Unsaved changes to ${file}` : "Not saved yet") : file ? `Saved as ${file}` : "";
     el.innerHTML = `
-      <div class="as-pv-map ${this.#busy ? "as-busy" : ""} ${this.#stale ? "as-stale" : ""} ${this.#tool ? "as-drawing" : ""}">
+      <div class="as-pv-map ${this.#busy || this.#placing ? "as-busy" : ""} ${this.#stale ? "as-stale" : ""} ${this.#tool ? "as-drawing" : ""}">
         ${map}
-        <div class="as-pv-wait"><i class="fa-solid fa-spinner fa-spin"></i> Drawing <button type="button" data-action="asStopDraw" data-tooltip-text="Stop drawing (the change that started it is taken back)">Stop</button></div>
+        <div class="as-pv-wait"><i class="fa-solid fa-spinner fa-spin"></i> ${this.#placing && !this.#busy ? esc(this.#placingWhat ?? "Working") : "Drawing"} <button type="button" data-action="asStopDraw" data-tooltip-text="${this.#placing && !this.#busy ? "Stop (nothing is changed)" : "Stop drawing (the change that started it is taken back)"}">Stop</button></div>
         ${this.#error ? `<p class="as-pv-error" role="alert">${esc(this.#error)}${!r && !this.#busy ? ` <button type="button" data-action="asRedraw">Draw It</button>` : ""}</p>` : ""}
       </div>
       <aside class="as-pv-side">
@@ -566,7 +570,7 @@ export class AtlasScribeApp extends Base {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(row(f.id, f.name ?? f.text ?? f.id, kind, rolls.get(f.id) ?? null));
     }
-    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines" };
+    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines", place: "Places", realm: "Realms", terrain: "Painted Terrain" };
     return [...groups].map(([g, list]) => `<li class="as-pv-group" role="presentation"><strong>${esc(TITLES[g] ?? g)}</strong></li>${list.join("")}`).join("");
   }
 
@@ -672,7 +676,7 @@ export class AtlasScribeApp extends Base {
         ev.stopPropagation();
         if (h.kind === "corner" && (ev.button === 2 || ev.altKey)) return this.#reshape(removeCorner(this.#plan, h.id, h.i));
         if (ev.button !== 0) return;
-        this.#edit = { h, partners: h.kind === "corner" ? partnersOf(this.#plan, h.id, h.i) : [], plan: this.#plan, gen: this.#gen, x: ev.clientX, y: ev.clientY, moved: false, next: null };
+        this.#edit = { h, partners: h.kind === "corner" || h.kind === "point" ? partnersOf(this.#plan, h.id, h.i) : [], plan: this.#plan, gen: this.#gen, x: ev.clientX, y: ev.clientY, moved: false, next: null };
         box.setPointerCapture(ev.pointerId);
         return;
       }
@@ -776,7 +780,7 @@ export class AtlasScribeApp extends Base {
       if (this.#publishing || this.#saving) return this.render(); // put the input back: nothing changes while a scene is made
       this.#apply((plan) => (id === "@plan" ? setPlanField(plan, field, value) : setField(plan, id, field, value)));
     });
-    // (the Plan panel's Land group stays open or shut across redraws)
+    // (Plan Settings' Land group stays open or shut across redraws)
     el.addEventListener("toggle", (ev) => { if (ev.target.classList?.contains("as-pv-land")) this.#landOpen = ev.target.open; }, true);
     el.addEventListener("pointercancel", () => {
       if (this.#edit) { this.#edit = null; this.render(); } // put the outline back
@@ -926,7 +930,8 @@ export class AtlasScribeApp extends Base {
 
   /** Shows a layer view over the map ("map" takes it away): made by the worker for the plan as it is now. */
   async #showLayer(view) {
-    this.#layerView = LAYER_VIEWS.some(([v]) => v === view) ? view : "map";
+    // (with the Layer Views setting off there's no switch, so no view)
+    this.#layerView = LAYER_VIEWS.some(([v]) => v === view) && this.#host.layerViews?.() ? view : "map";
     if (this.#layerUrl) { URL.revokeObjectURL(this.#layerUrl); this.#layerUrl = null; }
     if (this.#layerView === "map" || !this.#plan?.land || !this.#result) return this.render();
     // (while a drawing or a job runs, the view waits: it's made when the next drawing lands)
@@ -938,19 +943,22 @@ export class AtlasScribeApp extends Base {
       const res = await this.#host.landView(plan, { view: want, px: Math.min(2400, this.#result.width) });
       if (this.rendered && this.#plan === plan && this.#layerView === want) this.#layerUrl = URL.createObjectURL(res.blob);
     } catch (e) {
-      // (another job started meanwhile: the view waits for the next drawing; anything else is said)
-      if (!/already|busy/i.test(`${e.message ?? e}`)) { this.#error = `The layer view couldn't be made (${`${e.message ?? e}`.replace(/^AtlasScribe( worker)?: /, "")}).`; this.#layerView = "map"; }
+      // (stopped: nothing to say; anything else is said)
+      if (!e.canceled) { this.#error = `The layer view couldn't be made (${`${e.message ?? e}`.replace(/^AtlasScribe( worker)?: /, "")}).`; this.#layerView = "map"; }
     }
     this.#viewing = false;
     if (!this.rendered) return;
     if (this.#queue.length && !this.#working) return this.#flush();
+    // (a drawing landed while it was made, for a plan since changed: its view is made now)
+    if (this.#layerView !== "map" && !this.#layerUrl && this.#plan !== plan && !this.#working) return this.#showLayer(this.#layerView);
     this.render();
   }
 
   /** The names the drawing made for the plan's places, by id (a Map), or null when the drawing is of another plan. */
   #madeNames() {
     if (this.#stale || !this.#result?.labels) return null;
-    return new Map(this.#result.labels.filter((l) => String(l.id).startsWith("@place:")).map((l) => [l.id.slice(7), l.text]));
+    // (a place's made name, or the plan label that shows it in its place)
+    return new Map(this.#result.labels.filter((l) => String(l.id).startsWith("@place:") || l.placeName).map((l) => [l.placeName ? l.of : l.id.slice(7), l.text]));
   }
 
   /** The realm whose land a point in squares is in, by the drawing's realm grid (or null). */
@@ -1044,7 +1052,7 @@ export class AtlasScribeApp extends Base {
     }
     e.to = to;
     e.snapped = snapped;
-    e.next = moveHandle(e.plan, e.h, to, e.partners, { exact: snapped });
+    e.next = moveHandle(e.plan, e.h, to, e.partners, { exact: snapped, name: e.h.kind === "point" ? this.#madeNames()?.get(e.h.id) ?? null : null });
     // Redraw the outlines that moved, and the handle, without redrawing the map
     const ids = new Set([e.h.id, ...e.partners.map((p) => p.id)]);
     const plan = normalize(e.next);
@@ -1105,6 +1113,8 @@ export class AtlasScribeApp extends Base {
   async #editEnd() {
     const e = this.#edit;
     this.#edit = null;
+    // (a place's or peak's handle clicked without moving it: the place is picked, as a click on its mark would)
+    if (e?.h?.kind === "point" && !e.moved) return this.#select(e.h.id);
     if (!e?.moved || !e.next) return;
     // Another plan was put in mid-drag (opened, imported, Quick Start): the drag was on a plan that's gone
     if (e.gen !== this.#gen) return this.render();
@@ -1123,8 +1133,8 @@ export class AtlasScribeApp extends Base {
       return this.#reshape(e.label.kind === "move" ? moveLabel(this.#plan, e.label.id, e.label.to) : turnLabel(this.#plan, e.label.id, e.label.to));
     }
     if (!featureOf(this.#plan, e.h.id) || !e.to) return this.render();
-    const partners = e.h.kind === "corner" ? partnersOf(this.#plan, e.h.id, e.h.i) : [];
-    return this.#reshape(moveHandle(this.#plan, e.h, e.to, partners, { exact: e.snapped }));
+    const partners = e.h.kind === "corner" || e.h.kind === "point" ? partnersOf(this.#plan, e.h.id, e.h.i) : [];
+    return this.#reshape(moveHandle(this.#plan, e.h, e.to, partners, { exact: e.snapped, name: e.h.kind === "point" ? this.#madeNames()?.get(e.h.id) ?? null : null }));
   }
 
   /** Keeps a reshaped plan and draws it, unless a shape it changed would cross itself (then it says so). */
@@ -1185,7 +1195,8 @@ export class AtlasScribeApp extends Base {
     const future = this.#future;
     this.#remember();
     // Only labels changed: the picture stands, and only the labels on it are worked out again
-    if (this.#result && !this.#stale && mapKey(plan) === mapKey(this.#plan)) {
+    // (an overland map's names are placed around its labels, so a label change there draws it again)
+    if (this.#result && !this.#stale && mapKey(plan) === mapKey(this.#plan) && !overlandPlan(plan)) {
       // (checked as a draw would check it: a label's error refuses the change)
       const errors = this.#host.check(plan).problems.filter((p) => p.level === "error");
       if (errors.length) {
@@ -1256,7 +1267,7 @@ export class AtlasScribeApp extends Base {
   /** Undo or Redo: the plan put back, drawn again only when the map changes (locks and labels don't change it). */
   async #step(before, how) {
     this.#error = null;
-    const sameMap = mapKey(before) === mapKey(this.#plan); // locks and labels don't change the picture
+    const sameMap = mapKey(before) === mapKey(this.#plan) && !overlandPlan(before); // locks and labels don't change the picture (an overland map's names do move)
     this.#plan = before;
     if (sameMap && this.#result && !this.#stale) {
       this.#result = { ...this.#result, labels: labelsOf(before) };
@@ -1355,7 +1366,7 @@ export class AtlasScribeApp extends Base {
 
   /** An overland plan: towns and roads placed (or placed again) by the generator, one step Undo takes back. */
   static async #onPlaceTowns() {
-    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`);
+    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`, "Placing towns and roads");
   }
 
   /** An overland plan: a new land of the same kind, from a new land seed (its towns placed again: #change). */
@@ -1374,22 +1385,22 @@ export class AtlasScribeApp extends Base {
   /** An overland plan: its land's heights saved as a file beside its maps and the plan pointed at them. */
   static async #onKeepLand() {
     if (!this.#plan?.land || this.#plan.land.keep) return;
-    await this.#placeJob((plan) => this.#host.keepLand(plan), (res) => `AtlasScribe: kept this land as ${res.path}. Its coasts, ranges and rivers stay as they are now; Forget the Kept Land lets the generator make it again.`);
+    await this.#placeJob((plan) => this.#host.keepLand(plan), (res) => `AtlasScribe: kept this land as ${res.path}. Its coasts, ranges and rivers stay as they are now; Forget the Kept Land lets the generator make it again.`, "Keeping the land");
   }
 
   /** An overland plan: realms ruled from its cities and towns (or ruled again), one step Undo takes back. */
   static async #onPlaceRealms() {
     await this.#placeJob((plan) => this.#host.placeRealms(plan), (res) => res.added || res.removed
       ? `AtlasScribe: ${res.added} realm${res.added === 1 ? "" : "s"} ruled from the map's cities and towns${res.removed ? `, in place of ${res.removed} the generator had made` : ""}. Click a realm's name to change its name, color or capital; Undo takes them back.`
-      : "AtlasScribe: no realms were placed.");
+      : "AtlasScribe: no realms were placed.", "Placing realms");
   }
 
   /** An overland plan: the names its map made written into it. */
   static async #onKeepNames() {
-    await this.#placeJob((plan) => this.#host.keepNames(plan), (res) => res.places + res.features ? `AtlasScribe: kept ${res.places} place names and ${res.features} names of the land in the plan. They stay now when the land changes.` : "AtlasScribe: every name is already in the plan.");
+    await this.#placeJob((plan) => this.#host.keepNames(plan), (res) => res.places + res.features ? `AtlasScribe: kept ${res.places} place names and ${res.features} names of the land in the plan. They stay now when the land changes.` : "AtlasScribe: every name is already in the plan.", "Keeping the names");
   }
 
-  /** The Name sets window (the world's library of naming rules). */
+  /** The Name Sets window (the world's library of naming rules). */
   static #onNameSets() {
     this.#host.openNameSets?.();
   }
@@ -1404,7 +1415,7 @@ export class AtlasScribeApp extends Base {
   }
 
   /**
-   * When the open plan keeps names (Keep names), asks whether a name set should name those again: true, false to keep
+   * When the open plan keeps names (Keep the Names), asks whether a name set should name those again: true, false to keep
    * them, null when the GM closed the question. True with nothing kept.
    */
   async #renameKept(setName) {
@@ -1423,7 +1434,7 @@ export class AtlasScribeApp extends Base {
   }
 
   /**
-   * A name set copied into the open plan, its names now made by it (from the Name sets window). Returns true when
+   * A name set copied into the open plan, its names now made by it (from the Name Sets window). Returns true when
    * it's applied, false when there's no overland plan open.
    */
   async useNameSet(set) {
@@ -1443,6 +1454,7 @@ export class AtlasScribeApp extends Base {
   async #replaceOn(plan) {
     const from = this.#plan;
     this.#placing = true;
+    this.#placingWhat = "Making the land and placing its towns";
     this.#error = null;
     this.render();
     let res = null;
@@ -1459,10 +1471,11 @@ export class AtlasScribeApp extends Base {
   }
 
   /** Runs a job that gives back the plan changed ({ plan, ... }), then shows it as one step; told() says what it did. */
-  async #placeJob(job, told) {
+  async #placeJob(job, told, what = "Working") {
     const from = this.#plan;
     if (!from || this.#working || this.#stale) return;
     this.#placing = true;
+    this.#placingWhat = what;
     this.#error = null;
     this.render();
     let res = null;
@@ -1892,7 +1905,7 @@ export class AtlasScribeApp extends Base {
     const f = featureOf(this.#plan, target.dataset.id);
     if (!f || this.#working) return;
     // (the name the map shows for it: its own, else the one the map made)
-    const shown = (this.#result?.labels ?? []).find((l) => l.id === `@place:${f.id}`)?.text ?? null;
+    const shown = (this.#result?.labels ?? []).find((l) => l.id === `@place:${f.id}` || (l.placeName && l.of === f.id))?.text ?? null;
     const town = townFromPlace(this.#plan, f, { name: shown });
     if (town) return this.#quickStart({ fill: town });
     if (!(await this.#mayDiscard())) return;
@@ -1938,8 +1951,8 @@ export class AtlasScribeApp extends Base {
         for (const n of notes) note.info(n);
         const drawn = await this.show(plan);
         // (towns from the plan's own seed, so the same seed and choices make the same map; Reroll places varies them)
-        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.realms ? ` in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Reroll Places in the Plan panel places them again; Undo takes them off.`);
-        else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place Towns and Roads in the Plan panel once it draws.");
+        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.realms ? ` in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Reroll Places in Plan Settings places them again; Undo takes them off.`, "Placing towns and roads");
+        else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place Towns and Roads in Plan Settings once it draws.");
       } catch (e) {
         note.error(e.message);
       }
@@ -2167,7 +2180,7 @@ export class AtlasScribeApp extends Base {
 
   /** Stops the drawing under way (a slow one: a big map, or many feet a square); the change that started it is taken back. */
   static #onStopDraw() {
-    if (this.#busy && !this.#publishing) this.#host.cancel();
+    if ((this.#busy || this.#placing) && !this.#publishing) this.#host.cancel();
   }
 
   /** Goes to the scene made from this plan. */

@@ -54,10 +54,12 @@ export function editableShape(f) {
   return null;
 }
 
-/** Every handle in the plan: [{ id, kind: "corner" | "mid" | "radius" | "rx" | "ry", i, at: [x, y] }]. */
+/** Every handle in the plan: [{ id, kind: "corner" | "mid" | "radius" | "rx" | "ry" | "point", i, at: [x, y] }]. */
 export function handlesOf(plan) {
-  const out = [];
+  const out = [], points = [];
   for (const f of plan?.features ?? []) {
+    // (a place, or a painted peak, moves by its point; these go last, so they're drawn over road ends beside them)
+    if (movablePoint(f)) { points.push({ id: f.id, kind: "point", i: 0, at: [f.at[0], f.at[1]], type: f.type, family: "point" }); continue; }
     const e = editableShape(f);
     if (!e) continue;
     if (e.kind === "poly" || e.kind === "path") {
@@ -73,7 +75,7 @@ export function handlesOf(plan) {
       out.push({ id: f.id, kind: "ry", i: 0, at: [e.c[0], e.c[1] + e.ry] });
     }
   }
-  return out;
+  return [...out, ...points];
 }
 
 /** The point-list shapes and paths in a plan: [{ f, pts, path }]. */
@@ -88,9 +90,19 @@ export function familyOf(f) {
   return f?.type === "water" ? "body" : f?.type === "height" ? "height" : f?.type === "region" ? "region" : "shape";
 }
 
-/** The other shapes' corners at the same place as this corner: [{ id, i }]. */
+/** A feature moved by its point: a place, or a painted peak. */
+export const movablePoint = (f) => isObj(f) && (f.type === "place" || (f.type === "terrain" && f.class === "peak")) && Array.isArray(f.at) && f.at.length === 2 && f.at.every(Number.isFinite);
+
+/** The other shapes' corners at the same place as this corner (for a place, the ends of the roads at it): [{ id, i }]. */
 export function partnersOf(plan, id, i) {
   const all = polys(plan);
+  const pt = (plan?.features ?? []).find((f) => f?.id === id);
+  if (movablePoint(pt)) {
+    if (pt.type !== "place") return [];
+    const out = [];
+    for (const o of all) if (o.path && o.f.type === "road") for (const j of [0, o.pts.length - 1]) if (near(o.pts[j], pt.at)) out.push({ id: o.f.id, i: j });
+    return out;
+  }
   const me = all.find((x) => x.f.id === id);
   if (!me?.pts[i]) return [];
   const out = [];
@@ -123,10 +135,28 @@ function withPoints(plan, ids, fn) {
  * Moves a handle to a point. The point is rounded to a tenth of a square unless exact is true (a corner snapped onto
  * another keeps that corner's exact place, so the two stay one corner). A corner takes the corners it shares with
  * other shapes along (partners: from partnersOf). A side's middle adds a corner there, in this shape and in any shape
- * that shares that side. A radius or axis handle sets the circle's radius or the ellipse's axis (at least 0.5).
+ * that shares that side. A radius or axis handle sets the circle's radius or the ellipse's axis (at least 0.5). A point
+ * handle moves a place or peak (name: the name the map showed for a place that has none, kept as its own).
  */
-export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = false } = {}) {
+export function moveHandle(plan, { id, kind, i }, to, partners = [], { exact = false, name = null } = {}) {
   const at = exact ? [to[0], to[1]] : [round(to[0]), round(to[1])];
+  if (kind === "point") {
+    // (the roads that end at a place take their ends along, and a realm ruled from it its crown)
+    const ids = [...new Set(partners.map((w) => w.id))];
+    const next = withPoints(plan, ids, (pts, fid) => { for (const w of partners) if (w.id === fid) pts[w.i] = [...at]; return pts; });
+    for (const f of next.features) {
+      // (its site facts were of where it stood: Reroll Places, or a change to the land, works them out again; a name the
+      // map made from them is written in first, so the place keeps the name it showed)
+      if (isObj(f) && f.id === id && Array.isArray(f.at)) {
+        f.at = [...at];
+        if (typeof name === "string" && name.trim() && !(typeof f.name === "string" && f.name.trim())) f.name = name.trim();
+        delete f.site;
+      }
+      if (isObj(f) && f.type === "realm" && f.capital === id && Array.isArray(f.at)) f.at = [...at];
+    }
+    // (bridges and fords follow the roads that came along)
+    return ids.length ? refitAfter(plan, ids, next) : next;
+  }
   if (kind === "corner") {
     const where = [{ id, i }, ...partners];
     const ids = [...new Set(where.map((w) => w.id))];

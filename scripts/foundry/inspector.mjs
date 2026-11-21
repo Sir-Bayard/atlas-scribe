@@ -261,7 +261,7 @@ function landActionsHTML(plan, working) {
     </div>`;
 }
 
-/** An overland plan's own actions in its Plan panel: place (or reroll) its towns and roads, and keep its names. */
+/** An overland plan's own actions in its Plan Settings: place (or reroll) its towns and roads, and keep its names. */
 function overlandActionsHTML(plan, working, nameSets = []) {
   if (plan?.kind !== "region" || !plan?.land || typeof plan.land !== "object") return "";
   const dis = working ? "disabled" : "";

@@ -5,6 +5,7 @@
  * redraws the borders and nothing else is stored. Pure.
  */
 import { Heap } from "./heap.mjs";
+import { log } from "./dmath.mjs";
 import { rng } from "../rng.mjs";
 import { namer } from "./names.mjs";
 import { parseNameSet } from "./namesets.mjs";
@@ -98,8 +99,8 @@ export function growRealms(land, crowns, { reach = Infinity, spacing = Number.is
       // (across a big river, the dearer the bigger it is, so a river is a border more often than not: half on the way
       // onto it and half on the way off, so a realm that reaches a river can't run along it and off onto the far bank
       // for one toll)
-      if (riverF[j] > 0 && riverId[j] !== riverId[i]) c += toll * Math.log(riverF[j] / T + 1);
-      if (riverF[i] > 0 && riverId[i] !== riverId[j] && !wet(j)) c += toll * Math.log(riverF[i] / T + 1);
+      if (riverF[j] > 0 && riverId[j] !== riverId[i]) c += toll * log(riverF[j] / T + 1);
+      if (riverF[i] > 0 && riverId[i] !== riverId[j] && !wet(j)) c += toll * log(riverF[i] / T + 1);
       const gj = gi + c;
       if (gj < cost[j] - 1e-12 || (Math.abs(gj - cost[j]) <= 1e-12 && by[i] < by[j])) { cost[j] = gj; by[j] = by[i]; heap.push(gj, j); }
     }
@@ -235,10 +236,10 @@ function simplify(pts, tol) {
   const stack = [[0, pts.length - 1]];
   while (stack.length) {
     const [a, b] = stack.pop();
-    const [ax, ay] = pts[a], [bx, by] = pts[b], dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy);
+    const [ax, ay] = pts[a], [bx, by] = pts[b], dx = bx - ax, dy = by - ay, L = Math.sqrt(dx * dx + dy * dy);
     let far = -1, fd = tol;
     for (let i = a + 1; i < b; i++) {
-      const d = L < 1e-9 ? Math.hypot(pts[i][0] - ax, pts[i][1] - ay) : Math.abs(dy * (pts[i][0] - ax) - dx * (pts[i][1] - ay)) / L;
+      const d = L < 1e-9 ? Math.sqrt((pts[i][0] - ax) ** 2 + (pts[i][1] - ay) ** 2) : Math.abs(dy * (pts[i][0] - ax) - dx * (pts[i][1] - ay)) / L;
       if (d > fd) { fd = d; far = i; }
     }
     if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, b]); }
@@ -299,7 +300,7 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
     let best = null, bv = -Infinity;
     for (const c of cand) {
       if (picks.includes(c)) continue;
-      const dmin = chosen.length ? Math.min(...chosen.map((a) => Math.hypot(a[0] - c.p.at[0], a[1] - c.p.at[1]))) : S;
+      const dmin = chosen.length ? Math.min(...chosen.map((a) => Math.sqrt((a[0] - c.p.at[0]) ** 2 + (a[1] - c.p.at[1]) ** 2))) : S;
       if (dmin < S * 0.5) continue;
       const v = Math.min(dmin, S * 1.5) * (1 + 0.04 * c.w);
       if (v > bv) { bv = v; best = c; }
@@ -308,7 +309,7 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
     picks.push(best); chosen.push(best.p.at);
   }
   if (!picks.length && !kept.length) {
-    notes.push("There were no cities or towns on the map to rule realms from, so it has none. Place towns first.");
+    notes.push("There were no cities or towns on the map to rule realms from, so it has none. Place Towns and Roads first.");
     return { plan: { ...structuredClone(plan), features: structuredClone(keep) }, added: 0, removed: gone.length, notes };
   }
   // grow them once, for their sizes and who borders whom
@@ -350,5 +351,5 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
 
 /** The realms a plan keeps, normalized, in order: [{ id, name, color, at, capital }]. */
 export function realmsOf(plan) {
-  return (normalize(plan).features ?? []).filter((q) => q.type === "realm" && Array.isArray(q.at)).map((q, k) => ({ id: q.id, name: q.name ?? null, color: q.color ?? REALM_COLORS[k % REALM_COLORS.length], at: q.at, capital: q.capital ?? null }));
+  return (normalize(plan).features ?? []).filter((q) => q.type === "realm" && Array.isArray(q.at) && q.at.length === 2 && Number.isFinite(q.at[0]) && Number.isFinite(q.at[1])).map((q, k) => ({ id: q.id, name: q.name ?? null, color: q.color ?? REALM_COLORS[k % REALM_COLORS.length], at: q.at, capital: q.capital ?? null }));
 }

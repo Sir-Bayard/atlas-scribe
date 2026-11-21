@@ -118,13 +118,20 @@ export function lakesStage(ctx) {
  * [[x, y, F, slope]...], ends: "sea" | "lake" | "edge" | "river", nodes }], drawn (Uint8Array), riverOf (Int32Array) }.
  */
 export function riversStage(ctx) {
-  const { g, h, w, F, land, lake, outlet, threshold } = ctx;
+  const { g, h, w, F, land, outlet, threshold } = ctx;
   const { rec, rd } = w;
   const n = g.n;
+  // (a salt flat is a dried lake: rivers end at it, as at a lake, and don't cross it)
+  const lake = ctx.salt ? Uint8Array.from(ctx.lake, (v, i) => (v || ctx.salt[i] ? 1 : 0)) : ctx.lake;
   const main = new Uint8Array(n), drawn = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (land[i] && !lake[i] && F[i] >= threshold) main[i] = 1;
   // (a river the GM drew is drawn its whole length, however little drains into its first reach)
-  for (const list of ctx.forced ?? []) for (const i of list) if (land[i] && !lake[i]) main[i] = 1;
+  for (const list of ctx.forced ?? []) {
+    for (const i of list) if (land[i] && !lake[i]) main[i] = 1;
+    // (and on from its end, the way its water goes, to where it meets a river, a lake, the sea or the edge)
+    let j = list[list.length - 1];
+    for (let guard = 0; guard < 4000 && rec[j] !== j; guard++) { j = rec[j]; if (!land[j] || lake[j] || main[j]) break; main[j] = 1; }
+  }
   for (let i = 0; i < n; i++) {
     drawn[i] = main[i];
     if (main[i] || !land[i] || lake[i] || F[i] < threshold / 3) continue;
@@ -204,18 +211,44 @@ export function riverMarks(rivers, hard) {
 }
 
 /**
- * A GM's forced river: the nodes along its course (source to mouth), held as a valley that runs downhill. Called
- * after each solver step. path: [[x, y]...] frame miles; nearest: node lookup. Returns the node list (once) when
- * nodes is null.
+ * A GM's forced river: the nodes along its course (source to mouth), each a neighbor of the one before, held as a
+ * valley that runs downhill. path: [[x, y]...] frame miles; nearest: node lookup; g: the graph.
  */
-export function forcedNodes(path, nearest, spacing) {
-  const out = [];
+export function forcedNodes(path, nearest, spacing, g) {
+  const out = [], on = new Set();
+  const add = (j) => { if (!on.has(j)) { out.push(j); on.add(j); } };
+  // (from the last node toward a target node through neighbors, so the course has no gaps)
+  const walk = (to) => {
+    let cur = out[out.length - 1];
+    for (let guard = 0; cur !== to && guard < 4000; guard++) {
+      const tx = g.x[to], ty = g.y[to];
+      let best = -1, bd = len(g.x[cur] - tx, g.y[cur] - ty);
+      for (let e = g.indptr[cur]; e < g.indptr[cur + 1]; e++) { const j = g.indices[e], d = len(g.x[j] - tx, g.y[j] - ty); if (d < bd || (d === bd && best >= 0 && j < best)) { bd = d; best = j; } }
+      if (best < 0) break;
+      cur = best;
+      add(cur);
+    }
+    add(to);
+  };
   for (let k = 0; k + 1 < path.length; k++) {
     const [ax, ay] = path[k], [bx, by] = path[k + 1], L = len(bx - ax, by - ay);
     const steps = Math.max(1, Math.ceil(L / (spacing * 0.5)));
-    for (let s = 0; s <= steps; s++) { const j = nearest(ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps); if (out[out.length - 1] !== j) out.push(j); }
+    for (let s = 0; s <= steps; s++) {
+      const j = nearest(ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps);
+      if (!out.length) add(j); else if (out[out.length - 1] !== j) walk(j);
+    }
   }
-  return out;
+  // (a node the walk stepped through beside the way is left out where the next one is already a neighbor, so the
+  // course is one chain with no side steps)
+  const nb = (a, b) => { for (let e = g.indptr[a]; e < g.indptr[a + 1]; e++) if (g.indices[e] === b) return true; return false; };
+  const chain = [];
+  for (let k = 0; k < out.length; k++) {
+    chain.push(out[k]);
+    let m = k + 1;
+    while (m + 1 < out.length && nb(out[k], out[m + 1])) m++;
+    k = m - 1;
+  }
+  return chain;
 }
 /** Holds a forced river's valley: each node below the one before it and a little below its other neighbors (never
  * raised; the sea and the frame's outlets left alone). */
@@ -229,6 +262,77 @@ export function holdForced(g, h, nodes, fixed, outlet) {
     const cap = Math.min(h[p] - 1e-6, mn - 0.002);
     if (h[i] > cap) h[i] = Math.min(h[i], Math.max(0.0005, cap));
   }
+}
+
+/**
+ * A forced river that ends on ground rising around it floods back along its own valley: here the least cut that lets
+ * its end drain on is made, away from the river's course (two neighbors' width of it kept clear, so no ditch runs
+ * beside it). Left alone when its end is in a lake that isn't mostly its own valley (a river drawn into a lake), or no
+ * way out is found within reach. w: routing made after the hold (fillRoute). Returns whether anything was cut.
+ */
+export function breachForced(g, h, w, nodes, fixed, outlet) {
+  const end = nodes[nodes.length - 1], on = (nodes.on ??= new Set(nodes));
+  if (nodes.length < 2 || (outlet && outlet[end]) || !(w.hf[end] > h[end])) return false;
+  // (cut into rising ground, its end sits well below the ground beside it; in a lake's bed it doesn't: a river drawn
+  // into a lake, and a lake that is mostly not the river's own valley, are left as they are)
+  let beside = Infinity;
+  for (let e = g.indptr[end]; e < g.indptr[end + 1]; e++) { const j = g.indices[e]; if (!on.has(j) && h[j] < beside) beside = h[j]; }
+  if (beside - h[end] < 0.5 * (w.hf[end] - h[end]) || !trenchFlood(g, h, w, end, on)) return false;
+  // (the course and two rings of neighbors around it kept clear, but for its last few nodes, where the way out starts)
+  const clear = new Uint8Array(g.n);
+  const tail = new Set(nodes.slice(-3));
+  let ring = nodes.filter((k) => !tail.has(k));
+  for (const k of ring) clear[k] = 1;
+  for (let pass = 0; pass < 2; pass++) {
+    const next = [];
+    for (const k of ring) for (let e = g.indptr[k]; e < g.indptr[k + 1]; e++) { const j = g.indices[e]; if (!clear[j] && !tail.has(j)) { clear[j] = 1; next.push(j); } }
+    ring = next;
+  }
+  for (const k of nodes) clear[k] = 1;
+  clear[end] = 0;
+  // (least cost: the length, and dearly the height that would have to be cut down to the end's level)
+  const base = h[end], cost = new Float64Array(g.n).fill(Infinity), prev = new Int32Array(g.n).fill(-1);
+  const heap = new Heap(256);
+  cost[end] = 0; heap.push(0, end);
+  let goal = -1, popped = 0;
+  while (heap.size && popped < 20000) {
+    const i = heap.pop();
+    if (heap.lastKey > cost[i]) continue;
+    popped++;
+    if (i !== end && ((outlet && outlet[i]) || (h[i] < base && w.hf[i] <= h[i] && !on.has(w.rec[i])))) { goal = i; break; }
+    for (let e = g.indptr[i]; e < g.indptr[i + 1]; e++) {
+      const j = g.indices[e];
+      if (clear[j] || (fixed && fixed[j])) continue;
+      const c = cost[i] + g.elen[e] * (1 + 2000 * Math.max(0, h[j] - base));
+      if (c < cost[j]) { cost[j] = c; prev[j] = i; heap.push(c, j); }
+    }
+  }
+  if (goal < 0) return false;
+  const path = [];
+  for (let k = goal; k !== end && k >= 0; k = prev[k]) path.push(k);
+  path.reverse();
+  let last = base;
+  for (const k of path) {
+    if (outlet && outlet[k]) break;
+    if (h[k] >= last) h[k] = Math.max(0.0005, last - 1e-6);
+    last = h[k];
+  }
+  return true;
+}
+
+/**
+ * Whether the flooded hollow a forced river ends in is the river's own valley flooding back along itself (its nodes
+ * a good share of the hollow), not a lake it runs into.
+ */
+function trenchFlood(g, h, w, start, on) {
+  const seen = new Set([start]), queue = [start];
+  let course = 0;
+  for (let q = 0; q < queue.length && queue.length < 5000; q++) {
+    const i = queue[q];
+    if (on.has(i)) course++;
+    for (let e = g.indptr[i]; e < g.indptr[i + 1]; e++) { const j = g.indices[e]; if (!seen.has(j) && w.hf[j] > h[j]) { seen.add(j); queue.push(j); } }
+  }
+  return course >= 0.25 * queue.length;
 }
 
 export { fillRoute, accumulate };

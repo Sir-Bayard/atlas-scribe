@@ -9,7 +9,7 @@
  * climate, zones, then the generator) is kept by the stages that read these. Pure (writeLayers is async: it encodes).
  */
 import { makeField, like, sample, blur } from "./field.mjs";
-import { decodeGraySync, encodeGray, fromDataUrl, toDataUrl } from "./pngio.mjs";
+import { decodeGraySync, encodeGray, fromDataUrl, toDataUrl, layerHeader } from "./pngio.mjs";
 import { LAYER_NAMES, terrainGeometry } from "./schema.mjs";
 import { shapeToPolygon, pointInPolygon, bbox } from "../geom.mjs";
 
@@ -42,8 +42,11 @@ export function readIntent(plan, frame) {
   if (lay) for (const name of LAYER_NAMES) {
     if (typeof lay[name] !== "string") continue;
     try {
-      const { w, h, values } = decodeGraySync(fromDataUrl(lay[name]));
-      if (!fits(w, h) || (size && (w !== size[0] || h !== size[1]))) continue;
+      const bytes = fromDataUrl(lay[name]);
+      // (its header first: an 8-bit gray picture of the frame's shape, at most 1024 a side, before it's inflated)
+      const head = layerHeader(bytes);
+      if (!head || !fits(head.w, head.h) || head.w > 1024 || head.h > 1024 || (size && (head.w !== size[0] || head.h !== size[1]))) continue;
+      const { w, h, values } = decodeGraySync(bytes);
       const f = { w, h, cell: frame.W / w, data: new Float64Array(w * h) };
       for (let i = 0; i < w * h; i++) f.data[i] = READ[name].from(values[i]);
       fields[name] = f;
@@ -88,7 +91,8 @@ export function intentAtNodes(intent, g) {
     const src = intent.fields[name];
     if (!src) return null;
     const f = like(src, src.data);
-    const r = Math.round(SOFT[name] / f.cell);
+    // (on a small map the blend is cut to a share of the frame, or a painted area would be spread over all of it)
+    const r = Math.round(Math.min(SOFT[name], 0.06 * Math.max(f.w, f.h) * f.cell) / f.cell);
     if (r >= 1) blur(f, r);
     const a = new Float64Array(g.n);
     for (let i = 0; i < g.n; i++) a[i] = sharp(name) ? nearestValue(src, g.x[i], g.y[i]) : sample(f, g.x[i], g.y[i]);

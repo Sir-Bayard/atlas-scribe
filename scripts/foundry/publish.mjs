@@ -93,7 +93,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     padding: opts.padding,
     thumb,
     // (a region measured in miles)
-    grid: { type: plan.output.grid === "hex" && plan.kind === "region" ? hexGridType(width, height, opts.padding, plan.output.pxPerSquare, warnings) : CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, ...(plan.kind === "region" ? { distance: Number((plan.size.ftPerSquare / 5280).toPrecision(3)), units: "mi" } : { distance: plan.size.ftPerSquare, units: "ft" }), alpha: opts.gridAlpha },
+    grid: { type: plan.output.grid === "hex" && plan.kind === "region" && plan.land && typeof plan.land === "object" ? hexGridType(width, height, opts.padding, plan.output.pxPerSquare, warnings) : CONST.GRID_TYPES.SQUARE, size: plan.output.pxPerSquare, ...(plan.kind === "region" ? { distance: Number((plan.size.ftPerSquare / 5280).toPrecision(3)), units: "mi" } : { distance: plan.size.ftPerSquare, units: "ft" }), alpha: opts.gridAlpha },
     tokenVision: opts.tokenVision,
     fog: { mode: opts.fog ? CONST.FOG_EXPLORATION_MODES.INDIVIDUAL : CONST.FOG_EXPLORATION_MODES.DISABLED },
     environment,
@@ -355,7 +355,7 @@ export async function publish({ plan, image, width, height, folder, layout = nul
       animals = made.length;
       placed = true;
       for (let k = 0; k < oldAnimals.length; k += BATCH) await sceneById(sceneId).deleteEmbeddedDocuments("Token", oldAnimals.slice(k, k + BATCH));
-      if (from.size) warnings.push(`The animals are tokens of ${[...from].join(", ")} from your compendiums, kept in the actors' "AtlasScribe animals" folder.`);
+      if (from.size) warnings.push(`The animals are tokens of ${[...from].join(", ")} from your compendiums, kept in the actors' "AtlasScribe Animals" folder.`);
     } catch (e) {
       warnings.push(placed ? `The last map's animals couldn't all be taken out (${e.message}); delete them from the scene.` : `The animals couldn't all be placed as tokens (${e.message}).`);
     }

@@ -1,5 +1,5 @@
 /**
- * Biomes from temperature, moisture and ground (a Whittaker-like table, as Azgaar's). Temperature here is the
+ * Biomes from temperature, moisture and ground (a Whittaker-like table). Temperature here is the
  * climate's at the node (height cools it), so high ground is tundra and ice; the lowland types read the temperature
  * with height's cooling added back, so a warm valley under a range isn't tundra. Wetland where flat, low ground
  * carries a lot of water. Pure.

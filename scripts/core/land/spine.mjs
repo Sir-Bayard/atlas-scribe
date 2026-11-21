@@ -31,7 +31,8 @@ export function resample(pts, step) {
  */
 export function addRange(g, spine, o, fields, r, out) {
   const w0 = Math.max(1, o.width ?? 30);
-  let pts = resample(spine, w0 / 4);
+  // (no finer than a third of the node spacing: a range narrower than the nodes can show costs time and adds nothing)
+  let pts = resample(spine, Math.max(w0 / 4, (o.spacing ?? 0) / 3));
   if (pts.length < 2) return 0;
   // a hand's wobble, perpendicular, smoothed
   const np = pts.length, wob = new Float64Array(np);

@@ -73,7 +73,8 @@ export function climateStage(ctx) {
     let t = seaTemp(lat(g.y[i])) - LAPSE * Math.max(0, h[i]);
     if (ctx.intent?.wet) r *= Math.max(0.05, 1 + 1.5 * ctx.intent.wet[i]);
     if (ctx.intent?.warm) t += 0.25 * ctx.intent.warm[i];
-    rain[i] = r; temp[i] = t;
+    // (the blur's running sums leave a rounding residue that can dip below 0 at sea)
+    rain[i] = Math.max(0, r); temp[i] = t;
   }
   for (const z of ctx.zones ?? []) for (let i = 0; i < n; i++) if (z.nodes[i]) {
     if (Number.isFinite(z.rain)) rain[i] = 0.15 * rain[i] + 0.85 * z.rain;

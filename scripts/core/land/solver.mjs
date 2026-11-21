@@ -124,7 +124,7 @@ export function step(g, h, w, p, np) {
     const r = rec[i];
     const base = h[r] > hf[r] ? h[r] : hf[r];
     if (h[i] > base) {
-      const f = K[i] * Math.sqrt(A[i]) * dt / rd[i];
+      const f = K[i] * Math.sqrt(Math.max(0, A[i])) * dt / rd[i];
       h[i] = (h[i] + f * base) / (1 + f);
     } else if (basin[i] < 0 || basinArea[basin[i]] < 0) h[i] = hf[i];
     else h[i] += fill * (hf[i] - h[i]);

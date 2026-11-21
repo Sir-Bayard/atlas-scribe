@@ -33,7 +33,7 @@ export async function quickDialog({ tab = "settlement", seed, fill = null, onTab
         <div class="form-group"><label for="as-qs-name">Name</label><input type="text" id="as-qs-name" name="name" placeholder="Made up if empty" value="${esc(fill?.options?.name ?? "")}"></div>
         <div class="form-group"><label for="as-qs-seed">Seed</label><input type="number" id="as-qs-seed" name="seed" value="${seed}" min="1" step="1"></div>
       </div>
-      <p class="hint">Everything it makes can be changed afterwards.</p>
+      <p class="hint">Everything it makes can be changed afterward.</p>
     </div>`;
   const showTab = (root, which) => {
     root.querySelector('[name="tab"]').value = which;
@@ -98,13 +98,13 @@ function regionTabHTML() {
   const land = (k, label, tip = "") => `<div class="form-group" data-land="${k}"><label for="as-ql-${k}">${label}</label><select id="as-ql-${k}" name="l-${k}"${tip ? ` data-tooltip-text="${esc(tip)}" aria-describedby="as-ql-${k}-tip"` : ""}>${LAND_QUICK[k].map((v) => `<option value="${v}">${esc(titleCase(LAND_QUICK_LABELS[k][v]))}</option>`).join("")}</select>${tip ? `<span id="as-ql-${k}-tip" class="as-sr-only">${esc(tip)}</span>` : ""}</div>`;
   // (names: a style, or one of the world's name sets)
   const sets = storedNameSets();
-  const namesTip = "How the names of places, rivers, ranges and seas sound: a style, or a name set of your own (Name Sets, in the Plan panel)";
+  const namesTip = "How the names of places, rivers, ranges and seas sound: a style, or a name set of your own (Name Sets, in Plan Settings)";
   const names = `<div class="form-group"><label for="as-ql-names">Names</label><span id="as-ql-names-tip" class="as-sr-only">${namesTip}</span><select id="as-ql-names" name="l-names" data-tooltip-text="${namesTip}" aria-describedby="as-ql-names-tip">${LAND_QUICK.names.map((v) => `<option value="${v}">${esc(titleCase(LAND_QUICK_LABELS.names[v]))}</option>`).join("")}${sets.length ? `<optgroup label="Your Name Sets">${sets.map((x) => `<option value="set:${esc(x.id)}">${esc(x.name)}</option>`).join("")}</optgroup>` : ""}</select></div>`;
   const tips = {
     type: "The shape of the land and sea",
     seaSide: "Where the open sea lies, for a coast or a peninsula",
-    towns: "How many towns, villages and castles are placed (Reroll Places in the Plan panel places them again)",
-    realms: "Kingdoms ruled from the biggest towns, their borders along ranges, rivers and coasts; a few large ones or many small",
+    towns: "How many towns, villages and castles are placed (Reroll Places in Plan Settings places them again)",
+    realms: "Realms ruled from the biggest towns, their borders along ranges, rivers and coasts; a few large ones or many small",
     size: "The picture's long side; a bigger map takes longer to draw",
     age: "Young land has sharp, high ranges; old land is worn down to hills",
     plates: "How many plates the land is built from: more makes more, shorter ranges",
@@ -123,7 +123,7 @@ function regionTabHTML() {
       <div data-for="land">
         <p class="hint">Land, rivers and climate made by the generator, then towns, villages, castles, roads and names placed on it. Each town's own map can be made from it.</p>
         <div class="as-qs-two">${land("type", "Land", tips.type)}${land("seaSide", "Sea Side", tips.seaSide)}${land("climate", "Climate", tips.climate)}${land("hemisphere", "Hemisphere", tips.hemisphere)}${land("span", "Latitudes", tips.span)}${land("mountains", "Mountains")}${land("towns", "Towns", tips.towns)}${land("realms", "Realms", tips.realms)}${land("grid", "Grid")}${land("size", "Size", tips.size)}${names}${land("season", "Season")}</div>
-        <details class="as-qs-more"><summary>More</summary><div class="as-qs-two">${LAND_MORE.map((k) => land(k, { age: "Age", plates: "Plates", coast: "Coast", wind: "Wind", rain: "Rain", rivers: "Rivers", lakes: "Lakes", plateaus: "Plateaus", volcanic: "Volcanic" }[k], tips[k])).join("")}</div></details>
+        <details class="as-qs-more"><summary>More</summary><div class="as-qs-two">${LAND_MORE.map((k) => land(k, { age: "Age", plates: "Plates", coast: "Coast", wind: "Wind", rain: "Rain", rivers: "Rivers", lakes: "Lakes", plateaus: "Plateaus", volcanic: "Volcanoes" }[k], tips[k])).join("")}</div></details>
       </div>
       <div data-for="local" hidden>
         <p class="hint">Towns, villages, castles and ruins with their roads, rivers, woods and mountains. Each place's own map is made from it.</p>

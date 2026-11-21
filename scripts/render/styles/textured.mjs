@@ -365,7 +365,7 @@ export function paint(ctx) {
   // Cut hay lies in soft pale windrows, each with a little shadow on its north side
   const hay = fields.filter((f) => f.crop === "hay" && f.rows * pp >= 3);
   // Each field's rows clipped to that field (two hay fields side by side would otherwise cross-hatch); the mask is
-  // blurred once afterwards, so the clips cost nothing extra
+  // blurred once afterward, so the clips cost nothing extra
   const windrows = (dx, dy) => (k) => {
     k.lineWidth = 0.2 * pp; k.lineCap = "butt";
     for (const f of hay) {

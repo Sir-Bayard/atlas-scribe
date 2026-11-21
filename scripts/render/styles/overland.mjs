@@ -445,7 +445,8 @@ function paintRealms(ctx, L, S, outPx) {
   // the borders: a pale halo, then the dashed ink
   const u = outPx / 3600;
   target.lineCap = "round"; target.lineJoin = "round";
-  const tx1 = x0 + W / pp, ty1 = y0 + H / pp, pad = 1;
+  // (crowns stand well above their mark on a big picture: the same reach past the tile as the atlas marks)
+  const tx1 = x0 + W / pp, ty1 = y0 + H / pp, pad = Math.max(1, (40 * u) / pp + 0.5);
   const near = (pts) => pts.some(([x, y]) => x >= x0 - pad && y >= y0 - pad && x <= tx1 + pad && y <= ty1 + pad);
   const path = (pts) => { target.beginPath(); pts.forEach(([x, y], i) => (i ? target.lineTo(X(x), Y(y)) : target.moveTo(X(x), Y(y)))); };
   for (const [stroke, width, dash] of [["rgba(252,246,232,0.7)", 7 * u, []], ["rgba(58,40,30,0.85)", 3.2 * u, [11 * u, 5 * u, 2.5 * u, 5 * u]]]) {

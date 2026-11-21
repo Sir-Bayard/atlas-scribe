@@ -99,9 +99,10 @@ function readNodes(bytes) {
 
 /** The kept file read into fields over the frame: { heights, land, nodes } (land 1 or 0, nearest pixel; nodes the exact block or null), or { error }. */
 export function readKept(bytes, keep) {
+  // (the cheap check first: a replaced file isn't inflated)
+  if (keep?.hash && bytesHash(bytes) !== keep.hash) return { error: "its file isn't the one kept (it was changed or replaced)" };
   let img;
   try { img = decodeGraySync(bytes); } catch (e) { return { error: `its file couldn't be read (${e.message})` }; }
-  if (keep?.hash && bytesHash(bytes) !== keep.hash) return { error: "its file isn't the one kept (it was changed or replaced)" };
   const w = img.w, h = img.h, max = Number.isFinite(keep?.max) && keep.max > 0 ? keep.max : 1;
   const W = Array.isArray(keep?.frame) ? keep.frame[0] : null;
   if (!(w >= 2 && h >= 2 && W > 0)) return { error: "its file has no size" };
@@ -134,8 +135,8 @@ export function missingKept(keep, why) {
   if (keep?.path) store.set(keep.path, { hash: keep.hash ?? null, error: why, missing: true });
 }
 
-/** Whether the store has a kept land's file read (or one that can't be read: a fetch that failed is tried again). */
-export const hasKept = (keep) => { const e = keep?.path ? store.get(keep.path) : null; return !!e && e.hash === (keep.hash ?? null) && !e.missing; };
+/** Whether the store has a kept land's file read (one that couldn't be fetched or read is asked for again, so a file put back is found). */
+export const hasKept = (keep) => { const e = keep?.path ? store.get(keep.path) : null; return !!e && e.hash === (keep.hash ?? null) && !e.missing && !e.error; };
 
 /**
  * What a layout gets for a plan's kept land: { heights, land } to hold it, { error } when its file couldn't be had

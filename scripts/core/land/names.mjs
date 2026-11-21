@@ -26,7 +26,7 @@ const ENDS = {
   forest: ["wood", "holt", "hurst", "den", "shaw", "grove"],
   plain: ["ton", "by", "stead", "field", "well", "ham", "dale", "worth", "thorpe", "bury", "ley", "wick"],
 };
-const RIVER_ROOT = ["Wend", "Lea", "Isel", "Dove", "Rill", "Sorrow", "Kestrel", "Willow", "Tarn", "Whin", "Brack", "Ember", "Swift", "Lune", "Wey", "Cray", "Mardle", "Sedge", "Hollow", "Teal", "Rother", "Dene", "Wyre", "Fallow", "Glass"];
+const RIVER_ROOT = ["Wend", "Linnet", "Ashen", "Merrow", "Rill", "Sorrow", "Kestrel", "Willow", "Tansy", "Whin", "Brack", "Ember", "Swift", "Wren", "Brindle", "Sorrel", "Mardle", "Sedge", "Hollow", "Teal", "Thistle", "Bramble", "Hazel", "Fallow", "Glass"];
 const WATER_ADJ = ["Black", "Cold", "Gray", "Swift", "Still", "Silver", "Bright", "Long", "Deep", "Clear", "Red", "White", "Green", "Dark"];
 const RANGE_ADJ = ["Gray", "Storm", "Frost", "Wolf", "Ember", "Hollow", "Black", "Red", "Sawtooth", "Raven", "High", "Old", "Broken", "Bitter", "Pale", "Giant's", "King's", "Weeping", "Cinder", "Thorn", "White"];
 const SEA_ADJ = ["Gray", "Silver", "Whale", "Amber", "Misty", "Long", "Quiet", "Wide", "Morning", "Gull", "Salt", "Stormy", "Pearl", "Glass", "Northern", "Southern", "Western", "Eastern"];
@@ -232,7 +232,7 @@ function customNamer(set, seed) {
   const ok = (nm) => nm && !used.has(nm) && !banned.has(flat(nm));
   const unique = (key, makeOne) => {
     for (let k = 0; k < 40; k++) { lastRoot = null; const nm = titled(makeOne(rng(seed, "names", "custom", key, k))); if (ok(nm)) { used.add(nm); if (lastRoot) roots.add(flat(lastRoot)); return nm; } }
-    let k = 2, base = titled(makeOne(rng(seed, "names", "custom", key, "last")) ?? set.name ?? "Unnamed"); while (used.has(`${base} ${k}`)) k++;
+    let k = 2, base = titled(makeOne(rng(seed, "names", "custom", key, "last")) ?? [...used].find((u) => !/ \d+$/.test(u)) ?? "Unnamed"); while (used.has(`${base} ${k}`)) k++;
     used.add(`${base} ${k}`); return `${base} ${k}`;
   };
   const pattern = (r, kind, name) => { const own = set.kinds?.[kind], list = own?.length ? own : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };

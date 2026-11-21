@@ -263,7 +263,7 @@ async function resolveWith(idx, roles, progress, { drawn, check, instead, notes,
   lockedFiles += lockedHere.size;
   if (nexusWhy) notes.push(`${nexusWhy}; art it would have given is ${instead}`);
   if (lockedFiles) notes.push(`${lockedFiles} Forgotten Adventures ${lockedFiles === 1 ? "file needs" : "files need"} FA Nexus connected to Patreon; ${instead === "drawn instead" ? "what they'd show is drawn instead" : "what they'd show is painted in plain colors"}`);
-  if (skipped.size) notes.push(`${skipped.size === 1 ? "An art file" : `${skipped.size} art files`} couldn't be loaded earlier and ${skipped.size === 1 ? "is" : "are"} left out until the art is read again (the Art window's Read the folders again): ${[...skipped].slice(0, 5).map(nameOfUrl).join(", ")}${skipped.size > 5 ? ", ..." : ""}`);
+  if (skipped.size) notes.push(`${skipped.size === 1 ? "An art file" : `${skipped.size} art files`} couldn't be loaded earlier and ${skipped.size === 1 ? "is" : "are"} left out until the art is read again (the Art window's Read the Folders Again): ${[...skipped].slice(0, 5).map(nameOfUrl).join(", ")}${skipped.size > 5 ? ", ..." : ""}`);
   // (a battle map with no art at all is simply drawn: nothing to warn of)
   if (missing.length && !Object.keys(art).length && !idx.folders.length && !faNexus.available() && !drawn) notes.push(NO_ART);
 

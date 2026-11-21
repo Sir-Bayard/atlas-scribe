@@ -241,6 +241,40 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
     }
   };
 
+  // ---- the plan's own roads, as the GM kept them: laid on the network first, so new roads join them instead of
+  // running beside them, and never drawn again ----
+  const keptEdge = new Uint8Array(E);
+  const LEVEL = { track: 1, path: 1, lane: 1, street: 2, road: 2, highway: 3 };
+  const keptPaths = [];
+  for (const q of plan?.features ?? []) {
+    if (q?.type !== "road" || !Array.isArray(q.path) || q.path.length < 2 || !q.path.every((pt) => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))) continue;
+    const chain = [];
+    const toward = (to) => {
+      let cur = chain[chain.length - 1];
+      for (let guard = 0; cur !== to && guard < 4000; guard++) {
+        let best = -1, bd = sq(x[cur] - x[to]) + sq(y[cur] - y[to]);
+        for (let k = indptr[cur]; k < indptr[cur + 1]; k++) { const j = indices[k], d = sq(x[j] - x[to]) + sq(y[j] - y[to]); if (d < bd || (d === bd && best >= 0 && j < best)) { bd = d; best = j; } }
+        if (best < 0) break;
+        cur = best; chain.push(cur);
+      }
+      if (chain[chain.length - 1] !== to) chain.push(to);
+    };
+    for (let m = 1; m < q.path.length; m++) {
+      const [ax, ay] = q.path[m - 1], [bx, by] = q.path[m];
+      const L = Math.sqrt(sq((bx - ax) * mpu) + sq((by - ay) * mpu)), steps = Math.max(1, Math.ceil(L / (0.5 * step)));
+      for (let t = m === 1 ? 0 : 1; t <= steps; t++) {
+        const j = nearest((ax + ((bx - ax) * t) / steps) * mpu + M, (ay + ((by - ay) * t) / steps) * mpu + M);
+        if (j < 0) continue;
+        if (!chain.length) chain.push(j); else if (chain[chain.length - 1] !== j) toward(j);
+      }
+    }
+    if (chain.length < 2) continue;
+    lay(chain, LEVEL[q.class] ?? 2);
+    for (let m = 1; m < chain.length; m++) for (let k = indptr[chain[m - 1]]; k < indptr[chain[m - 1] + 1]; k++) if (indices[k] === chain[m]) { keptEdge[k] = 1; keptEdge[rev[k]] = 1; break; }
+    keptPaths.push({ path: q.path });
+  }
+  const keptCross = (plan?.features ?? []).filter((q) => q?.type === "crossing" && Array.isArray(q.at) && Number.isFinite(q.at[0]) && Number.isFinite(q.at[1])).map((q) => q.at);
+
   // ---- places, interleaved with the roads ----
   // (the plan's own places first: kept as they are, counted against the new ones' spacing, joined by the roads)
   const SPACING_OF = { city: sp.city, town: sp.town, castle: sp.castle, ruin: sp.village * 1.2 };
@@ -392,7 +426,7 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
     let changed = false;
     for (const L of extract().map((q) => ({ ...q, miles: lineMiles(q) })).sort((p, q) => p.miles - q.miles || p.nodes[0] - q.nodes[0])) {
       const a = L.nodes[0], b = L.nodes[L.nodes.length - 1];
-      if (a === b || isMajor[a] || isMajor[b] || L.miles > 0.4 * sp.town) continue;
+      if (a === b || isMajor[a] || isMajor[b] || L.miles > 0.4 * sp.town || L.ks.some((k) => keptEdge[k])) continue;
       const keep = L.ks.map((k) => edgeClass[k]);
       for (const k of L.ks) { edgeClass[k] = 0; edgeClass[rev[k]] = 0; }
       // (by roads at least as good as this one)
@@ -417,9 +451,26 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
   const taken = new Set([...(plan?.features ?? []).map((q) => q?.id), ...reserve].filter(Boolean));
   const freeId = (base, k) => { let id; do id = `${base}-${++k.n}`; while (taken.has(id)); return id; };
   const nRoad = { n: 0 };
+  // (a line's runs off the GM's kept roads: those are the plan's own, already drawn)
+  const newRuns = [];
   for (const L of lines) {
+    let from = 0;
+    for (let m = 0; m <= L.ks.length; m++) if (m === L.ks.length || keptEdge[L.ks[m]]) { if (m > from) newRuns.push({ cls: L.cls, nodes: L.nodes.slice(from, m + 1), whole: L }); from = m + 1; }
+  }
+  // (a new road that meets a kept one ends on the kept road's line, not at the node beside it)
+  const onKept = (i) => { for (let k = indptr[i]; k < indptr[i + 1]; k++) if (keptEdge[k]) return true; return false; };
+  const snapKept = (p) => {
+    let best = null, bd = Infinity;
+    for (const q of keptPaths) for (let m = 1; m < q.path.length; m++) {
+      const a = q.path[m - 1], b = q.path[m], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-12;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)), c = [a[0] + t * dx, a[1] + t * dy], d = sq(c[0] - p[0]) + sq(c[1] - p[1]);
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best && bd < sq((2 * step) / mpu) ? best : p;
+  };
+  for (const L of newRuns) {
     // (a road to one of the plan's own places ends at the place itself, not at the node nearest it)
-    const raw = L.nodes.map((i, m) => (m === 0 || m === L.nodes.length - 1) && givenAt.has(i) ? givenAt.get(i) : U(i));
+    const raw = L.nodes.map((i, m) => (m === 0 || m === L.nodes.length - 1) ? (givenAt.has(i) ? givenAt.get(i) : onKept(i) ? snapKept(U(i)) : U(i)) : U(i));
     let path = simplify(raw, tol);
     if (crossCount(path) !== crossCount(raw)) path = simplify(raw, tol / 4);
     if (crossCount(path) !== crossCount(raw)) path = raw;
@@ -430,11 +481,15 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
       const id = freeId("road", nRoad);
       features.push({ id, type: "road", class: CLASS_OF[L.cls], path: piece.map(round2) });
     }
-    // (each road's ends, for the places' road bearings)
+  }
+  // (each road's ends, for the places' road bearings: the network's lines run along the GM's kept roads too)
+  for (const L of lines) {
+    const raw = L.nodes.map((i, m) => (m === 0 || m === L.nodes.length - 1) && givenAt.has(i) ? givenAt.get(i) : U(i));
     const a = L.nodes[0], b = L.nodes[L.nodes.length - 1];
     (roadsAt.get(a) ?? roadsAt.set(a, []).get(a)).push(raw);
     (roadsAt.get(b) ?? roadsAt.set(b, []).get(b)).push(raw.slice().reverse());
   }
+
   // ---- crossings: where a road's line crosses a drawn river; a bridge, or a ford where a track meets a stream ----
   const nBridge = { n: 0 }, nFord = { n: 0 };
   const placeAt = places.map((p) => U(p.node));
@@ -447,6 +502,7 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
       // (not on a place: the place is the crossing; not twice in one spot on one road, nor on top of another road's)
       if (placeAt.some((p) => sq(p[0] - at[0]) + sq(p[1] - at[1]) < sq(0.35))) continue;
       if (crossAt.some((c) => sq(c.at[0] - at[0]) + sq(c.at[1] - at[1]) < sq(c.road === ft.id ? 0.4 : 0.12))) continue;
+      if (keptCross.some((c) => sq(c[0] - at[0]) + sq(c[1] - at[1]) < sq(0.3))) continue;
       crossAt.push({ at, road: ft.id });
       const big = rl[q][2] > 4 * T, ford = ft.class === "track" && !big;
       const angle = Math.round((atan2(path[m][1] - path[m - 1][1], path[m][0] - path[m - 1][0]) * 180) / PI);
@@ -456,8 +512,9 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
   // ---- the places, with their site facts ----
   const counts = {};
   const sited = [];
+  const givenSites = {};
   for (const p of places) {
-    if (p.given) continue;
+    if (p.given) { givenSites[p.given] = siteOf(p.node); continue; }
     let id; do id = `${p.kind}-${(counts[p.kind] = (counts[p.kind] ?? 0) + 1)}`; while (taken.has(id));
     sited.push({ id, type: "place", class: p.kind, at: round2(U(p.node)), site: siteOf(p.node) });
   }
@@ -489,6 +546,8 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
   const roadsOut = features.filter((q) => q.type === "road"), crossOut = features.filter((q) => q.type === "crossing");
   return {
     features: [...sited, ...roadsOut, ...crossOut], notes,
+    // (the site facts of the plan's own places, on the land as it is now)
+    sites: givenSites,
     // (scores: each node's base site score, for the window's Site Score view; -Infinity where nothing is built)
     ...(scores ? { scores: base } : {}),
     stats: { landArea, cities: cities.length, towns: towns.length, given: places.filter((p) => p.given).length, villages: villages.length, castles: castles.length, ruins: ruins.length, beyond: beyond.length, roads: roadsOut.length, bridges: nBridge.n, fords: nFord.n, spacing: sp },

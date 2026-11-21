@@ -4,6 +4,7 @@
  */
 import { parseNameSet } from "./namesets.mjs";
 import { hash128 } from "../rng.mjs";
+import { fromDataUrl, layerHeader } from "./pngio.mjs";
 
 /** The number the land is made from: the land's own seed, else the plan's (a word hashed to a number). */
 export function landSeedOf(plan) {
@@ -73,7 +74,7 @@ export function checkLand(raw) {
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
-  else if (Number.isInteger(raw.gen) && raw.gen < GEN && !raw.keep) warn("gen", `This land was made by an older generator (${raw.gen}); it will look different now. Keep this land to stop that.`);
+  else if (Number.isInteger(raw.gen) && raw.gen < GEN && !raw.keep) warn("gen", `This land was made by an older generator (${raw.gen}); it will look different now. Keep This Land to stop that.`);
   if (raw.type !== undefined && !LAND_TYPES.includes(raw.type)) err("type", `land.type "${raw.type}" isn't one AtlasScribe knows (${LAND_TYPES.join(", ")}).`);
   if (raw.seaSide !== undefined && !LAND_SIDES.includes(raw.seaSide)) warn("seaSide", `land.seaSide should be one of ${LAND_SIDES.join(", ")}; the seed picks one.`);
   const unit = (k, lo, hi) => { if (raw[k] !== undefined && !(Number.isFinite(raw[k]) && raw[k] >= lo && raw[k] <= hi)) err(k, `land.${k} must be a number from ${lo} to ${hi}.`); };
@@ -116,6 +117,12 @@ export function checkLand(raw) {
       if (k === "size") { if (!(Array.isArray(raw.layers.size) && raw.layers.size.length === 2 && raw.layers.size.every((v) => Number.isInteger(v) && v >= 8 && v <= 1024))) err("layers.size", "land.layers.size must be [width, height] in pixels, 8 to 1024."); continue; }
       if (!LAYER_NAMES.includes(k)) warn(`layers.${k}`, `land.layers.${k} isn't a layer AtlasScribe knows (${LAYER_NAMES.join(", ")}); it's ignored.`);
       else if (typeof raw.layers[k] !== "string" || !raw.layers[k].startsWith("data:image/png;base64,")) err(`layers.${k}`, `land.layers.${k} must be a PNG as a data URL.`);
+      else {
+        let head = null;
+        try { head = layerHeader(fromDataUrl(raw.layers[k])); } catch { /* (read below as not a gray picture) */ }
+        if (!head) warn(`layers.${k}`, `land.layers.${k} isn't an 8-bit gray PNG, so it's ignored.`);
+        else if (head.w > 1024 || head.h > 1024 || (Array.isArray(raw.layers.size) && (head.w !== raw.layers.size[0] || head.h !== raw.layers.size[1]))) warn(`layers.${k}`, `land.layers.${k} is ${head.w} by ${head.h} pixels, not the layers' size, so it's ignored.`);
+      }
     }
   }
   if (raw.keep !== undefined && raw.keep !== null && !(typeof raw.keep === "object" && typeof raw.keep.path === "string")) err("keep", "land.keep must be null or { path, gen, frame, size, hash } (a kept land's files).");

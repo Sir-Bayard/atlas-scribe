@@ -254,7 +254,7 @@ export const PLAN_FIELDS = [
   { path: "season", label: "Season", kind: "enum", values: SEASONS },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
-  { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 x 160 mi, 6 mi cells)", realm: "realm (720 x 480 mi, 12 mi cells)", continent: "continent (2,400 x 1,600 mi, 40 mi)", world: "world (7,200 x 4,800 mi, 120 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size and the generator's towns, roads and realms are placed again on it; what you placed keeps its spot on the map" },
+  { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 by 160 mi)", realm: "realm (720 by 480 mi)", continent: "continent (2,400 by 1,600 mi)", world: "world (7,200 by 4,800 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size and the generator's towns, roads and realms are placed again on it; what you placed keeps its spot on the map" },
   { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
   { path: "land.realms", label: "Realms", kind: "enum", values: ["none", "few", "some", "many"], overland: true, required: true, auto: "none", help: "How many realms Place Realms (or Reroll Realms) rules from the map's cities and towns, and Reroll Places keeps when it moves them (None: it takes the generator's away). It also sets how far each realm reaches, so changing it moves the borders of realms already placed" },
@@ -270,7 +270,7 @@ export const PLAN_FIELDS = [
   { path: "land.plateaus", label: "Plateaus", kind: "boolean", overland: true, group: "land", auto: false, help: "High flat land behind the ranges" },
   { path: "land.volcanic", label: "Volcanoes", kind: "boolean", overland: true, group: "land", auto: false, help: "Volcanic cones, with a lake in the crater where it's wet" },
   { path: "land.coast", label: "Coast", kind: "number", min: 0, max: 1, overland: true, group: "land", auto: 0.5, help: "From 0 (smooth) to 1 (rugged, with inlets and fjords)" },
-  { path: "land.climate", label: "Climate", kind: "enum", values: ["temperate", "cold", "warm", "arid", "tropical", "auto"], overland: true, group: "land", auto: "temperate", names: { arid: "dry", auto: "by its latitude" }, help: "Sets the map's latitude and how wet it is (a world runs pole to pole whatever this says)" },
+  { path: "land.climate", label: "Climate", kind: "enum", values: ["temperate", "cold", "warm", "arid", "tropical", "auto"], overland: true, group: "land", auto: "temperate", names: { arid: "dry", auto: "by its latitude" }, help: "Sets the map's latitude and how wet it is (a world takes its span of latitudes instead)" },
   { path: "land.hemisphere", label: "Hemisphere", kind: "enum", values: ["north", "south"], overland: true, group: "land", auto: "north", names: { north: "northern", south: "southern" }, help: "Which side of the equator the map lies on: in the south, the cold is to the south" },
   { path: "land.wind", label: "Wind", kind: "enum", values: ["270", "90", "0", "180"], numeric: true, overland: true, group: "land", auto: "by the latitude", names: { 270: "from the west", 90: "from the east", 0: "from the north", 180: "from the south" }, help: "Where the rain comes from: the land past a range from it is drier" },
   { path: "land.rain", label: "Rain", kind: "enum", values: ["drier", "normal", "wetter"], overland: true, group: "land", auto: "normal" },
@@ -612,7 +612,7 @@ export function setPlanField(plan, path, raw) {
   return { plan: next };
 }
 
-/** Which names an overland plan keeps from Keep names, still as kept: { places: Set of ids, land: Set of ids }. */
+/** Which names an overland plan keeps from Keep the Names, still as kept: { places: Set of ids, land: Set of ids }. */
 function keptIds(plan) {
   const k = isObj(plan?.land?.keptNames) ? plan.land.keptNames : {}, kp = isObj(k.places) ? k.places : {}, kl = isObj(k.land) ? k.land : {};
   const named = (n) => typeof n === "string" && n.trim();
@@ -625,7 +625,7 @@ function keptIds(plan) {
 }
 
 /**
- * The names an overland plan keeps (Keep names) that a name set could make again: { places, features }, how many.
+ * The names an overland plan keeps (Keep the Names) that a name set could make again: { places, features }, how many.
  * Names the GM typed or changed aren't counted.
  */
 export function keptNamesOf(plan) {

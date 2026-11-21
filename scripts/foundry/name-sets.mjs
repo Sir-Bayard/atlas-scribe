@@ -213,10 +213,10 @@ export class NameSetsWindow extends Base {
   }
 }
 
-/** The Name sets window, one at a time. */
+/** The Name Sets window, one at a time. */
 export const nameSetsWindow = singleWindow(() => new NameSetsWindow());
 
-/** Draws the Name sets window again when the library changes (another GM saved or deleted a set). */
+/** Draws the Name Sets window again when the library changes (another GM saved or deleted a set). */
 export function refreshNameSets() {
   const w = foundry.applications.instances.get("atlas-scribe-name-sets");
   if (w?.rendered) w.render();

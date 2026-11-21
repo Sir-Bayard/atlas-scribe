@@ -66,7 +66,8 @@ export function parseNameSet(text) {
   // (gather each section's lines: "key: value" at the left margin opens a section, indented "key: value" a part of it,
   // and an indented line with no key carries on the last one)
   for (let n = 0; n < lines.length; n++) {
-    const line = lines[n].replace(/\s+#.*$/, "").replace(/^#.*$/, "");
+    // (runs of spaces inside a line made one, so a line padded with thousands of them still reads at once)
+    const line = lines[n].replace(/(\S)[ \t]{2,}/g, "$1 ").replace(/\s+#.*$/, "").replace(/^#.*$/, "");
     if (!line.trim()) continue;
     const top = /^([A-Za-z][A-Za-z ]*?)\s*:\s*(.*)$/.exec(line);
     if (top && !/^\s/.test(line)) {
@@ -146,6 +147,12 @@ export function parseNameSet(text) {
   if ((set.sounds || learned.length) && !problems.some((p) => p.level === "error")) {
     const make = wordMaker(set, (w) => keepsRules(set, w));
     if (![1, 2, 3, 4, 5, 6].some((k) => make(probe(k)))) err(0, set.sounds ? "It can't make a name with these rules: check its syllables and length against each other, and what it avoids." : "It can't make a name from these examples with these rules: examples need three letters or more, and the avoid rules may leave nothing.");
+    else {
+      // (a set that makes only a handful of words would fill a map with numbered repeats)
+      const seen = new Set();
+      for (let k = 1; k <= 300 && seen.size < 40; k++) { const wd = make(probe(k)); if (wd) seen.add(wd); }
+      if (seen.size < 40) warn(0, `It can make only about ${seen.size} different names; give it more sounds or syllables, or a map runs out and numbers them.`);
+    }
   }
   return { set: problems.some((p) => p.level === "error") && !set.sounds && !learned.length ? null : set, problems };
 }

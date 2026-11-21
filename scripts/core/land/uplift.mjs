@@ -130,7 +130,7 @@ export function upliftStage(ctx) {
   const num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
   (ctx.terrain ?? []).forEach((t, k) => {
     if (t.class === "range" && Array.isArray(t.path) && t.path.length >= 2) {
-      const o = { height: num(t.height, 1, 0, 2), width: num(t.width, 30, 2, 400), hard: num(t.hard, 0.8, 0, 1), ridges: Math.round(num(t.ridges, 4, 0, 4)), steep: 0, foreland: false, kind: "range" };
+      const o = { height: num(t.height, 1, 0, 2), width: num(t.width, 30, 2, 400), hard: num(t.hard, 0.8, 0, 1), ridges: Math.round(num(t.ridges, 4, 0, 4)), steep: 0, foreland: false, kind: "range", spacing: Math.sqrt((frame.W * frame.H) / g.n) };
       addRange(g, t.path, o, fields, r.fork("painted", t.id ?? `#${k}`), out);
       used.push({ kind: "painted", id: t.id, points: t.path, width: o.width });
     } else if (t.class === "peak" && Array.isArray(t.at)) {

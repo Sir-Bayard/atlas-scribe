@@ -3,6 +3,7 @@
  * and a short digest of a layout kept between renders, so the next render can say what changed. Pure: runs anywhere.
  */
 import { useLabel } from "./uses.mjs";
+import { extentOf, milesPerUnit } from "./land/units.mjs";
 
 /** Names for the kinds of item a summary counts, singular and plural. */
 const KINDS = {
@@ -62,7 +63,12 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
   out.push(`# ${plan?.name ?? plan?.id ?? "Map"}`, "");
   const region = plan?.kind === "region";
   const span = region ? `${ft} ft (${Math.round((W * ft) / 528) / 10} by ${Math.round((H * ft) / 528) / 10} miles)` : `${ft} ft (${Math.round(W * ft)} by ${Math.round(H * ft)} ft)`;
-  out.push(`- ${plan?.kind === "battle" ? "Battle map" : region ? "Region" : "Settlement"}, ${W} by ${H} squares at ${span}, ${plan?.season ?? "summer"}, seed ${plan?.seed ?? "?"}`);
+  // (an overland map in miles, its cells hexes or squares; its extent from the hex geometry)
+  const overland = region && plan?.land && typeof plan.land === "object";
+  if (overland) {
+    const [ew, eh] = extentOf(plan), mpu = milesPerUnit(plan), cell = plan?.output?.grid === "hex" ? ["hex", "hexes"] : ["square", "squares"];
+    out.push(`- Overland map, ${W} by ${H} ${cell[1]} of ${Math.round(mpu * 10) / 10} miles (${Math.round(ew * mpu)} by ${Math.round(eh * mpu)} miles), ${plan?.season ?? "summer"}, seed ${plan?.seed ?? "?"}`);
+  } else out.push(`- ${plan?.kind === "battle" ? "Battle map" : region ? "Region" : "Settlement"}, ${W} by ${H} squares at ${span}, ${plan?.season ?? "summer"}, seed ${plan?.seed ?? "?"}`);
   if (scene) out.push(`- Scene: ${scene}`);
   const items = layout?.items ?? [];
   const count = (kind, f = () => true) => items.filter((i) => i.kind === kind && f(i)).length;
@@ -94,7 +100,7 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
     realms.forEach((q, k) => {
       const seat = feats.find((f) => f.id === q.capital);
       const what = Object.keys(PLACE_WORDS).filter((c) => held[k][c]).map((c) => plural(held[k][c], PLACE_WORDS[c]));
-      const seatName = seat ? (typeof seat.name === "string" && seat.name.trim() ? seat.name : (layout?.labels ?? []).find((l) => l.id === `@place:${seat.id}`)?.text ?? seat.id) : null;
+      const seatName = seat ? (typeof seat.name === "string" && seat.name.trim() ? seat.name : (layout?.labels ?? []).find((l) => l.id === `@place:${seat.id}` || (l.placeName && l.of === seat.id))?.text ?? seat.id) : null;
       out.push(`- **${q.name ?? q.id}**${seatName ? `, ruled from ${seatName}` : ""}${what.length ? `: ${what.join(", ")}` : ""}`);
     });
   }
@@ -128,6 +134,6 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
   const labels = (layout?.labels ?? []).filter((l) => !l.gen), made = (layout?.labels ?? []).filter((l) => l.gen && !String(l.id).startsWith("@realm:")); // (realms are listed above)
   if (labels.length) out.push("", "## Labels", "", ...labels.map((l) => `- ${l.text}`));
   // (an overland map's names, its places' and its land's, as a gazetteer)
-  if (made.length) out.push("", "## Names on the map", "", ...made.map((l) => `- ${l.id.startsWith("@land:") ? l.text.replace(/^THE /, "the ").replace(/\b([A-Z])([A-Z']+)\b/g, (m, a, b) => a + b.toLowerCase()).replace(/ Of /g, " of ") : l.text}`));
+  if (made.length) out.push("", "## Names on the Map", "", ...made.map((l) => `- ${l.id.startsWith("@land:") ? l.text.replace(/^THE /, "The ").replace(/\b([A-Z])([A-Z']+)\b/g, (m, a, b) => a + b.toLowerCase()).replace(/ Of /g, " of ") : l.text}`));
   return out.join("\n") + "\n";
 }

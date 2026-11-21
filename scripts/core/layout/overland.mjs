@@ -48,7 +48,7 @@ export function compactLand(L) {
   const f = L.frame;
   const marks = L.marks ?? {};
   return {
-    gen: L.gen, attempt: L.attempt, seed: L.seed,
+    gen: L.gen, attempt: L.attempt, tries: L.tries, seed: L.seed,
     frame: { W: f.W, H: f.H, margin: f.margin, mapW: f.mapW, mapH: f.mapH, mpu: f.mpu, scale: f.scale },
     n, x: g.x, y: g.y, triangles: g.triangles, indptr: g.indptr, indices: g.indices, spacing: L.spacing,
     h: L.h, landMask: L.landMask, lake: L.lake, salt: L.salt, lakeId: L.lakeId,
@@ -83,12 +83,12 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   else {
     const full = generateLand(plan, { onProgress: (p, l) => progress(0.9 * p, l) });
     land = compactLand(full);
-    L = { problems: full.problems, keptError: full.keptError ?? null, attempt: full.attempt, frame: full.frame, grid: full.grid, landMask: full.landMask, lake: full.lake, g: { n: full.g.n, x: full.g.x, y: full.g.y, area: full.g.area } };
+    L = { problems: full.problems, keptError: full.keptError ?? null, attempt: full.attempt, tries: full.tries, frame: full.frame, grid: full.grid, landMask: full.landMask, lake: full.lake, g: { n: full.g.n, x: full.g.x, y: full.g.y, area: full.g.area } };
   }
   lastLand = { key, L, land };
   const [W, H] = extentOf(plan);
   const items = [];
-  const notes = L.problems.map((p) => ({ level: "info", id: null, message: `The land is short of its kind here (${p.detail}); it was made ${L.attempt + 1 === 1 ? "once" : `${L.attempt + 1} times`} and the closest kept.` }));
+  const notes = L.problems.map((p) => ({ level: "info", id: null, message: `The land is short of its kind here (${p.detail}); it was made ${(L.tries ?? 1) === 1 ? "once" : `${L.tries} times`} and the closest kept.` }));
   // (a kept land whose file couldn't be had: made from its settings, and said)
   if (L.keptError) notes.push({ level: "warning", id: null, message: `This map's kept land couldn't be read (${L.keptError}), so it was made from its settings and may differ. Put its file back at ${plan.land?.keep?.path ?? "its path"}, or Forget the Kept Land.` });
   for (const f of plan.features) {
@@ -151,6 +151,14 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
       if (worst >= most) notes.push({ level: "warning", id: it.id, message: `${named(it)} runs a long way through open water (more than a bridge would cross); it's drawn as it is.` });
     }
   }
+  // (a plan label on a place shows the name the map made for it, in place of the made label, when the place has no
+  // name of its own)
+  const own = labelsOf(plan).map((l) => {
+    const owner = l.of ? plan.features.find((f) => f.id === l.of) : null;
+    const text = owner?.type === "place" && !(typeof owner.name === "string" && owner.name.trim()) && !(plan.features.find((f) => f.id === l.id)?.text) ? named.placeNames.get(owner.id) : null;
+    return text ? { ...l, text, placeName: true } : l;
+  });
+  const shadowed = new Set(own.filter((l) => l.placeName).map((l) => `@place:${l.of}`));
   progress(1, "Done");
   return {
     atlasScribe: LAYOUT_VERSION, plan: plan.id ?? null, kind: "region", overland: true, seed: plan.seed,
@@ -158,6 +166,6 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     season: plan.season ?? "summer", style: "painted",
     title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
     realms, showRealms: plan.output?.realms !== false,
-    pxPerSquare: plan.output.pxPerSquare, items, labels: [...labelsOf(plan), ...named.labels], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
+    pxPerSquare: plan.output.pxPerSquare, items, labels: [...own, ...named.labels.filter((l) => !shadowed.has(l.id))], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
 }

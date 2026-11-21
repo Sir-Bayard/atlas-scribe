@@ -45,8 +45,10 @@ export async function prepare(payload) {
   const stop = typeof AbortController === "function" ? new AbortController() : null;
   const timer = stop ? setTimeout(() => stop.abort(), 30000) : null;
   try {
-    const res = await fetch(payload.keptUrl, stop ? { signal: stop.signal } : undefined);
-    if (!res.ok) return missingKept(keep, `its file wasn't found at ${keep.path}`);
+    let res = await fetch(payload.keptUrl, stop ? { signal: stop.signal } : undefined);
+    // (not where it was kept: this world's own lands folder, for a plan from another world or a world that moved)
+    if (!res.ok && payload.keptAlt) res = await fetch(payload.keptAlt, stop ? { signal: stop.signal } : undefined);
+    if (!res.ok) return missingKept(keep, `its file wasn't found at ${keep.path}${payload.keptAlt ? " or in this world's lands folder" : ""}`);
     provideKept(keep, keptBytes(new Uint8Array(await res.arrayBuffer())));
   } catch (e) {
     missingKept(keep, e?.name === "AbortError" ? "its file took too long to fetch" : `its file couldn't be fetched (${e.message ?? e})`);
