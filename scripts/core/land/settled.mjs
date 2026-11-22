@@ -13,9 +13,10 @@ import { nearestOf } from "./realms.mjs";
 
 /**
  * How much each kind of place clears and how far (miles of easy ground over which its clearing falls by e). Land over
- * about 0.35 is cleared and farmed: on a kingdom's map with some towns a third of the land, with few a fifth.
+ * about 0.35 is cleared and farmed: on a kingdom's map with some towns about a fifth of the land, with few an eighth.
+ * Ruins, battlefields and the wilds' points of interest (lairs, wrecks, stones...) clear nothing.
  */
-export const SETTLE_PLACE = { city: [1, 25], town: [0.95, 15], village: [0.85, 8], hamlet: [0.7, 5], castle: [0.7, 6], tower: [0.45, 3], temple: [0.55, 3.75], inn: [0.5, 3], mine: [0.4, 2.5], place: [0.6, 3.75] };
+export const SETTLE_PLACE = { city: [1, 25], town: [0.95, 15], village: [0.85, 8], hamlet: [0.7, 5], castle: [0.7, 6], tower: [0.45, 3], temple: [0.55, 3.75], inn: [0.5, 3], mine: [0.4, 2.5], quarry: [0.4, 2], fort: [0.55, 3.5], monastery: [0.5, 3], lighthouse: [0.3, 1.5], customs: [0.4, 2], place: [0.6, 3.75] };
 /** And each class of road, along its whole length. */
 export const SETTLE_ROAD = { highway: [0.75, 5.5], road: [0.65, 4], track: [0.45, 2.25], path: [0.3, 1.5] };
 /** Settled enough to be cleared and farmed. */

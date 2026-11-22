@@ -47,8 +47,8 @@ export const SITE_ELEMENTS = {
   plain: () => true,
 };
 /** The kinds a name set can give a pattern or an element for: places' classes and the land's features. */
-export const PLACE_KINDS = ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"];
-export const FEATURE_KINDS = ["sea", "ocean", "bay", "lake", "river", "range", "hills", "mountains", "forest", "desert", "marsh", "island", "cape", "land", "realm"];
+export const PLACE_KINDS = ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine", "quarry", "fort", "monastery", "lighthouse", "customs", "battlefield", "stones", "barrow", "wreck", "lair", "cave", "grove", "camp", "cove", "monster"];
+export const FEATURE_KINDS = ["sea", "ocean", "bay", "lake", "river", "range", "hills", "mountains", "forest", "desert", "marsh", "island", "cape", "land", "realm", "falls", "pass", "volcano", "spring", "tree", "stacks"];
 const SECTIONS = ["name", "sounds", "examples", "names", "elements", "kinds", "avoid", "genitive", "inns"];
 const SOUND_KEYS = ["onsets", "vowels", "codas", "endings", "syllables", "length"];
 const AVOID_KEYS = ["letters", "parts", "starts", "names"];

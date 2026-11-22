@@ -15,6 +15,8 @@ import { LAKE_BIOME, SEA_BIOME } from "../land/raster.mjs";
 import { realmsOf, growRealms, realmGrid, realmReach } from "../land/realms.mjs";
 import { keptFor } from "../land/kept.mjs";
 import { settledField, settledKey, SETTLED } from "../land/settled.mjs";
+import { landmarksOf } from "./landmarks.mjs";
+const WATER_SITES = new Set(["wreck", "monster"]);
 
 /** The biome index for a painted zone's own (custom) biome. */
 export const CUSTOM_BIOME = 253;
@@ -57,6 +59,8 @@ export function compactLand(L) {
     rain: L.rain, temp: L.temp, hard: L.hard, biome, zone, sea, F: L.F, threshold: L.threshold,
     zones: (L.zones ?? []).map((z) => ({ index: z.index, id: z.id ?? null, name: z.name ?? null, biome: z.biome, color: z.color ?? null })),
     rivers, inventory: L.inventory ?? [],
+    // (the volcanoes' cones, [{ at: [x, y] frame miles, rad }], for their marks)
+    cones: (L.cones ?? []).map((c) => ({ at: [c.at[0], c.at[1]], rad: c.rad })),
     // (river marks in frame miles: the head of navigation and the lowest bridging point on main rivers to the sea)
     marks: { heads: marks.heads ?? [], bridges: marks.bridges ?? [] },
   };
@@ -92,7 +96,7 @@ let lastLand = null;
 export function forgetLand() { lastLand = null; }
 /** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, keptNames, nameStyle, nameSet, towns, realms, ...landIn } = plan.land ?? {};
+  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, ...landIn } = plan.land ?? {};
   // (and whether a kept land's file was read: a land made without it isn't kept once the file comes)
   return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]);
 }
@@ -133,6 +137,8 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   // settled land: how cleared and farmed each node is, from the places and roads (the painter's fields and woods)
   const settled = settledField(land, items);
   const covers = coversOf(land, settled);
+  // landmarks from the land (falls, passes, volcanoes...), with the points of interest
+  const landmarks = plan.land?.sites === "none" ? [] : landmarksOf(land, settled, items);
   // (how much of each corner is land, for the dressing: nw, ne, sw, se)
   const cornerLand = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([cx, cy]) => {
     const f = L.frame, x0 = f.margin + cx * f.mapW * 0.76, y0 = f.margin + cy * f.mapH * 0.76;
@@ -158,14 +164,15 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, realms, showRealms: plan.output?.realms !== false, covers };
   const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
   const keyBox = keyOf(shape);
-  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [], settled });
+  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [], settled, landmarks });
   for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
   // places standing in water and roads running through it (a GM's edit, or land that changed under them)
   { const fr = L.frame;
     const wetAt = (u, v) => { const i = L.grid.nearest(u * fr.mpu + fr.margin, v * fr.mpu + fr.margin); return i >= 0 && (!L.landMask[i] || L.lake[i] === 1); };
     const named = (it) => `"${it.name ?? it.id}"`;
     for (const it of items) {
-      if (it.kind === "place" && wetAt(it.x, it.y)) notes.push({ level: "warning", id: it.id, message: `${named(it)} stands in the water; move it onto the land.` });
+      // (a wreck lies in the sea, and a monster may haunt a lake or the sea)
+      if (it.kind === "place" && wetAt(it.x, it.y) && !WATER_SITES.has(it.class)) notes.push({ level: "warning", id: it.id, message: `${named(it)} stands in the water; move it onto the land.` });
       if (it.kind !== "way") continue;
       // (samples about every 2 miles, at most every half unit; over 10 miles of water in a row is more than a bridge)
       const gap = Math.min(0.5, 2 / fr.mpu), most = Math.max(3, Math.ceil(10 / (gap * fr.mpu)));
@@ -191,7 +198,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     size,
     season: plan.season ?? "summer", style: "painted",
     title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
-    realms, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers,
+    realms, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers, landmarks,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...own, ...named.labels.filter((l) => !shadowed.has(l.id))], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
 }

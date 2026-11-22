@@ -9,6 +9,7 @@ import { pinnables } from "../core/pin.mjs";
 import { zoomPlan } from "../core/zoom.mjs";
 import { placeTowns, keepNames, untouched } from "../core/land/places.mjs";
 import { placeRealms, REALM_COUNTS } from "../core/land/realms.mjs";
+import { placeSites, BORDER_SITES, SITE_CLASSES, MARK_ONLY } from "../core/land/sites.mjs";
 import { normalize } from "../core/plan.mjs";
 import { generateLand } from "../core/land/index.mjs";
 import { makeKept, provideKept, missingKept, hasKept, forgetKept, keptFor } from "../core/land/kept.mjs";
@@ -58,12 +59,14 @@ export async function prepare(payload) {
 }
 
 /** The views the window's layer switch offers (beside the map itself). */
+// (the made names of places drawn as marks only, which have no label: the window shows them and keeps them on a drag)
+const markNamesOf = (layout) => Object.fromEntries((layout.items ?? []).filter((i) => i.kind === "place" && MARK_ONLY.includes(i.class) && typeof i.name === "string").map((i) => [i.from ?? i.id, i.name]));
 export const LAND_VIEWS = ["shade", "uplift", "rain", "temp", "flow", "biome", "plates", "site"];
 
 // (the last full land made for a layer view, so switching views doesn't make it again)
 let viewLand = null;
 // (as the layout's own key: what the land is made from, and whether its kept file was read)
-const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
+const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
 
 export const jobs = {
   /**
@@ -117,7 +120,7 @@ export const jobs = {
     const blob = await c.convertToBlob({ type: "image/webp", quality: 0.9 });
     const counts = {};
     for (const i of layout.items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), realms: realmPick(layout), landAttempt: Number.isInteger(layout.land?.attempt) ? layout.land.attempt : null, counts, ms: Math.round(performance.now() - t0) };
+    return { blob, width: W, height: H, pxPerSquare: pp, squares: [MW, MH], notes: layout.notes.map((n) => n.message), labels: layout.labels, markNames: markNamesOf(layout), crossings: layout.items.filter((i) => i.kind === "crossing" && i.id === i.from).map((i) => ({ id: i.id, at: i.at })), pinnables: pinnables(layout), realms: realmPick(layout), landAttempt: Number.isInteger(layout.land?.attempt) ? layout.land.attempt : null, counts, ms: Math.round(performance.now() - t0) };
   },
 
   /**
@@ -138,17 +141,21 @@ export const jobs = {
   async placeTowns({ plan, seed, density = null }, progress) {
     const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.9 * p, l) });
     progress(0.92, "Placing towns and roads");
-    const { plan: out, added, removed, notes } = placeTowns(plan, layout.land, { seed, density });
+    const { plan: out, added, removed, gone, notes } = placeTowns(plan, layout.land, { seed, density });
     // (realms ruled from the new towns, when the plan asks for them or still has some the generator made)
     // (a plan with the generator's realms but no count, from a script, keeps some; one whose realms are all the GM's
     // gets none added)
     const count = out.land?.realms, has = out.features.some((f) => f.type === "realm" && untouched(f));
+    let next = out, realms = 0;
     if (["few", "some", "many"].includes(count) || has) {
-      progress(0.97, "Placing realms");
+      progress(0.96, "Placing realms");
       const R = placeRealms(out, layout.land, { count: REALM_COUNTS.includes(count) ? count : "some", seed });
-      return { plan: R.plan, added, removed, notes: [...notes, ...R.notes], realms: R.added };
+      next = R.plan; realms = R.added; notes.push(...R.notes);
     }
-    return { plan: out, added, removed, notes };
+    // (then the points of interest, by the roads, the settled land and the realms' borders)
+    progress(0.98, "Placing points of interest");
+    const S = placeSites(next, layout.land, { seed, reserve: gone });
+    return { plan: S.plan, added, removed, notes: [...notes, ...S.notes], ...(realms ? { realms } : {}), sites: S.added };
   },
 
   /**
@@ -163,7 +170,11 @@ export const jobs = {
     // Places keeps as many)
     const own = plan.land?.realms, n = REALM_COUNTS.includes(count) ? count : ["few", "some", "many"].includes(own) ? own : "some";
     const res = placeRealms(plan, layout.land, { count: n, seed });
-    return { ...res, plan: { ...res.plan, land: { ...res.plan.land, realms: n } } };
+    const ruled = { ...res.plan, land: { ...res.plan.land, realms: n } };
+    // (the points of interest that follow the borders, placed again by the new ones: on a plan that has points of
+    // interest, or asks for them)
+    const has = ruled.features.some((q) => q.type === "place" && SITE_CLASSES.includes(q.class)) || (ruled.land?.sites && ruled.land.sites !== "none");
+    return { ...res, plan: has ? placeSites(ruled, layout.land, { seed, only: BORDER_SITES }).plan : ruled };
   },
 
   /** The names an overland plan's map makes, kept in the plan (land/places.mjs keepNames). Returns { plan, places, features }. */

@@ -294,7 +294,7 @@ export const TYPES = {
     // land, what its own map should know (its river's size and bearings, the coast's bearing, its roads' bearings,
     // biome, ground), from Quick Start
     geometry: "point",
-    classes: ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine"],
+    classes: ["city", "town", "village", "hamlet", "castle", "ruin", "tower", "temple", "inn", "mine", "quarry", "fort", "monastery", "lighthouse", "customs", "battlefield", "stones", "barrow", "wreck", "lair", "cave", "grove", "camp", "cove", "monster"],
     fields: { name: str(), seed: num(null, { min: 1, integer: true }), site: { kind: "data", default: null }, made: { kind: "data", default: null } },
   },
   terrain: {

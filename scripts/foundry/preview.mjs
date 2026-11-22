@@ -958,7 +958,9 @@ export class AtlasScribeApp extends Base {
   #madeNames() {
     if (this.#stale || !this.#result?.labels) return null;
     // (a place's made name, or the plan label that shows it in its place)
-    return new Map(this.#result.labels.filter((l) => String(l.id).startsWith("@place:") || l.placeName).map((l) => [l.placeName ? l.of : l.id.slice(7), l.text]));
+    // (and the names of places shown as marks only, which have no label)
+    const marks = Object.entries(this.#result.markNames ?? {});
+    return new Map([...marks, ...this.#result.labels.filter((l) => String(l.id).startsWith("@place:") || l.placeName).map((l) => [l.placeName ? l.of : l.id.slice(7), l.text])]);
   }
 
   /** The realm whose land a point in squares is in, by the drawing's realm grid (or null). */
@@ -1366,7 +1368,7 @@ export class AtlasScribeApp extends Base {
 
   /** An overland plan: towns and roads placed (or placed again) by the generator, one step Undo takes back. */
   static async #onPlaceTowns() {
-    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`, "Placing towns and roads");
+    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.sites ? `, ${res.sites} point${res.sites === 1 ? "" : "s"} of interest` : ""}${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`, "Placing towns and roads");
   }
 
   /** An overland plan: a new land of the same kind, from a new land seed (its towns placed again: #change). */
@@ -1466,7 +1468,7 @@ export class AtlasScribeApp extends Base {
     this.#placing = false;
     if (!this.rendered || this.#plan !== from || !res?.plan) { if (this.rendered) this.render(); return null; }
     for (const n of res.notes ?? []) note.warn(`AtlasScribe: ${n?.message ?? n}`);
-    note.info(`AtlasScribe: the land changed, so its towns, roads and bridges were placed again (${res.added}${res.realms ? `, in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}); the ones you placed or changed stay. Undo takes the change back.`);
+    note.info(`AtlasScribe: the land changed, so its towns, roads and bridges were placed again (${res.added}${res.sites ? `, with ${res.sites} point${res.sites === 1 ? "" : "s"} of interest` : ""}${res.realms ? `, in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}); the ones you placed or changed stay. Undo takes the change back.`);
     return res.plan;
   }
 
@@ -1951,7 +1953,7 @@ export class AtlasScribeApp extends Base {
         for (const n of notes) note.info(n);
         const drawn = await this.show(plan);
         // (towns from the plan's own seed, so the same seed and choices make the same map; Reroll places varies them)
-        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.realms ? ` in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Reroll Places in Plan Settings places them again; Undo takes them off.`, "Placing towns and roads");
+        if (drawn && this.#plan === plan) await this.#placeJob((p) => this.#host.placeTowns(p, { seed: plan.seed }), (res) => `AtlasScribe: made ${plan.name}, with ${res.added} towns, roads and bridges${res.sites ? ` and ${res.sites} point${res.sites === 1 ? "" : "s"} of interest` : ""}${res.realms ? ` in ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Reroll Places in Plan Settings places them again; Undo takes them off.`, "Placing towns and roads");
         else if (!drawn && this.#plan === plan) note.warn("AtlasScribe: the land couldn't be drawn, so no towns or roads were placed. Press Place Towns and Roads in Plan Settings once it draws.");
       } catch (e) {
         note.error(e.message);

@@ -23,6 +23,7 @@ export const LAND_QUICK = {
   mountains: ["any", "none", "few", "some", "many"],
   towns: ["some", "few", "many"],
   realms: ["none", "few", "some", "many"],
+  sites: ["some", "few", "many", "none"],
   grid: ["hex", "square"],
   size: ["medium", "small", "large"],
   names: ["english", "mixed", "invented"],
@@ -51,6 +52,7 @@ export const LAND_QUICK_LABELS = {
   mountains: { any: "Any", none: "None", few: "Few", some: "Some", many: "Many" },
   towns: { few: "Few", some: "Some", many: "Many" },
   realms: { none: "None", few: "Few", some: "Some", many: "Many" },
+  sites: { none: "None", few: "Few", some: "Some", many: "Many" },
   grid: { hex: "Hexes", square: "Squares" },
   size: { small: "Small (2,048 px)", medium: "Medium (4,096 px)", large: "Large (8,192 px, slower)" },
   names: { english: "English countryside", mixed: "English places, older features", invented: "One invented tongue" },
@@ -82,7 +84,7 @@ const TYPES_AT = {
 const CLIMATES_ANY = ["temperate", "temperate", "temperate", "cold", "warm", "arid", "tropical"];
 
 /**
- * The plan. options: { scale, type, seaSide, climate, hemisphere, span (a world's), mountains, towns, grid, size,
+ * The plan. options: { scale, type, seaSide, climate, hemisphere, span (a world's), mountains, towns, sites, grid, size,
  * names, season, realms, age, plates, coast, wind, rain, rivers, lakes, plateaus, volcanic, nameSet ({ name, text, from }: a
  * set from the library, used for the names), name, seed }.
  * Returns { plan, choices, notes }.
@@ -111,7 +113,7 @@ export function landPlan(options = {}) {
   // (rounded down, so a picture never passes the size asked: 8,192 px is where some graphics cards stop)
   const pxPerSquare = Math.max(20, Math.floor(LAND_PX[c.size] / Math.max(across, down)));
   // The land: its type, climate, mountains and towns, then the rest only as chosen
-  const land = { type: c.type, ...(c.climate ? { climate: c.climate } : {}), mountains: MOUNTAINS[c.mountains], towns: c.towns };
+  const land = { type: c.type, ...(c.climate ? { climate: c.climate } : {}), mountains: MOUNTAINS[c.mountains], towns: c.towns, sites: c.sites };
   if (c.seaSide !== "auto") land.seaSide = c.seaSide;
   if (c.age !== "any") land.age = c.age;
   if (c.plates !== "auto") land.plates = c.plates;

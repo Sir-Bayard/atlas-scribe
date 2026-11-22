@@ -96,7 +96,7 @@ export function asBuilt(plan, layout, { scene = null } = {}) {
       const k = c >= 0 && r >= 0 && c < G.w && r < G.h ? G.ids[r * G.w + c] : -1;
       if (k >= 0 && held[k]) held[k][i.class] = (held[k][i.class] ?? 0) + 1;
     }
-    const PLACE_WORDS = { city: ["city", "cities"], town: ["town", "towns"], village: ["village", "villages"], hamlet: ["hamlet", "hamlets"], castle: ["castle", "castles"], ruin: ["ruin", "ruins"], tower: ["tower", "towers"], temple: ["temple", "temples"], inn: ["inn", "inns"], mine: ["mine", "mines"] };
+    const PLACE_WORDS = { city: ["city", "cities"], town: ["town", "towns"], village: ["village", "villages"], hamlet: ["hamlet", "hamlets"], castle: ["castle", "castles"], ruin: ["ruin", "ruins"], tower: ["watchtower", "watchtowers"], temple: ["shrine", "shrines"], inn: ["inn", "inns"], mine: ["mine", "mines"], quarry: ["quarry", "quarries"], fort: ["fort", "forts"], monastery: ["monastery", "monasteries"], lighthouse: ["lighthouse", "lighthouses"], customs: ["customs house", "customs houses"], battlefield: ["battlefield", "battlefields"] };
     realms.forEach((q, k) => {
       const seat = feats.find((f) => f.id === q.capital);
       const what = Object.keys(PLACE_WORDS).filter((c) => held[k][c]).map((c) => plural(held[k][c], PLACE_WORDS[c]));

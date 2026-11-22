@@ -108,7 +108,7 @@ export function paintKey(ctx, P, { miles = true, covers = {} } = {}) {
   g.lineCap = "round"; g.lineJoin = "round";
   for (const col of key.columns) for (const e of col.entries) {
     const mx = X(col.x + u * 1.9), my = Y(e.y);
-    if (e.kind === "place") placeMark(g, mx, my, e.cls, mu);
+    if (e.kind === "place" || e.kind === "site") placeMark(g, mx, my, e.cls, mu);
     else if (e.kind === "way") strokeRoad(g, e.cls, mu, () => { g.beginPath(); g.moveTo(X(col.x + u * 0.2), my); g.lineTo(X(col.x + u * 3.6), my); });
     else if (e.kind === "cover") {
       // (a swatch of the land cover as the map paints it, in a thin frame)

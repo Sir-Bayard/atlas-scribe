@@ -40,8 +40,13 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
     g.restore();
   }
   // places, smallest first so a city's mark is on top
-  const ORDER = { hamlet: 0, inn: 0, mine: 0, ruin: 1, tower: 1, temple: 1, village: 2, castle: 3, town: 4, city: 5 };
-  const places = items.filter((i) => i.kind === "place").sort((a, b) => (ORDER[a.class] ?? 1) - (ORDER[b.class] ?? 1));
+  const ORDER = { hamlet: 0, inn: 0, mine: 0, ruin: 1, tower: 1, temple: 1, village: 2, castle: 3, town: 4, city: 5 }; // (points of interest: 0)
+  const places = items.filter((i) => i.kind === "place").sort((a, b) => (ORDER[a.class] ?? 0) - (ORDER[b.class] ?? 0));
+  // landmarks from the land (falls, passes, volcanoes...), under the places
+  for (const lm of layout.landmarks ?? []) {
+    if (!near([[lm.x, lm.y]])) continue;
+    landmarkMark(g, X(lm.x), Y(lm.y), lm.kind, u);
+  }
   for (const p of places) {
     if (!near([[p.x, p.y]])) continue;
     placeMark(g, X(p.x), Y(p.y), p.class, u);
@@ -154,7 +159,87 @@ export function placeMark(g, x, y, cls, u) {
     g.strokeStyle = "rgba(252,246,232,0.8)"; g.lineWidth = 4.4 * u;
     const picks = () => { g.beginPath(); g.moveTo(x - 6 * u, y + 6 * u); g.lineTo(x + 6 * u, y - 6 * u); g.moveTo(x + 6 * u, y + 6 * u); g.lineTo(x - 6 * u, y - 6 * u); g.stroke(); };
     picks(); g.strokeStyle = INK; g.lineWidth = 2.2 * u; picks();
-  } else disc(4.4, INK, "rgba(252,246,232,0.8)", 1.4);
+  } else if (SITE_MARK[cls]) siteMark(g, x, y, cls, u);
+  else disc(4.4, INK, "rgba(252,246,232,0.8)", 1.4);
+}
+
+// (a landmark's mark, as a point of interest's: ink over a pale halo, some filled)
+const LANDMARK = {
+  // falling water: two chevrons
+  falls: (g, x, y, u) => { for (const d of [-3, 2]) { g.moveTo(x - 6 * u, y + (d - 2) * u); g.lineTo(x, y + (d + 2) * u); g.lineTo(x + 6 * u, y + (d - 2) * u); } },
+  // a pass between two slopes: )(
+  pass: (g, x, y, u) => { g.moveTo(x - 7 * u, y - 7 * u); g.quadraticCurveTo(x - 2 * u, y, x - 7 * u, y + 7 * u); g.moveTo(x + 7 * u, y - 7 * u); g.quadraticCurveTo(x + 2 * u, y, x + 7 * u, y + 7 * u); },
+  // a cone with smoke over it
+  volcano: (g, x, y, u) => { g.moveTo(x - 9 * u, y + 6 * u); g.lineTo(x - 2.5 * u, y - 4 * u); g.lineTo(x + 2.5 * u, y - 4 * u); g.lineTo(x + 9 * u, y + 6 * u); g.closePath(); },
+  // steam over a pool
+  spring: (g, x, y, u) => { g.moveTo(x + 6 * u, y + 5 * u); g.ellipse(x, y + 5 * u, 6 * u, 2.5 * u, 0, 0, 2 * Math.PI); for (const d of [-3.5, 0, 3.5]) { g.moveTo(x + d * u, y + 1 * u); g.quadraticCurveTo(x + (d - 2) * u, y - 2.5 * u, x + d * u, y - 5 * u); g.quadraticCurveTo(x + (d + 2) * u, y - 7.5 * u, x + d * u, y - 10 * u); } },
+  // a great tree: a crown on its trunk
+  tree: (g, x, y, u) => { g.moveTo(x + 7 * u, y - 3 * u); g.arc(x, y - 3 * u, 7 * u, 0, 2 * Math.PI); g.moveTo(x - 1.6 * u, y + 3 * u); g.rect(x - 1.6 * u, y + 3 * u, 3.2 * u, 6 * u); },
+  // rock pillars in the sea
+  stacks: (g, x, y, u) => { for (const [d, t] of [[-5, 4], [0, 8], [5, 5]]) g.rect(x + (d - 1.5) * u, y + (4 - t) * u, 3 * u, t * u); },
+};
+const LANDMARK_FILL = { volcano: "rgba(92,66,52,1)", tree: "rgba(36,64,34,1)", stacks: "rgba(110,98,86,1)" };
+export function landmarkMark(g, x, y, kind, u0) {
+  if (!LANDMARK[kind]) return;
+  const u = u0 * SITE_SIZE, path = () => { g.beginPath(); LANDMARK[kind](g, x, y, u); };
+  g.lineCap = "round"; g.lineJoin = "round";
+  path(); g.strokeStyle = HALO; g.lineWidth = 4.4 * u; g.stroke();
+  if (LANDMARK_FILL[kind]) { path(); g.fillStyle = LANDMARK_FILL[kind]; g.fill(); }
+  path(); g.strokeStyle = kind === "falls" || kind === "spring" ? "rgba(40,90,130,1)" : INK; g.lineWidth = (LANDMARK_FILL[kind] ? 1.2 : 2) * u; g.stroke();
+  if (kind === "volcano") {
+    // (its smoke: a pale curl over the crater)
+    g.beginPath(); g.moveTo(x, y - 5 * u); g.bezierCurveTo(x - 4 * u, y - 9 * u, x + 4 * u, y - 11 * u, x + 1 * u, y - 15 * u);
+    g.strokeStyle = HALO; g.lineWidth = 3.4 * u; g.stroke(); g.strokeStyle = "rgba(90,86,82,0.9)"; g.lineWidth = 1.6 * u; g.stroke();
+  }
+}
+
+// (a point of interest's mark: drawn in ink over a pale halo, as the mine's picks are)
+const HALO = "rgba(252,246,232,0.82)";
+const SITE_MARK = {
+  // stepped cuts in a hillside
+  quarry: (g, x, y, u) => { g.moveTo(x - 7 * u, y - 5 * u); g.lineTo(x - 7 * u, y + 5 * u); g.lineTo(x + 7 * u, y + 5 * u); g.lineTo(x + 7 * u, y + 1 * u); g.lineTo(x + 2 * u, y + 1 * u); g.lineTo(x + 2 * u, y - 2 * u); g.lineTo(x - 3 * u, y - 2 * u); g.lineTo(x - 3 * u, y - 5 * u); },
+  // a bastioned square
+  fort: (g, x, y, u) => { const a = 5 * u, b = 9 * u; g.moveTo(x, y - b); g.lineTo(x + a, y - a); g.lineTo(x + b, y); g.lineTo(x + a, y + a); g.lineTo(x, y + b); g.lineTo(x - a, y + a); g.lineTo(x - b, y); g.lineTo(x - a, y - a); g.closePath(); },
+  // a house with a cross over it
+  monastery: (g, x, y, u) => { g.rect(x - 6 * u, y - 2 * u, 12 * u, 8 * u); g.moveTo(x, y - 2 * u); g.lineTo(x, y - 11 * u); g.moveTo(x - 3 * u, y - 8 * u); g.lineTo(x + 3 * u, y - 8 * u); },
+  // a tapered tower with its light
+  lighthouse: (g, x, y, u) => { g.moveTo(x - 4 * u, y + 7 * u); g.lineTo(x - 2 * u, y - 5 * u); g.lineTo(x + 2 * u, y - 5 * u); g.lineTo(x + 4 * u, y + 7 * u); g.closePath(); g.moveTo(x - 9 * u, y - 9 * u); g.lineTo(x - 4 * u, y - 7 * u); g.moveTo(x + 9 * u, y - 9 * u); g.lineTo(x + 4 * u, y - 7 * u); g.moveTo(x, y - 13 * u); g.lineTo(x, y - 8 * u); },
+  // a toll bar on its post
+  customs: (g, x, y, u) => { g.moveTo(x - 7 * u, y + 6 * u); g.lineTo(x - 7 * u, y - 6 * u); g.moveTo(x - 7 * u, y - 3 * u); g.lineTo(x + 8 * u, y - 3 * u); g.moveTo(x - 2 * u, y - 5 * u); g.lineTo(x - 2 * u, y - 1 * u); g.moveTo(x + 3 * u, y - 5 * u); g.lineTo(x + 3 * u, y - 1 * u); },
+  // crossed swords
+  battlefield: (g, x, y, u) => { const s = 7 * u; g.moveTo(x - s, y + s); g.lineTo(x + s, y - s); g.moveTo(x + s, y + s); g.lineTo(x - s, y - s); g.moveTo(x - s + 1 * u, y + s - 5 * u); g.lineTo(x - s + 5 * u, y + s - 1 * u); g.moveTo(x + s - 1 * u, y + s - 5 * u); g.lineTo(x + s - 5 * u, y + s - 1 * u); },
+  // a ring of standing stones
+  stones: (g, x, y, u) => { for (let k = 0; k < 6; k++) { const a = (k / 6) * 2 * Math.PI, sx = x + 6.5 * u * Math.cos(a), sy = y + 5 * u * Math.sin(a); g.moveTo(sx, sy - 2 * u); g.lineTo(sx, sy + 2 * u); } },
+  // a long mound
+  barrow: (g, x, y, u) => { g.moveTo(x - 8 * u, y + 3 * u); g.quadraticCurveTo(x, y - 8 * u, x + 8 * u, y + 3 * u); g.closePath(); },
+  // a hull on its side with a broken mast
+  wreck: (g, x, y, u) => { g.moveTo(x - 8 * u, y); g.quadraticCurveTo(x, y + 9 * u, x + 8 * u, y - 2 * u); g.closePath(); g.moveTo(x - 1 * u, y + 2 * u); g.lineTo(x + 3 * u, y - 8 * u); g.lineTo(x + 6 * u, y - 6 * u); },
+  // claw marks
+  lair: (g, x, y, u) => { for (const d of [-4.5, 0, 4.5]) { g.moveTo(x + (d - 2) * u, y + 7 * u); g.quadraticCurveTo(x + (d + 3) * u, y, x + (d + 1) * u, y - 7 * u); } },
+  // a cave's mouth
+  cave: (g, x, y, u) => { g.moveTo(x - 8 * u, y + 5 * u); g.lineTo(x - 5 * u, y - 2 * u); g.quadraticCurveTo(x, y - 9 * u, x + 5 * u, y - 2 * u); g.lineTo(x + 8 * u, y + 5 * u); g.moveTo(x - 3 * u, y + 5 * u); g.quadraticCurveTo(x, y - 3 * u, x + 3 * u, y + 5 * u); },
+  // three trees in a ring
+  grove: (g, x, y, u) => { for (const [dx, dy] of [[-4.5, 2.5], [4.5, 2.5], [0, -4.5]]) { g.moveTo(x + (dx + 3) * u, y + dy * u); g.arc(x + dx * u, y + dy * u, 3 * u, 0, 2 * Math.PI); } },
+  // a camp's tent
+  camp: (g, x, y, u) => { g.moveTo(x - 8 * u, y + 6 * u); g.lineTo(x, y - 7 * u); g.lineTo(x + 8 * u, y + 6 * u); g.closePath(); g.moveTo(x, y - 7 * u); g.lineTo(x, y + 6 * u); },
+  // an anchor
+  cove: (g, x, y, u) => { g.moveTo(x, y - 8 * u); g.lineTo(x, y + 7 * u); g.moveTo(x - 4 * u, y - 4 * u); g.lineTo(x + 4 * u, y - 4 * u); g.moveTo(x - 7 * u, y + 1 * u); g.quadraticCurveTo(x - 6 * u, y + 7 * u, x, y + 7 * u); g.quadraticCurveTo(x + 6 * u, y + 7 * u, x + 7 * u, y + 1 * u); },
+  // a serpent's coils
+  monster: (g, x, y, u) => { g.moveTo(x - 10 * u, y + 3 * u); g.quadraticCurveTo(x - 7 * u, y - 6 * u, x - 4 * u, y + 2 * u); g.quadraticCurveTo(x - 1 * u, y + 8 * u, x + 2 * u, y); g.quadraticCurveTo(x + 5 * u, y - 7 * u, x + 8 * u, y - 1 * u); g.lineTo(x + 10 * u, y - 4 * u); },
+};
+// (marks drawn as solid shapes rather than lines)
+const SITE_FILL = { fort: true, wreck: true, barrow: true, grove: "rgba(44,74,40,1)" };
+// (drawn in lines, these read lighter than the solid marks, so a little larger)
+const SITE_SIZE = 1.3;
+function siteMark(g, x, y, cls, u0) {
+  const u = u0 * SITE_SIZE;
+  const path = () => { g.beginPath(); SITE_MARK[cls](g, x, y, u); };
+  g.lineCap = "round"; g.lineJoin = "round";
+  path(); g.strokeStyle = HALO; g.lineWidth = 4.4 * u; g.stroke();
+  const fill = SITE_FILL[cls];
+  if (fill) { path(); g.fillStyle = fill === true ? INK : fill; g.fill(); }
+  path(); g.strokeStyle = INK; g.lineWidth = (fill ? 1.2 : 2) * u; g.stroke();
+  if (cls === "fort") { g.beginPath(); g.arc(x, y, 2.2 * u, 0, 2 * Math.PI); g.fillStyle = HALO; g.fill(); }
 }
 
 /** Where a crossing's road meets a drawn river, near its own point: { x, y, angle (radians, along the road), cls }. */

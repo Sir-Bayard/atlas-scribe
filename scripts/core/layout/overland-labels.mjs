@@ -11,18 +11,19 @@ import { parseNameSet, usesRiver } from "../land/namesets.mjs";
 import { readable, cleanFont } from "../labels.mjs";
 import { Heap } from "../land/heap.mjs";
 import { woodSpot } from "../land/settled.mjs";
+import { MARK_ONLY } from "../land/sites.mjs";
 
 /** Each label's font size in pixels on a picture 3600 px on its long side (larger pictures, larger labels alike). */
-export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19 };
+export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, landmark: 16, quarry: 16, fort: 20, monastery: 18, lighthouse: 17, customs: 16, battlefield: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19 };
 // (each mark's half size, in the same pixels as the markers: the label sits beside it)
-const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6 };
+const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6, quarry: 9, fort: 12, monastery: 14, lighthouse: 16, customs: 10, battlefield: 9, falls: 8, pass: 9, volcano: 12, spring: 9, tree: 10, stacks: 9 };
 const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river"]);
 // (each look's colors: Foundry outlines a light label in black and a dark one in white, so "bold" is white with a black
 // outline and "ink" dark with a light one)
 const LOOKS = { bold: { water: "#e8f3ff", land: "#fff8ec", place: "#ffffff" }, ink: { water: "#1d4a6e", land: "#4b3621", place: null } };
 const FONT = { water: "Amiri", land: "Vollkorn" };
 // (the order labels are placed in: the first placed keeps its spot, later ones step around it)
-const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "forest", "desert", "marsh", "island", "village", "cape", "ruin", "tower", "temple", "inn", "mine", "hamlet", "place"];
+const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "fort", "monastery", "forest", "desert", "marsh", "island", "village", "cape", "ruin", "tower", "temple", "lighthouse", "inn", "mine", "quarry", "customs", "battlefield", "landmark", "hamlet", "place"];
 
 /**
  * plan: the normalized plan; land: the layout's compact land; items: the layout's items so far; keepOut: boxes in map
@@ -31,7 +32,7 @@ const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river"
  * placeNames: Map(place id -> name), featureNames: Map(inventory id -> name, for each named feature) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
-export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [], settled = null } = {}) {
+export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [], settled = null, landmarks = [] } = {}) {
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu, side = Math.max(MW, MH);
   const em = (px) => (px * side) / 3600;
@@ -62,7 +63,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   const madeNames = new Map();
   const named = (q, kind, info = {}) => {
     if (madeNames.has(q.id)) return madeNames.get(q.id);
-    const near = ["bay", "lake", "marsh", "cape"].includes(kind) ? nearTown(q) : null;
+    const near = ["bay", "lake", "marsh", "cape", "falls", "spring", "stacks"].includes(kind) ? nearTown(q) : null;
     const name = clean(given[q.id]) ?? nm.feature(kind, { ...info, near }, q.id);
     madeNames.set(q.id, name);
     return name;
@@ -88,6 +89,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     if (riverOf && site.river?.id !== undefined) site.riverName = riverOf(site.river.id);
     const name = clean(raw?.name) ?? clean(p.name) ?? nm.place(p.class, site, p.id);
     placeNames.set(p.id, name);
+    // (a mark-only kind keeps its name, unlabeled)
+    if (MARK_ONLY.includes(p.class)) continue;
     const cls = LABEL_PX[p.class] ? p.class : "place";
     if (shown(p)) want.push({ id: `@place:${p.id}`, kind: cls, text: name, place: p, px: LABEL_PX[cls] });
   }
@@ -139,6 +142,12 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     const q = spot[0] === q0.x && spot[1] === q0.y ? q0 : { ...q0, x: spot[0], y: spot[1] };
     want.push({ id: `@land:${q.id}`, kind: k, text: named(q, k), q });
   }
+  // (landmarks: a name beside each mark, in the land's colors)
+  for (const lm of landmarks) {
+    const q = { id: lm.id, x: lm.x * mpu + M, y: lm.y * mpu + M };
+    const text = named(q, lm.kind);
+    if (inside(lm.x, lm.y)) want.push({ id: `@land:${lm.id}`, kind: "landmark", text, place: { x: lm.x, y: lm.y, class: lm.kind }, mark: true });
+  }
   for (const q of kindsOf("island").slice(0, 10)) want.push({ id: `@land:${q.id}`, kind: "island", text: named(q, "island"), q });
   for (const q of kindsOf("cape").slice(0, 6)) want.push({ id: `@land:${q.id}`, kind: "cape", text: named(q, "cape"), q });
 
@@ -185,7 +194,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   // other spot is worse still)
   const hard = (keepOut ?? []).filter((b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite));
   // (each place's mark, so no label covers one: covering a mark counts a few times over covering another label)
-  const marks = places.filter(shown).map((p) => { const r = em(MARK_PX[p.class] ?? 4.4); return [p.x - r, p.y - r, p.x + r, p.y + r]; });
+  const marks = [...places.filter(shown), ...landmarks.map((lm) => ({ x: lm.x, y: lm.y, class: lm.kind }))].map((p) => { const r = em(MARK_PX[p.class] ?? 4.4); return [p.x - r, p.y - r, p.x + r, p.y + r]; });
   const boxOf = (at, angle, w, h) => {
     const a = (angle * Math.PI) / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
     const hw = (w * c + h * s) / 2, hh = (w * s + h * c) / 2;
@@ -275,7 +284,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     const water = WATER.has(L.kind);
     labels.push({
       id: L.id, of: null, text, at: [Math.round(at[0] * 1000) / 1000, Math.round(at[1] * 1000) / 1000], angle, size: "normal", em: Math.round(size * 1000) / 1000, show: "gm",
-      color: L.place ? placeColor : water ? COLOR.water : COLOR.land, font: L.place ? placeFont : water ? FONT.water : FONT.land, alpha: 1, gen: true,
+      color: L.place && !L.mark ? placeColor : water ? COLOR.water : COLOR.land, font: L.place && !L.mark ? placeFont : water ? FONT.water : FONT.land, alpha: 1, gen: true,
     });
   }
   return { labels, placeNames, featureNames };

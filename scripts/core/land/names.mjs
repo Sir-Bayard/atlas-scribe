@@ -134,9 +134,24 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
         if (kind === "castle") return r.pick([`${base} Keep`, `${base} Castle`, `Castle ${base}`, `${base} Hold`]);
         if (kind === "ruin") return r.pick([`Old ${base}`, `${base} Ruins`, `Ruins of ${base}`, `The Fallen ${r.pick(["Tower", "Hall", "Keep", "Gate"])}`]);
         if (kind === "tower") return `${base} Tower`;
-        if (kind === "temple") return r.pick([`${base} Abbey`, `${base} Shrine`, `${base} Priory`]);
+        if (kind === "temple") return r.pick([`${base} Shrine`, `${base} Chapel`, `${base} Cross`]);
         if (kind === "inn") return `The ${r.pick(["Gray", "Red", "Old", "Laughing", "Drowsy", "Golden"])} ${r.pick(["Stag", "Lantern", "Goose", "Hound", "Anchor", "Wheel"])}`;
         if (kind === "mine") return `${base} ${r.pick(["Mine", "Delvings", "Pits"])}`;
+        if (kind === "quarry") return `${base} Quarry`;
+        if (kind === "fort") return r.pick([`Fort ${base}`, `${base} Fort`, `${base} Watch`]);
+        if (kind === "monastery") return r.pick([`${base} Abbey`, `${base} Priory`, `${base} Monastery`]);
+        if (kind === "lighthouse") return r.pick([`${base} Light`, `${base} Lighthouse`]);
+        if (kind === "customs") return r.pick([`${base} Toll`, `${base} Customs House`, `${base} Tollhouse`]);
+        if (kind === "battlefield") return r.pick([`${base} Field`, `The Field of ${base}`, `${base} Fight`]);
+        if (kind === "stones") return r.pick([`The ${base} Stones`, `${base} Ring`, `The Old Stones of ${base}`]);
+        if (kind === "barrow") return r.pick([`${base} Barrow`, `${base} Howe`, `${base} Mound`]);
+        if (kind === "wreck") return `The Wreck of the ${r.pick(["Gull", "Swift", "Merrow", "Lantern", "Kestrel", "Gray Lady", "Wanderer", "Saltheart"])}`;
+        if (kind === "lair") return r.pick([`${base} Lair`, `${base} Den`, `${base} Hollow`]);
+        if (kind === "cave") return r.pick([`${base} Cave`, `${base} Caverns`, `${base} Hole`]);
+        if (kind === "grove") return r.pick([`${base} Grove`, `The Grove of ${base}`, `${base} Holt`]);
+        if (kind === "camp") return r.pick([`${base} Brigands`, `The ${base} Band`, `${base} Outlaws`]);
+        if (kind === "cove") return r.pick([`${base} Cove`, `Smugglers' Cove`, `${base} Haven`]);
+        if (kind === "monster") return r.pick([`The Beast of ${base}`, `The ${base} Wyrm`, `The Thing in ${base}`]);
         return base;
       });
     },
@@ -170,6 +185,12 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
           case "marsh": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Fen`, `${w} Marsh`, `the ${w} Mire`, `${w} Moss`]); }
           case "island": { const w = root(r.pick(FIRST)); return r.pick([`${w} Isle`, `the Isle of ${w}`, inventedFeatures ? `${w}` : `${w}holm`]); }
           case "cape": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Head`, `${w} Point`, `Cape ${w}`, inventedFeatures || near ? `${w} Point` : `${w}ness`]); }
+          case "falls": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Falls`, `${w} Force`, `the ${w} Linn`]); }
+          case "pass": { const w = root(r.pick(FIRST)); return r.pick([`${w} Pass`, `the ${w} Gap`, `${w} Col`]); }
+          case "volcano": { const w = root(r.pick(FIRST)); return r.pick([`Mount ${w}`, `the ${w} Fire`, `${w} Smoke`]); }
+          case "spring": { const w = near ?? root(r.pick(WATER_ADJ)); return r.pick([`${w} Springs`, `the ${w} Wells`, `${w} Baths`]); }
+          case "tree": return r.pick([`the ${inventedFeatures ? root() : r.pick(LAND_ADJ)} Oak`, `the Old Tree`, `the ${inventedFeatures ? root() : r.pick(FIRST)} Yew`]);
+          case "stacks": { const w = near ?? root(r.pick(WATER_ADJ)); return r.pick([`the ${w} Stacks`, `the ${w} Needles`, `the ${w} Teeth`]); }
           case "land": return inventedFeatures ? root() : r.pick([`the ${r.pick(["West", "East", "North", "South", "Middle", "High", "Far"])}lands`, `${r.pick(FIRST)}land`]);
           case "realm": {
             // (a realm: its rank's word, and a name of its own, or now and then its capital's; info.rank one of
@@ -206,10 +227,14 @@ const REALM_ENDS = ["mark", "land", "shire", "wold", "dale", "moor", "reach", "m
 // (the patterns a kind of thing takes when the set gives none: plain words anyone can read)
 const COMMON = {
   city: ["{name}"], town: ["{name}"], village: ["{name}"], hamlet: ["{name}"], castle: ["{name} Castle"], ruin: ["Ruins of {name}"], tower: ["{name} Tower"],
-  temple: ["{name} Shrine"], inn: ["{name}"], mine: ["{name} Mine"],
+  temple: ["{name} Shrine"], inn: ["{name}"], mine: ["{name} Mine"], quarry: ["{name} Quarry"], fort: ["Fort {name}"], monastery: ["{name} Abbey"],
+  lighthouse: ["{name} Light"], customs: ["{name} Toll"], battlefield: ["The Field of {name}"], stones: ["The {name} Stones"], barrow: ["{name} Barrow"],
+  wreck: ["The Wreck of the {name}"], lair: ["{name} Lair"], cave: ["{name} Cave"], grove: ["{name} Grove"], camp: ["The {name} Band"], cove: ["{name} Cove"],
+  monster: ["The Beast of {name}"],
   sea: ["the {name} Sea", "the Sea of {name}"], ocean: ["the {name} Ocean"], bay: ["{name} Bay", "the Bay of {name}"], lake: ["Lake {name}"], river: ["the {name}", "River {name}"],
   hills: ["the {name} Hills"], mountains: ["the {name} Mountains"], range: ["the {name} Range"], forest: ["the {name} Forest"], desert: ["the {name} Waste"], marsh: ["the {name} Marsh"],
-  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], land: ["{name}"], realm: ["the Kingdom of {name}", "{name}"],
+  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
+  spring: ["{name} Springs"], tree: ["The {name} Oak"], stacks: ["The {name} Stacks"], land: ["{name}"], realm: ["the Kingdom of {name}", "{name}"],
 };
 
 function customNamer(set, seed) {

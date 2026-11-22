@@ -74,7 +74,7 @@ export function placeTowns(plan, land, { seed = 1, density = null } = {}) {
   }
   // (a kept place's site facts as the land is now, for Make This Town and its name)
   const kept = structuredClone(keep).map((f) => (f.type === "place" && out.sites?.[f.id] ? { ...f, site: out.sites[f.id] } : f));
-  return { plan: { ...structuredClone(plan), features: [...kept, ...made] }, added: made.length, removed: gone.length, notes };
+  return { plan: { ...structuredClone(plan), features: [...kept, ...made] }, added: made.length, removed: gone.length, gone, notes };
 }
 
 function segDist(p, a, b) {

@@ -8,9 +8,15 @@
 /** What a key can list, in its order: places, then roads, then crossings; only those the map has are shown. */
 export const KEY_ENTRIES = [
   { kind: "place", cls: "city", text: "City" }, { kind: "place", cls: "town", text: "Town" }, { kind: "place", cls: "village", text: "Village" },
-  { kind: "place", cls: "hamlet", text: "Hamlet" }, { kind: "place", cls: "castle", text: "Castle" }, { kind: "place", cls: "tower", text: "Tower" },
-  { kind: "place", cls: "temple", text: "Temple" }, { kind: "place", cls: "inn", text: "Inn" }, { kind: "place", cls: "mine", text: "Mine" },
-  { kind: "place", cls: "ruin", text: "Ruin" },
+  { kind: "place", cls: "hamlet", text: "Hamlet" }, { kind: "place", cls: "castle", text: "Castle" }, { kind: "place", cls: "ruin", text: "Ruin" },
+  // (points of interest, under the columns as the land covers are)
+  { kind: "site", cls: "inn", text: "Inn" }, { kind: "site", cls: "tower", text: "Watchtower" }, { kind: "site", cls: "fort", text: "Fort" },
+  { kind: "site", cls: "temple", text: "Shrine" }, { kind: "site", cls: "monastery", text: "Monastery" }, { kind: "site", cls: "mine", text: "Mine" },
+  { kind: "site", cls: "quarry", text: "Quarry" }, { kind: "site", cls: "lighthouse", text: "Lighthouse" }, { kind: "site", cls: "customs", text: "Customs House" },
+  { kind: "site", cls: "battlefield", text: "Battlefield" }, { kind: "site", cls: "stones", text: "Standing Stones" }, { kind: "site", cls: "barrow", text: "Barrow" },
+  { kind: "site", cls: "wreck", text: "Shipwreck" }, { kind: "site", cls: "lair", text: "Lair" }, { kind: "site", cls: "cave", text: "Cave" },
+  { kind: "site", cls: "grove", text: "Sacred Grove" }, { kind: "site", cls: "camp", text: "Brigands" }, { kind: "site", cls: "cove", text: "Pirates" },
+  { kind: "site", cls: "monster", text: "Monster" },
   { kind: "way", cls: "highway", text: "Highway" }, { kind: "way", cls: "street", text: "Road" }, { kind: "way", cls: "track", text: "Track" },
   { kind: "crossing", cls: "bridge", text: "Bridge" }, { kind: "crossing", cls: "footbridge", text: "Footbridge" }, { kind: "crossing", cls: "ford", text: "Ford" },
   { kind: "realm", cls: "border", text: "Border" }, { kind: "realm", cls: "capital", text: "Capital" },
@@ -42,24 +48,27 @@ function keyFor(L, miles, withCovers = true) {
   if (!L.dressing || !L.overland || L.legend === false || L.places === false || !(L.size?.squares?.[0] > 0)) return null;
   const items = L.items ?? [];
   const realms = L.showRealms !== false && L.realms?.list?.length > 0;
-  const has = (kind, cls) => (kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === kind && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
+  const has = (kind, cls) => (kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === (kind === "site" ? "place" : kind) && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
   const shown = KEY_ENTRIES.filter((e) => has(e.kind, e.cls));
   if (!shown.some((e) => e.kind === "place" || e.kind === "way")) return null;
   const [mw, mh] = L.size.squares;
   const { unit: u, corners } = cornersOf(L);
-  // columns: places, then roads and crossings; the land covers under them, half a row below, each to whichever column
-  // is shorter then, so the key stays two columns wide (a narrow key hides less of the map); a key of places alone gets
-  // a column of covers beside them
-  const places = shown.filter((e) => e.kind === "place"), lines = shown.filter((e) => e.kind !== "place" && e.kind !== "cover"), coverRows = shown.filter((e) => e.kind === "cover");
+  // columns: places, then roads and crossings; the points of interest and then the land covers under them, so the key
+  // stays two columns wide (a narrow key hides less of the map)
+  const places = shown.filter((e) => e.kind === "place"), lines = shown.filter((e) => !["place", "cover", "site"].includes(e.kind));
   const cols = [places, lines].filter((l) => l.length).map((l) => l.map((e, k) => ({ e, r: k })));
-  if (coverRows.length && cols.length === 2) {
+  // (each group under the columns, half a row below the last, each entry to whichever column is shorter then; a key
+  // with one column gets a column of the group beside it)
+  for (const group of [shown.filter((e) => e.kind === "site"), shown.filter((e) => e.kind === "cover")]) {
+    if (!group.length) continue;
+    if (cols.length < 2) { cols.push(group.map((e, k) => ({ e, r: k }))); continue; }
     const end = (c) => (c.length ? c[c.length - 1].r + 1 : 0), started = new Set();
-    for (const e of coverRows) {
+    for (const e of group) {
       const c = end(cols[0]) + (started.has(0) ? 0 : 0.5) <= end(cols[1]) + (started.has(1) ? 0 : 0.5) ? 0 : 1;
       cols[c].push({ e, r: end(cols[c]) + (started.has(c) ? 0 : 0.5) });
       started.add(c);
     }
-  } else if (coverRows.length) cols.push(coverRows.map((e, k) => ({ e, r: k })));
+  }
   const colW = (list) => KEY.mark * u + Math.max(...list.map((q) => q.e.text.length)) * KEY.font * u * 0.56;
   const inner = Math.max(KEY.least * u, cols.reduce((t, l) => t + colW(l), 0) + (cols.length - 1) * KEY.gap * u);
   const rows = Math.max(...cols.map((l) => l[l.length - 1].r + 1));
