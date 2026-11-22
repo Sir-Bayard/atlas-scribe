@@ -2,7 +2,9 @@
  * Kept land (Keep This Land): a finished land's heights saved as a 16-bit gray PNG over its context frame, so later
  * versions of the generator never move its coasts, ranges or rivers. Pixel value 0 is sea; 1 to 65535 are land
  * heights from 0 to `max`. A private chunk ("asND") holds the generator's own node heights and coast, read back
- * exactly while the generator version and its points are the same (the raster is for a later generator). The plan keeps { path, gen, frame: [W, H] (miles), size: [w, h] (pixels), max, hash } as
+ * exactly while the generator's points are the same as the keeper's (schema's POINTS_GEN), its later steps run as the
+ * keeper ran them; the raster is for a generator whose points differ. The plan keeps
+ * { path, gen, frame: [W, H] (miles), size: [w, h] (pixels), max, hash } as
  * land.keep; the file (a JSON file holding the PNG, since Foundry turns uploaded PNGs into WebP) sits beside the map's
  * images. A layout reads the heights back from a store the worker fills
  * before a job (provideKept), since layouts are synchronous. Pure apart from the PNG streams.

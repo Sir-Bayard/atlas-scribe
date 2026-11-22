@@ -30,7 +30,7 @@ const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river"
  * placeNames: Map(place id -> name), featureNames: Map(inventory id -> name, for each named feature) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
-export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [] } = {}) {
+export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [] } = {}) {
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu, side = Math.max(MW, MH);
   const em = (px) => (px * side) / 3600;
@@ -186,7 +186,25 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   // (how much of a box other labels and marks already cover: the spot covering least wins when none is clear)
   const overlap = (b, o) => Math.max(0, Math.min(b[2], o[2]) - Math.max(b[0], o[0])) * Math.max(0, Math.min(b[3], o[3]) - Math.max(b[1], o[1]));
   const cover = (b) => { let a = 0; for (const o of boxes) a += overlap(b, o); for (const o of marks) a += 4 * overlap(b, o); for (const o of hard) a += 8 * overlap(b, o); return a; };
-  const least = (list, w, h) => { let best = null, bc = Infinity; for (const c of list) { const v = cover(boxOf(c.at, c.angle ?? 0, w, h)); if (v < bc - 1e-12) { bc = v; best = c; } if (v === 0) break; } return best; };
+  // (the realms' borders as points a little apart: a river's or range's name over a border's dashes costs as much as
+  // covering a mark, by the length of border under it)
+  const bstep = 0.004 * side, bpts = [];
+  for (const b of borders ?? []) for (let k = 1; k < b.length; k++) {
+    const [ax, ay] = b[k - 1], [bx, by] = b[k], m = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / bstep));
+    for (let q = 0; q < m; q++) bpts.push(ax + ((bx - ax) * (q + 0.5)) / m, ay + ((by - ay) * (q + 0.5)) / m);
+  }
+  const onBorders = (at, angle, w, h) => {
+    if (!bpts.length) return 0;
+    const a = (angle * Math.PI) / 180, c = Math.cos(a), s0 = Math.sin(a), R = (w + h) / 2;
+    let n = 0;
+    for (let k = 0; k < bpts.length; k += 2) {
+      const dx = bpts[k] - at[0], dy = bpts[k + 1] - at[1];
+      if (Math.abs(dx) > R || Math.abs(dy) > R) continue;
+      if (Math.abs(dx * c + dy * s0) <= w / 2 && Math.abs(-dx * s0 + dy * c) <= h / 2) n++;
+    }
+    return 4 * n * bstep * h;
+  };
+  const least = (list, w, h, extra = () => 0) => { let best = null, bc = Infinity; for (const c of list) { const v = cover(boxOf(c.at, c.angle ?? 0, w, h)) + extra(c.at, c.angle ?? 0, w, h); if (v < bc - 1e-12) { bc = v; best = c; } if (v === 0) break; } return best; };
   // (how much of a label's box the dressing covers, as a share of it)
   const onDressing = (at, angle, w, h) => { const b = boxOf(at, angle, w, h), A = (b[2] - b[0]) * (b[3] - b[1]) || 1; let a = 0; for (const o of hard) a += overlap(b, o); return a / A; };
   const onMarks = (at, angle, w, h) => { const b = boxOf(at, angle, w, h); return marks.filter((o) => overlap(b, o) > 0.25 * (o[2] - o[0]) * (o[3] - o[1])).length; };
@@ -220,7 +238,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
         const ang = readable(st.angle), a = (ang * Math.PI) / 180, offs = L.kind === "river" ? [size * 0.8, -size * 0.8] : [0, size * 0.9, -size * 0.9, size * 1.8, -size * 1.8];
         for (const off of offs) cand.push({ at: fit([st.mid[0] + Math.sin(a) * off, st.mid[1] - Math.cos(a) * off], w, h, ang), angle: ang });
       }
-      const pick = least(cand, w, h);
+      const pick = least(cand, w, h, onBorders);
       if (pick) ({ at, angle } = pick);
       else {
         // (no stretch long enough: flat, at the middle of the longest part in the map)

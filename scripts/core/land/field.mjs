@@ -148,6 +148,50 @@ export function blur(f, r) {
   return f;
 }
 
+/**
+ * A blur along one direction only (deg: a compass bearing, 0 north, 90 east; either way along it is the same): each
+ * pixel the mean of 2r + 1 bilinear samples a pixel apart along it, three passes, in place. Long streaks of rain
+ * downwind, not round patches.
+ */
+export function lineBlur(f, deg, r) {
+  if (r < 1) return f;
+  const { w, h } = f, a = (deg * PI) / 180, ux = sin(a), uy = -cos(a);
+  // (past the field's size a longer line adds only more of the clamped edge)
+  r = Math.min(r, Math.max(w, h));
+  let src = f.data, dst = new Float64Array(w * h);
+  // (along a row or a column: running sums, the edge clamped, as blur's passes)
+  if (Math.abs(uy) < 1e-9 || Math.abs(ux) < 1e-9) {
+    const horiz = Math.abs(uy) < 1e-9, n = horiz ? w : h, m = horiz ? h : w;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let j = 0; j < m; j++) {
+        const at = (i) => (horiz ? j * w + Math.min(n - 1, Math.max(0, i)) : Math.min(n - 1, Math.max(0, i)) * w + j);
+        let acc = 0;
+        for (let i = -r; i <= r; i++) acc += src[at(i)];
+        for (let i = 0; i < n; i++) { dst[horiz ? j * w + i : i * w + j] = acc / (2 * r + 1); acc += src[at(i + r + 1)] - src[at(i - r)]; }
+      }
+      [src, dst] = [dst, src];
+    }
+    if (src !== f.data) f.data.set(src);
+    return f;
+  }
+  const at = (d, x, y) => {
+    if (x < 0) x = 0; else if (x > w - 1) x = w - 1;
+    if (y < 0) y = 0; else if (y > h - 1) y = h - 1;
+    const ix = Math.min(w - 2, Math.floor(x)), iy = Math.min(h - 2, Math.floor(y)), tx = x - ix, ty = y - iy, o = iy * w + ix;
+    return (d[o] * (1 - tx) + d[o + 1] * tx) * (1 - ty) + (d[o + w] * (1 - tx) + d[o + w + 1] * tx) * ty;
+  };
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let k = -r; k <= r; k++) acc += at(src, x + k * ux, y + k * uy);
+      dst[y * w + x] = acc / (2 * r + 1);
+    }
+    [src, dst] = [dst, src];
+  }
+  if (src !== f.data) f.data.set(src);
+  return f;
+}
+
 /** Labels 4-connected regions of pixels where test(i) holds. Returns { label (Int32Array, -1 outside), sizes, edge (touches the frame) }. */
 export function regions(f, test) {
   const { w, h } = f, label = new Int32Array(w * h).fill(-1);

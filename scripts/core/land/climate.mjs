@@ -8,7 +8,7 @@
  * applied here, before erosion uses the rain. Rain is normalized so 1 is a rainy coastal lowland. Per mile, not per
  * pixel, so it is the same at any scale. Pure.
  */
-import { makeField, like, sample, blur } from "./field.mjs";
+import { makeField, like, sample, blur, lineBlur } from "./field.mjs";
 import { nodeGrid } from "./graph.mjs";
 import { exp, cos, sin, PI } from "./dmath.mjs";
 
@@ -22,7 +22,8 @@ export const seaTemp = (lat) => Math.min(1, Math.max(0, (78 - Math.abs(lat)) / 6
 
 /**
  * ctx: { g, frame, h (heights per node), landMask, lat (y miles -> degrees), land (block), seaSide, intent ({ wet,
- * warm } per node, -1..1, or null), zones ([{ nodes: mask, rain, temp }] targets for zones that react) }.
+ * warm } per node, -1..1, or null), zones ([{ nodes: mask, rain, temp }] targets for zones that react), gen (the
+ * generator to run as: 1 has no smoothing along the wind; left out, the newest) }.
  * Returns { rain, temp (per node), rainF, tempF (fields over the frame) }.
  */
 export function climateStage(ctx) {
@@ -66,6 +67,10 @@ export function climateStage(ctx) {
     const belt = (1 - 0.45 * exp(-((L - 28) / 7) * ((L - 28) / 7))) * (1 + 0.5 * exp(-(L / 8) * (L / 8))) * bias;
     for (let x = 0; x < f.w; x++) rainF.data[y * f.w + x] *= belt / RAIN_REF;
   }
+  // (smoothed along the wind first, so the wet and dry lands run a little downwind, not in round patches: about 1% of
+  // the frame each way, 15 miles at least, little enough that a range still casts its rain shadow; never more than 6%
+  // of the field's pixels, which a map a few miles across would ask for many times over)
+  if ((ctx.gen ?? 2) >= 2) lineBlur(rainF, Number.isFinite(wind) ? wind : 90, Math.max(1, Math.min(Math.round(0.06 * Math.max(f.w, f.h)), Math.round(Math.max(15, 0.01 * Math.max(frame.W, frame.H)) / f.cell))));
   blur(rainF, Math.max(1, Math.round(15 / f.cell)));
   const n = g.n, rain = new Float64Array(n), temp = new Float64Array(n);
   for (let i = 0; i < n; i++) {

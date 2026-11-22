@@ -51,10 +51,14 @@ export function components(g, test) {
   return { comp, areas, edge };
 }
 
+/** How much more of the map than the recipe's share ranges may raise from the sea, as a share of the map. */
+export const RANGE_ROOM = 0.04;
+
 /**
  * ctx: { g, frame, land (normalized land block), seed, r (random stream), shapeF (the shape field), terrain (the
  * plan's terrain features in frame miles: [{ class, path | at, ...fields }]), intent (sampled intent layers per node,
- * or null) }. Returns { shape, U, Uold, K, hard, talus, D, landMask, outlet, fixedH, spines, plates, distSea }.
+ * or null), gen (the generator to run as; left out, the newest) }. Returns { shape, U, Uold, K, hard, talus, D, landMask,
+ * outlet, fixedH, spines, plates, distSea, rangeT (how high a range stands before it makes land of the sea) }.
  */
 export function upliftStage(ctx) {
   const { g, frame, land, seed, r, shapeF } = ctx;
@@ -146,9 +150,29 @@ export function upliftStage(ctx) {
       }
     }
   });
-  // land: the shape, plus wherever a range stands
+  // land: the shape, plus wherever a range stands; but on a kingdom map, or of islands, ranges raise no more of the sea
+  // than keeps the land within a little of the share the recipe asked for (on a small map a range's miles of width are
+  // much of it, and a thin arc or a few islands would turn to one land): past that, only a range's higher ground stands
+  // above the sea (generator 2 on)
   const landMask = new Uint8Array(n);
-  for (let i = 0; i < n; i++) landMask[i] = shape[i] > 0 || U[i] > 0.12 ? 1 : 0;
+  let rangeT = 0.12;
+  if ((ctx.gen ?? 2) >= 2 && (frame.scale === "kingdom" || ["archipelago", "arc", "island"].includes(land.type))) {
+    let mapA = 0, shapeA = 0; const sea = [];
+    for (let i = 0; i < n; i++) {
+      if (!frame.inMap(g.x[i], g.y[i])) continue;
+      mapA += g.area[i];
+      if (shape[i] > 0) shapeA += g.area[i]; else if (U[i] > 0.12) sea.push(i);
+    }
+    const room = Math.max(0, (Number.isFinite(shapeF.share) ? shapeF.share + RANGE_ROOM : 1) * mapA - shapeA);
+    let add = 0; for (const i of sea) add += g.area[i];
+    if (add > room) {
+      sea.sort((a, b) => U[b] - U[a] || a - b);
+      let a = 0, k = 0;
+      while (k < sea.length && a + g.area[sea[k]] <= room) a += g.area[sea[k++]];
+      rangeT = k < sea.length ? U[sea[k]] : rangeT;
+    }
+  }
+  for (let i = 0; i < n; i++) landMask[i] = shape[i] > 0 || U[i] > rangeT ? 1 : 0;
   // intent: land or sea painted
   if (ctx.intent?.water) for (let i = 0; i < n; i++) { const v = ctx.intent.water[i]; if (v > 0.6) landMask[i] = 1; else if (v < 0.4) landMask[i] = 0; }
   // clean: land specks under 0.2% of the map go; sea holes under 0.5% that don't reach the frame's edge fill
@@ -191,7 +215,7 @@ export function upliftStage(ctx) {
     talus[i] = SOLVER.talus * pow(s, -0.3) * (1 + 0.6 * hard[i]);
     D[i] = (Dphys * (1 - 0.6 * hard[i])) / SOLVER.dt;
   }
-  return { shape, U, Uold, K, hard, talus, D, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null };
+  return { shape, U, Uold, K, hard, talus, D, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null, rangeT };
 }
 
 /** How hard a plateau's rock is at its heart. */

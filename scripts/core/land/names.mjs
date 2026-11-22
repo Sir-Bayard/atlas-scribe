@@ -172,14 +172,13 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
           case "cape": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Head`, `${w} Point`, `Cape ${w}`, inventedFeatures || near ? `${w} Point` : `${w}ness`]); }
           case "land": return inventedFeatures ? root() : r.pick([`the ${r.pick(["West", "East", "North", "South", "Middle", "High", "Far"])}lands`, `${r.pick(FIRST)}land`]);
           case "realm": {
-            // (a realm: its rank's word, and a name of its own, or now and then its capital's; info.rank great, middle
-            // or small)
+            // (a realm: its rank's word, and a name of its own, or now and then its capital's; info.rank one of
+            // REALM_FORMS's)
             // (one s where two meet, Kingshire, and no "march" or "king" twice: not the Reedmarch March or the Kingdom
             // of Kingsdale)
             const a = r.pick(FIRST), b = r.pick(REALM_ENDS);
             const w = near ?? (inventedFeatures ? root() : /s$/i.test(a) && b[0] === "s" ? a + b.slice(1) : a + b);
-            const forms = (REALM_FORMS[info.rank] ?? REALM_FORMS.middle).filter((t) => !(/march/i.test(w) && /March/.test(t)) && !(/king/i.test(w) && /Kingdom/.test(t)));
-            return r.pick(forms.length ? forms : ["{name}"]).replace("{name}", w);
+            return r.pick(realmForms(info.rank, w)).replace("{name}", w);
           }
           default: return null;
         }
@@ -188,12 +187,19 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
   };
 }
 
-/** A realm's name by its rank: the great ones kingdoms, the small ones marches, counties and baronies. */
+/** A realm's name by its rank (realms.mjs realmRank, a march being a duchy on a frontier with the wilds). */
 const REALM_FORMS = {
-  great: ["the Kingdom of {name}", "{name}", "the Kingdom of {name}"],
-  middle: ["the Duchy of {name}", "the Kingdom of {name}", "the Principality of {name}", "{name}"],
-  small: ["the {name} March", "the County of {name}", "the Barony of {name}", "the March of {name}"],
+  empire: ["the Empire of {name}", "the {name} Empire"],
+  kingdom: ["the Kingdom of {name}", "{name}", "the Kingdom of {name}"],
+  duchy: ["the Duchy of {name}", "the Principality of {name}", "the Duchy of {name}"],
+  march: ["the March of {name}", "the {name} March"],
+  county: ["the County of {name}", "the Earldom of {name}"],
+  barony: ["the Barony of {name}"],
 };
+// (a rank's forms for a name w, never "march" or "king" twice; just the name when every form would)
+const realmForms = (rank, w) => { const f = (REALM_FORMS[rank] ?? REALM_FORMS.middle).filter((t) => !(/march/i.test(w) && /March/.test(t)) && !(/king/i.test(w) && /Kingdom/.test(t))); return f.length ? f : ["{name}"]; };
+// (the older words for the ranks)
+Object.assign(REALM_FORMS, { great: REALM_FORMS.kingdom, middle: REALM_FORMS.duchy, small: REALM_FORMS.county });
 const REALM_ENDS = ["mark", "land", "shire", "wold", "dale", "moor", "reach", "march"];
 
 // ---- a GM's name set (namesets.mjs) ----
@@ -235,7 +241,8 @@ function customNamer(set, seed) {
     let k = 2, base = titled(makeOne(rng(seed, "names", "custom", key, "last")) ?? [...used].find((u) => !/ \d+$/.test(u)) ?? "Unnamed"); while (used.has(`${base} ${k}`)) k++;
     used.add(`${base} ${k}`); return `${base} ${k}`;
   };
-  const pattern = (r, kind, name) => { const own = set.kinds?.[kind], list = own?.length ? own : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };
+  // (a realm with no pattern of the set's own takes its rank's words)
+  const pattern = (r, kind, name, rank) => { const own = set.kinds?.[kind], list = own?.length ? own : kind === "realm" && REALM_FORMS[rank] ? realmForms(rank, name) : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };
   // (a word that took one of the set's endings gives it up for a suffix that says more: not Bricadunmagos)
   const endings = (set.sounds?.endings ?? []).slice().sort((a, b) => b.length - a.length);
   // (a word that's little more than its ending can't give it up: null)
@@ -289,7 +296,7 @@ function customNamer(set, seed) {
           return named && e.type !== "pattern" && set.kinds?.[k]?.length ? pattern(r, k, named) : named;
         }
         const pk = kinds.find((x) => set.kinds?.[x]) ?? kinds[0];
-        return pattern(r, pk, root);
+        return pattern(r, pk, root, info.rank);
       });
     },
   };

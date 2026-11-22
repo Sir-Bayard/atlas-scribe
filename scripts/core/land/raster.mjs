@@ -337,7 +337,8 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
   }
 
   // lakes from their levels: water wherever the ground is below its lake's level inside that lake's basin
-  const lakeS = new Float32Array(N).fill(-1), lake = new Uint8Array(N), salt = new Uint8Array(N);
+  // (lakeDepth: how far below its lake's level the ground is, in height units, where there's water)
+  const lakeS = new Float32Array(N).fill(-1), lake = new Uint8Array(N), salt = new Uint8Array(N), lakeDepth = new Float32Array(N);
   const level = new Map((land.lakes ?? []).map((L) => [L.id, L.level]));
   for (let i = 0; i < N; i++) {
     if (!landM[i]) continue;
@@ -345,12 +346,12 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
     if (k >= 0 && level.has(k)) {
       const s = (level.get(k) - z[i]) * 4000;
       lakeS[i] = Math.max(-1, Math.min(1, s));
-      if (s > 0) lake[i] = 1;
+      if (s > 0) { lake[i] = 1; lakeDepth[i] = level.get(k) - z[i]; }
     }
     if (!lake[i] && saltQ[i] > 0) salt[i] = 1;
   }
   // (lake specks dropped)
-  { const lr = regions(rw, rh, (i) => lake[i] === 1); for (let i = 0; i < N; i++) { const l = lr.label[i]; if (l >= 0 && lr.sizes[l] < speckMin) { lake[i] = 0; lakeS[i] = Math.min(lakeS[i], -0.01); } } }
+  { const lr = regions(rw, rh, (i) => lake[i] === 1); for (let i = 0; i < N; i++) { const l = lr.label[i]; if (l >= 0 && lr.sizes[l] < speckMin) { lake[i] = 0; lakeDepth[i] = 0; lakeS[i] = Math.min(lakeS[i], -0.01); } } }
 
   // the sea's depth: the distance offshore, blended with the recipe's shape continued under the water (shelves, banks,
   // island platforms, deep channels)
@@ -367,5 +368,5 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
   }
   boxBlur(depth, rw, rh, Math.max(1, 1.5 * sp));
 
-  return { rw, rh, cell, cellMi, z, land: landM, landS, lake, lakeS, salt, rain, temp, hard, forest, biome, zone, seaDist, landDist, depth, riverDist, ms: Math.round(performance.now() - t0) };
+  return { rw, rh, cell, cellMi, z, land: landM, landS, lake, lakeS, lakeDepth, salt, rain, temp, hard, forest, biome, zone, seaDist, landDist, depth, riverDist, ms: Math.round(performance.now() - t0) };
 }

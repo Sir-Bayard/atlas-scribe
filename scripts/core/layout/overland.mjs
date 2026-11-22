@@ -50,7 +50,7 @@ export function compactLand(L) {
   return {
     gen: L.gen, attempt: L.attempt, tries: L.tries, seed: L.seed,
     frame: { W: f.W, H: f.H, margin: f.margin, mapW: f.mapW, mapH: f.mapH, mpu: f.mpu, scale: f.scale },
-    n, x: g.x, y: g.y, triangles: g.triangles, indptr: g.indptr, indices: g.indices, spacing: L.spacing,
+    n, x: g.x, y: g.y, area: g.area, triangles: g.triangles, indptr: g.indptr, indices: g.indices, spacing: L.spacing,
     h: L.h, landMask: L.landMask, lake: L.lake, salt: L.salt, lakeId: L.lakeId,
     lakes: L.lakes.map((k) => ({ id: k.id, level: k.level, closed: k.closed, area: k.area })),
     rain: L.rain, temp: L.temp, hard: L.hard, biome, zone, sea, F: L.F, threshold: L.threshold,
@@ -132,7 +132,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, realms, showRealms: plan.output?.realms !== false };
   const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
   const keyBox = keyOf(shape);
-  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [] });
+  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [] });
   for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
   // places standing in water and roads running through it (a GM's edit, or land that changed under them)
   { const fr = L.frame;

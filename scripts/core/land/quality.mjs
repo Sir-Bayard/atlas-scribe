@@ -23,8 +23,8 @@ export function landProblems(L, inventory) {
   if (land.type === "archipelago" && top > 0.4) out.push({ check: "masses", detail: "an archipelago has no land mass over 40% of the land" });
   // (a map under about 40 miles across is smaller than a range and a river's catchment: those two aren't asked of it)
   const big = Math.max(L.frame.mapW, L.frame.mapH) >= 40;
-  // a range when mountains are asked for
-  if (big && land.mountains > 0.3 && !inventory.some((f) => f.kind === "range")) out.push({ check: "range", detail: "no range on land" });
+  // a range when mountains are asked for (not of islands: their heights stand in the sea, a peak or two above it)
+  if (big && land.mountains > 0.3 && !["archipelago", "arc"].includes(land.type) && !inventory.some((f) => f.kind === "range")) out.push({ check: "range", detail: "no range on land" });
   // rivers, unless the land is mostly small islands
   const mains = L.rivers.filter((R) => R.main).length;
   if (big && !["archipelago", "arc"].includes(land.type) && mains < 2) out.push({ check: "rivers", detail: `only ${mains} river${mains === 1 ? "" : "s"}` });

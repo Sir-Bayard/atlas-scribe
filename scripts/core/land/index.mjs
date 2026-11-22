@@ -7,7 +7,7 @@
  */
 import { frameOf, latitudeOf, scaleClass } from "./units.mjs";
 import { shapeField } from "./recipes.mjs";
-import { GEN, normalizeLand, landSeedOf } from "./schema.mjs";
+import { GEN, POINTS_GEN, normalizeLand, landSeedOf } from "./schema.mjs";
 import { makePoints, makeGraph, nodeGrid } from "./graph.mjs";
 import { distanceTo, atNodes } from "./field.mjs";
 import { upliftStage, SOLVER, components, landforms, scourHollows } from "./uplift.mjs";
@@ -42,8 +42,9 @@ export function generateLand(plan, opts = {}) {
   // than tipping the checks over to another try)
   const pinned = Number.isInteger(plan.land?.attempt) && plan.land.attempt >= 0 ? plan.land.attempt : null;
   const tries = opts.kept || pinned !== null ? 1 : Math.max(1, opts.tries ?? TRIES);
-  // (a kept node block from this generator: made with the attempt it came from, so its points are the same)
-  const keptAttempt = opts.kept?.nodes && opts.kept.nodes.gen === GEN ? opts.kept.nodes.attempt : 0;
+  // (a kept node block from a generator whose points are this one's: made with the attempt it came from, so its points
+  // are the same)
+  const keptAttempt = opts.kept?.nodes && opts.kept.nodes.gen >= POINTS_GEN ? opts.kept.nodes.attempt : 0;
   // (the painted intent read once for every try)
   if (opts.intent === undefined) opts = { ...opts, intent: readIntent(plan, frameOf(plan)) };
   let made = 0;
@@ -82,11 +83,12 @@ export function generateOnce(plan, opts = {}) {
 
   // the graph: every point near land and inside the map, one in four far out at sea and in the margin
   progress(0.08, "Points");
-  // (a land kept whole: read back exactly from its node block when this generator made it, its points made as they
-  // were; else from its height file, its own coast setting where the points are dense)
+  // (a land kept whole: read back exactly from its node block when a generator whose points are this one's kept it,
+  // and its steps after the heights run as that generator ran them; else from its height file, its own coast setting
+  // where the points are dense)
   // (a lock area waits for 1.4's brushes: a kept land is always kept whole)
   const keptWhole = !!opts.kept?.land;
-  const exactWanted = keptWhole && opts.kept.nodes?.gen === GEN;
+  const exactWanted = keptWhole && opts.kept.nodes?.gen >= POINTS_GEN;
   const seaDist = keptWhole && !exactWanted ? distanceTo(opts.kept.land, (i) => opts.kept.land.data[i] > 0) : distanceTo(shapeF, (i) => shapeF.data[i] > 0);
   const pad = 0.03 * Math.max(frame.mapW, frame.mapH);
   const full = (x, y) => x > frame.margin - pad && y > frame.margin - pad && x < frame.margin + frame.mapW + pad && y < frame.margin + frame.mapH + pad && sampleLike(seaDist, x, y) < 60;
@@ -109,14 +111,17 @@ export function generateOnce(plan, opts = {}) {
     at: isPoint(f.at) ? frame.toFrame(f.at) : null,
   }));
   progress(0.15, "Plates and ranges");
+  const exact = exactWanted && opts.kept.nodes.n === g.n && opts.kept.nodes.pos === pointsHash(g);
+  // (the generator whose steps this land runs: a land read back exactly runs its keeper's, so its rock, rivers and
+  // lakes don't move)
+  const stepsGen = exact ? Math.min(GEN, opts.kept.nodes.gen) : GEN;
   // (a land kept whole takes no new plateaus or volcanoes: its heights are read back, and they'd only move its coast)
   // (read back exactly, the plateaus and volcanoes are made again as they were: their hard rock and cones are the
   // land's too, though its heights already hold them)
-  const up = upliftStage({ g, frame, land, seed: subSeed, r: r.fork("uplift"), shapeF, terrain, intent, keptWhole: !!opts.kept && !exactWanted });
+  const up = upliftStage({ g, frame, land, seed: subSeed, r: r.fork("uplift"), shapeF, terrain, intent, keptWhole: !!opts.kept && !exactWanted, gen: stepsGen });
   const { U, Uold, K, D, talus, landMask, outlet, fixedH } = up;
   const n = g.n;
   // a land kept whole: its coast as kept (the nearest pixel of its file), whatever the recipe now makes
-  const exact = exactWanted && opts.kept.nodes.n === g.n && opts.kept.nodes.pos === pointsHash(g);
   if (keptWhole) {
     const KL = opts.kept.land;
     for (let i = 0; i < n; i++) {
@@ -158,7 +163,7 @@ export function generateOnce(plan, opts = {}) {
   const p = { U: Ueff, K, dt: SOLVER.dt, fill: 0.008, smallArea: Math.max(15, 3 * meanArea), D, passes: 2, talus, outlet, fixed };
   for (let s = 0; s < (allKept ? 0 : steps); s++) {
     if (s === Math.floor(steps * 0.45)) {
-      const c = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
+      const c = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets, gen: stepsGen });
       rainNow = c.rain;
       let sum = 0, cnt = 0;
       for (let i = 0; i < n; i++) if (landMask[i]) { sum += rainNow[i]; cnt++; }
@@ -187,7 +192,7 @@ export function generateOnce(plan, opts = {}) {
   // (a land read back exactly runs those last steps as it first did: nothing held)
   const after = exact ? null : fixed;
   let np = fillRoute(g, h, outlet, w);
-  const cl1 = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
+  const cl1 = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets, gen: stepsGen });
   const rainW = new Float64Array(n);
   for (let i = 0; i < n; i++) rainW[i] = cl1.rain[i] * g.area[i];
   accumulate(w, rainW, np);
@@ -207,7 +212,7 @@ export function generateOnce(plan, opts = {}) {
   for (const fn of forced) if (breachForced(g, h, w, fn, after, outlet)) cut = true;
   if (cut) np = fillRoute(g, h, outlet, w);
   progress(0.8, "Rain and rivers");
-  const climate = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets });
+  const climate = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets, gen: stepsGen });
   const pxPerMile = (Number(plan.output?.pxPerSquare) || 100) / frame.mpu;
   const lk = lakesStage({ g, h, w, np, rain: climate.rain, temp: climate.temp, land: landMask, outlet, pxPerMile, amount: land.lakes });
   // (a flooded hollow too small to show as a lake is filled flat, as sediment would: rivers then never step uphill)
@@ -229,7 +234,7 @@ export function generateOnce(plan, opts = {}) {
   }
   progress(1, "Done");
   return {
-    gen: GEN, attempt, seed, frame, land, g, grid, shapeF, h, hPre, hf: Float64Array.from(w.hf), rec: Int32Array.from(w.rec),
+    gen: GEN, attempt, seed, rangeT: up.rangeT, frame, land, g, grid, shapeF, h, hPre, hf: Float64Array.from(w.hf), rec: Int32Array.from(w.rec),
     landMask, outlet, U, hard: up.hard, spines: up.spines, plates: up.plates, distSea: up.distSea,
     rain: climate.rain, temp: climate.temp, rainF: climate.rainF, tempF: climate.tempF,
     F: lk.F, lake: lk.lake, salt: lk.salt, lakes: lk.lakes, lakeId: lk.lakeId, rivers: rv.rivers, riverOf: rv.riverOf, marks,

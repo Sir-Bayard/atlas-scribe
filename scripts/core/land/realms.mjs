@@ -26,6 +26,34 @@ const REACH = 2.2;
 const RIVER_TOLL = 0.03;
 const BIOME_COST = { glacier: 6, tundra: 0.6, "hot-desert": 0.9, wetland: 1.2, "salt-flat": 0.8, "temperate-rainforest": 0.3, rainforest: 0.5 };
 
+/**
+ * The ranks a realm can take, smallest first, from its land in square miles (the part in the map) and its towns and
+ * cities: a barony under 1,500 sq mi, a county under 5,000, a duchy (a march on a frontier with the wilds) under 12,000,
+ * a kingdom under 250,000 and an empire above; a kingdom needs two towns or cities and an empire six, a duchy one, or
+ * it's a rank lower.
+ */
+export const REALM_RANKS = ["barony", "county", "duchy", "kingdom", "empire"];
+const RANK_AREA = [1500, 5000, 12000, 250000];
+const RANK_TOWNS = { duchy: 1, kingdom: 2, empire: 6 };
+export function realmRank(sqMi, towns) {
+  let k = RANK_AREA.findIndex((a) => sqMi < a);
+  if (k < 0) k = REALM_RANKS.length - 1;
+  while (k > 1 && towns < (RANK_TOWNS[REALM_RANKS[k]] ?? 0)) k--;
+  return REALM_RANKS[k];
+}
+
+/** Each node's area in square miles: the land's own, or a third of each triangle it's a corner of. */
+export function nodeAreas(land) {
+  if (land.area) return land.area;
+  const { n, x, y, triangles: tri } = land, area = new Float64Array(n);
+  for (let t = 0; t < tri.length; t += 3) {
+    const a = tri[t], b = tri[t + 1], c = tri[t + 2];
+    const s = Math.abs((x[b] - x[a]) * (y[c] - y[a]) - (x[c] - x[a]) * (y[b] - y[a])) / 6;
+    area[a] += s; area[b] += s; area[c] += s;
+  }
+  return area;
+}
+
 /** A finder of the nearest node to a point in map units (squares), over the land's nodes. */
 function nearestOf(land) {
   const { n, x, y, frame: f } = land;
@@ -63,11 +91,13 @@ export function realmSpacing(land, count = "some") {
 /**
  * Each land node's realm, grown from the crowns by least cost: travel (grade, ranges, rough ground), crossing a big
  * river (dear, so borders follow rivers), and the sea or a lake (dearer still, so a near island joins and a far one
- * stays apart). crowns: [{ at: [u, v] }] in map units. Returns { owner: Int16Array (a realm's index, -1 at sea or in
- * a lake, -2 land no realm reaches), cost: Float64Array (miles' worth from its crown) }.
+ * stays apart), open ground a little dearer or cheaper here and there (wanderOf, by `wander`, so borders across it
+ * wander). crowns: [{ at: [u, v] }] in map units. Returns { owner: Int16Array (a realm's index, -1 at sea or in a lake,
+ * -2 land no realm reaches), cost: Float64Array (miles' worth from its crown) }.
  */
-export function growRealms(land, crowns, { reach = Infinity, spacing = Number.isFinite(reach) ? reach / REACH : land.spacing * 20 } = {}) {
+export function growRealms(land, crowns, { reach = Infinity, spacing = Number.isFinite(reach) ? reach / REACH : land.spacing * 20, wander: amount = WANDER } = {}) {
   const { n, x, y, indptr, indices, h, landMask, lake, F, threshold: T } = land;
+  const wander = wanderOf(land, spacing, amount);
   const owner = new Int16Array(n).fill(-1), cost = new Float64Array(n).fill(Infinity);
   const wet = (i) => !landMask[i] || lake[i] === 1;
   const toll = spacing * RIVER_TOLL;
@@ -94,7 +124,7 @@ export function growRealms(land, crowns, { reach = Infinity, spacing = Number.is
       if (wet(j)) c = d * (landMask[j] ? 4 : 7);
       else {
         const grade = ((h[j] - h[i]) * 3.1) / Math.max(1e-9, d);
-        c = d * (1 + 20 * grade * grade + (h[j] > 0.5 ? 2.5 : h[j] > 0.35 ? 0.8 : 0) + (BIOME_COST[BIOMES[land.biome?.[j]]] ?? 0));
+        c = d * (1 + 20 * grade * grade + (h[j] > 0.5 ? 2.5 : h[j] > 0.35 ? 0.8 : 0) + (BIOME_COST[BIOMES[land.biome?.[j]]] ?? 0)) * wander[j];
       }
       // (across a big river, the dearer the bigger it is, so a river is a border more often than not: half on the way
       // onto it and half on the way off, so a realm that reaches a river can't run along it and off onto the far bank
@@ -110,6 +140,31 @@ export function growRealms(land, crowns, { reach = Infinity, spacing = Number.is
   // around it most)
   tidy(land, owner, seats);
   return { owner, cost };
+}
+
+/**
+ * A gentle unevenness in what open ground costs to cross, per node (about 0.65 to 1.35), so a border no range or river
+ * guides wanders as old borders do rather than running ruled across a plain: smooth noise over the land, its rises
+ * a seventh of a realm spacing apart, from the land's seed. Whole-number hashing and plain arithmetic, so every
+ * browser grows the same borders.
+ */
+export const WANDER = 0.35;
+export function wanderOf(land, spacing, amount = WANDER) {
+  const { n, x, y } = land, out = new Float64Array(n).fill(1);
+  const seed = (Number(land.seed) | 0) ^ 0x5f3759df;
+  const hash = (i, j, o) => { let k = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(seed + o, 1274126177); k = Math.imul(k ^ (k >>> 13), 1103515245); return ((k ^ (k >>> 16)) >>> 0) / 4294967296; };
+  const fade = (t) => t * t * (3 - 2 * t);
+  const noise = (px, py, o) => {
+    const i = Math.floor(px), j = Math.floor(py), fx = fade(px - i), fy = fade(py - j);
+    const a = hash(i, j, o), b = hash(i + 1, j, o), c = hash(i, j + 1, o), d = hash(i + 1, j + 1, o);
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+  };
+  const L1 = Math.max(1e-6, spacing / 7), L2 = L1 / 2.3;
+  for (let i = 0; i < n; i++) {
+    const v = (noise(x[i] / L1, y[i] / L1, 0) - 0.5) * 1.4 + (noise(x[i] / L2, y[i] / L2, 7) - 0.5) * 0.6;
+    out[i] = 1 + amount * v;
+  }
+  return out;
 }
 
 /**
@@ -286,11 +341,12 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
   const roadsAt = (p) => roads.filter((rd) => [rd.path[0], rd.path[rd.path.length - 1]].some((e) => Math.abs(e[0] - p.at[0]) < 0.05 && Math.abs(e[1] - p.at[1]) < 0.05)).length;
   const rank = { city: 2, town: 1 };
   const cand = places.filter((p) => rank[p.class]).map((p) => ({ p, w: rank[p.class] * 10 + roadsAt(p) + r.next() * 8 })).sort((a, b) => b.w - a.w || (a.p.id < b.p.id ? -1 : 1));
-  // how many: the map's land over a realm's share of it
-  let landCells = 0;
-  for (let i = 0; i < land.n; i++) if (land.landMask[i] && !land.lake[i]) { const u = (land.x[i] - f.margin) / f.mpu, v = (land.y[i] - f.margin) / f.mpu; if (u >= 0 && v >= 0 && u <= MW && v <= MH) landCells++; }
-  let total = 0; for (let i = 0; i < land.n; i++) { const u = (land.x[i] - f.margin) / f.mpu, v = (land.y[i] - f.margin) / f.mpu; if (u >= 0 && v >= 0 && u <= MW && v <= MH) total++; }
-  const landArea = (landCells / Math.max(1, total)) * MW * MH;
+  // how many: the map's land (by the nodes' own areas: points are sparser far out at sea) over a realm's share of it
+  const area = nodeAreas(land);
+  const inMap = (i) => { const u = (land.x[i] - f.margin) / f.mpu, v = (land.y[i] - f.margin) / f.mpu; return u >= 0 && v >= 0 && u <= MW && v <= MH; };
+  let landMi = 0;
+  for (let i = 0; i < land.n; i++) if (land.landMask[i] && !land.lake[i] && inMap(i)) landMi += area[i];
+  const landArea = landMi / (f.mpu * f.mpu);
   const want = Math.max(2, Math.min(16, Math.round(landArea / (S * S) * 1.3))) - kept.length;
   // farthest first: each next capital the candidate best placed and farthest from those chosen, never closer than
   // half a spacing
@@ -315,8 +371,9 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
   // grow them once, for their sizes and who borders whom
   const crowns = [...kept.map((q) => ({ at: q.at })), ...picks.map((c) => ({ at: c.p.at }))];
   const { owner } = growRealms(land, crowns, { reach: realmReach(land, count) });
-  const nodes = new Array(crowns.length).fill(0); let held = 0;
-  for (let i = 0; i < land.n; i++) if (owner[i] >= 0) { nodes[owner[i]]++; held++; }
+  // (how much of the land any realm holds, for the note on the wilds)
+  let held = 0, dry = 0;
+  for (let i = 0; i < land.n; i++) if (owner[i] !== -1) { dry += area[i]; if (owner[i] >= 0) held += area[i]; }
   const pairs = neighborsOf(land, owner);
   // colors: a kept realm keeps its own; each new one the first color no neighbor has, else the least used
   const colors = crowns.map((c, k) => (k < kept.length ? kept[k].color ?? null : null));
@@ -325,8 +382,17 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
     const used = (c) => colors.filter((x) => x === c).length;
     colors[k] = REALM_COLORS.find((c) => !near.has(c) && !colors.includes(c)) ?? REALM_COLORS.filter((c) => !near.has(c)).sort((a, b) => used(a) - used(b))[0] ?? REALM_COLORS[k % REALM_COLORS.length];
   }
-  // names: by rank (its share of the realms' land), from the map's style or its name set; a new realm's id clear of
-  // the plan's own
+  // names: by rank (realmRank: its land in the map in square miles and its towns), from the map's style or its name
+  // set; a new realm's id clear of the plan's own
+  const landOf = new Array(crowns.length).fill(0), townsOf = new Array(crowns.length).fill(0), frontier = new Array(crowns.length).fill(false);
+  for (let i = 0; i < land.n; i++) {
+    const o = owner[i];
+    if (o < 0 || !land.landMask[i] || land.lake[i]) continue;
+    if (inMap(i)) landOf[o] += area[i];
+    for (let q = land.indptr[i]; q < land.indptr[i + 1]; q++) { const j = land.indices[q]; if (owner[j] === -2 && land.landMask[j] && !land.lake[j]) frontier[o] = true; }
+  }
+  const nearest = nearestOf(land);
+  for (const p of places) if (p.class === "town" || p.class === "city") { const i = nearest(p.at[0], p.at[1]); if (i >= 0 && owner[i] >= 0) townsOf[owner[i]]++; }
   const L = plan.land ?? {};
   const set = L.nameStyle === "custom" && typeof L.nameSet?.text === "string" ? parseNameSet(L.nameSet.text).set : null;
   const nm = set ? namer("custom", seed, { set }) : namer(L.nameStyle ?? "english", seed);
@@ -336,15 +402,15 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
   const nextId = () => { do k++; while (ids.has(`realm-${k}`)); ids.add(`realm-${k}`); return `realm-${k}`; };
   const made = [];
   picks.forEach((c, m) => {
-    const idx = kept.length + m, share = held ? nodes[idx] / held : 0;
-    const rankWord = share > 0.3 || (crowns.length <= 3 && share > 0.2) ? "great" : share > 0.12 ? "middle" : "small";
+    const idx = kept.length + m, rank = realmRank(landOf[idx], townsOf[idx]);
+    const rankWord = rank === "duchy" && frontier[idx] ? "march" : rank;
     const capName = typeof c.p.name === "string" && c.p.name.trim() ? c.p.name.trim() : null;
     const name = nm.feature("realm", { rank: rankWord, near: capName }, `realm:${c.p.id}`);
     if (!name) return;
     const feat = { id: nextId(), type: "realm", class: "realm", at: [...c.p.at], name, color: colors[idx], capital: c.p.id };
     made.push({ ...feat, made: madeMark(feat) });
   });
-  const unreached = held && landCells ? Math.max(0, 1 - held / Math.max(1, [...owner].filter((v) => v !== -1).length)) : 0;
+  const unreached = held && dry ? Math.max(0, 1 - held / dry) : 0;
   if (unreached > 0.25) notes.push(`About ${Math.round(unreached * 100)}% of the land is far from any capital and belongs to no realm (the wilds).`);
   return { plan: { ...structuredClone(plan), features: [...structuredClone(keep), ...made] }, added: made.length, removed: gone.length, notes };
 }

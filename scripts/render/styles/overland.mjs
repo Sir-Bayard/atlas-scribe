@@ -13,6 +13,7 @@ import { landRasters, boxBlur, fbm, chaikin, distance } from "../../core/land/ra
 import { refineLand } from "../../core/land/refine.mjs";
 import { contours, smoothLine } from "../../core/land/vector.mjs";
 import { BIOMES, BIOME_CLIMATE } from "../../core/land/biome.mjs";
+import { LAPSE } from "../../core/land/climate.mjs";
 
 export const MAX_BLUR = 0.5;
 export const rolesFor = () => [];
@@ -25,9 +26,21 @@ const LOOK = {
   dry: [206, 178, 116], meadow: [168, 180, 86], lush: [124, 158, 70], heath: [176, 178, 150], sand: [222, 196, 138], polar: [226, 228, 222],
   forest: [92, 122, 72], forestCold: [-14, -8, 6], rock: [158, 142, 116], snow: [248, 248, 244], alluvium: [178, 184, 120], salt: [236, 230, 212],
   warm: [96, 76, 34], cool: [62, 60, 34], coolSnow: [80, 70, 40],
-  shallow: [172, 206, 198], deep: [66, 112, 128], lakeRim: [150, 192, 192], lakeDeep: [96, 140, 150],
-  ripple: [36, 66, 76], coast: [50, 42, 32], river: [58, 98, 118], lakeInk: [50, 70, 80], paper: [236, 226, 200], vignette: [96, 74, 44],
+  shallow: [172, 206, 198], deep: [66, 112, 128], lakeRim: [96, 172, 196], lakeDeep: [38, 104, 152],
+  ripple: [36, 66, 76], coast: [50, 42, 32], river: [84, 146, 188], riverCase: [30, 46, 56], lakeInk: [50, 70, 80], paper: [236, 226, 200], vignette: [96, 74, 44],
 };
+/**
+ * Snow from the air's warmth at a height: the climate's warmth (0 to 1) taken back to sea level, as the year's mean in
+ * degrees Fahrenheit (about 79 by the equator, 52 at 45 degrees, 38 at 60, 21 by the pole), cooled by a real lapse rate
+ * (3.6 degrees a thousand feet) at the height in feet (a land unit is high mountains, about 5 km). Snow starts where
+ * the mean is below 26 F and covers the ground below 16 F: a snow line near 15,000 to 17,500 ft by the equator, 7,000 to
+ * 10,000 ft at 45 degrees, at the sea near the poles. And it needs the wet (moist 0 to 1): a dry plateau stays bare.
+ */
+export const FT_PER_UNIT = 16400;
+export function snowAt(temp, z, moist = 1) {
+  const zz = Math.max(0, z), seaF = 21 + 58 * (temp + LAPSE * zz), f = seaF - (3.6 * zz * FT_PER_UNIT) / 1000;
+  return smooth(26, 16, f) * smooth(0.08, 0.4, moist);
+}
 const mixTo = (c, to, t) => { const k = Math.min(1, Math.max(0, t)); for (let ch = 0; ch < 3; ch++) c[ch] += (to[ch] - c[ch]) * k; };
 /**
  * The ground's color by climate, as mockup 3: dry ochre to meadow by moisture (lusher where wetter), heath where it's
@@ -61,7 +74,7 @@ export function reliefSide(full) {
 // Worked out once per land and relief size, for every tile of a paint (and every layout of one land: an edit to
 // places, roads or labels keeps the land, so its rasters too; what they read is the land, the seed, the look and size)
 const PREPARED = new WeakMap();
-function prepared(L, pp) {
+export function prepared(L, pp) {
   const [MW, MH] = L.size.squares;
   const side = reliefSide(Math.max(MW, MH) * pp);
   // (rh covers the map's height at the raster's cell, which rw sets; drawn by that cell, so the outlines and the paint
@@ -83,7 +96,7 @@ function prepare(L, rw, rh) {
   const seed = (Number.isFinite(Number(L.seed)) ? Number(L.seed) : 1) | 0;
   const land = (L.look?.heights ?? LOOK_OPTIONS.heights) === "refined" ? refineLand(L.land) : L.land;
   const R = landRasters(land, { rw, rh, seed });
-  const image = smoothImage(R, L, seed);
+  const { rgba: image, bare } = smoothImage(R, L, seed);
   const toMap = (pts) => pts.map(([x, y]) => [x * R.cell, y * R.cell]);
   const coast = contours(R.landS, rw, rh, 0, 4).map((c) => ({ pts: toMap(smoothLine(c.pts, c.closed, 2)), closed: c.closed }));
   const lakeS = Float32Array.from(R.lakeS, (v, i) => (R.land[i] ? v : -1));
@@ -112,7 +125,14 @@ function prepare(L, rw, rh) {
     }
     pts.push(p[p.length - 1].slice(0, 3));
     const sm = chaikin(pts, 3);
-    rivers.push(sm.map(([x, y, fl]) => [x, y, fmax > fmin ? Math.max(0, Math.min(1, Math.log(fl / fmin) / Math.log(fmax / fmin))) : 0.5]));
+    const line = sm.map(([x, y, fl]) => [x, y, fmax > fmin ? Math.max(0, Math.min(1, Math.log(fl / fmin) / Math.log(fmax / fmin))) : 0.5]);
+    // (its id, for its name; each point's distance from its source in map units, for the taper; and whether it
+    // starts small, at a spring: one that starts where a lake spills already carries the lake's water)
+    line.id = Rv.id;
+    line.spring = !(Rv.points[0][2] > 3 * (L.land.threshold ?? Infinity));
+    let run = 0;
+    line.from = line.map((q, k) => (run += k ? Math.hypot(q[0] - line[k - 1][0], q[1] - line[k - 1][1]) : 0));
+    rivers.push(line);
   }
   // marsh and dune marks: where, from the biome raster
   const wetland = BIOMES.indexOf("wetland"), desert = BIOMES.indexOf("hot-desert");
@@ -122,15 +142,45 @@ function prepare(L, rw, rh) {
   const smoothCanvas = canvasOf(rw, rh);
   { const k = smoothCanvas.getContext("2d"), id = k.createImageData(rw, rh); id.data.set(image); k.putImageData(id, 0, 0); }
   // (only what the tiles read is kept: the rest of the rasters go)
-  return { R: { rw, rh, cell: R.cell, land: R.land, lake: R.lake, biome: R.biome }, rw, rh, smoothCanvas, landImg, coast, shores, ripples, rivers, wetland, desert };
+  return { R: { rw, rh, cell: R.cell, land: R.land, lake: R.lake, biome: R.biome, bare }, rw, rh, smoothCanvas, landImg, coast, shores, ripples, rivers, wetland, desert };
+}
+
+/**
+ * The river segments to stroke, [x0, y0, x1, y1, width] in map units and output pixels: width by flow (t, 0 to 1), at
+ * least a floor on a named river, tapered over the first stretch from its source (a spring, not a lake's outlet).
+ * keep(line): whether a line is drawn.
+ */
+export function riverSegs(L, S, outPx, keep) {
+  const mul = (L.land.frame.scale === "kingdom" ? 1.15 : 1) * (outPx / 3072);
+  const named = namedRivers(L), taper = 0.03 * Math.max(L.size.squares[0], L.size.squares[1]), out = [];
+  for (const rv of S.rivers) {
+    if (!keep(rv)) continue;
+    const floor = named.has(rv.id) ? 2.4 * mul : 0;
+    for (let q = 1; q < rv.length; q++) {
+      const k = rv.spring === false ? 1 : 0.35 + 0.65 * smooth(0, taper, rv.from[q]);
+      out.push([rv[q - 1][0], rv[q - 1][1], rv[q][0], rv[q][1], Math.max(0.6, Math.max(floor, (0.6 + 6.4 * Math.pow(rv[q][2], 1.35)) * mul) * k)]);
+    }
+  }
+  return out;
+}
+// (the dark casing's extra width, both sides together)
+const riverCasing = (outPx) => Math.max(1, (1.6 * outPx) / 3072);
+// (the rivers with a name on the map: their own label's id is "@land:" and the inventory entry naming them)
+const NAMED = new WeakMap();
+function namedRivers(L) {
+  if (NAMED.has(L)) return NAMED.get(L);
+  const inv = new Map((L.land.inventory ?? []).filter((q) => q.kind === "river").map((q) => [`@land:${q.id}`, q.river]));
+  const out = new Set((L.labels ?? []).filter((l) => inv.has(l.id)).map((l) => inv.get(l.id)));
+  NAMED.set(L, out);
+  return out;
 }
 
 function canvasOf(w, h) {
   return new OffscreenCanvas(w, h);
 }
 
-/** The smooth image at relief resolution: RGBA bytes. */
-function smoothImage(R, L, seed) {
+/** The smooth image at relief resolution: { rgba (bytes), bare (0 to 255: how much snow or bare rock) }. */
+export function smoothImage(R, L, seed) {
   const { rw, rh } = R, N = rw * rh, side = Math.max(rw, rh);
   const forestLook = L.look?.forest ?? LOOK_OPTIONS.forest;
   const E = new Float32Array(N);
@@ -221,7 +271,7 @@ function smoothImage(R, L, seed) {
   // (how far inside a lake: its middle darker)
   const lakeDist = R.lake.some((v) => v) ? distance(rw, rh, (i) => !R.lake[i]) : new Float32Array(N);
   const lakeFar = Math.max(4, (36 * side) / 3072);
-  const out = new Uint8ClampedArray(N * 4);
+  const out = new Uint8ClampedArray(N * 4), bare = new Uint8Array(N);
   const azs = [[315, 40, 0.62], [270, 60, 0.19], [0, 60, 0.19]].map(([az, alt, w]) => { const a = (az * Math.PI) / 180, e = (alt * Math.PI) / 180; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e), w]; });
   const flat = 0.62 * Math.sin((40 * Math.PI) / 180) + 0.38 * Math.sin((60 * Math.PI) / 180);
   const col = [0, 0, 0];
@@ -231,7 +281,9 @@ function smoothImage(R, L, seed) {
       const t = R.depth[i], k = 1 + 0.035 * Math.tanh(seaN[i]);
       for (let ch = 0; ch < 3; ch++) col[ch] = (LOOK.shallow[ch] + (LOOK.deep[ch] - LOOK.shallow[ch]) * t) * k;
     } else if (R.lake[i]) {
-      const t = Math.min(1, lakeDist[i] / lakeFar);
+      // (the water darker by its depth below the lake's level in feet, a little by the way out from its shore: the
+      // most saturated color on the map)
+      const t = 0.3 * Math.min(1, lakeDist[i] / lakeFar) + 0.7 * (1 - Math.exp(-(R.lakeDepth[i] * FT_PER_UNIT) / 100));
       for (let ch = 0; ch < 3; ch++) col[ch] = LOOK.lakeRim[ch] + (LOOK.lakeDeep[ch] - LOOK.lakeRim[ch]) * t;
     } else {
       const e = E[i], slope = slopeA[i], zk = 1 - Math.min(1, zoneW[i] * 1.2);
@@ -253,9 +305,10 @@ function smoothImage(R, L, seed) {
         const sp = forestLook === "speckle" ? 0.09 * crowns[i] + 0.05 * crownsB[i] : 0.04 * crownsB[i];
         for (let ch = 0; ch < 3; ch++) col[ch] += ((LOOK.forest[ch] + LOOK.forestCold[ch] * cold) * (1 + sp) - col[ch]) * wd;
       }
-      // snow on high, cold ground, less on steep faces
-      const snow = Math.min(1, Math.max(0, (e - 0.6) * 6 + (0.18 - R.temp[i]) * 4)) * Math.min(1, Math.max(0, 1.5 - sr * 0.45)) * zk * smooth(0.25, 0.4, e);
+      // snow where the air is cold enough at its height (snowAt), less on steep faces
+      const snow = snowAt(R.temp[i], R.z[i], moist[i]) * Math.min(1, Math.max(0, 1.5 - sr * 0.45)) * zk;
       for (let ch = 0; ch < 3; ch++) col[ch] += (LOOK.snow[ch] - col[ch]) * snow;
+      bare[i] = Math.round(255 * Math.max(snow, rk));
       // brush
       const bk = 1 + 0.04 * Math.tanh(brush[i]);
       for (let ch = 0; ch < 3; ch++) col[ch] *= bk;
@@ -272,7 +325,7 @@ function smoothImage(R, L, seed) {
     }
     out[4 * i] = col[0]; out[4 * i + 1] = col[1]; out[4 * i + 2] = col[2]; out[4 * i + 3] = 255;
   }
-  return out;
+  return { rgba: out, bare };
 }
 
 /**
@@ -347,16 +400,13 @@ export function paint(ctx) {
   if (m && S.rivers.length) {
     const mg = m.getContext("2d");
     mg.setTransform(1, 0, 0, 1, 0, 0); mg.globalCompositeOperation = "source-over"; mg.clearRect(0, 0, W, H);
-    // (stroked opaque, then laid on at the river's alpha, so the joints between segments don't bead)
-    mg.lineCap = "round"; mg.lineJoin = "round"; mg.strokeStyle = rgb(LOOK.river);
-    const scale = outPx / 3072, mul = (L.land.frame.scale === "kingdom" ? 1.15 : 1) * scale;
-    for (const rv of S.rivers) {
-      if (!near(rv, 1)) continue;
-      for (let q = 1; q < rv.length; q++) {
-        const t = rv[q][2];
-        mg.lineWidth = Math.max(0.8, (0.6 + 6.4 * Math.pow(t, 1.35)) * mul);
-        mg.beginPath(); mg.moveTo(X(rv[q - 1][0]), Y(rv[q - 1][1])); mg.lineTo(X(rv[q][0]), Y(rv[q][1])); mg.stroke();
-      }
+    // (stroked opaque, then laid on at the river's alpha, so the joints between segments don't bead: every casing
+    // first, then every river over them, so where two join the casing doesn't cross the water)
+    mg.lineCap = "round"; mg.lineJoin = "round";
+    const segs = riverSegs(L, S, outPx, (rv) => near(rv, 1));
+    for (const [color, extra] of [[LOOK.riverCase, riverCasing(outPx)], [LOOK.river, 0]]) {
+      mg.strokeStyle = rgb(color);
+      for (const [ax, ay, bx, by, w] of segs) { mg.lineWidth = w + extra; mg.beginPath(); mg.moveTo(X(ax), Y(ay)); mg.lineTo(X(bx), Y(by)); mg.stroke(); }
     }
     mg.globalCompositeOperation = "destination-in";
     mg.imageSmoothingEnabled = true;
@@ -396,70 +446,142 @@ export function paint(ctx) {
   progress(1, "Done");
 }
 
-// (each layout's realm wash, worked out once: a picture over the realm grid, each realm's color faint in its middle
-// and stronger toward its borders)
-const WASH = new WeakMap();
-function realmWash(L) {
-  const R = L.realms;
-  if (WASH.has(R)) return WASH.get(R);
-  const { w, h, ids } = R.grid, d = new Float32Array(w * h).fill(1e9);
-  for (let k = 0; k < w * h; k++) {
-    const c = k % w, me = ids[k];
+// (the realm band's width in miles, as hand-colored atlases: a stripe inside each border, its color fading to nothing
+// inward; the same width for every realm of a map, however big: a fortieth of the map's long side, 6 miles on a
+// kingdom map, 18 on a realm, 60 on a continent, 180 on a world; its strength at the border)
+export const BAND_SHARE = 0.025, BAND_PEAK = 0.8;
+const BAND = new WeakMap();
+
+/**
+ * Each realm's band at relief resolution, worked out once per prepared picture and realms: the realm's color along its
+ * borders with another realm or the wilds (not the coast), fading to nothing within the band's miles, none on snow, bare
+ * rock or lakes. Its color is the ground's own (with the paper's vignette) times the realm's color, so laid over the
+ * ground at its alpha it multiplies the ground: the relief shows through, as a multiply would across the layer tiles.
+ */
+export function realmBand(L, S) {
+  const R = L.realms, held = BAND.get(S);
+  if (held && held.R === R) return held.img;
+  const { rw, rh, cell: rc, land, lake, bare } = S.R, N = rw * rh;
+  const { w: gw, h: gh, cell: gc, ids } = R.grid;
+  const f = L.land.frame, [MW, MH] = L.size.squares;
+  // (each relief pixel's realm: of the four grid cells about it, the land id with the most weight, so the edge between
+  // two realms runs smooth and close to the border line drawn over it)
+  // (a cell counts only if its middle is land: realms grow over the sea too, and the sea out of reach is marked as wilds)
+  const cellLand = new Uint8Array(gw * gh);
+  for (let r = 0; r < gh; r++) for (let c = 0; c < gw; c++) {
+    const x = Math.min(rw - 1, Math.floor(((c + 0.5) * gc) / rc)), y = Math.min(rh - 1, Math.floor(((r + 0.5) * gc) / rc));
+    cellLand[r * gw + c] = land[y * rw + x] && !lake[y * rw + x] ? 1 : 0;
+  }
+  const own = new Int16Array(N).fill(-1);
+  const wt = new Map();
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+    const i = y * rw + x;
+    if (!land[i] || lake[i]) continue;
+    const gx = Math.min(gw - 1, Math.max(0, ((x + 0.5) * rc) / gc - 0.5)), gy = Math.min(gh - 1, Math.max(0, ((y + 0.5) * rc) / gc - 0.5));
+    const c0 = Math.floor(gx), r0 = Math.floor(gy), fx = gx - c0, fy = gy - r0, c1 = Math.min(gw - 1, c0 + 1), r1 = Math.min(gh - 1, r0 + 1);
+    wt.clear();
+    for (const [c, r, v] of [[c0, r0, (1 - fx) * (1 - fy)], [c1, r0, fx * (1 - fy)], [c0, r1, (1 - fx) * fy], [c1, r1, fx * fy]]) {
+      const id = ids[r * gw + c];
+      if (id !== -1 && cellLand[r * gw + c]) wt.set(id, (wt.get(id) ?? 0) + v);
+    }
+    let best = -3, bw = -1;
+    for (const [id, v] of wt) if (v > bw) { bw = v; best = id; }
+    own[i] = best;
+  }
+  // (a pixel with no land cell about it, on a spit, an islet or the coast's edge: its nearest neighbor's, by a flood)
+  let open = [];
+  for (let i = 0; i < N; i++) if (own[i] === -3) open.push(i);
+  while (open.length) {
+    const next = [], got = [];
+    for (const i of open) {
+      const x = i % rw;
+      for (const j of [x > 0 ? i - 1 : -1, x < rw - 1 ? i + 1 : -1, i - rw, i + rw]) if (j >= 0 && j < N && own[j] !== -3 && own[j] !== -1) { got.push(i, own[j]); break; }
+    }
+    if (!got.length) break;
+    for (let k = 0; k < got.length; k += 2) own[got[k]] = got[k + 1];
+    for (const i of open) if (own[i] === -3) next.push(i);
+    open = next;
+  }
+  for (const i of open) own[i] = -2;
+  // distance in relief pixels from the realm's edge with another realm or the wilds (the sea and lakes aren't edges)
+  const d = new Float32Array(N).fill(1e9);
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+    const i = y * rw + x, me = own[i];
     if (me < 0) continue;
-    // (a border cell: beside another realm or the wilds, not the sea)
-    const nb = [c > 0 ? ids[k - 1] : me, c < w - 1 ? ids[k + 1] : me, k >= w ? ids[k - w] : me, k < w * (h - 1) ? ids[k + w] : me];
-    if (nb.some((o) => o !== me && o !== -1)) d[k] = 0;
+    if ((x > 0 && own[i - 1] !== me && own[i - 1] !== -1) || (x < rw - 1 && own[i + 1] !== me && own[i + 1] !== -1) || (y > 0 && own[i - rw] !== me && own[i - rw] !== -1) || (y < rh - 1 && own[i + rw] !== me && own[i + rw] !== -1)) d[i] = 0;
   }
-  for (let pass = 0; pass < 2; pass++) for (let s = 0; s < w * h; s++) {
-    const k = pass ? w * h - 1 - s : s, c = k % w;
-    if (ids[k] < 0) continue;
-    const a = pass ? [c < w - 1 ? k + 1 : -1, k < w * (h - 1) ? k + w : -1] : [c > 0 ? k - 1 : -1, k >= w ? k - w : -1];
-    for (const j of a) if (j >= 0 && ids[j] === ids[k] && d[j] + 1 < d[k]) d[k] = d[j] + 1;
+  const D2 = Math.SQRT2;
+  for (let pass = 0; pass < 2; pass++) for (let s = 0; s < N; s++) {
+    const i = pass ? N - 1 - s : s, me = own[i];
+    if (me < 0) continue;
+    const x = i % rw, y = (i - x) / rw;
+    const look = pass
+      ? [[x < rw - 1, i + 1, 1], [y < rh - 1, i + rw, 1], [y < rh - 1 && x > 0, i + rw - 1, D2], [y < rh - 1 && x < rw - 1, i + rw + 1, D2]]
+      : [[x > 0, i - 1, 1], [y > 0, i - rw, 1], [y > 0 && x > 0, i - rw - 1, D2], [y > 0 && x < rw - 1, i - rw + 1, D2]];
+    for (const [ok, j, step] of look) if (ok && own[j] === me && d[j] + step < d[i]) d[i] = d[j] + step;
   }
-  const img = new OffscreenCanvas(w, h), g = img.getContext("2d"), id = g.createImageData(w, h);
-  const hex = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
-  const cols = R.list.map((q) => (/^#[0-9a-f]{6}$/i.test(q.color ?? "") ? hex(q.color) : [140, 120, 100]));
-  const band = Math.max(2, Math.round(Math.max(w, h) / 90));
-  for (let k = 0; k < w * h; k++) {
-    const me = ids[k];
-    if (me < 0 || !cols[me]) continue;
-    const a = 0.13 + 0.3 * Math.exp(-d[k] / band);
-    id.data.set([...cols[me], Math.round(255 * a)], 4 * k);
+  const miPx = (rc * Math.max(f.mapW, f.mapH)) / Math.max(MW, MH);
+  const band = Math.max(3, Math.max(1, BAND_SHARE * Math.max(f.mapW, f.mapH)) / miPx);
+  // (each color brightened toward full strength, so the multiply tints more than it darkens)
+  const cols = R.list.map((q) => { const c = hexColor(q.color) ?? [140, 120, 100], k = Math.pow(255 / Math.max(1, ...c), 0.6); return c.map((v) => v * k); });
+  // (the paper's vignette, as paper() lays it on the ground, so the band's ground matches the ground under it)
+  const edge = (Math.max(MW, MH) * 160) / 3072, V = LOOK.vignette, img = S.smoothCanvas.getContext("2d").getImageData(0, 0, rw, rh).data;
+  const out = canvasOf(rw, rh), og = out.getContext("2d"), id = og.createImageData(rw, rh);
+  for (let i = 0; i < N; i++) {
+    const me = own[i];
+    if (me < 0 || !cols[me] || d[i] >= band) continue;
+    const t = d[i] / band, a = BAND_PEAK * Math.pow(1 - t, 1.4) * (1 - bare[i] / 255);
+    if (a <= 0.004) continue;
+    const x = i % rw, y = (i - x) / rw, mx = (x + 0.5) * rc, my = (y + 0.5) * rc;
+    const v = Math.pow(Math.min(1, Math.max(0, Math.min(mx, MW - mx, my, MH - my) / edge)), 0.7), av = 0.8 + 0.2 * v, vb = (1 - v) * 0.09;
+    for (let ch = 0; ch < 3; ch++) id.data[4 * i + ch] = ((img[4 * i + ch] * av + V[ch] * vb) * cols[me][ch]) / 255;
+    id.data[4 * i + 3] = Math.round(255 * a);
   }
-  g.putImageData(id, 0, 0);
-  WASH.set(R, img);
-  return img;
+  og.putImageData(id, 0, 0);
+  if (held) { held.img.width = 1; held.img.height = 1; }
+  BAND.set(S, { R, img: out });
+  return out;
 }
 
 /**
- * The realms: each realm's land washed in its color, stronger by its borders, and the borders as dashed lines in the
- * map's ink on a pale halo, all on the land only (not the sea or lakes).
+ * The realms: a band of each realm's color inside its borders (realmBand), cut off the rivers and the coast's and lakes'
+ * ink, and the borders as dashed lines in the map's ink on a pale halo, all on the land only (not the sea or lakes).
  */
 function paintRealms(ctx, L, S, outPx) {
-  const { g, W, H, x0, y0, pp } = ctx, R = L.realms, m = ctx.mask;
+  const { g, W, H, x0, y0, pp } = ctx, R = L.realms;
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
-  const target = m ? m.getContext("2d") : g;
-  if (m) { target.setTransform(1, 0, 0, 1, 0, 0); target.globalCompositeOperation = "source-over"; target.clearRect(0, 0, W, H); }
+  // (on a scratch canvas, so the cuts below cut only the band, then laid on the tile)
+  const m = ctx.mask ?? canvasOf(W, H), target = m.getContext("2d");
+  target.setTransform(1, 0, 0, 1, 0, 0); target.globalCompositeOperation = "source-over"; target.clearRect(0, 0, W, H);
   target.imageSmoothingEnabled = true; target.imageSmoothingQuality = "high";
-  target.drawImage(realmWash(L), 0, 0, R.grid.w, R.grid.h, X(0), Y(0), R.grid.w * R.grid.cell * pp, R.grid.h * R.grid.cell * pp);
-  // the borders: a pale halo, then the dashed ink
   const u = outPx / 3600;
   target.lineCap = "round"; target.lineJoin = "round";
   // (crowns stand well above their mark on a big picture: the same reach past the tile as the atlas marks)
   const tx1 = x0 + W / pp, ty1 = y0 + H / pp, pad = Math.max(1, (40 * u) / pp + 0.5);
   const near = (pts) => pts.some(([x, y]) => x >= x0 - pad && y >= y0 - pad && x <= tx1 + pad && y <= ty1 + pad);
   const path = (pts) => { target.beginPath(); pts.forEach(([x, y], i) => (i ? target.lineTo(X(x), Y(y)) : target.moveTo(X(x), Y(y)))); };
+  {
+    target.drawImage(realmBand(L, S), 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);
+    // the band off the rivers and the ink of coasts and lake shores, a little wider than they're drawn
+    target.globalCompositeOperation = "destination-out"; target.strokeStyle = "#000";
+    const casing = riverCasing(outPx);
+    for (const [ax, ay, bx, by, w] of riverSegs(L, S, outPx, near)) { target.lineWidth = w + casing + 1; target.beginPath(); target.moveTo(X(ax), Y(ay)); target.lineTo(X(bx), Y(by)); target.stroke(); }
+    target.lineWidth = Math.max(1.1, outPx / 1700) * 1.6 + 1;
+    for (const c of [...S.coast, ...S.shores]) { if (!near(c.pts)) continue; path(c.pts); if (c.closed) target.closePath(); target.stroke(); }
+    // (and thinned where the ground has marsh tufts and dune marks, drawn as the ground draws them, so they still show)
+    marks({ ...ctx, g: target }, S, (L.size.squares[0] * pp) / S.rw);
+    target.globalCompositeOperation = "source-over";
+  }
+  // the borders: a pale halo, then the dashed ink
   for (const [stroke, width, dash] of [["rgba(252,246,232,0.7)", 7 * u, []], ["rgba(58,40,30,0.85)", 3.2 * u, [11 * u, 5 * u, 2.5 * u, 5 * u]]]) {
     target.strokeStyle = stroke; target.lineWidth = Math.max(1, width); target.setLineDash(dash);
     for (const b of R.borders) { if (!near(b)) continue; path(b); target.stroke(); }
   }
   target.setLineDash([]);
-  if (m) {
-    target.globalCompositeOperation = "destination-in";
-    target.drawImage(S.landImg, 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);
-    target.globalCompositeOperation = "source-over";
-    g.drawImage(m, 0, 0);
-  }
+  target.globalCompositeOperation = "destination-in";
+  target.drawImage(S.landImg, 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);
+  target.globalCompositeOperation = "source-over";
+  g.drawImage(m, 0, 0);
   // each capital's crown, above its mark (on this layer, so hiding the realms hides the crowns)
   for (const p of L.items ?? []) if (p.kind === "place" && p.capital && near([[p.x, p.y]])) crownMark(g, X(p.x), Y(p.y) - (CROWN_LIFT[p.class] ?? 14) * u, u);
 }
