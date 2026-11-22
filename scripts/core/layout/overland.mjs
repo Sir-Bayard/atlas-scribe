@@ -14,6 +14,7 @@ import { BIOMES } from "../land/biome.mjs";
 import { LAKE_BIOME, SEA_BIOME } from "../land/raster.mjs";
 import { realmsOf, growRealms, realmGrid, realmReach } from "../land/realms.mjs";
 import { keptFor } from "../land/kept.mjs";
+import { settledField, settledKey, SETTLED } from "../land/settled.mjs";
 
 /** The biome index for a painted zone's own (custom) biome. */
 export const CUSTOM_BIOME = 253;
@@ -59,6 +60,28 @@ export function compactLand(L) {
     // (river marks in frame miles: the head of navigation and the lowest bridging point on main rivers to the sea)
     marks: { heads: marks.heads ?? [], bridges: marks.bridges ?? [] },
   };
+}
+
+/**
+ * The land covers an overland map's key shows, most first: those on at least 5% of the dry land in the map (a marsh 2%):
+ * farmland (settled land), broadleaf, conifer and rainforest, grassland, desert, marsh, tundra, snow and ice; four at
+ * most, so the key stays small.
+ */
+const COVER_OF = { "temperate-forest": "broadleaf", "seasonal-forest": "broadleaf", taiga: "conifer", "temperate-rainforest": "conifer", rainforest: "rainforest", grassland: "grassland", savanna: "grassland", shrubland: "grassland", "hot-desert": "desert", "cold-steppe": "desert", "salt-flat": "desert", wetland: "marsh", tundra: "tundra", glacier: "snow" };
+export const COVERS_MAX = 4;
+export function coversOf(land, settled) {
+  const f = land.frame, share = new Map();
+  let dry = 0;
+  for (let i = 0; i < land.n; i++) {
+    if (!land.landMask[i] || land.lake[i] === 1) continue;
+    const u = land.x[i] - f.margin, v = land.y[i] - f.margin;
+    if (u < 0 || v < 0 || u > f.mapW || v > f.mapH) continue;
+    const a = land.area?.[i] ?? 1;
+    dry += a;
+    const c = settled[i] >= SETTLED ? "farmland" : COVER_OF[BIOMES[land.biome[i]]];
+    if (c) share.set(c, (share.get(c) ?? 0) + a);
+  }
+  return [...share].filter(([c, a]) => a >= (c === "marsh" ? 0.02 : 0.05) * dry).sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).slice(0, COVERS_MAX).map(([c]) => c);
 }
 
 // (the last land made, kept while the plan's land doesn't change: a change to places, roads, labels or the plan's
@@ -107,6 +130,9 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     const caps = new Set(realmList.map((q) => q.capital).filter(Boolean));
     for (const it of items) if (it.kind === "place" && caps.has(it.id)) it.capital = true;
   }
+  // settled land: how cleared and farmed each node is, from the places and roads (the painter's fields and woods)
+  const settled = settledField(land, items);
+  const covers = coversOf(land, settled);
   // (how much of each corner is land, for the dressing: nw, ne, sw, se)
   const cornerLand = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([cx, cy]) => {
     const f = L.frame, x0 = f.margin + cx * f.mapW * 0.76, y0 = f.margin + cy * f.mapH * 0.76;
@@ -129,10 +155,10 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   const title = typeof plan.name === "string" && plan.name.trim() ? plan.name.trim() : null;
   const size = { squares: [W, H], ftPerSquare: plan.size.ftPerSquare, grid: plan.output?.grid === "hex" ? "hex" : "square", cells: plan.size.squares };
   // (the realms too: their key entries make the key taller, which can move it to another corner)
-  const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, realms, showRealms: plan.output?.realms !== false };
+  const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, realms, showRealms: plan.output?.realms !== false, covers };
   const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
   const keyBox = keyOf(shape);
-  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [] });
+  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [], settled });
   for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
   // places standing in water and roads running through it (a GM's edit, or land that changed under them)
   { const fr = L.frame;
@@ -165,7 +191,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     size,
     season: plan.season ?? "summer", style: "painted",
     title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
-    realms, showRealms: plan.output?.realms !== false,
+    realms, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...own, ...named.labels.filter((l) => !shadowed.has(l.id))], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
 }

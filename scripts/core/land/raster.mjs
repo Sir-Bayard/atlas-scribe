@@ -1,4 +1,35 @@
 /**
+ * A per-node value (one a node of the compact land) drawn into a raster rw by rh over the map, straight between each
+ * triangle's corners and smoothed by half the node spacing, as landRasters draws the climate. Pure.
+ */
+export function nodeRaster(land, values, rw, rh) {
+  const { frame } = land, n = land.n, cellMi = frame.mapW / rw, N = rw * rh;
+  const px = new Float64Array(n), py = new Float64Array(n);
+  for (let i = 0; i < n; i++) { px[i] = (land.x[i] - frame.margin) / cellMi; py[i] = (land.y[i] - frame.margin) / cellMi; }
+  const out = new Float32Array(N), covered = new Uint8Array(N), tri = land.triangles;
+  for (let t = 0; t < tri.length; t += 3) {
+    const a = tri[t], b = tri[t + 1], c = tri[t + 2];
+    const ax = px[a], ay = py[a], bx = px[b], by = py[b], cx = px[c], cy = py[c];
+    const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx))), x1 = Math.min(rw - 1, Math.ceil(Math.max(ax, bx, cx)));
+    const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy))), y1 = Math.min(rh - 1, Math.ceil(Math.max(ay, by, cy)));
+    if (x0 > x1 || y0 > y1) continue;
+    const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(det) < 1e-12) continue;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const qx = x + 0.5, qy = y + 0.5;
+      const wa = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / det, wb = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / det, wc = 1 - wa - wb;
+      if (wa < -1e-9 || wb < -1e-9 || wc < -1e-9) continue;
+      const i = y * rw + x;
+      if (covered[i]) continue;
+      covered[i] = 1;
+      out[i] = wa * values[a] + wb * values[b] + wc * values[c];
+    }
+  }
+  boxBlur(out, rw, rh, Math.max(1, (0.5 * land.spacing) / cellMi));
+  return out;
+}
+
+/**
  * The land drawn into rasters for painting: the generator's nodes blended into a fine height raster over the map (not
  * the margin), rivers carved into it, small relief added, the coast, lakes from their levels, the sea's depth, and the
  * climate and cover the painter colors by. Painting needn't be the same to the bit on every computer (the canvas isn't),

@@ -55,7 +55,7 @@ export function nodeAreas(land) {
 }
 
 /** A finder of the nearest node to a point in map units (squares), over the land's nodes. */
-function nearestOf(land) {
+export function nearestOf(land) {
   const { n, x, y, frame: f } = land;
   const cell = Math.max(land.spacing * 2, 1e-6), gw = Math.ceil(f.W / cell) + 1, gh = Math.ceil(f.H / cell) + 1;
   const start = new Int32Array(gw * gh + 1), at = new Int32Array(n);

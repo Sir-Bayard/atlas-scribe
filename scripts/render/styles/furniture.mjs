@@ -89,7 +89,7 @@ function drawScale(ctx, P, { x, y, left, len, h, nice, per, inKey = false, unit,
  * An overland map's key (keyOf): the symbols the map uses in a paper box, in the corner it covers least, with the scale
  * bar at its foot. Painted with the dressing, or alone as a layer of its own.
  */
-export function paintKey(ctx, P, { miles = true } = {}) {
+export function paintKey(ctx, P, { miles = true, covers = {} } = {}) {
   const { g, x0, y0, pp, layout: L } = ctx;
   const X = (v) => (v - x0) * pp, Y = (v) => (v - y0) * pp;
   const [mw, mh] = L.size?.squares ?? [0, 0];
@@ -110,6 +110,12 @@ export function paintKey(ctx, P, { miles = true } = {}) {
     const mx = X(col.x + u * 1.9), my = Y(e.y);
     if (e.kind === "place") placeMark(g, mx, my, e.cls, mu);
     else if (e.kind === "way") strokeRoad(g, e.cls, mu, () => { g.beginPath(); g.moveTo(X(col.x + u * 0.2), my); g.lineTo(X(col.x + u * 3.6), my); });
+    else if (e.kind === "cover") {
+      // (a swatch of the land cover as the map paints it, in a thin frame)
+      const c = covers[e.cls] ?? [200, 190, 160];
+      g.fillStyle = `rgb(${c.map((v) => Math.round(v)).join(",")})`; g.fillRect(X(col.x + u * 0.4), Y(e.y - u * 0.8), u * 3 * pp, u * 1.6 * pp);
+      g.strokeStyle = ink(0.6); g.lineWidth = Math.max(1, pp * 0.02); g.strokeRect(X(col.x + u * 0.4), Y(e.y - u * 0.8), u * 3 * pp, u * 1.6 * pp);
+    }
     else if (e.kind === "realm" && e.cls === "capital") { placeMark(g, mx, my + 3 * mu, "town", mu * 0.8); crownMark(g, mx, my - 9 * mu, mu); }
     else if (e.kind === "realm") {
       // (a realm's border as the map draws it: the halo, then the dashed ink)

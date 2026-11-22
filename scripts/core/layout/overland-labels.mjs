@@ -10,6 +10,7 @@ import { namer } from "../land/names.mjs";
 import { parseNameSet, usesRiver } from "../land/namesets.mjs";
 import { readable, cleanFont } from "../labels.mjs";
 import { Heap } from "../land/heap.mjs";
+import { woodSpot } from "../land/settled.mjs";
 
 /** Each label's font size in pixels on a picture 3600 px on its long side (larger pictures, larger labels alike). */
 export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19 };
@@ -30,7 +31,7 @@ const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river"
  * placeNames: Map(place id -> name), featureNames: Map(inventory id -> name, for each named feature) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
-export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [] } = {}) {
+export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [], settled = null } = {}) {
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu, side = Math.max(MW, MH);
   const em = (px) => (px * side) / 3600;
@@ -130,7 +131,14 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     const size = n * land.spacing * land.spacing;
     want.push({ id: `@land:${q.id}`, kind: size > 0.006 * mapArea ? "bigLake" : "lake", text: named(q, "lake", { size }), q, shut: true });
   }
-  for (const k of ["forest", "desert", "marsh"]) for (const q of kindsOf(k).slice(0, 6)) want.push({ id: `@land:${q.id}`, kind: k, text: named(q, k), q });
+  // (a forest's name in what the settled land has left of it; one nearly all cleared keeps its name, unlabeled, so the
+  // names after it don't shift as towns change)
+  for (const k of ["forest", "desert", "marsh"]) for (const q0 of kindsOf(k).slice(0, 6)) {
+    const spot = k === "forest" ? woodSpot(land, settled, q0.x, q0.y) : [q0.x, q0.y];
+    if (!spot) { named(q0, k); continue; }
+    const q = spot[0] === q0.x && spot[1] === q0.y ? q0 : { ...q0, x: spot[0], y: spot[1] };
+    want.push({ id: `@land:${q.id}`, kind: k, text: named(q, k), q });
+  }
   for (const q of kindsOf("island").slice(0, 10)) want.push({ id: `@land:${q.id}`, kind: "island", text: named(q, "island"), q });
   for (const q of kindsOf("cape").slice(0, 6)) want.push({ id: `@land:${q.id}`, kind: "cape", text: named(q, "cape"), q });
 

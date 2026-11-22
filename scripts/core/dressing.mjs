@@ -14,6 +14,10 @@ export const KEY_ENTRIES = [
   { kind: "way", cls: "highway", text: "Highway" }, { kind: "way", cls: "street", text: "Road" }, { kind: "way", cls: "track", text: "Track" },
   { kind: "crossing", cls: "bridge", text: "Bridge" }, { kind: "crossing", cls: "footbridge", text: "Footbridge" }, { kind: "crossing", cls: "ford", text: "Ford" },
   { kind: "realm", cls: "border", text: "Border" }, { kind: "realm", cls: "capital", text: "Capital" },
+  // (an overland map's land covers, as swatches: those its layout lists in `covers`)
+  { kind: "cover", cls: "farmland", text: "Farmland" }, { kind: "cover", cls: "broadleaf", text: "Forest" }, { kind: "cover", cls: "conifer", text: "Pine Forest" },
+  { kind: "cover", cls: "rainforest", text: "Rainforest" }, { kind: "cover", cls: "grassland", text: "Grassland" }, { kind: "cover", cls: "desert", text: "Desert" },
+  { kind: "cover", cls: "marsh", text: "Marsh" }, { kind: "cover", cls: "tundra", text: "Tundra" }, { kind: "cover", cls: "snow", text: "Snow and Ice" },
 ];
 // (sizes in the dressing's unit: letters, a row, the symbol's column, the padding, the gap between the columns, the
 // heading, the scale bar's part at the foot, and the inset from the map's edge)
@@ -34,21 +38,31 @@ export function keyOf(L, { miles = true } = {}) {
 }
 const KEY_MEMO = new WeakMap();
 
-function keyFor(L, miles) {
+function keyFor(L, miles, withCovers = true) {
   if (!L.dressing || !L.overland || L.legend === false || L.places === false || !(L.size?.squares?.[0] > 0)) return null;
   const items = L.items ?? [];
   const realms = L.showRealms !== false && L.realms?.list?.length > 0;
-  const has = (kind, cls) => (kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === kind && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
+  const has = (kind, cls) => (kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === kind && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
   const shown = KEY_ENTRIES.filter((e) => has(e.kind, e.cls));
   if (!shown.some((e) => e.kind === "place" || e.kind === "way")) return null;
   const [mw, mh] = L.size.squares;
   const { unit: u, corners } = cornersOf(L);
-  // two columns: places, then roads and crossings (one column when either is empty)
-  const places = shown.filter((e) => e.kind === "place"), lines = shown.filter((e) => e.kind !== "place");
-  const cols = [places, lines].filter((l) => l.length);
-  const colW = (list) => KEY.mark * u + Math.max(...list.map((e) => e.text.length)) * KEY.font * u * 0.56;
+  // columns: places, then roads and crossings; the land covers under them, half a row below, each to whichever column
+  // is shorter then, so the key stays two columns wide (a narrow key hides less of the map); a key of places alone gets
+  // a column of covers beside them
+  const places = shown.filter((e) => e.kind === "place"), lines = shown.filter((e) => e.kind !== "place" && e.kind !== "cover"), coverRows = shown.filter((e) => e.kind === "cover");
+  const cols = [places, lines].filter((l) => l.length).map((l) => l.map((e, k) => ({ e, r: k })));
+  if (coverRows.length && cols.length === 2) {
+    const end = (c) => (c.length ? c[c.length - 1].r + 1 : 0), started = new Set();
+    for (const e of coverRows) {
+      const c = end(cols[0]) + (started.has(0) ? 0 : 0.5) <= end(cols[1]) + (started.has(1) ? 0 : 0.5) ? 0 : 1;
+      cols[c].push({ e, r: end(cols[c]) + (started.has(c) ? 0 : 0.5) });
+      started.add(c);
+    }
+  } else if (coverRows.length) cols.push(coverRows.map((e, k) => ({ e, r: k })));
+  const colW = (list) => KEY.mark * u + Math.max(...list.map((q) => q.e.text.length)) * KEY.font * u * 0.56;
   const inner = Math.max(KEY.least * u, cols.reduce((t, l) => t + colW(l), 0) + (cols.length - 1) * KEY.gap * u);
-  const rows = Math.max(...cols.map((l) => l.length));
+  const rows = Math.max(...cols.map((l) => l[l.length - 1].r + 1));
   const w = inner + 2 * KEY.pad * u, h = KEY.pad * u + KEY.head * u + rows * KEY.row * u + u + KEY.scale * u + KEY.pad * u;
   // the corner: of the emptiest, the one whose key would cover fewest places, crossings and road bends (the key hides
   // what's under it)
@@ -58,12 +72,18 @@ function keyFor(L, miles) {
   const covers = (b) => 3 * marks.filter((m) => m.x > b[0] && m.x < b[2] && m.y > b[1] && m.y < b[3]).length + bends.filter((p) => p[0] > b[0] && p[0] < b[2] && p[1] > b[1] && p[1] < b[3]).length;
   const score = (k) => covers(boxAt(k)) + 4 * (k.n ?? 0);
   const c = corners.reduce((a, k) => (score(k) < score(a) ? k : a));
+  // (the land covers only where the key has room for them: a key they'd make hide more places goes without them)
+  const hidden = (b) => marks.filter((m) => m.x > b[0] && m.x < b[2] && m.y > b[1] && m.y < b[3]).length;
+  if (withCovers && shown.some((e) => e.kind === "cover") && hidden(boxAt(c)) > 0) {
+    const bare = keyFor(L, miles, false);
+    if (bare && bare.hidden < hidden(boxAt(c))) return bare;
+  }
   const west = c.k.endsWith("w"), north = c.k.startsWith("n");
   const [x, y] = boxAt(c);
   const heading = { x: x + w / 2, y: y + KEY.pad * u + KEY.head * u * 0.5, font: 2.1 * u };
   let cx = x + KEY.pad * u;
   const columns = cols.map((list) => {
-    const out = { x: cx, entries: list.map((e, k) => ({ ...e, y: y + KEY.pad * u + KEY.head * u + (k + 0.5) * KEY.row * u })) };
+    const out = { x: cx, entries: list.map(({ e, r }) => ({ ...e, y: y + KEY.pad * u + KEY.head * u + (r + 0.5) * KEY.row * u })) };
     cx += colW(list) + KEY.gap * u;
     return out;
   });
@@ -82,7 +102,10 @@ function keyFor(L, miles) {
   const under = (c) => marks.filter((m) => m.x > c.x - 1.3 * R && m.x < c.x + 1.3 * R && m.y > c.y - 1.6 * R && m.y < c.y + 1.3 * R).length;
   const best = spots.reduce((a, c) => (under(c) < under(a) ? c : a));
   const compass = { x: best.x, y: best.y, R, unit: u };
-  return { x, y, w, h, unit: u, corner: c.k, heading, columns, scale, compass };
+  const key = { x, y, w, h, unit: u, corner: c.k, heading, columns, scale, compass };
+  // (how many places and crossings it hides, for the choice above)
+  Object.defineProperty(key, "hidden", { value: hidden(boxAt(c)) });
+  return key;
 }
 
 /**

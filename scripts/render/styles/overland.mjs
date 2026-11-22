@@ -9,11 +9,12 @@ import { PALETTE } from "./palette.mjs";
 import { dress, paintKey } from "./furniture.mjs";
 import { keyOf } from "../../core/dressing.mjs";
 import { drawAtlas, crownMark, CROWN_LIFT } from "./atlas.mjs";
-import { landRasters, boxBlur, fbm, chaikin, distance } from "../../core/land/raster.mjs";
+import { landRasters, boxBlur, fbm, chaikin, distance, nodeRaster } from "../../core/land/raster.mjs";
 import { refineLand } from "../../core/land/refine.mjs";
 import { contours, smoothLine } from "../../core/land/vector.mjs";
 import { BIOMES, BIOME_CLIMATE } from "../../core/land/biome.mjs";
 import { LAPSE } from "../../core/land/climate.mjs";
+import { SETTLED } from "../../core/land/settled.mjs";
 
 export const MAX_BLUR = 0.5;
 export const rolesFor = () => [];
@@ -26,6 +27,8 @@ const LOOK = {
   dry: [206, 178, 116], meadow: [168, 180, 86], lush: [124, 158, 70], heath: [176, 178, 150], sand: [222, 196, 138], polar: [226, 228, 222],
   forest: [92, 122, 72], forestCold: [-14, -8, 6], conifer: [58, 92, 76], rainforest: [46, 108, 54], drywood: [100, 120, 62],
   bareWood: [124, 108, 90], autumn: [[178, 112, 50], [154, 82, 46], [192, 152, 62]], spring: [150, 186, 80], straw: [186, 172, 128],
+  farm: [196, 184, 112], pasture: [138, 166, 82], valley: [172, 192, 104],
+  fields: { summer: [[208, 186, 102], [146, 166, 80]], spring: [[150, 184, 86], [122, 156, 72]], autumn: [[198, 174, 108], [148, 118, 82]], winter: [[182, 172, 142], [152, 140, 112]] },
   ice: [214, 226, 232], riverIce: [178, 198, 212], riverIceCase: [92, 108, 120], rock: [158, 142, 116], snow: [248, 248, 244], alluvium: [178, 184, 120], salt: [236, 230, 212],
   warm: [96, 76, 34], cool: [62, 60, 34], coolSnow: [80, 70, 40],
   shallow: [172, 206, 198], deep: [66, 112, 128], lakeRim: [96, 172, 196], lakeDeep: [38, 104, 152],
@@ -78,6 +81,54 @@ export function iceAt(temp, z, season = "summer") {
  * much, where the picture is big enough to draw them (a clump is about a mile and a fifth; under four pixels, noise).
  */
 export const forestTexture = (miles, cellMi = 0) => smooth(1500, 400, miles) * (cellMi > 0 ? smooth(2, 4, 1.2 / cellMi) : 1);
+/** A field's size in raster pixels (long, short): a few pixels each, so fields read as a texture, not as plots. */
+export const FIELD_PX = [5, 3];
+/**
+ * The field a raster pixel i is in: [along, across] its nearest road, counted in fields from the road's start (every
+ * other row of fields offset by half, as strips are). ra: roadAngles.
+ */
+export function fieldCell(i, rw, ra) {
+  const a = ra.ang[i], x = (i % rw) - ra.ox[i], y = (i - (i % rw)) / rw - ra.oy[i], ca = Math.cos(a), sa = Math.sin(a);
+  const cu = Math.floor((ra.os[i] + x * ca + y * sa) / FIELD_PX[0]);
+  return [cu, Math.floor((-x * sa + y * ca) / FIELD_PX[1] + (cu & 1) * 0.5)];
+}
+/** Which of two tones a field is (0 to 1), by its cell. */
+const fieldTone = (cu, cv, seed) => { let h = Math.imul(cu | 0, 374761393) ^ Math.imul(cv | 0, 668265263) ^ Math.imul(seed | 0, 2246822519); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+/**
+ * Each raster pixel's nearest road stretch, for fields lined up with it: { ang (its direction, radians), ox, oy (where
+ * it starts, in raster pixels), os (how far along its road that is, in raster pixels) }: the fields are counted from
+ * the road's start, so their rows run on unbroken around its bends. The roads drawn into the raster, then the nearest
+ * drawn pixel's stretch carried out by a two-pass chamfer. A map with no roads: east and west from the corner.
+ */
+export function roadAngles(L, R) {
+  const { rw, rh, cell } = R, N = rw * rh, ang = new Float32Array(N), ox = new Float32Array(N), oy = new Float32Array(N), os = new Float32Array(N), d = new Float32Array(N).fill(1e9);
+  for (const it of L.items ?? []) {
+    if (it.kind !== "way" || !Array.isArray(it.path)) continue;
+    let run = 0;
+    for (let m = 1; m < it.path.length; m++) {
+      const [ax, ay] = it.path[m - 1], [bx, by] = it.path[m], a = Math.atan2(by - ay, bx - ax), len = Math.hypot(bx - ax, by - ay) / cell, k = Math.max(1, Math.ceil(len * 2));
+      for (let q = 0; q <= k; q++) {
+        const x = Math.floor((ax + ((bx - ax) * q) / k) / cell), y = Math.floor((ay + ((by - ay) * q) / k) / cell);
+        if (x < 0 || y < 0 || x >= rw || y >= rh) continue;
+        const i = y * rw + x; d[i] = 0; ang[i] = a; ox[i] = ax / cell; oy[i] = ay / cell; os[i] = run;
+      }
+      run += len;
+    }
+  }
+  const D2 = Math.SQRT2;
+  const take = (i, j, step) => { if (d[j] + step < d[i]) { d[i] = d[j] + step; ang[i] = ang[j]; ox[i] = ox[j]; oy[i] = oy[j]; os[i] = os[j]; } };
+  for (let i = 0; i < N; i++) {
+    const x = i % rw, y = (i - x) / rw;
+    if (x > 0) take(i, i - 1, 1);
+    if (y > 0) { take(i, i - rw, 1); if (x > 0) take(i, i - rw - 1, D2); if (x < rw - 1) take(i, i - rw + 1, D2); }
+  }
+  for (let i = N - 1; i >= 0; i--) {
+    const x = i % rw, y = (i - x) / rw;
+    if (x < rw - 1) take(i, i + 1, 1);
+    if (y < rh - 1) { take(i, i + rw, 1); if (x > 0) take(i, i + rw - 1, D2); if (x < rw - 1) take(i, i + rw + 1, D2); }
+  }
+  return { ang, ox, oy, os };
+}
 /** An autumn leaf's color for a patch noise n (about -1.7 to 1.7): russet where it's low, gold where it's high, orange between. Into out. */
 export function autumnLeaf(n, out) {
   for (let ch = 0; ch < 3; ch++) out[ch] = LOOK.autumn[0][ch];
@@ -102,6 +153,8 @@ function groundColor(m, t, tl, out) {
 
 const hexColor = (s) => (typeof s === "string" && /^#[0-9a-f]{6}$/i.test(s) ? [1, 3, 5].map((k) => parseInt(s.slice(k, k + 2), 16)) : null);
 
+/** The key's land cover swatches: each the color its cover is painted, near enough to find on the map. */
+const COVER_SWATCH = { farmland: LOOK.farm, broadleaf: LOOK.forest, conifer: LOOK.conifer, rainforest: LOOK.rainforest, grassland: LOOK.meadow, desert: LOOK.dry, marsh: [124, 140, 100], tundra: LOOK.heath, snow: LOOK.snow };
 /**
  * How a layout is painted (options kept for side-by-sides): forest "speckle" (crowns as a fine speckle, the default)
  * or "plain"; heights "refined" (the graph subdivided and a few solver steps run at the finer spacing, the default)
@@ -114,9 +167,13 @@ export function reliefSide(full) {
   return full <= 800 ? Math.max(64, Math.round(full)) : Math.max(800, Math.min(2730, Math.round(full / 2)));
 }
 
-// Worked out once per land and relief size, for every tile of a paint (and every layout of one land: an edit to
-// places, roads or labels keeps the land, so its rasters too; what they read is the land, the seed, the season, the look and size)
-const PREPARED = new WeakMap();
+// Worked out once per land and relief size, for every tile of a paint (and every layout of one land: an edit to labels
+// keeps them all). What they read is the land, the seed, the season, the look and size, and the places and roads
+// (settled land); an edit to places or roads keeps the land's own rasters, outlines and rivers at a preview's size
+// and paints the image again.
+const PREPARED = new WeakMap(), RASTERS = new WeakMap();
+// (the land's own rasters are kept for pictures up to this many relief pixels: a preview's; a render's are let go)
+const KEEP_RASTERS = 1600 * 1600;
 export function prepared(L, pp) {
   const [MW, MH] = L.size.squares;
   const side = reliefSide(Math.max(MW, MH) * pp);
@@ -125,21 +182,50 @@ export function prepared(L, pp) {
   const rw = MW >= MH ? side : Math.max(16, Math.round((side * MW) / MH)), rh = Math.max(16, Math.ceil((rw * MH) / MW));
   let byKey = PREPARED.get(L.land);
   if (!byKey) { byKey = new Map(); PREPARED.set(L.land, byKey); }
-  const key = `${rw}x${rh}:${MW}x${MH}:${L.seed}:${L.season ?? "summer"}:${L.look?.forest ?? LOOK_OPTIONS.forest}:${L.look?.heights ?? LOOK_OPTIONS.heights}`;
+  const baseKey = `${rw}x${rh}:${MW}x${MH}:${L.seed}:${L.season ?? "summer"}:${L.look?.forest ?? LOOK_OPTIONS.forest}:${L.look?.heights ?? LOOK_OPTIONS.heights}`;
+  const key = `${baseKey}:${L.settledKey ?? ""}`;
   if (!byKey.has(key)) {
-    // (two sizes kept at most, a preview's and a render's; an older one let go, its canvases freed)
+    // (two kept at most, a preview's and a render's; an older one let go, its canvases freed)
     while (byKey.size >= 2) { const [k0, old] = byKey.entries().next().value; byKey.delete(k0); for (const v of Object.values(old)) if (v && typeof v === "object" && "width" in v && "getContext" in v) { v.width = 1; v.height = 1; } }
-    byKey.set(key, prepare(L, rw, rh));
+    let kept = RASTERS.get(L.land);
+    if (!kept) { kept = new Map(); RASTERS.set(L.land, kept); }
+    let base = kept.get(baseKey);
+    if (!base) {
+      base = landPart(L, rw, rh);
+      if (rw * rh <= KEEP_RASTERS) { while (kept.size >= 2) kept.delete(kept.keys().next().value); kept.set(baseKey, base); }
+    }
+    byKey.set(key, prepare(L, base));
   }
   return byKey.get(key);
 }
 
-/** The rasters, the smooth image and the outlines for a relief size. */
-function prepare(L, rw, rh) {
+/** How far a flood plain's marsh reaches from a big river (miles), and how flat its ground (feet a mile at most). */
+export const FLOOD = { miles: 2.5, ftPerMile: 25 };
+/**
+ * Flood plains: marsh on the flat floor beside a big river, its edge broken by noise, where the ground isn't dry,
+ * frozen, settled (cleared land beside a river is meadow and fields) or inside a painted zone. Sets those pixels'
+ * biome to wetland, so they are painted and marked as marsh. Changes R.biome in place.
+ */
+export function floodMarsh(R, settled, seed) {
+  const { rw, rh, cellMi, z, land, lake, riverDist, biome } = R, N = rw * rh;
+  const wet = BIOMES.indexOf("wetland"), dry = new Set(["hot-desert", "salt-flat", "cold-steppe", "glacier", "tundra"].map((b) => BIOMES.indexOf(b)));
+  const reach = FLOOD.miles / cellMi, n = fbm(rw, rh, Math.max(2, reach * 1.5), seed * 5 + 29, 0.55);
+  const ft = 16400 / (2 * cellMi);
+  for (let i = 0; i < N; i++) {
+    if (!land[i] || lake[i] || R.zone?.[i] || dry.has(biome[i]) || biome[i] === wet || (settled && settled[i] >= SETTLED - 0.05)) continue;
+    if (riverDist[i] > reach * (0.6 + 0.5 * Math.tanh(n[i]))) continue;
+    const x = i % rw, y = (i - x) / rw;
+    if (x < 1 || y < 1 || x >= rw - 1 || y >= rh - 1) continue;
+    const gx = (z[i + 1] - z[i - 1]) * ft, gy = (z[i + rw] - z[i - rw]) * ft;
+    if (gx * gx + gy * gy < FLOOD.ftPerMile * FLOOD.ftPerMile) biome[i] = wet;
+  }
+}
+
+/** The land's own part for a relief size, which places and roads don't change: its rasters, outlines and rivers. */
+function landPart(L, rw, rh) {
   const seed = (Number.isFinite(Number(L.seed)) ? Number(L.seed) : 1) | 0;
   const land = (L.look?.heights ?? LOOK_OPTIONS.heights) === "refined" ? refineLand(L.land) : L.land;
   const R = landRasters(land, { rw, rh, seed });
-  const { rgba: image, bare } = smoothImage(R, L, seed);
   const toMap = (pts) => pts.map(([x, y]) => [x * R.cell, y * R.cell]);
   const coast = contours(R.landS, rw, rh, 0, 4).map((c) => ({ pts: toMap(smoothLine(c.pts, c.closed, 2)), closed: c.closed }));
   const lakeS = Float32Array.from(R.lakeS, (v, i) => (R.land[i] ? v : -1));
@@ -179,6 +265,18 @@ function prepare(L, rw, rh) {
     line.ice = line.map(([x, y]) => { const i = Math.min(rh - 1, Math.max(0, Math.floor(y / R.cell))) * rw + Math.min(rw - 1, Math.max(0, Math.floor(x / R.cell))); return iceAt(R.temp[i], R.z[i], L.season ?? "summer"); });
     rivers.push(line);
   }
+  return { R, seed, rw, rh, coast, shores, ripples, rivers };
+}
+
+/** The smooth image and what the tiles read, from the land's part and the layout's settled land. */
+function prepare(L, base) {
+  const { seed, rw, rh, coast, shores, ripples, rivers } = base;
+  // (settled land drawn from the layout's nodes: it follows the places and roads, not the land; flood plain marsh on a
+  // copy of the biomes, so the land's part stays as it was)
+  const settled = L.settled?.length === L.land.n ? nodeRaster(L.land, L.settled, rw, rh) : null;
+  const R = { ...base.R, biome: Uint8Array.from(base.R.biome) };
+  floodMarsh(R, settled, seed);
+  const { rgba: image, bare } = smoothImage(R, L, seed, { settled });
   // marsh and dune marks: where, from the biome raster
   const wetland = BIOMES.indexOf("wetland"), desert = BIOMES.indexOf("hot-desert");
   // the land without lakes, as a picture, so rivers are clipped to it
@@ -227,7 +325,7 @@ function canvasOf(w, h) {
 }
 
 /** The smooth image at relief resolution: { rgba (bytes), bare (0 to 255: how much snow or bare rock), wood (0 to 1: how much forest) }. */
-export function smoothImage(R, L, seed) {
+export function smoothImage(R, L, seed, { settled = null } = {}) {
   const { rw, rh } = R, N = rw * rh, side = Math.max(rw, rh);
   const forestLook = L.look?.forest ?? LOOK_OPTIONS.forest;
   const E = new Float32Array(N);
@@ -293,9 +391,20 @@ export function smoothImage(R, L, seed) {
   const texK = forestTexture(Math.max(f.mapW, f.mapH)), clumpK = forestTexture(Math.max(f.mapW, f.mapH), R.cellMi);
   const season = L.season ?? "summer";
   const clumpN = clumpK > 0 ? fbm(rw, rh, Math.max(2, 1.2 / R.cellMi), seed * 11 + 12, 0.55) : none;
+  // (fields: shown where a settled map's texture and clumps show, each lined up with the nearest road)
+  const fieldK = settled ? clumpK : 0, roadAng = fieldK > 0 ? roadAngles(L, R) : null;
   const tintN = season === "autumn" ? fbm(rw, rh, Math.max(3, side / 220), seed * 11 + 13, 0.6) : none;
+  // alluvium along big rivers, salt flats
+  const allu = new Float32Array(N);
+  const rivReach = Math.max(4, (40 * side) / 3072);
+  for (let i = 0; i < N; i++) allu[i] = R.land[i] ? Math.max(0, 1 - R.riverDist[i] / rivReach) * (1 - smooth(0.05, 0.15, E[i])) : 0;
+  boxBlur(allu, rw, rh, Math.max(1, side / 500));
+  // settled land (0 to 1, from the places and roads), and how cleared it is: woods end with an edge where it passes
+  // SETTLED, broken by a little noise
+  const st = settled ?? none;
+  const cleared = (i) => smooth(SETTLED - 0.05, SETTLED + 0.07, st[i] + 0.06 * Math.tanh(edgeN[i]));
   // the forest: where it's wet, warm enough and not high (inside a painted zone, by the zone's biome), its edge
-  // broken up, as mockup 3
+  // broken up, as mockup 3; cleared where the land is settled, and opened into meadows on a big river's floor
   const wood = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     if (!R.land[i] || R.lake[i]) continue;
@@ -303,14 +412,9 @@ export function smoothImage(R, L, seed) {
     const byClimate = Math.min(1, Math.max(0, (moist[i] - 0.66) * 4)) * Math.min(1, Math.max(0, (0.42 - E[i]) * 6)) * smooth(0.1, 0.18, t);
     const v = R.zone[i] ? Math.min(1, Math.max(0, (R.forest[i] - 0.3) * 2.5)) * Math.min(1, Math.max(0, (0.5 - E[i]) * 6)) : byClimate;
     // (at a kingdom's scale the woods break into clumps with glades between)
-    wood[i] = Math.min(1, Math.max(0, v * 1.5 + 0.35 * Math.tanh(1.3 * edgeN[i]) - 0.1)) * (1 - 0.85 * clumpK * smooth(0.5, 1.0, clumpN[i]));
+    wood[i] = Math.min(1, Math.max(0, v * 1.5 + 0.35 * Math.tanh(1.3 * edgeN[i]) - 0.1)) * (1 - 0.85 * clumpK * smooth(0.5, 1.0, clumpN[i])) * (1 - cleared(i)) * (1 - 0.75 * smooth(0.35, 0.75, allu[i]));
   }
   boxBlur(wood, rw, rh, Math.max(1, side / 2400));
-  // alluvium along big rivers, salt flats
-  const allu = new Float32Array(N);
-  const rivReach = Math.max(4, (40 * side) / 3072);
-  for (let i = 0; i < N; i++) allu[i] = R.land[i] ? Math.max(0, 1 - R.riverDist[i] / rivReach) * (1 - smooth(0.05, 0.15, E[i])) : 0;
-  boxBlur(allu, rw, rh, Math.max(1, side / 500));
   const saltB = Float32Array.from(R.salt);
   boxBlur(saltB, rw, rh, 1);
   // zones: their biome's color laid over, blended over a few miles with a ragged edge (painted intent, not an outline)
@@ -366,6 +470,21 @@ export function smoothImage(R, L, seed) {
       // alluvium and salt flats
       const al = allu[i] * 0.3, sl = saltB[i] * 0.9;
       for (let ch = 0; ch < 3; ch++) { col[ch] += (LOOK.alluvium[ch] - col[ch]) * al; col[ch] += (LOOK.salt[ch] - col[ch]) * sl; }
+      // a big river's floor: light, a meadow, where it's flat
+      mixTo(col, LOOK.valley, 0.35 * smooth(0.3, 0.8, allu[i]) * smooth(1.2, 0.4, sr) * (1 - rk));
+      // farmland on settled land: a lighter, warmer ground; on a kingdom's map, where the picture can draw them, small
+      // fields in two tones lined up with the nearest road; pasture, not fields, on slopes
+      const fk = cleared(i) * (1 - rk) * (1 - sl);
+      if (fk > 0.01) {
+        const pasture = smooth(0.18, 0.45, sr);
+        mixTo(col, LOOK.farm, 0.5 * fk * (1 - pasture));
+        mixTo(col, LOOK.pasture, 0.45 * fk * pasture);
+        if (fieldK > 0 && roadAng) {
+          const [cu, cv] = fieldCell(i, rw, roadAng), tone = fieldTone(cu, cv, seed);
+          const two = LOOK.fields[season] ?? LOOK.fields.summer;
+          mixTo(col, two[tone < 0.5 ? 0 : 1], 0.55 * fk * fieldK * (1 - pasture) * (0.6 + 0.8 * Math.abs(tone - 0.5)));
+        }
+      }
       // the forest canopy by kind: conifer dark and blue-green with a fine sharp speckle, broadleaf warmer and rounder,
       // rainforest deep and dense; by season, broadleaf bare and gray-brown where winter is cold, turned in autumn where
       // the year is cool, bright in spring
@@ -388,11 +507,15 @@ export function smoothImage(R, L, seed) {
         const sp = forestLook === "speckle"
           ? texK * ((0.09 + 0.06 * k3) * crowns[i] + (0.05 - 0.03 * k3) * crownsB[i]) + (1 - texK) * 0.02 * crownsB[i]
           : 0.04 * crownsB[i];
+        // (a wood's edge against cleared land a little darker, as the woods of a settled country are drawn)
+        const rim = texK * 0.12 * smooth(0.15, 0.6, cleared(i)) * (wd < 0.95 ? 1 : 0);
         const dense = Math.min(1, wd * (1 + 0.3 * kr3));
+        if (rim > 0) for (let ch = 0; ch < 3; ch++) fc[ch] *= 1 - rim;
         for (let ch = 0; ch < 3; ch++) col[ch] += (fc[ch] * (1 + sp) - col[ch]) * dense;
       }
       // savanna's trees: scattered dark crowns on the ochre, seen at a kingdom's scale, a faint darkening on a continent's
-      const sv = kindW[4][i] * (1 - rk);
+      // (cleared from settled land, as the forest is)
+      const sv = kindW[4][i] * (1 - rk) * (1 - cleared(i));
       if (sv > 0.02) {
         const dots = texK * smooth(0.55, 0.85, crowns[i]) * 0.55 + (1 - texK) * 0.12;
         mixTo(col, LOOK.drywood, sv * dots);
@@ -461,7 +584,7 @@ export function paint(ctx) {
     return;
   }
   if (layer === "legend") {
-    if (L.dressing) paintKey(ctx, { ...PALETTE }, { miles: true });
+    if (L.dressing) paintKey(ctx, { ...PALETTE }, { miles: true, covers: COVER_SWATCH });
     progress(1, "Done");
     return;
   }
