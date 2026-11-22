@@ -24,7 +24,9 @@ const rgb = ([r, g, b], a = 1) => (a === 1 ? `rgb(${r | 0},${g | 0},${b | 0})` :
 /** The look's colors (mockup 3's palette: clear meadows and ochres, a canopy of its own, warm rock under violet shade). */
 const LOOK = {
   dry: [206, 178, 116], meadow: [168, 180, 86], lush: [124, 158, 70], heath: [176, 178, 150], sand: [222, 196, 138], polar: [226, 228, 222],
-  forest: [92, 122, 72], forestCold: [-14, -8, 6], rock: [158, 142, 116], snow: [248, 248, 244], alluvium: [178, 184, 120], salt: [236, 230, 212],
+  forest: [92, 122, 72], forestCold: [-14, -8, 6], conifer: [58, 92, 76], rainforest: [46, 108, 54], drywood: [100, 120, 62],
+  bareWood: [124, 108, 90], autumn: [[178, 112, 50], [154, 82, 46], [192, 152, 62]], spring: [150, 186, 80], straw: [186, 172, 128],
+  ice: [214, 226, 232], riverIce: [178, 198, 212], riverIceCase: [92, 108, 120], rock: [158, 142, 116], snow: [248, 248, 244], alluvium: [178, 184, 120], salt: [236, 230, 212],
   warm: [96, 76, 34], cool: [62, 60, 34], coolSnow: [80, 70, 40],
   shallow: [172, 206, 198], deep: [66, 112, 128], lakeRim: [96, 172, 196], lakeDeep: [38, 104, 152],
   ripple: [36, 66, 76], coast: [50, 42, 32], river: [84, 146, 188], riverCase: [30, 46, 56], lakeInk: [50, 70, 80], paper: [236, 226, 200], vignette: [96, 74, 44],
@@ -37,9 +39,50 @@ const LOOK = {
  * 10,000 ft at 45 degrees, at the sea near the poles. And it needs the wet (moist 0 to 1): a dry plateau stays bare.
  */
 export const FT_PER_UNIT = 16400;
-export function snowAt(temp, z, moist = 1) {
-  const zz = Math.max(0, z), seaF = 21 + 58 * (temp + LAPSE * zz), f = seaF - (3.6 * zz * FT_PER_UNIT) / 1000;
-  return smooth(26, 16, f) * smooth(0.08, 0.4, moist);
+/**
+ * The air at a place, [mean, swing] in degrees Fahrenheit: the year's mean at its height (as snowAt reads it) and how
+ * far the coldest month falls below it (and the warmest rises above), from its latitude (read back from the warmth at
+ * sea level): a few degrees in the tropics, about 17 at 45 degrees, 23 at 60.
+ */
+export function airF(temp, z) {
+  const zz = Math.max(0, z), sea = temp + LAPSE * zz, lat = Math.min(90, Math.max(0, 78 - 62 * Math.min(1, sea)));
+  return [21 + 58 * sea - (3.6 * zz * FT_PER_UNIT) / 1000, Math.max(3, 0.45 * (lat - 8))];
+}
+/**
+ * Snow lying in each season, past the year-round snow (the mean below 26 F, all of it below 16 F): [how much of the
+ * swing below the mean the season's air is, where snow starts, where it covers the ground]. Winter's is the snow of the
+ * coldest month, lying where it's below about freezing; spring keeps the high snowpack; autumn has the first snow on
+ * the heights. Summer is the year-round snow alone.
+ */
+export const SEASON_SNOW = { winter: [1, 34, 26], spring: [0.45, 30, 20], autumn: [0.25, 28, 18] };
+export function snowAt(temp, z, moist = 1, season = "summer") {
+  const [f, swing] = airF(temp, z);
+  return snowOfAir(f, swing, moist, season);
+}
+/** snowAt for air already worked out (airF's mean and swing). */
+export function snowOfAir(f, swing, moist, season) {
+  const s = SEASON_SNOW[season];
+  const lying = s ? Math.max(smooth(26, 16, f), smooth(s[1], s[2], f - s[0] * swing)) : smooth(26, 16, f);
+  return lying * smooth(0.08, 0.4, moist);
+}
+/** How frozen a lake or river is (0 to 1): in winter, where the coldest month is below about 22 F. */
+export function iceAt(temp, z, season = "summer") {
+  if (season !== "winter") return 0;
+  const [f, swing] = airF(temp, z);
+  return smooth(26, 18, f - swing);
+}
+/**
+ * How much of a forest's texture shows (0 to 1) on a map so many miles on its long side: a speckle of crowns on a
+ * kingdom's map (the whole of it to about 400 miles), less on a realm's, a smooth tone on a continent's (1,500 miles
+ * and more), the same at every picture size. With cellMi (miles a pixel), how much of its clumps and glades show: as
+ * much, where the picture is big enough to draw them (a clump is about a mile and a fifth; under four pixels, noise).
+ */
+export const forestTexture = (miles, cellMi = 0) => smooth(1500, 400, miles) * (cellMi > 0 ? smooth(2, 4, 1.2 / cellMi) : 1);
+/** An autumn leaf's color for a patch noise n (about -1.7 to 1.7): russet where it's low, gold where it's high, orange between. Into out. */
+export function autumnLeaf(n, out) {
+  for (let ch = 0; ch < 3; ch++) out[ch] = LOOK.autumn[0][ch];
+  mixTo(out, LOOK.autumn[1], smooth(-0.1, -0.6, n)); mixTo(out, LOOK.autumn[2], smooth(0.1, 0.6, n));
+  return out;
 }
 const mixTo = (c, to, t) => { const k = Math.min(1, Math.max(0, t)); for (let ch = 0; ch < 3; ch++) c[ch] += (to[ch] - c[ch]) * k; };
 /**
@@ -72,7 +115,7 @@ export function reliefSide(full) {
 }
 
 // Worked out once per land and relief size, for every tile of a paint (and every layout of one land: an edit to
-// places, roads or labels keeps the land, so its rasters too; what they read is the land, the seed, the look and size)
+// places, roads or labels keeps the land, so its rasters too; what they read is the land, the seed, the season, the look and size)
 const PREPARED = new WeakMap();
 export function prepared(L, pp) {
   const [MW, MH] = L.size.squares;
@@ -82,7 +125,7 @@ export function prepared(L, pp) {
   const rw = MW >= MH ? side : Math.max(16, Math.round((side * MW) / MH)), rh = Math.max(16, Math.ceil((rw * MH) / MW));
   let byKey = PREPARED.get(L.land);
   if (!byKey) { byKey = new Map(); PREPARED.set(L.land, byKey); }
-  const key = `${rw}x${rh}:${MW}x${MH}:${L.seed}:${L.look?.forest ?? LOOK_OPTIONS.forest}:${L.look?.heights ?? LOOK_OPTIONS.heights}`;
+  const key = `${rw}x${rh}:${MW}x${MH}:${L.seed}:${L.season ?? "summer"}:${L.look?.forest ?? LOOK_OPTIONS.forest}:${L.look?.heights ?? LOOK_OPTIONS.heights}`;
   if (!byKey.has(key)) {
     // (two sizes kept at most, a preview's and a render's; an older one let go, its canvases freed)
     while (byKey.size >= 2) { const [k0, old] = byKey.entries().next().value; byKey.delete(k0); for (const v of Object.values(old)) if (v && typeof v === "object" && "width" in v && "getContext" in v) { v.width = 1; v.height = 1; } }
@@ -132,6 +175,8 @@ function prepare(L, rw, rh) {
     line.spring = !(Rv.points[0][2] > 3 * (L.land.threshold ?? Infinity));
     let run = 0;
     line.from = line.map((q, k) => (run += k ? Math.hypot(q[0] - line[k - 1][0], q[1] - line[k - 1][1]) : 0));
+    // (how frozen it is at each point, in a cold winter)
+    line.ice = line.map(([x, y]) => { const i = Math.min(rh - 1, Math.max(0, Math.floor(y / R.cell))) * rw + Math.min(rw - 1, Math.max(0, Math.floor(x / R.cell))); return iceAt(R.temp[i], R.z[i], L.season ?? "summer"); });
     rivers.push(line);
   }
   // marsh and dune marks: where, from the biome raster
@@ -146,23 +191,25 @@ function prepare(L, rw, rh) {
 }
 
 /**
- * The river segments to stroke, [x0, y0, x1, y1, width] in map units and output pixels: width by flow (t, 0 to 1), at
- * least a floor on a named river, tapered over the first stretch from its source (a spring, not a lake's outlet).
- * keep(line): whether a line is drawn.
+ * The river segments to stroke, [x0, y0, x1, y1, width, ice] in map units and output pixels: width by flow (t, 0 to 1),
+ * at least a floor on a named river, tapered over the first stretch from its source (a spring, not a lake's outlet),
+ * wider in spring when the rivers run high; ice 0 to 1, how frozen it is. keep(line): whether a line is drawn.
  */
 export function riverSegs(L, S, outPx, keep) {
-  const mul = (L.land.frame.scale === "kingdom" ? 1.15 : 1) * (outPx / 3072);
+  const mul = (L.land.frame.scale === "kingdom" ? 1.15 : 1) * (outPx / 3072) * (L.season === "spring" ? SPRING_RIVERS : 1);
   const named = namedRivers(L), taper = 0.03 * Math.max(L.size.squares[0], L.size.squares[1]), out = [];
   for (const rv of S.rivers) {
     if (!keep(rv)) continue;
     const floor = named.has(rv.id) ? 2.4 * mul : 0;
     for (let q = 1; q < rv.length; q++) {
       const k = rv.spring === false ? 1 : 0.35 + 0.65 * smooth(0, taper, rv.from[q]);
-      out.push([rv[q - 1][0], rv[q - 1][1], rv[q][0], rv[q][1], Math.max(0.6, Math.max(floor, (0.6 + 6.4 * Math.pow(rv[q][2], 1.35)) * mul) * k)]);
+      out.push([rv[q - 1][0], rv[q - 1][1], rv[q][0], rv[q][1], Math.max(0.6, Math.max(floor, (0.6 + 6.4 * Math.pow(rv[q][2], 1.35)) * mul) * k), rv.ice ? (rv.ice[q - 1] + rv.ice[q]) / 2 : 0]);
     }
   }
   return out;
 }
+// (how much wider rivers run in spring)
+export const SPRING_RIVERS = 1.15;
 // (the dark casing's extra width, both sides together)
 const riverCasing = (outPx) => Math.max(1, (1.6 * outPx) / 3072);
 // (the rivers with a name on the map: their own label's id is "@land:" and the inventory entry naming them)
@@ -179,7 +226,7 @@ function canvasOf(w, h) {
   return new OffscreenCanvas(w, h);
 }
 
-/** The smooth image at relief resolution: { rgba (bytes), bare (0 to 255: how much snow or bare rock) }. */
+/** The smooth image at relief resolution: { rgba (bytes), bare (0 to 255: how much snow or bare rock), wood (0 to 1: how much forest) }. */
 export function smoothImage(R, L, seed) {
   const { rw, rh } = R, N = rw * rh, side = Math.max(rw, rh);
   const forestLook = L.look?.forest ?? LOOK_OPTIONS.forest;
@@ -236,6 +283,17 @@ export function smoothImage(R, L, seed) {
   const moist = Float32Array.from(R.rain, (v) => Math.min(1, Math.max(0, v / 1.05)));
   const warm = Float32Array.from(R.temp);
   boxBlur(moist, rw, rh, Math.max(1, side / 300)); boxBlur(warm, rw, rh, Math.max(1, side / 300));
+  // the forest's kinds, from the biomes, smoothed as the climate: conifer (taiga, the cold rainforest), broadleaf (the
+  // temperate forest), dry broadleaf (the seasonal forest), rainforest; and savanna's scattered trees
+  // (only the kinds the map has; a kind it lacks reads as a shared empty field)
+  const KIND = { taiga: 0, "temperate-rainforest": 0, "temperate-forest": 1, "seasonal-forest": 2, rainforest: 3, savanna: 4 };
+  const kindOf = BIOMES.map((b) => KIND[b]), none = new Float32Array(N), kindW = [none, none, none, none, none];
+  for (let i = 0; i < N; i++) { const k = kindOf[R.biome[i]]; if (k !== undefined && R.land[i]) { if (kindW[k] === none) kindW[k] = new Float32Array(N); kindW[k][i] = 1; } }
+  for (const a of kindW) if (a !== none) boxBlur(a, rw, rh, Math.max(1, side / 300));
+  const texK = forestTexture(Math.max(f.mapW, f.mapH)), clumpK = forestTexture(Math.max(f.mapW, f.mapH), R.cellMi);
+  const season = L.season ?? "summer";
+  const clumpN = clumpK > 0 ? fbm(rw, rh, Math.max(2, 1.2 / R.cellMi), seed * 11 + 12, 0.55) : none;
+  const tintN = season === "autumn" ? fbm(rw, rh, Math.max(3, side / 220), seed * 11 + 13, 0.6) : none;
   // the forest: where it's wet, warm enough and not high (inside a painted zone, by the zone's biome), its edge
   // broken up, as mockup 3
   const wood = new Float32Array(N);
@@ -244,7 +302,8 @@ export function smoothImage(R, L, seed) {
     const t = warm[i] + 0.6 * E[i];
     const byClimate = Math.min(1, Math.max(0, (moist[i] - 0.66) * 4)) * Math.min(1, Math.max(0, (0.42 - E[i]) * 6)) * smooth(0.1, 0.18, t);
     const v = R.zone[i] ? Math.min(1, Math.max(0, (R.forest[i] - 0.3) * 2.5)) * Math.min(1, Math.max(0, (0.5 - E[i]) * 6)) : byClimate;
-    wood[i] = Math.min(1, Math.max(0, v * 1.5 + 0.35 * Math.tanh(1.3 * edgeN[i]) - 0.1));
+    // (at a kingdom's scale the woods break into clumps with glades between)
+    wood[i] = Math.min(1, Math.max(0, v * 1.5 + 0.35 * Math.tanh(1.3 * edgeN[i]) - 0.1)) * (1 - 0.85 * clumpK * smooth(0.5, 1.0, clumpN[i]));
   }
   boxBlur(wood, rw, rh, Math.max(1, side / 2400));
   // alluvium along big rivers, salt flats
@@ -274,7 +333,7 @@ export function smoothImage(R, L, seed) {
   const out = new Uint8ClampedArray(N * 4), bare = new Uint8Array(N);
   const azs = [[315, 40, 0.62], [270, 60, 0.19], [0, 60, 0.19]].map(([az, alt, w]) => { const a = (az * Math.PI) / 180, e = (alt * Math.PI) / 180; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e), w]; });
   const flat = 0.62 * Math.sin((40 * Math.PI) / 180) + 0.38 * Math.sin((60 * Math.PI) / 180);
-  const col = [0, 0, 0];
+  const col = [0, 0, 0], fc = [0, 0, 0], leaf = [0, 0, 0], turn = [0, 0, 0];
   for (let i = 0; i < N; i++) {
     if (!R.land[i]) {
       // the sea: shallows to deep by its depth, brushed
@@ -285,10 +344,19 @@ export function smoothImage(R, L, seed) {
       // most saturated color on the map)
       const t = 0.3 * Math.min(1, lakeDist[i] / lakeFar) + 0.7 * (1 - Math.exp(-(R.lakeDepth[i] * FT_PER_UNIT) / 100));
       for (let ch = 0; ch < 3; ch++) col[ch] = LOOK.lakeRim[ch] + (LOOK.lakeDeep[ch] - LOOK.lakeRim[ch]) * t;
+      // (frozen in a cold winter)
+      mixTo(col, LOOK.ice, iceAt(R.temp[i], R.z[i], season));
     } else {
       const e = E[i], slope = slopeA[i], zk = 1 - Math.min(1, zoneW[i] * 1.2);
-      // the ground by climate: dry ochre to meadow by moisture, heath where it's cold, sand where hot and dry
+      // the ground by climate: dry ochre to meadow by moisture, heath where it's cold, sand where hot and dry; by season,
+      // straw where winter is cold, new green in spring, a little gold in autumn
       groundColor(moist[i], warm[i], warm[i] + 0.6 * e, col);
+      const [airMean, swing] = airF(R.temp[i], R.z[i]), coldMonth = airMean - swing;
+      if (season === "winter") mixTo(col, LOOK.straw, 0.45 * smooth(46, 32, coldMonth));
+      else if (season === "spring") mixTo(col, LOOK.spring, 0.3 * smooth(0.15, 0.45, moist[i]) * smooth(30, 45, airMean) * smooth(72, 62, airMean));
+      else if (season === "autumn") mixTo(col, LOOK.autumn[2], 0.18 * smooth(70, 55, airMean) * smooth(25, 35, airMean));
+      // (savanna's ground ochre)
+      mixTo(col, LOOK.dry, 0.5 * kindW[4][i]);
       if (zoneW[i] > 0.01) { const k = Math.min(1, zoneW[i] * 1.2), s = 1 / zoneW[i]; col[0] += (zr[i] * s - col[0]) * k; col[1] += (zg[i] * s - col[1]) * k; col[2] += (zb[i] * s - col[2]) * k; }
       // bare rock high and on the steepest ground (slope against the land's own 95th percentile, so it doesn't follow
       // the light's exaggeration; not inside a painted zone)
@@ -298,15 +366,40 @@ export function smoothImage(R, L, seed) {
       // alluvium and salt flats
       const al = allu[i] * 0.3, sl = saltB[i] * 0.9;
       for (let ch = 0; ch < 3; ch++) { col[ch] += (LOOK.alluvium[ch] - col[ch]) * al; col[ch] += (LOOK.salt[ch] - col[ch]) * sl; }
-      // the forest canopy: its own dark green (bluer where it's cold), a speckle of crowns, its edge broken
+      // the forest canopy by kind: conifer dark and blue-green with a fine sharp speckle, broadleaf warmer and rounder,
+      // rainforest deep and dense; by season, broadleaf bare and gray-brown where winter is cold, turned in autumn where
+      // the year is cool, bright in spring
       const wd = wood[i] * (1 - rk);
       if (wd > 0) {
-        const cold = smooth(0.4, 0.2, warm[i] + 0.6 * e);
-        const sp = forestLook === "speckle" ? 0.09 * crowns[i] + 0.05 * crownsB[i] : 0.04 * crownsB[i];
-        for (let ch = 0; ch < 3; ch++) col[ch] += ((LOOK.forest[ch] + LOOK.forestCold[ch] * cold) * (1 + sp) - col[ch]) * wd;
+        const kc = kindW[0][i], kb = kindW[1][i], kd = kindW[2][i], kr = kindW[3][i], kn = kc + kb + kd + kr;
+        if (kn < 0.05) { const cold = smooth(0.4, 0.2, warm[i] + 0.6 * e); for (let ch = 0; ch < 3; ch++) fc[ch] = LOOK.forest[ch] + LOOK.forestCold[ch] * cold; }
+        else {
+          for (let ch = 0; ch < 3; ch++) leaf[ch] = LOOK.forest[ch];
+          if (season === "winter") mixTo(leaf, LOOK.bareWood, smooth(40, 30, coldMonth));
+          else if (season === "autumn") {
+            // (orange, russet or gold in patches)
+            autumnLeaf(tintN[i], turn);
+            mixTo(leaf, turn, 0.5 * smooth(64, 50, airMean) * smooth(26, 36, airMean));
+          }
+          else if (season === "spring") mixTo(leaf, LOOK.spring, 0.3 * smooth(30, 45, airMean) * smooth(72, 62, airMean));
+          for (let ch = 0; ch < 3; ch++) fc[ch] = (LOOK.conifer[ch] * kc + leaf[ch] * kb + LOOK.drywood[ch] * kd + LOOK.rainforest[ch] * kr) / kn;
+        }
+        const k3 = kn > 0 ? kc / kn : 0, kr3 = kn > 0 ? kr / kn : 0;
+        const sp = forestLook === "speckle"
+          ? texK * ((0.09 + 0.06 * k3) * crowns[i] + (0.05 - 0.03 * k3) * crownsB[i]) + (1 - texK) * 0.02 * crownsB[i]
+          : 0.04 * crownsB[i];
+        const dense = Math.min(1, wd * (1 + 0.3 * kr3));
+        for (let ch = 0; ch < 3; ch++) col[ch] += (fc[ch] * (1 + sp) - col[ch]) * dense;
+      }
+      // savanna's trees: scattered dark crowns on the ochre, seen at a kingdom's scale, a faint darkening on a continent's
+      const sv = kindW[4][i] * (1 - rk);
+      if (sv > 0.02) {
+        const dots = texK * smooth(0.55, 0.85, crowns[i]) * 0.55 + (1 - texK) * 0.12;
+        mixTo(col, LOOK.drywood, sv * dots);
       }
       // snow where the air is cold enough at its height (snowAt), less on steep faces
-      const snow = snowAt(R.temp[i], R.z[i], moist[i]) * Math.min(1, Math.max(0, 1.5 - sr * 0.45)) * zk;
+      // (half as much on a forest's crowns, so a snowy wood still reads dark)
+      const snow = snowOfAir(airMean, swing, moist[i], season) * Math.min(1, Math.max(0, 1.5 - sr * 0.45)) * zk * (1 - 0.5 * wd);
       for (let ch = 0; ch < 3; ch++) col[ch] += (LOOK.snow[ch] - col[ch]) * snow;
       bare[i] = Math.round(255 * Math.max(snow, rk));
       // brush
@@ -325,7 +418,7 @@ export function smoothImage(R, L, seed) {
     }
     out[4 * i] = col[0]; out[4 * i + 1] = col[1]; out[4 * i + 2] = col[2]; out[4 * i + 3] = 255;
   }
-  return { rgba: out, bare };
+  return { rgba: out, bare, wood };
 }
 
 /**
@@ -404,9 +497,10 @@ export function paint(ctx) {
     // first, then every river over them, so where two join the casing doesn't cross the water)
     mg.lineCap = "round"; mg.lineJoin = "round";
     const segs = riverSegs(L, S, outPx, (rv) => near(rv, 1));
-    for (const [color, extra] of [[LOOK.riverCase, riverCasing(outPx)], [LOOK.river, 0]]) {
-      mg.strokeStyle = rgb(color);
-      for (const [ax, ay, bx, by, w] of segs) { mg.lineWidth = w + extra; mg.beginPath(); mg.moveTo(X(ax), Y(ay)); mg.lineTo(X(bx), Y(by)); mg.stroke(); }
+    // (a frozen stretch pale, its casing gray)
+    const tint = (a, b, t) => rgb(t > 0.01 ? a.map((v, ch) => v + (b[ch] - v) * t) : a);
+    for (const [color, iceColor, extra] of [[LOOK.riverCase, LOOK.riverIceCase, riverCasing(outPx)], [LOOK.river, LOOK.riverIce, 0]]) {
+      for (const [ax, ay, bx, by, w, ice] of segs) { mg.strokeStyle = tint(color, iceColor, ice); mg.lineWidth = w + extra; mg.beginPath(); mg.moveTo(X(ax), Y(ay)); mg.lineTo(X(bx), Y(by)); mg.stroke(); }
     }
     mg.globalCompositeOperation = "destination-in";
     mg.imageSmoothingEnabled = true;

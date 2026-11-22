@@ -251,7 +251,7 @@ export function drawnLandChanged(before, after) {
 /** The plan-wide settings, by path: what the "Plan" panel shows. */
 export const PLAN_FIELDS = [
   { path: "name", label: "Name", kind: "string" },
-  { path: "season", label: "Season", kind: "enum", values: SEASONS },
+  { path: "season", label: "Season", kind: "enum", values: SEASONS, help: "The season the map's art is drawn for: trees, crops, ground and snow" },
   { path: "style", label: "Style", kind: "enum", values: STYLES, names: { illustrated: "illustrated (drawn)", textured: "textured (map art)", ink: "ink (black and white)" }, help: "Illustrated draws the map in ink and color, with no art needed; ink the same in black ink on pale paper, as an engraved map; textured paints it from map art (your art folders, art you choose, or FA Nexus), made for battle maps" },
   { path: "output.dressing", label: "Map dressing", kind: "boolean", help: "A frame, a compass rose and a scale bar painted on the map, and the map's name on a hidden tile (illustrated style)" },
   { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 by 160 mi)", realm: "realm (720 by 480 mi)", continent: "continent (2,400 by 1,600 mi)", world: "world (7,200 by 4,800 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size and the generator's towns, roads and realms are placed again on it; what you placed keeps its spot on the map" },
@@ -513,6 +513,7 @@ export function planFieldsOf(plan) {
   const region = plan?.kind === "region";
   const overland = region && plan?.land && typeof plan.land === "object";
   const fields = (!region ? PLAN_FIELDS : PLAN_FIELDS.filter((p) => p.path !== "style" && !(p.path === "output.dressing" && !overland) && !(overland && p.path === "ground"))
+    .map((p) => (p.path === "season" && overland ? { ...p, help: "Snow down to where the season's air is cold enough, frozen lakes and rivers in a cold winter, bare woods in winter, turned leaves in autumn, new green and high rivers in spring; the land itself stays as it is" } : p))
     .map((p) => (p.path === "output.dressing" && overland ? { ...p, help: "A frame, a compass rose, a scale bar and the key painted on the map, and the map's name on a hidden tile" } : p))
     .map((p) => (p.path !== "size.ftPerSquare" ? p : overland ? { ...p, min: MILE_FT, max: 120 * MILE_FT, help: "A cell's width: 31680 is 6 miles (a kingdom), 211200 is 40 (a continent). Changing it changes the map's miles; Scale sets both" } : { ...p, min: 500, max: 26400, help: "2640 is half a mile, 5280 a mile" }))).filter((p) => !p.overland || overland);
   // (Realms left unset: none, or some for a plan holding the generator's realms, as Reroll Places takes it)
