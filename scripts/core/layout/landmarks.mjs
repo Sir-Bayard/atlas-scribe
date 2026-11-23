@@ -8,9 +8,9 @@ import { BIOMES } from "../land/biome.mjs";
 import { woodSpot, SETTLED } from "../land/settled.mjs";
 
 /** The kinds of landmark, as their marks and names know them. */
-export const LANDMARK_KINDS = ["falls", "pass", "volcano", "spring", "tree", "stacks"];
+export const LANDMARK_KINDS = ["falls", "pass", "volcano", "spring", "tree", "stacks", "oasis"];
 // (at most this many of each on a map)
-const MOST = { falls: 5, pass: 5, volcano: 6, spring: 3, tree: 1, stacks: 3 };
+const MOST = { falls: 5, pass: 5, volcano: 6, spring: 3, tree: 1, stacks: 3, oasis: 6 };
 const FOREST = new Set(["temperate-forest", "temperate-rainforest", "seasonal-forest", "rainforest", "taiga"]);
 
 /**
@@ -115,5 +115,7 @@ export function landmarksOf(land, settled, items = []) {
     const kept = [];
     for (const [, i] of cand) { if (kept.some((j) => Math.hypot(x[i] - x[j], y[i] - y[j]) < gap)) continue; if (add("stacks", x[i], y[i])) kept.push(i); }
   }
+  // oases: the land's own (generator 3), in its deserts
+  for (const o of land.oases ?? []) add("oasis", o.x, o.y);
   return out;
 }

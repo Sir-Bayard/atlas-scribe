@@ -59,7 +59,7 @@ export const RANGE_ROOM = 0.04;
  * plan's terrain features in frame miles: [{ class, path | at, ...fields }]), intent (sampled intent layers per node,
  * or null), gen (the generator to run as; left out, the newest) }. Returns { shape, U, Uold, K, hard, talus, D, early
  * (K, talus, D and hard without a plateau's rock, for the wearing down before the coast is made; null when the
- * same), landMask, outlet, fixedH, spines, plates, distSea, rangeT (how high a range stands before it makes land of
+ * same), rock (each node's rock family: ROCK_FAMILIES), landMask, outlet, fixedH, spines, plates, distSea, rangeT (how high a range stands before it makes land of
  * the sea) }.
  */
 export function upliftStage(ctx) {
@@ -221,7 +221,16 @@ export function upliftStage(ctx) {
     D[i] = (Dphys * (1 - 0.6 * hard[i])) / SOLVER.dt;
     if (early) { early.K[i] = SOLVER.K0 * rock * (1 - 0.55 * hardBefore[i]); early.talus[i] = SOLVER.talus * pow(s, -0.3) * (1 + 0.6 * hardBefore[i]); early.D[i] = (Dphys * (1 - 0.6 * hardBefore[i])) / SOLVER.dt; }
   }
-  return { shape, U, Uold, K, hard, talus, D, early, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null, rangeT };
+  // (each node's rock family, for the painter and the mines: by the province, softer to harder, limestone (0),
+  // sandstone (1), granite (2), basalt (3); a volcano's land basalt; hard peaks and plateaus granite)
+  const rock = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = province[i];
+    rock[i] = p < -0.3 ? 0 : p < 0.1 ? 1 : p < 0.45 ? 2 : 3;
+    if (hard[i] > 0.5 && rock[i] < 2) rock[i] = 2;
+  }
+  if (out.cones) for (const c of out.cones) for (let i = 0; i < n; i++) if (len(g.x[i] - c.at[0], g.y[i] - c.at[1]) < 2.5 * c.rad) rock[i] = 3;
+  return { shape, U, Uold, K, hard, talus, D, early, rock, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null, rangeT };
 }
 
 /**
@@ -241,6 +250,9 @@ export function refadePlateau(g, up, landMask) {
     D[i] = (early.D[i] * (1 - 0.6 * now)) / (1 - 0.6 * b);
   }
 }
+
+/** The rock families, by uplift's rock index. */
+export const ROCK_FAMILIES = ["limestone", "sandstone", "granite", "basalt"];
 
 /** How hard a plateau's rock is at its heart. */
 const PLATEAU_HARD = 0.75;

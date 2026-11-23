@@ -221,7 +221,8 @@ export function chaikin(p, n = 2) {
 /**
  * The rasters for a compact land. rw, rh: the raster's size over the map; seed: the layout's. Returns { rw, rh, cell
  * (map units a pixel), cellMi, z (heights), land (Uint8), landS (signed: land above 0, its zero line the coast), lake
- * (Uint8), lakeS (signed: water above 0, -1 away from any lake), salt (Uint8), rain, temp, hard, forest (0 to 1),
+ * (Uint8), lakeS (signed: water above 0, -1 away from any lake), salt (Uint8), seasonal (Uint8: a seasonal lake's bed),
+ * rock (Uint8: the rock family, nearest node), rain, temp, hard, forest (0 to 1),
  * biome (Uint8 index, nearest node), zone (Int16, 0 none), seaDist, landDist (pixels), depth (0 shallow to 1 deep),
  * riverDist (pixels to a drawn river big enough to have a floodplain), ms }.
  */
@@ -248,7 +249,7 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
 
   // every triangle drawn: heights by blended tangent planes, the rest straight between its corners
   const z = new Float32Array(N), landQ = new Float32Array(N), rain = new Float32Array(N), temp = new Float32Array(N);
-  const hard = new Float32Array(N), forest = new Float32Array(N), sdep = new Float32Array(N), saltQ = new Float32Array(N);
+  const hard = new Float32Array(N), forest = new Float32Array(N), sdep = new Float32Array(N), saltQ = new Float32Array(N), seasQ = new Float32Array(N), rock = new Uint8Array(N);
   const lakeOf = new Int32Array(N).fill(-1), biome = new Uint8Array(N).fill(SEA_BIOME), zone = new Int16Array(N);
   const covered = new Uint8Array(N);
   const tri = land.triangles;
@@ -283,7 +284,9 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
         hard[i] = wa * land.hard[a] + wb * land.hard[b] + wc * land.hard[c];
         sdep[i] = wa * land.sea[a] + wb * land.sea[b] + wc * land.sea[c];
         saltQ[i] = wa * (land.salt[a] ? 1 : -1) + wb * (land.salt[b] ? 1 : -1) + wc * (land.salt[c] ? 1 : -1);
+        if (land.seasonal) seasQ[i] = wa * (land.seasonal[a] ? 1 : -1) + wb * (land.seasonal[b] ? 1 : -1) + wc * (land.seasonal[c] ? 1 : -1);
         const near = wa >= wb && wa >= wc ? a : wb >= wc ? b : c;
+        if (land.rock) rock[i] = land.rock[near];
         const bi = land.biome[near];
         biome[i] = bi;
         forest[i] = wa * (FOREST_OF[land.biome[a]] ?? 0) + wb * (FOREST_OF[land.biome[b]] ?? 0) + wc * (FOREST_OF[land.biome[c]] ?? 0);
@@ -299,6 +302,8 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
   boxBlur(landQ, rw, rh, Math.max(1, 0.18 * sp));
   for (const a of [rain, temp, hard, sdep, forest]) boxBlur(a, rw, rh, Math.max(1, 0.5 * sp));
   boxBlur(saltQ, rw, rh, Math.max(1, 0.2 * sp));
+  // (a seasonal lake's bed rounder, as a pan's water spreads)
+  if (land.seasonal) boxBlur(seasQ, rw, rh, Math.max(1, 0.45 * sp));
 
   // rivers carved in: a trench along each drawn river, its floor below the river's level by its flow, so rivers sit
   // in their valleys; big rivers' floors flat. riverDist: how far a pixel is from a river with a floodplain
@@ -369,7 +374,7 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
 
   // lakes from their levels: water wherever the ground is below its lake's level inside that lake's basin
   // (lakeDepth: how far below its lake's level the ground is, in height units, where there's water)
-  const lakeS = new Float32Array(N).fill(-1), lake = new Uint8Array(N), salt = new Uint8Array(N), lakeDepth = new Float32Array(N);
+  const lakeS = new Float32Array(N).fill(-1), lake = new Uint8Array(N), salt = new Uint8Array(N), seasonal = new Uint8Array(N), lakeDepth = new Float32Array(N);
   const level = new Map((land.lakes ?? []).map((L) => [L.id, L.level]));
   for (let i = 0; i < N; i++) {
     if (!landM[i]) continue;
@@ -380,6 +385,7 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
       if (s > 0) { lake[i] = 1; lakeDepth[i] = level.get(k) - z[i]; }
     }
     if (!lake[i] && saltQ[i] > 0) salt[i] = 1;
+    if (!lake[i] && land.seasonal && seasQ[i] > 0) seasonal[i] = 1;
   }
   // (lake specks dropped)
   { const lr = regions(rw, rh, (i) => lake[i] === 1); for (let i = 0; i < N; i++) { const l = lr.label[i]; if (l >= 0 && lr.sizes[l] < speckMin) { lake[i] = 0; lakeDepth[i] = 0; lakeS[i] = Math.min(lakeS[i], -0.01); } } }
@@ -399,5 +405,5 @@ export function landRasters(land, { rw, rh, seed = 1 }) {
   }
   boxBlur(depth, rw, rh, Math.max(1, 1.5 * sp));
 
-  return { rw, rh, cell, cellMi, z, land: landM, landS, lake, lakeS, lakeDepth, salt, rain, temp, hard, forest, biome, zone, seaDist, landDist, depth, riverDist, ms: Math.round(performance.now() - t0) };
+  return { rw, rh, cell, cellMi, z, land: landM, landS, lake, lakeS, lakeDepth, salt, seasonal, rock, rain, temp, hard, forest, biome, zone, seaDist, landDist, depth, riverDist, ms: Math.round(performance.now() - t0) };
 }

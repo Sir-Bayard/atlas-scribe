@@ -6,7 +6,14 @@
  */
 import { fillRoute, accumulate } from "./solver.mjs";
 import { Heap } from "./heap.mjs";
-import { len } from "./dmath.mjs";
+import { len, exp } from "./dmath.mjs";
+
+/** The share of a river's water lost a mile where the land is as dry as it gets (generator 3 on): about two fifths over
+ * 25 miles of desert. */
+export const DRY_LOSS = 0.02;
+
+/** The share of the most water it carried below which a river losing water in dry country has run out (generator 3). */
+export const DRY_END = 0.7;
 
 /** Catchment (rain-weighted square miles) above which a river is drawn, by scale; times 2 for few, 0.5 for many. */
 export const RIVER_CATCHMENT = { kingdom: 1000, realm: 6000, continent: 40000, world: 150000 };
@@ -44,8 +51,9 @@ export function valleyFloors(g, h, w, big, land, fixed) {
  * catchment: rain less what the land gives back to the air, a share that grows with warmth and dryness, as Budyko's
  * curve) against evaporation (its open water's area times warmth); what's left leaves by its outlet, and the flow below
  * a lake is cut by the share it kept, so a hot, dry basin's lakes close where a wet one's overflow. A closed lake
- * keeps its deepest share and the rest becomes salt flat. Returns { lake (Uint8Array), salt, lakeId (Int32Array),
- * lakes: [{ id, level, area, inflow, evap, closed, outlet }], F (flow with lakes) }.
+ * keeps its deepest share and the rest becomes salt flat. From generator 3 (ctx.gen) a river loses water across dry
+ * country (DRY_LOSS). Returns { lake (Uint8Array), salt, lakeId (Int32Array), lakes: [{ id, level, area, inflow, evap,
+ * closed, outlet }], F (flow with lakes) }.
  */
 export function lakesStage(ctx) {
   const { g, h, w, np, rain, temp, land } = ctx;
@@ -82,6 +90,10 @@ export function lakesStage(ctx) {
     F[i] = r * g.area[i]; Q[i] = ((r * r) / (r + pet || 1)) * g.area[i];
   }
   const left = lakes.map((L) => L.evap);
+  // (from generator 3, a river in dry country loses water into its bed and the air as it goes: a share a mile by how
+  // far the rain there falls short of what the air would take up, so a river fed by wet highlands runs out into the
+  // desert and ends there)
+  const lossAt = (ctx.gen ?? 0) >= 3 ? (i) => { const r = Math.max(0, rain[i]), pet = 0.3 + 0.9 * Math.min(1, Math.max(0, temp[i])), a = Math.max(0, (pet - r) / pet); return exp(-DRY_LOSS * a * a * w.rd[i]); } : null;
   for (let k = np - 1; k >= 0; k--) {
     const i = pop[k], r = rec[i];
     if (r === i) continue;
@@ -91,7 +103,7 @@ export function lakesStage(ctx) {
       const take = Math.min(Q[i], left[li]); left[li] -= take;
       const kept = Q[i] > 0 ? (Q[i] - take) / Q[i] : 1;
       Q[r] += Q[i] - take; F[r] += F[i] * kept;
-    } else { Q[r] += Q[i]; F[r] += F[i]; }
+    } else if (lossAt && land[i] && reg[i] < 0) { const keep = lossAt(i); Q[r] += Q[i] * keep; F[r] += F[i] * keep; } else { Q[r] += Q[i]; F[r] += F[i]; }
   }
   const lake = new Uint8Array(n), salt = new Uint8Array(n), lakeId = new Int32Array(n).fill(-1);
   const byLake = lakes.map(() => []);
@@ -111,11 +123,13 @@ export function lakesStage(ctx) {
 }
 
 /**
- * Rivers. ctx: { g, h, w (routed), F (flow with lakes), land, lake, outlet, threshold (catchment to draw) }. Main
+ * Rivers. ctx: { g, h, w (routed), np (its order's length), F (flow with lakes), land, lake, outlet, threshold
+ * (catchment to draw), gen }. Main
  * channels where F >= threshold; heads a few steps further up where F >= threshold / 3 if they join a main channel.
  * Each river from its source to where it ends (the sea, a lake, the frame's edge, or a larger river: at a
  * confluence the larger flow keeps the river's identity). Returns { rivers: [{ id, parent, order, main, points:
- * [[x, y, F, slope]...], ends: "sea" | "lake" | "edge" | "river", nodes }], drawn (Uint8Array), riverOf (Int32Array) }.
+ * [[x, y, F, slope]...], ends: "sea" | "lake" | "edge" | "river" | "dry" (generator 3: run out on dry land), nodes }],
+ * drawn (Uint8Array), riverOf (Int32Array) }.
  */
 export function riversStage(ctx) {
   const { g, h, w, F, land, outlet, threshold } = ctx;
@@ -125,6 +139,28 @@ export function riversStage(ctx) {
   const lake = ctx.salt ? Uint8Array.from(ctx.lake, (v, i) => (v || ctx.salt[i] ? 1 : 0)) : ctx.lake;
   const main = new Uint8Array(n), drawn = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (land[i] && !lake[i] && F[i] >= threshold) main[i] = 1;
+  // (from generator 3 a river that falls below the threshold as it loses water in dry country runs on, drawn, while it
+  // keeps DRY_END of the most it carried; past that it has run out, and ends "dry")
+  if ((ctx.gen ?? 0) >= 3 && ctx.np) {
+    const peak = new Float64Array(n), { pop } = w;
+    for (let k = ctx.np - 1; k >= 0; k--) {
+      const i = pop[k], r = rec[i];
+      if (!main[i]) continue;
+      if (F[i] > peak[i]) peak[i] = F[i];
+      if (r === i || !land[r] || lake[r]) continue;
+      if (peak[i] > peak[r]) peak[r] = peak[i];
+      if (!main[r] && F[r] >= DRY_END * peak[i]) main[r] = 1;
+    }
+    // (a river that runs out a little above where the water gathers again, as other streams join, is drawn on to it, so
+    // it isn't broken by a gap)
+    for (let i = 0; i < n; i++) {
+      if (!main[i] || rec[i] === i || main[rec[i]] || !land[rec[i]] || lake[rec[i]]) continue;
+      const path = [];
+      let j = rec[i];
+      while (path.length < 30 && land[j] && !lake[j] && !main[j] && rec[j] !== j) { path.push(j); j = rec[j]; }
+      if (main[j] && land[j] && !lake[j]) for (const u of path) main[u] = 1;
+    }
+  }
   // (a river the GM drew is drawn its whole length, however little drains into its first reach)
   for (const list of ctx.forced ?? []) {
     for (const i of list) if (land[i] && !lake[i]) main[i] = 1;
@@ -162,7 +198,8 @@ export function riversStage(ctx) {
     }
     nodes.reverse(); // (source to mouth)
     const last = nodes[nodes.length - 1], r = rec[last];
-    const ends = parent >= 0 ? "river" : lake[r] ? "lake" : !land[r] ? "sea" : outlet[r] || r === last ? "edge" : "river";
+    // (from generator 3 a main river can run out on dry land: it ends "dry")
+    const ends = parent >= 0 ? "river" : lake[r] ? "lake" : !land[r] ? "sea" : outlet[r] || r === last ? "edge" : (ctx.gen ?? 0) >= 3 && main[last] ? "dry" : "river";
     const points = nodes.map((k) => [g.x[k], g.y[k], F[k], rec[k] !== k ? Math.max(0, (h[k] - h[rec[k]]) / rd[k]) : 0]);
     // (the river's last step reaches into what it ends in)
     if (r !== last) points.push([g.x[r], g.y[r], F[last], 0]);
@@ -180,6 +217,52 @@ export function riversStage(ctx) {
   for (const R of rivers) if (R.parent < 0) orderOf(R.id);
   return { rivers, drawn, riverOf };
 }
+
+/**
+ * Where rivers run out on dry land, and their dry beds (generator 3). The end of each river that ends "dry" spreads
+ * over the low ground around it (a share of the map by its flow): a salt pan where the land is driest, a seasonal lake
+ * where it's dry, a marsh where it's wetter (an inland delta). A river's points where it has lost water, in country
+ * drier than DRY_BED, are its dry bed. ctx: { g, h, rivers, F, rain, temp, land, lake, threshold, frame }. Returns { sinks: [{ kind ("salt-pan",
+ * "seasonal-lake" or "inland-marsh"), x, y, size (square miles), river, nodes }], salt, seasonal, marsh (Uint8Array:
+ * the nodes each covers) } and sets each river's dry (Uint8Array a point, 1 where its bed is dry).
+ */
+export function drySinks(ctx) {
+  const { g, h, rivers, F, rain, temp, land, lake, threshold, frame } = ctx;
+  const mapArea = frame ? frame.mapW * frame.mapH : Infinity;
+  const n = g.n, salt = new Uint8Array(n), seasonal = new Uint8Array(n), marsh = new Uint8Array(n), sinks = [];
+  const arid = (i) => { const r = Math.max(0, rain[i]), pet = 0.3 + 0.9 * Math.min(1, Math.max(0, temp[i])); return Math.max(0, (pet - r) / pet); };
+  for (const R of rivers) {
+    // (a dry bed: where the river has lost water, under 85% of the most it carried, in country drier than DRY_BED)
+    let top = 0;
+    R.dry = Uint8Array.from(R.nodes.map((i) => { top = Math.max(top, F[i]); return arid(i) > DRY_BED && F[i] < 0.85 * top ? 1 : 0; }));
+    if (R.ends !== "dry") continue;
+    const m = R.nodes[R.nodes.length - 1], a = arid(m);
+    // (the spread: low ground near the end, its area from the river's flow, never into a lake or the sea)
+    const want = Math.min(0.01 * mapArea, Math.max(0.0015 * mapArea, 0.05 * threshold) * Math.max(0.5, Math.min(3, F[m] / threshold))), floor = h[m] + 0.02;
+    // (a round patch of that area about the end, over ground no higher than a little above it, joined to the end)
+    const rad = Math.sqrt(want / Math.PI), nodes = [], seen = new Set([m]), q = [m];
+    let area = 0;
+    for (let k = 0; k < q.length; k++) {
+      const u = q[k];
+      if (!land[u] || lake[u] || h[u] > floor || len(g.x[u] - g.x[m], g.y[u] - g.y[m]) > rad) continue;
+      nodes.push(u); area += g.area[u];
+      for (let e = g.indptr[u]; e < g.indptr[u + 1]; e++) { const v = g.indices[e]; if (!seen.has(v)) { seen.add(v); q.push(v); } }
+    }
+    if (nodes.length < 2) continue;
+    const kind = a > 0.75 ? "salt-pan" : a > 0.5 ? "seasonal-lake" : "inland-marsh";
+    const mask = kind === "salt-pan" ? salt : kind === "seasonal-lake" ? seasonal : marsh;
+    for (const u of nodes) mask[u] = 1;
+    let sx = 0, sy = 0; for (const u of nodes) { sx += g.x[u]; sy += g.y[u]; }
+    sx /= nodes.length; sy /= nodes.length;
+    let b = nodes[0], bd = Infinity; for (const u of nodes) { const dx = g.x[u] - sx, dy = g.y[u] - sy, d = dx * dx + dy * dy; if (d < bd || (d === bd && u < b)) { bd = d; b = u; } }
+    sinks.push({ kind, x: g.x[b], y: g.y[b], size: Math.round(area * 10) / 10, river: R.id, nodes });
+  }
+  return { sinks, salt, seasonal, marsh };
+}
+
+/** The dryness (0 wet to 1 desert: how far the rain falls short of what the air would take up) past which a river that
+ * is losing water is drawn as a dry bed. */
+export const DRY_BED = 0.6;
 
 /**
  * Marks along rivers: falls (a step much steeper than the reach around it), the head of navigation (on a main

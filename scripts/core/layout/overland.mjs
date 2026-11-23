@@ -22,8 +22,8 @@ const WATER_SITES = new Set(["wreck", "monster"]);
 export const CUSTOM_BIOME = 253;
 
 /**
- * The land as the painter needs it: typed arrays per node, positions in frame miles; rivers as [x, y, flow, height]
- * points from source to where they end.
+ * The land as the painter needs it: typed arrays per node, positions in frame miles; rivers as [x, y, flow, height,
+ * dry] points from source to where they end (dry 1 where the bed runs dry).
  */
 export function compactLand(L) {
   const { g } = L, n = g.n;
@@ -37,11 +37,12 @@ export function compactLand(L) {
     sea[i] = sample(L.shapeF, g.x[i], g.y[i]);
   }
   const rivers = L.rivers.map((R) => {
-    const pts = R.nodes.map((k) => [g.x[k], g.y[k], L.F[k], L.h[k]]);
+    // (a fifth value a point: 1 where its bed runs dry, generator 3)
+    const pts = R.nodes.map((k, q) => [g.x[k], g.y[k], L.F[k], L.h[k], R.dry?.[q] ?? 0]);
     const last = R.points[R.points.length - 1];
     if (R.points.length > R.nodes.length) {
       const r = L.rec[R.nodes[R.nodes.length - 1]];
-      pts.push([last[0], last[1], last[2], L.lakeId[r] >= 0 ? L.lakes[L.lakeId[r]].level : L.h[r]]);
+      pts.push([last[0], last[1], last[2], L.lakeId[r] >= 0 ? L.lakes[L.lakeId[r]].level : L.h[r], R.dry?.[R.nodes.length - 1] ?? 0]);
     }
     // (nodes: the river's own nodes, source to end; to: the node it flows into, a river it joins or a lake or the
     // sea, or -1)
@@ -59,6 +60,8 @@ export function compactLand(L) {
     rain: L.rain, temp: L.temp, hard: L.hard, biome, zone, sea, F: L.F, threshold: L.threshold,
     zones: (L.zones ?? []).map((z) => ({ index: z.index, id: z.id ?? null, name: z.name ?? null, biome: z.biome, color: z.color ?? null })),
     rivers, inventory: L.inventory ?? [],
+    // (generator 3: the beds of seasonal lakes, each node's rock family, the oases in frame miles)
+    seasonal: L.seasonal ?? null, rock: L.rock ?? null, oases: (L.oases ?? []).map((o) => ({ x: o.x, y: o.y })),
     // (the volcanoes' cones, [{ at: [x, y] frame miles, rad }], for their marks)
     cones: (L.cones ?? []).map((c) => ({ at: [c.at[0], c.at[1]], rad: c.rad })),
     // (river marks in frame miles: the head of navigation and the lowest bridging point on main rivers to the sea)

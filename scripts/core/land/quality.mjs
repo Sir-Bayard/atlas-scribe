@@ -35,7 +35,9 @@ export function landProblems(L, inventory) {
   if (big && land.mountains > 0.3 && !["archipelago", "arc"].includes(land.type) && !inventory.some((f) => f.kind === "range")) out.push({ check: "range", detail: "no range on land" });
   // rivers, unless the land is mostly small islands
   const mains = L.rivers.filter((R) => R.main).length;
-  if (big && !["archipelago", "arc"].includes(land.type) && mains < 2) out.push({ check: "rivers", detail: `only ${mains} river${mains === 1 ? "" : "s"}` });
+  // (a dry land, from generator 3 where rivers run out in the desert, needs only one)
+  const fewest = land.climate === "arid" && (L.gen ?? 0) >= 3 ? 1 : 2;
+  if (big && !["archipelago", "arc"].includes(land.type) && mains < fewest) out.push({ check: "rivers", detail: `only ${mains} river${mains === 1 ? "" : "s"}` });
   // no range ringing a plate: a plate whose boundary nodes are nearly all high
   const { plate } = L.plates;
   const edge = new Float64Array(L.plates.count), high = new Float64Array(L.plates.count);

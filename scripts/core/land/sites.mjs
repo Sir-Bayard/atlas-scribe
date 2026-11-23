@@ -257,11 +257,14 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
     }
   }
   // (rock that shows: hard rock the GM painted, else steep ground in the hills)
-  const rocky = (i) => Math.max(hard[i], clamp((h[i] - 0.1) / 0.25) * clamp(slope[i] / 0.06));
+  // (rock: painted hard rock, else steep hill ground, and from generator 3 the land's own hard families, granite and
+  // basalt, on hill ground)
+  const rockOf = land.rock ?? null;
+  const rocky = (i) => Math.max(hard[i], clamp((h[i] - 0.1) / 0.25) * clamp(slope[i] / 0.06), rockOf && rockOf[i] >= 2 ? 0.5 * clamp((h[i] - 0.08) / 0.12) : 0);
   // mines: rock in the hills, beside a river
   placeKind("mine", (i) => (ok(i) && h[i] > 0.12 && h[i] < 0.6 && rocky(i) > 0.35 && riverNear(i) > 0 ? 2 * rocky(i) + 0.5 * Math.min(1, prom[i] * 20) - Math.min(1, roadMiles[i] / (0.5 * sp.city)) : -Infinity));
-  // quarries: rock on low hills near a road and a town
-  placeKind("quarry", (i) => (ok(i) && h[i] > 0.06 && h[i] < 0.35 && rocky(i) > 0.2 && roadMiles[i] < 0.15 * sp.city ? 1.5 * rocky(i) + Math.max(0, 1 - townMiles[i] / (0.6 * sp.city)) : -Infinity));
+  // quarries: rock on low hills near a road and a town (building stone, limestone or granite, first)
+  placeKind("quarry", (i) => (ok(i) && h[i] > 0.06 && h[i] < 0.35 && rocky(i) > 0.2 && roadMiles[i] < 0.15 * sp.city ? 1.5 * rocky(i) + Math.max(0, 1 - townMiles[i] / (0.6 * sp.city)) + (rockOf && (rockOf[i] === 0 || rockOf[i] === 2) ? 0.3 : 0) : -Infinity));
   // watchtowers: on passes and border hilltops; else hilltops above the roads
   const passNear = new Uint8Array(n); for (const p of passes) within(x[p], y[p], Math.max(4, 3 * step), (j) => { passNear[j] = 1; });
   placeKind("tower", (i) => (ok(i) && h[i] > 0.06 && prom[i] > 0.01 ? 2 * passNear[i] + 1.5 * border[i] + 0.8 * frontier[i] + 10 * prom[i] + (roadMiles[i] < 0.1 * sp.city ? 0.6 : 0) : -Infinity), { site: (i) => ({ ...(passNear[i] ? { pass: true } : {}), ...(border[i] ? { border: true } : {}) }) });

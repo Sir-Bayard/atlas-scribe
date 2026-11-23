@@ -20,6 +20,8 @@ export const MAX_BLUR = 0.5;
 export const rolesFor = () => [];
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// (the continental shelf's width in relief pixels: about 2% of the map's long side, narrower off a steep coast)
+const shelfPx = (L, R) => Math.max(2, (0.018 * Math.max(L.land.frame.mapW, L.land.frame.mapH)) / R.cellMi);
 const rgb = ([r, g, b], a = 1) => (a === 1 ? `rgb(${r | 0},${g | 0},${b | 0})` : `rgba(${r | 0},${g | 0},${b | 0},${a})`);
 
 /** The look's colors (mockup 3's palette: clear meadows and ochres, a canopy of its own, warm rock under violet shade). */
@@ -32,8 +34,12 @@ const LOOK = {
   ice: [214, 226, 232], riverIce: [178, 198, 212], riverIceCase: [92, 108, 120], rock: [158, 142, 116], snow: [248, 248, 244], alluvium: [178, 184, 120], salt: [236, 230, 212],
   warm: [96, 76, 34], cool: [62, 60, 34], coolSnow: [80, 70, 40],
   shallow: [172, 206, 198], deep: [66, 112, 128], lakeRim: [96, 172, 196], lakeDeep: [38, 104, 152],
+  turquoise: [104, 204, 198], reef: [238, 232, 204], playa: [200, 204, 194], beach: [232, 216, 172], cliff: [112, 98, 86], badland: [176, 108, 74], reg: [168, 148, 116], riverDry: [138, 150, 140],
+  rocks: [[196, 188, 166], [184, 134, 92], [158, 146, 140], [102, 98, 96]],
   ripple: [36, 66, 76], coast: [50, 42, 32], river: [84, 146, 188], riverCase: [30, 46, 56], lakeInk: [50, 70, 80], paper: [236, 226, 200], vignette: [96, 74, 44],
 };
+/** The rock families' colors (limestone, sandstone, granite, basalt), for tests. */
+export const LOOK_ROCKS = LOOK.rocks;
 /**
  * Snow from the air's warmth at a height: the climate's warmth (0 to 1) taken back to sea level, as the year's mean in
  * degrees Fahrenheit (about 79 by the equator, 52 at 45 degrees, 38 at 60, 21 by the pole), cooled by a real lapse rate
@@ -242,17 +248,17 @@ function landPart(L, rw, rh) {
   for (const Rv of L.land.rivers) for (const p of Rv.points) { if (p[2] > fmax) fmax = p[2]; if (p[2] < fmin) fmin = p[2]; }
   const rnd = (a, b) => { let h = Math.imul(a | 0, 2654435761) ^ Math.imul(b | 0, 1597334677) ^ seed; h = Math.imul(h ^ (h >>> 15), 2246822507); return ((h ^ (h >>> 13)) >>> 0) / 4294967296; };
   for (const Rv of L.land.rivers) {
-    const p = Rv.points.map(([x, y, fl, hh]) => [(x - f.margin) / f.mpu, (y - f.margin) / f.mpu, fl, hh]);
+    const p = Rv.points.map(([x, y, fl, hh, dy]) => [(x - f.margin) / f.mpu, (y - f.margin) / f.mpu, fl, hh, dy ?? 0]);
     const pts = [];
     for (let k = 0; k + 1 < p.length; k++) {
-      const [x0, y0, f0, h0] = p[k], [x1, y1, f1, h1] = p[k + 1];
-      pts.push([x0, y0, f0]);
+      const [x0, y0, f0, h0, d0] = p[k], [x1, y1, f1, h1, d1] = p[k + 1];
+      pts.push([x0, y0, f0, d0]);
       const dx = x1 - x0, dy = y1 - y0, ll = Math.sqrt(dx * dx + dy * dy) || 1e-9;
       const slope = Math.abs(h0 - h1) / (ll * f.mpu);
       const amp = (rnd(Rv.id * 977 + k, 3) * 2 - 1) * (slope < 0.00002 ? 0.28 : 0.1) * ll;
-      pts.push([(x0 + x1) / 2 - (dy / ll) * amp, (y0 + y1) / 2 + (dx / ll) * amp, (f0 + f1) / 2]);
+      pts.push([(x0 + x1) / 2 - (dy / ll) * amp, (y0 + y1) / 2 + (dx / ll) * amp, (f0 + f1) / 2, (d0 + d1) / 2]);
     }
-    pts.push(p[p.length - 1].slice(0, 3));
+    { const e = p[p.length - 1]; pts.push([e[0], e[1], e[2], e[4]]); }
     const sm = chaikin(pts, 3);
     const line = sm.map(([x, y, fl]) => [x, y, fmax > fmin ? Math.max(0, Math.min(1, Math.log(fl / fmin) / Math.log(fmax / fmin))) : 0.5]);
     // (its id, for its name; each point's distance from its source in map units, for the taper; and whether it
@@ -261,8 +267,12 @@ function landPart(L, rw, rh) {
     line.spring = !(Rv.points[0][2] > 3 * (L.land.threshold ?? Infinity));
     let run = 0;
     line.from = line.map((q, k) => (run += k ? Math.hypot(q[0] - line[k - 1][0], q[1] - line[k - 1][1]) : 0));
+    // (one that runs out on dry land narrows to its end)
+    line.toDry = Rv.ends === "dry";
     // (how frozen it is at each point, in a cold winter)
     line.ice = line.map(([x, y]) => { const i = Math.min(rh - 1, Math.max(0, Math.floor(y / R.cell))) * rw + Math.min(rw - 1, Math.max(0, Math.floor(x / R.cell))); return iceAt(R.temp[i], R.z[i], L.season ?? "summer"); });
+    // (where its bed runs dry, as the land marked it)
+    line.dry = sm.map((q) => (q[3] > 0.5 ? 1 : 0));
     rivers.push(line);
   }
   return { R, seed, rw, rh, coast, shores, ripples, rivers };
@@ -276,7 +286,17 @@ function prepare(L, base) {
   const settled = L.settled?.length === L.land.n ? nodeRaster(L.land, L.settled, rw, rh) : null;
   const R = { ...base.R, biome: Uint8Array.from(base.R.biome) };
   floodMarsh(R, settled, seed);
-  const { rgba: image, bare } = smoothImage(R, L, seed, { settled });
+  const { rgba: image, bare, erg, shelfR } = smoothImage(R, L, seed, { settled });
+  // reefs: the painted shelf's edge in warm seas, as runs of its contour where the water is warm (turquoise shows)
+  const reefs = [], toMap = (pts) => pts.map(([x, y]) => [x * R.cell, y * R.cell]);
+  if (shelfR) for (const c of contours(shelfR, rw, rh, 1, 8)) {
+    let run = [];
+    for (const [x, y] of smoothLine(c.pts, c.closed, 2)) {
+      const i = Math.min(rh - 1, Math.max(0, Math.floor(y))) * rw + Math.min(rw - 1, Math.max(0, Math.floor(x)));
+      if (!R.land[i] && R.temp[i] > 0.8) run.push([x, y]); else { if (run.length > 3) reefs.push(toMap(run)); run = []; }
+    }
+    if (run.length > 3) reefs.push(toMap(run));
+  }
   // marsh and dune marks: where, from the biome raster
   const wetland = BIOMES.indexOf("wetland"), desert = BIOMES.indexOf("hot-desert");
   // the land without lakes, as a picture, so rivers are clipped to it
@@ -285,13 +305,15 @@ function prepare(L, base) {
   const smoothCanvas = canvasOf(rw, rh);
   { const k = smoothCanvas.getContext("2d"), id = k.createImageData(rw, rh); id.data.set(image); k.putImageData(id, 0, 0); }
   // (only what the tiles read is kept: the rest of the rasters go)
-  return { R: { rw, rh, cell: R.cell, land: R.land, lake: R.lake, biome: R.biome, bare }, rw, rh, smoothCanvas, landImg, coast, shores, ripples, rivers, wetland, desert };
+  return { R: { rw, rh, cell: R.cell, land: R.land, lake: R.lake, biome: R.biome, bare, erg: (L.land.gen ?? 0) >= 3 ? erg : null }, rw, rh, smoothCanvas, landImg, coast, shores, ripples, reefs, rivers, wetland, desert };
 }
 
 /**
- * The river segments to stroke, [x0, y0, x1, y1, width, ice] in map units and output pixels: width by flow (t, 0 to 1),
- * at least a floor on a named river, tapered over the first stretch from its source (a spring, not a lake's outlet),
- * wider in spring when the rivers run high; ice 0 to 1, how frozen it is. keep(line): whether a line is drawn.
+ * The river segments to stroke, [x0, y0, x1, y1, width, ice, dry] in map units and output pixels: width by flow (t, 0 to 1),
+ * at least a floor on a named river, tapered over the first stretch from its source (a spring, not a lake's outlet) and
+ * over the last before a dry end,
+ * wider in spring when the rivers run high; ice 0 to 1, how frozen it is; dry 1 where the bed runs dry. keep(line): whether
+ * a line is drawn.
  */
 export function riverSegs(L, S, outPx, keep) {
   const mul = (L.land.frame.scale === "kingdom" ? 1.15 : 1) * (outPx / 3072) * (L.season === "spring" ? SPRING_RIVERS : 1);
@@ -300,8 +322,8 @@ export function riverSegs(L, S, outPx, keep) {
     if (!keep(rv)) continue;
     const floor = named.has(rv.id) ? 2.4 * mul : 0;
     for (let q = 1; q < rv.length; q++) {
-      const k = rv.spring === false ? 1 : 0.35 + 0.65 * smooth(0, taper, rv.from[q]);
-      out.push([rv[q - 1][0], rv[q - 1][1], rv[q][0], rv[q][1], Math.max(0.6, Math.max(floor, (0.6 + 6.4 * Math.pow(rv[q][2], 1.35)) * mul) * k), rv.ice ? (rv.ice[q - 1] + rv.ice[q]) / 2 : 0]);
+      const k = (rv.spring === false ? 1 : 0.35 + 0.65 * smooth(0, taper, rv.from[q])) * (rv.toDry ? 0.35 + 0.65 * smooth(0, taper, rv.from[rv.length - 1] - rv.from[q]) : 1);
+      out.push([rv[q - 1][0], rv[q - 1][1], rv[q][0], rv[q][1], Math.max(0.6, Math.max(floor, (0.6 + 6.4 * Math.pow(rv[q][2], 1.35)) * mul) * k), rv.ice ? (rv.ice[q - 1] + rv.ice[q]) / 2 : 0, rv.dry ? rv.dry[q - 1] & rv.dry[q] : 0]);
     }
   }
   return out;
@@ -324,7 +346,7 @@ function canvasOf(w, h) {
   return new OffscreenCanvas(w, h);
 }
 
-/** The smooth image at relief resolution: { rgba (bytes), bare (0 to 255: how much snow or bare rock), wood (0 to 1: how much forest) }. */
+/** The smooth image at relief resolution: { rgba (bytes), bare (0 to 255: how much snow or bare rock), wood (0 to 1: how much forest), erg (1 where a sand sea's dunes are drawn), shelfR (at sea, the distance offshore over the shelf's width there) }. */
 export function smoothImage(R, L, seed, { settled = null } = {}) {
   const { rw, rh } = R, N = rw * rh, side = Math.max(rw, rh);
   const forestLook = L.look?.forest ?? LOOK_OPTIONS.forest;
@@ -434,15 +456,42 @@ export function smoothImage(R, L, seed, { settled = null } = {}) {
   // (how far inside a lake: its middle darker)
   const lakeDist = R.lake.some((v) => v) ? distance(rw, rh, (i) => !R.lake[i]) : new Float32Array(N);
   const lakeFar = Math.max(4, (36 * side) / 3072);
+  // the sea floor: a shelf about 2% of the map's long side wide, narrower off a steep coast (the land's height near it),
+  // then the slope down to the deep
+  const nearE = Float32Array.from(E); boxBlur(nearE, rw, rh, Math.max(2, side / 120));
+  const shelf = shelfPx(L, R);
+  // seasonal lakes' beds, oases (a green patch at each), for generator 3 lands
+  const seasB = R.seasonal ? Float32Array.from(R.seasonal) : null;
+  if (seasB) boxBlur(seasB, rw, rh, 1);
+  const oasisW = new Float32Array(N);
+  for (const o of L.land.oases ?? []) {
+    const ox = (o.x - f.margin) / R.cellMi, oy = (o.y - f.margin) / R.cellMi, rr = Math.max(2, side / 170);
+    for (let y = Math.max(0, Math.floor(oy - 2 * rr)); y <= Math.min(rh - 1, Math.ceil(oy + 2 * rr)); y++) for (let x = Math.max(0, Math.floor(ox - 2 * rr)); x <= Math.min(rw - 1, Math.ceil(ox + 2 * rr)); x++) {
+      const d2 = ((x + 0.5 - ox) ** 2 + (y + 0.5 - oy) ** 2) / (rr * rr), i = y * rw + x;
+      oasisW[i] = Math.max(oasisW[i], Math.exp(-d2) * (0.75 + 0.25 * Math.tanh(edgeN[i])));
+    }
+  }
+  // (a beach's and a cliff's width at the coast, in relief pixels)
+  const beachW = Math.max(1, side / 900), cliffW = Math.max(1.2, side / 700);
+  const erg = new Uint8Array(N), shelfR = new Float32Array(N);
+  // (the rock families blended across their edges, for generator 3 lands)
+  const famW = R.rock && (L.land.gen ?? 0) >= 3 ? [0, 1, 2, 3].map((k) => { const a = Float32Array.from(R.rock, (v) => (v === k ? 1 : 0)); boxBlur(a, rw, rh, Math.max(1, side / 400)); return a; }) : null;
   const out = new Uint8ClampedArray(N * 4), bare = new Uint8Array(N);
   const azs = [[315, 40, 0.62], [270, 60, 0.19], [0, 60, 0.19]].map(([az, alt, w]) => { const a = (az * Math.PI) / 180, e = (alt * Math.PI) / 180; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e), w]; });
   const flat = 0.62 * Math.sin((40 * Math.PI) / 180) + 0.38 * Math.sin((60 * Math.PI) / 180);
   const col = [0, 0, 0], fc = [0, 0, 0], leaf = [0, 0, 0], turn = [0, 0, 0];
   for (let i = 0; i < N; i++) {
     if (!R.land[i]) {
-      // the sea: shallows to deep by its depth, brushed
-      const t = R.depth[i], k = 1 + 0.035 * Math.tanh(seaN[i]);
+      // the sea: shallow over the shelf, a break at its edge, then deep by its depth, brushed; turquoise over a warm
+      // sea's shelf; pack ice where the sea's air freezes it
+      const sd = R.seaDist[i], ws = shelf * (1.3 - 0.8 * smooth(0.01, 0.12, nearE[i])) * (0.75 + 0.5 * smooth(-1, 1, edgeN[i]));
+      const tb = 0.16 * Math.min(1, sd / ws) + 0.1 * R.depth[i], ta = Math.max(0.34, R.depth[i]);
+      const t = tb + (ta - tb) * smooth(ws, 1.4 * ws, sd), k = 1 + 0.035 * Math.tanh(seaN[i]);
+      shelfR[i] = sd / ws;
       for (let ch = 0; ch < 3; ch++) col[ch] = (LOOK.shallow[ch] + (LOOK.deep[ch] - LOOK.shallow[ch]) * t) * k;
+      mixTo(col, LOOK.turquoise, 0.38 * smooth(0.72, 0.88, warm[i]) * (1 - smooth(0.5 * ws, 1.2 * ws, sd)));
+      const pack = smooth(0.25, 0.75, iceAt(warm[i] - 0.03, 0, season) + 0.2 * Math.tanh(seaN[i]));
+      if (pack > 0) mixTo(col, LOOK.ice, 0.85 * pack);
     } else if (R.lake[i]) {
       // (the water darker by its depth below the lake's level in feet, a little by the way out from its shore: the
       // most saturated color on the map)
@@ -466,10 +515,35 @@ export function smoothImage(R, L, seed, { settled = null } = {}) {
       // the light's exaggeration; not inside a painted zone)
       const sr = slope / 1.6;
       const rk = Math.min(1, Math.max(0, (e - 0.45) * 3.5 + (sr - 1.1) * 0.7)) * zk;
-      for (let ch = 0; ch < 3; ch++) col[ch] += (LOOK.rock[ch] - col[ch]) * rk;
+      // (the rock by its family where the land has one: limestone pale, sandstone red, granite gray, basalt dark)
+      if (famW) { const w0 = famW[0][i], w1 = famW[1][i], w2 = famW[2][i], w3 = famW[3][i], ws0 = w0 + w1 + w2 + w3 || 1; for (let ch = 0; ch < 3; ch++) fc[ch] = (LOOK.rocks[0][ch] * w0 + LOOK.rocks[1][ch] * w1 + LOOK.rocks[2][ch] * w2 + LOOK.rocks[3][ch] * w3) / ws0; }
+      const rockC = famW ? fc : LOOK.rock;
+      for (let ch = 0; ch < 3; ch++) col[ch] += (rockC[ch] - col[ch]) * rk;
+      // deserts by their ground (generator 3): sand seas on low flat ground, stony plains higher up, badlands banded on
+      // dry hillsides of soft rock
+      const dd = (L.land.gen ?? 0) >= 3 ? smooth(0.32, 0.16, moist[i]) * smooth(0.55, 0.7, warm[i] + 0.6 * e) * zk * (1 - rk) : 0;
+      if (dd > 0.01) {
+        const soft = R.rock ? (R.rock[i] <= 1 ? 1 : 0.4) : 1, steepish = smooth(0.25, 0.7, sr);
+        const bl = dd * steepish * soft, band = 0.5 + 0.5 * Math.sin(zl[i] * 900 + 0.6 * edgeN[i]);
+        mixTo(col, LOOK.badland, 0.55 * bl * (0.55 + 0.45 * band));
+        const rg = dd * smooth(0.04, 0.12, e) * (1 - steepish);
+        mixTo(col, LOOK.reg, 0.4 * rg * (0.85 + 0.3 * crownsB[i]));
+        const er = dd * smooth(0.1, 0.04, e) * smooth(0.25, 0.1, sr);
+        mixTo(col, LOOK.sand, 0.5 * er);
+        if (er > 0.35) erg[i] = 1;
+      }
       // alluvium and salt flats
       const al = allu[i] * 0.3, sl = saltB[i] * 0.9;
       for (let ch = 0; ch < 3; ch++) { col[ch] += (LOOK.alluvium[ch] - col[ch]) * al; col[ch] += (LOOK.salt[ch] - col[ch]) * sl; }
+      // a seasonal lake's bed, pale; an oasis's green
+      if (seasB && seasB[i] > 0.01) mixTo(col, LOOK.playa, 0.75 * seasB[i]);
+      if (oasisW[i] > 0.01) mixTo(col, LOOK.lush, 0.85 * oasisW[i]);
+      // a beach on a low coast, a cliff's dark face on a steep one
+      if ((L.land.gen ?? 0) >= 3 && R.landDist[i] < cliffW) {
+        const steepC = Math.max(smooth(0.9, 1.6, sr), smooth(0.08, 0.18, e));
+        mixTo(col, LOOK.cliff, 0.45 * steepC * (1 - R.landDist[i] / cliffW));
+        if (R.landDist[i] < beachW && e < 0.04) mixTo(col, LOOK.beach, 0.55 * (1 - steepC) * (1 - R.landDist[i] / beachW));
+      }
       // a big river's floor: light, a meadow, where it's flat
       mixTo(col, LOOK.valley, 0.35 * smooth(0.3, 0.8, allu[i]) * smooth(1.2, 0.4, sr) * (1 - rk));
       // farmland on settled land: a lighter, warmer ground; on a kingdom's map, where the picture can draw them, small
@@ -541,7 +615,7 @@ export function smoothImage(R, L, seed, { settled = null } = {}) {
     }
     out[4 * i] = col[0]; out[4 * i + 1] = col[1]; out[4 * i + 2] = col[2]; out[4 * i + 3] = 255;
   }
-  return { rgba: out, bare, wood };
+  return { rgba: out, bare, wood, erg, shelfR };
 }
 
 /**
@@ -608,6 +682,13 @@ export function paint(ctx) {
   progress(0.55, "The sea");
   g.lineWidth = Math.max(1, outPx / 3072);
   for (const r of S.ripples) { if (!near(r.pts, 1)) continue; g.strokeStyle = rgb(LOOK.ripple, r.alpha); line(r.pts, r.closed); g.stroke(); }
+  // reefs: a dotted pale line along the shelf's edge in warm seas
+  if (S.reefs?.length) {
+    const rw0 = g.lineWidth, dot = Math.max(1, outPx / 1500);
+    g.lineCap = "round"; g.lineWidth = dot; g.setLineDash([0.1, 2.6 * dot]); g.strokeStyle = rgb(LOOK.reef, 0.8);
+    for (const r of S.reefs) { if (!near(r, 1)) continue; line(r, false); g.stroke(); }
+    g.setLineDash([]); g.lineWidth = rw0;
+  }
   // marsh tufts and dune ripples, at full size
   marks(ctx, S, k);
   // rivers, clipped to the land (not the sea or lakes)
@@ -623,8 +704,20 @@ export function paint(ctx) {
     // (a frozen stretch pale, its casing gray)
     const tint = (a, b, t) => rgb(t > 0.01 ? a.map((v, ch) => v + (b[ch] - v) * t) : a);
     for (const [color, iceColor, extra] of [[LOOK.riverCase, LOOK.riverIceCase, riverCasing(outPx)], [LOOK.river, LOOK.riverIce, 0]]) {
-      for (const [ax, ay, bx, by, w, ice] of segs) { mg.strokeStyle = tint(color, iceColor, ice); mg.lineWidth = w + extra; mg.beginPath(); mg.moveTo(X(ax), Y(ay)); mg.lineTo(X(bx), Y(by)); mg.stroke(); }
+      for (const [ax, ay, bx, by, w, ice, dryBed] of segs) { if (dryBed) continue; mg.strokeStyle = tint(color, iceColor, ice); mg.lineWidth = w + extra; mg.beginPath(); mg.moveTo(X(ax), Y(ay)); mg.lineTo(X(bx), Y(by)); mg.stroke(); }
     }
+    // (a dry bed: a thinner dashed line in a dull gray-green, no casing, each run of it one path so the dashes run on)
+    const dryW = Math.max(0.8, outPx / 2600);
+    mg.strokeStyle = rgb(LOOK.riverDry); mg.setLineDash([3 * dryW, 2.2 * dryW]);
+    let open = null;
+    const flush = () => { if (open) { mg.lineWidth = open.w; mg.stroke(); open = null; } };
+    for (const [ax, ay, bx, by, w, , dryBed] of segs) {
+      if (!dryBed) { flush(); continue; }
+      if (!open || Math.abs(open.x - ax) > 1e-9 || Math.abs(open.y - ay) > 1e-9) { flush(); mg.beginPath(); mg.moveTo(X(ax), Y(ay)); open = { w: Math.max(dryW, 0.6 * w) }; }
+      mg.lineTo(X(bx), Y(by)); open.x = bx; open.y = by;
+    }
+    flush();
+    mg.setLineDash([]);
     mg.globalCompositeOperation = "destination-in";
     mg.imageSmoothingEnabled = true;
     mg.drawImage(S.landImg, 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);
@@ -828,7 +921,8 @@ function marks(ctx, S, k) {
       g.beginPath();
       for (const dx of [-0.35, 0, 0.35]) { g.moveTo(ox + dx * s * 0.6, oy); g.lineTo(ox + dx * s, oy - s * (0.7 + Math.abs(dx))); }
       g.moveTo(ox - s * 0.5, oy); g.lineTo(ox + s * 0.5, oy); g.stroke();
-    } else if (b === S.desert) {
+    } else if (R.erg ? R.erg[i] === 1 : b === S.desert) {
+      // (dune crests on a sand sea, where the land has them; else on the whole desert)
       if (hsh(ay + 0.5, ax) > 0.35) continue;
       const s = step * 0.8;
       g.strokeStyle = "rgba(150,110,60,0.28)";

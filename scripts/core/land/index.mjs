@@ -12,10 +12,11 @@ import { makePoints, makeGraph, nodeGrid } from "./graph.mjs";
 import { distanceTo, atNodes } from "./field.mjs";
 import { upliftStage, SOLVER, components, landforms, scourHollows, graphDistance, refadePlateau } from "./uplift.mjs";
 import { coastForms } from "./coasts.mjs";
+import { len } from "./dmath.mjs";
 import { workFor, fillRoute, accumulate, step } from "./solver.mjs";
 import { climateStage } from "./climate.mjs";
 import { remapHeights } from "./hypso.mjs";
-import { valleyFloors, lakesStage, riversStage, riverMarks, forcedNodes, holdForced, breachForced, RIVER_CATCHMENT } from "./water.mjs";
+import { valleyFloors, lakesStage, riversStage, riverMarks, forcedNodes, holdForced, breachForced, drySinks, RIVER_CATCHMENT } from "./water.mjs";
 import { biomeOf, BIOME_CLIMATE } from "./biome.mjs";
 import { rng, hashAt, hash128 } from "../rng.mjs";
 import { inventoryOf } from "./inventory.mjs";
@@ -238,11 +239,25 @@ export function generateOnce(plan, opts = {}) {
   progress(0.8, "Rain and rivers");
   const climate = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets, gen: stepsGen });
   const pxPerMile = (Number(plan.output?.pxPerSquare) || 100) / frame.mpu;
-  const lk = lakesStage({ g, h, w, np, rain: climate.rain, temp: climate.temp, land: landMask, outlet, pxPerMile, amount: land.lakes });
+  const lk = lakesStage({ g, h, w, np, rain: climate.rain, temp: climate.temp, land: landMask, outlet, pxPerMile, amount: land.lakes, gen: stepsGen });
   // (a flooded hollow too small to show as a lake is filled flat, as sediment would: rivers then never step uphill)
   for (let i = 0; i < n; i++) if (landMask[i] && !lk.lake[i] && !lk.salt[i] && lk.depth[i] > 0) h[i] = w.hf[i];
-  const rv = riversStage({ g, h, w, F: lk.F, land: landMask, lake: lk.lake, salt: lk.salt, outlet, threshold, forced });
+  let rv = riversStage({ g, h, w, np, F: lk.F, land: landMask, lake: lk.lake, salt: lk.salt, outlet, threshold, forced, gen: stepsGen });
+  // (from generator 3, a floor on the rivers in the map: as many as the basins that reach the sea with half a river's
+  // water, two to eight, the threshold lowered a step at a time until they're drawn; not on islands, nor a map smaller
+  // than a range; a kept land runs it too, so its rivers read back as they were)
+  if (stepsGen >= 3 && !["archipelago", "arc"].includes(land.type) && Math.max(frame.mapW, frame.mapH) >= 40) {
+    let basins = 0;
+    for (let i = 0; i < n; i++) if (inMap(i) && !lk.lake[i] && w.rec[i] !== i && !landMask[w.rec[i]] && lk.F[i] >= 0.5 * threshold) basins++;
+    const floor = Math.min(8, Math.max(2, basins));
+    let t = threshold;
+    const shown = () => rv.rivers.filter((R) => R.main && R.nodes.some((i) => frame.inMap(g.x[i], g.y[i]))).length;
+    for (let k = 0; k < 3 && shown() < floor; k++) { t *= 0.75; rv = riversStage({ g, h, w, np, F: lk.F, land: landMask, lake: lk.lake, salt: lk.salt, outlet, threshold: t, forced, gen: stepsGen }); }
+  }
   const marks = riverMarks(rv.rivers, up.hard);
+  // (from generator 3, rivers that run out on dry land end in a salt pan, a seasonal lake or a marsh; their dry beds)
+  const dry = stepsGen >= 3 ? drySinks({ g, h, rivers: rv.rivers, F: lk.F, rain: climate.rain, temp: climate.temp, land: landMask, lake: lk.lake, threshold, frame }) : null;
+  if (dry) for (let i = 0; i < n; i++) if (dry.salt[i]) lk.salt[i] = 1;
 
   // biomes; wetland where flat, low ground carries a lot of water
   progress(0.9, "Biomes");
@@ -251,18 +266,20 @@ export function generateOnce(plan, opts = {}) {
     if (!landMask[i]) { biome[i] = "sea"; continue; }
     if (lk.lake[i]) { biome[i] = "lake"; continue; }
     const slope = w.rec[i] !== i ? (h[i] - h[w.rec[i]]) / w.rd[i] : 0;
-    const wet = h[i] < 0.03 && slope < 0.0004 && lk.F[i] > threshold * 0.6 && climate.rain[i] > 0.7;
+    const wet = (h[i] < 0.03 && slope < 0.0004 && lk.F[i] > threshold * 0.6 && climate.rain[i] > 0.7) || (dry?.marsh[i] === 1);
     biome[i] = biomeOf(climate.temp[i], h[i], climate.rain[i], wet, lk.salt[i] === 1);
     // a painted zone's biome, whatever the climate made (its own name for a custom one)
     if (intent?.zone?.[i]) { const z = intent.zones.find((q) => q.index === intent.zone[i]); if (z) biome[i] = BIOME_CLIMATE[z.biome] ? z.biome : `custom:${z.id ?? z.index}`; }
   }
   progress(1, "Done");
   return {
-    gen: GEN, attempt, seed, rangeT: up.rangeT, frame, land, g, grid, shapeF, h, hPre, hf: Float64Array.from(w.hf), rec: Int32Array.from(w.rec),
+    // (the generator whose steps made it: a land read back exactly is its keeper's)
+    gen: stepsGen, attempt, seed, rangeT: up.rangeT, frame, land, g, grid, shapeF, h, hPre, hf: Float64Array.from(w.hf), rec: Int32Array.from(w.rec),
     landMask, outlet, U, hard: up.hard, spines: up.spines, plates: up.plates, distSea: up.distSea,
     rain: climate.rain, temp: climate.temp, rainF: climate.rainF, tempF: climate.tempF,
     F: lk.F, lake: lk.lake, salt: lk.salt, lakes: lk.lakes, lakeId: lk.lakeId, rivers: rv.rivers, riverOf: rv.riverOf, marks,
-    biome, hypso, threshold, spacing: up.spacing, coasts: coastFeatures, fixed, kept: !!opts.kept, keptExact: !!opts.kept && exact, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
+    biome, hypso, threshold, spacing: up.spacing, coasts: coastFeatures, sinks: (dry?.sinks ?? []).map(({ nodes, ...s }) => s), seasonal: dry?.seasonal ?? new Uint8Array(n),
+    oases: stepsGen >= 3 ? oasesOf({ g, h, biome, landMask, frame, seed: subSeed, sinks: dry?.sinks ?? [] }) : [], rock: stepsGen >= 3 ? up.rock : null, fixed, kept: !!opts.kept, keptExact: !!opts.kept && exact, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
     // (the volcanoes, [{ at: [x, y] frame miles, rad, ht }], when the land is volcanic)
     ...(up.cones ? { cones: up.cones.filter((c) => landMask[grid.nearest(c.at[0], c.at[1])]) } : {}),
   };
@@ -278,3 +295,36 @@ function sampleLike(f, x, y) {
 }
 
 export { BIOME_CLIMATE, scaleClass, atNodes, GEN, normalizeLand };
+
+/**
+ * Oases (generator 3): in a hot desert, where water comes near the surface: at the foot of high ground, in the low
+ * ground where a dry river ends, or in a hollow. Spaced a tenth of the map's long side apart, about one for each 2% of
+ * the map that's desert, six at most. Returns [{ x, y }] in frame miles.
+ */
+function oasesOf({ g, h, biome, landMask, frame, seed, sinks }) {
+  const n = g.n, L = Math.max(frame.mapW, frame.mapH), mapArea = frame.mapW * frame.mapH;
+  const desert = new Uint8Array(n); let area = 0;
+  for (let i = 0; i < n; i++) if (landMask[i] && biome[i] === "hot-desert" && frame.inMap(g.x[i], g.y[i])) { desert[i] = 1; area += g.area[i]; }
+  const count = Math.min(6, Math.floor(area / (0.02 * mapArea)));
+  if (count <= 0) return [];
+  // (the foot of high ground: steps to land over 0.3, up to six)
+  const foot = new Float64Array(n).fill(Infinity), q = [];
+  for (let i = 0; i < n; i++) if (landMask[i] && h[i] > 0.3) { foot[i] = 0; q.push(i); }
+  for (let k = 0; k < q.length; k++) { const u = q[k]; if (foot[u] >= 6) continue; for (let e = g.indptr[u]; e < g.indptr[u + 1]; e++) { const v = g.indices[e]; if (foot[v] > foot[u] + 1) { foot[v] = foot[u] + 1; q.push(v); } } }
+  const sinkNodes = new Set(sinks.flatMap((s) => s.nodes ?? []));
+  const cand = [];
+  for (let i = 0; i < n; i++) {
+    if (!desert[i]) continue;
+    let low = true; for (let e = g.indptr[i]; e < g.indptr[i + 1]; e++) if (h[g.indices[e]] < h[i]) { low = false; break; }
+    const v = (foot[i] >= 1 && foot[i] <= 4 ? 1 : 0) + (sinkNodes.has(i) ? 1.2 : 0) + (low ? 0.8 : 0);
+    if (v > 0) cand.push([v + 0.3 * hashAt(i, 61, seed), i]);
+  }
+  cand.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  const out = [];
+  for (const [, i] of cand) {
+    if (out.length >= count) break;
+    if (out.some((o) => len(o.x - g.x[i], o.y - g.y[i]) < 0.1 * L)) continue;
+    out.push({ x: g.x[i], y: g.y[i] });
+  }
+  return out;
+}

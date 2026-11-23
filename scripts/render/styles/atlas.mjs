@@ -177,6 +177,8 @@ const LANDMARK = {
   tree: (g, x, y, u) => { g.moveTo(x + 7 * u, y - 3 * u); g.arc(x, y - 3 * u, 7 * u, 0, 2 * Math.PI); g.moveTo(x - 1.6 * u, y + 3 * u); g.rect(x - 1.6 * u, y + 3 * u, 3.2 * u, 6 * u); },
   // rock pillars in the sea
   stacks: (g, x, y, u) => { for (const [d, t] of [[-5, 4], [0, 8], [5, 5]]) g.rect(x + (d - 1.5) * u, y + (4 - t) * u, 3 * u, t * u); },
+  // a palm over a pool: its trunk bent, four fronds
+  oasis: (g, x, y, u) => { g.moveTo(x + 6 * u, y + 7 * u); g.ellipse(x, y + 7 * u, 6 * u, 2 * u, 0, 0, 2 * Math.PI); g.moveTo(x - 1 * u, y + 6 * u); g.quadraticCurveTo(x + 2 * u, y, x, y - 5 * u); for (const [dx, dy] of [[-7, -2], [-4, -9], [4, -9], [7, -2]]) { g.moveTo(x, y - 5 * u); g.quadraticCurveTo(x + dx * 0.5 * u, y + (dy - 3) * u, x + dx * u, y + dy * u); } },
 };
 const LANDMARK_FILL = { volcano: "rgba(92,66,52,1)", tree: "rgba(36,64,34,1)", stacks: "rgba(110,98,86,1)" };
 export function landmarkMark(g, x, y, kind, u0) {

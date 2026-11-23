@@ -104,6 +104,8 @@ export function roadsAndDistricts(ctx) {
   }
   // Inner edges between neighbors were built from the same u, v; snap equal points together after rounding
   for (const d of districts) d.poly = outline(clipToMap(d.poly.map(pt), W, H));
+  // (a district the map's edge cuts down to less than a polygon, a village strung past the edge, is left out)
+  for (let k = districts.length - 1; k >= 0; k--) if (districts[k].poly.length < 3) districts.splice(k, 1);
   // Points the same up to rounding become one point, so shared corners stay shared
   const all = districts.flatMap((d) => d.poly);
   for (const p of all) for (const q of all) if (p !== q && Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.15) { q[0] = p[0]; q[1] = p[1]; }
