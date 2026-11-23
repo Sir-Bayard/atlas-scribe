@@ -10,7 +10,7 @@ import { estimatePlots, BIG_PLOTS } from "../core/check.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
 import { featureOf, setField, setPlanField, deleteFeature, withNameSet, keptNamesOf, landMoved, drawnLandChanged } from "../core/edit.mjs";
-import { hasMadePlaces } from "../core/land/places.mjs";
+import { hasMadePlaces, keepFeatures, untouched } from "../core/land/places.mjs";
 import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML, battleHTML, battleSizeText, rerollButtons, kindOf } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
 import { underlayOf, addUnderlay, setUnderlay, removeUnderlay, movedRect, scaledRect } from "../core/underlay.mjs";
@@ -123,6 +123,8 @@ export class AtlasScribeApp extends Base {
       asKeepLand: AtlasScribeApp.#onKeepLand,
       asForgetLand: AtlasScribeApp.#onForgetLand,
       asKeepNames: AtlasScribeApp.#onKeepNames,
+      asKeepRealms: AtlasScribeApp.#onKeepRealms,
+      asKeepCultures: AtlasScribeApp.#onKeepCultures,
       asNameSets: AtlasScribeApp.#onNameSets,
       asNameSetUpdate: AtlasScribeApp.#onNameSetUpdate,
       asPlan: AtlasScribeApp.#onPlan,
@@ -570,7 +572,7 @@ export class AtlasScribeApp extends Base {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(row(f.id, f.name ?? f.text ?? f.id, kind, rolls.get(f.id) ?? null));
     }
-    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines", place: "Places", realm: "Realms", terrain: "Painted Terrain" };
+    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines", place: "Places", realm: "Realms", culture: "Cultures", terrain: "Painted Terrain" };
     return [...groups].map(([g, list]) => `<li class="as-pv-group" role="presentation"><strong>${esc(TITLES[g] ?? g)}</strong></li>${list.join("")}`).join("");
   }
 
@@ -1400,6 +1402,17 @@ export class AtlasScribeApp extends Base {
   /** An overland plan: the names its map made written into it. */
   static async #onKeepNames() {
     await this.#placeJob((plan) => this.#host.keepNames(plan), (res) => res.places + res.features ? `AtlasScribe: kept ${res.places} place names and ${res.features} names of the land in the plan. They stay now when the land changes.` : "AtlasScribe: every name is already in the plan.", "Keeping the names");
+  }
+
+  /** Keep the Realms and Keep the Cultures: the generator's realms or cultures kept as the GM's. */
+  static async #onKeepRealms() { await this.#keepMade("realm", "realm"); }
+  static async #onKeepCultures() { await this.#keepMade("culture", "culture"); }
+  async #keepMade(type, word) {
+    if (!this.#plan) return;
+    const n = (this.#plan.features ?? []).filter((f) => f?.type === type && untouched(f)).length;
+    if (!n) { ui.notifications.info(`AtlasScribe: every ${word} is already kept.`); return; }
+    await this.#apply((plan) => ({ plan: keepFeatures(plan, type).plan }));
+    ui.notifications.info(`AtlasScribe: kept ${n} ${word}${n === 1 ? "" : "s"}. Reroll Places and a change to the land leave ${n === 1 ? "it" : "them"} now.`);
   }
 
   /** The Name Sets window (the world's library of naming rules). */

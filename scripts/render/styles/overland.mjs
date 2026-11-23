@@ -882,11 +882,20 @@ function paintRealms(ctx, L, S, outPx) {
     marks({ ...ctx, g: target }, S, (L.size.squares[0] * pp) / S.rw);
     target.globalCompositeOperation = "source-over";
   }
-  // the borders: a pale halo, then the dashed ink
-  for (const [stroke, width, dash] of [["rgba(252,246,232,0.7)", 7 * u, []], ["rgba(58,40,30,0.85)", 3.2 * u, [11 * u, 5 * u, 2.5 * u, 5 * u]]]) {
-    target.strokeStyle = stroke; target.lineWidth = Math.max(1, width); target.setLineDash(dash);
-    for (const b of R.borders) { if (!near(b)) continue; path(b); target.stroke(); }
-  }
+  // the borders: a pale halo, then the ink by the border's kind: a dash and dot across open country and along a crest
+  // (longer there), a light dotted line beside a river, red dashes where two enemies meet, sparse dots on a frontier
+  // with the wilds; provinces' borders faint dots inside their realm
+  const INK = { open: ["rgba(58,40,30,0.85)", 3.2, [11, 5, 2.5, 5]], crest: ["rgba(58,40,30,0.85)", 3.2, [16, 5, 2.5, 5]], river: ["rgba(58,40,30,0.7)", 2.4, [2, 4]], disputed: ["rgba(150,34,30,0.9)", 3.4, [7, 5]], frontier: ["rgba(88,64,44,0.75)", 3, [0.1, 7]] };
+  target.strokeStyle = "rgba(252,246,232,0.7)"; target.lineWidth = Math.max(1, 7 * u); target.setLineDash([]);
+  for (const b of R.borders) { if (!near(b)) continue; path(b); target.stroke(); }
+  R.borders.forEach((b, k) => {
+    if (!near(b)) return;
+    const [stroke, width, dash] = INK[R.kinds?.[k]] ?? INK.open;
+    target.strokeStyle = stroke; target.lineWidth = Math.max(1, width * u); target.setLineDash(dash.map((v) => v * u));
+    path(b); target.stroke();
+  });
+  target.strokeStyle = "rgba(58,40,30,0.45)"; target.lineWidth = Math.max(1, 1.6 * u); target.setLineDash([0.1, 4 * u]);
+  for (const b of R.provinceLines ?? []) { if (!near(b)) continue; path(b); target.stroke(); }
   target.setLineDash([]);
   target.globalCompositeOperation = "destination-in";
   target.drawImage(S.landImg, 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);

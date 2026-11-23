@@ -148,6 +148,15 @@ export const FIELD_TEXT = {
   "realm.class": { hidden: true },
   "realm.color": { label: "Color", kind: "color", help: "Its wash and border on the map; a realm the generator made never shares a color with a neighbor" },
   "realm.capital": { label: "Capital", kind: "enum", required: true, help: "The place it's ruled from: its crown moves there, and its land is grown again from it, so the borders move too" },
+  "realm.kind": { label: "Kind", names: { naval: "a sea realm", river: "a river realm", highland: "a highland realm", nomadic: "nomads", generic: "a land realm" }, help: "How it grows: a sea realm across water, a river realm along its rivers, a highland realm over the hills, nomads across open country" },
+  "realm.form": { label: "Rule", help: "How it's ruled; its name follows when the generator names it" },
+  "realm.might": { label: "Might", help: "How far it grows against its neighbors (1 is even; 2 grows twice as far before it meets one)" },
+  "realm.relations": { hidden: true },
+  "realm.culture": { hidden: true },
+  "culture.class": { hidden: true },
+  "culture.name": { label: "Name", help: "The places and realms on its land are named in its way" },
+  "culture.seed": { hidden: true },
+  "culture.nameSet": { hidden: true },
   "area.feature": { label: "On the green", names: { pond: "a pond", well: "a well", maypole: "a maypole", cross: "a market cross", none: "nothing" }, help: "A village green's", auto: "by seed" },
   "area.layout": { label: "Walks", names: { quartered: "quartered", saltire: "saltire", "goose-foot": "goose foot", concentric: "concentric", canal: "long canal", compartments: "compartments" }, help: "A formal garden's", auto: "by seed" },
   "area.center": { label: "Center", names: { basin: "basin", fountain: "fountain", statue: "statue", sundial: "sundial", "rond-point": "rond-point" }, help: "A formal garden's", auto: "by seed" },
@@ -233,7 +242,7 @@ export function landMoved(before, after) {
   const sameKeep = keptBefore && keptAfter && before.land.keep.hash === after.land.keep.hash && before.land.keep.path === after.land.keep.path;
   const key = (plan) => {
     if (!isObj(plan?.land)) return null;
-    const { names, keptNames, nameStyle, nameSet, towns, realms, sites, keep, ...landIn } = plan.land;
+    const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, keep, ...landIn } = plan.land;
     // (the land's own seed, or the plan's when it has none: the same land either way)
     landIn.seed = landSeedOf(plan);
     return JSON.stringify([landIn, plan.size, plan.output?.grid ?? null, (plan.features ?? []).filter((f) => isObj(f) && ((f.type === "terrain" && !sameKeep) || f.type === "water"))]);
@@ -259,6 +268,8 @@ export const PLAN_FIELDS = [
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
   { path: "land.sites", label: "Points of Interest", kind: "enum", values: ["none", "few", "some", "many"], overland: true, auto: "some", help: "How many inns, mines, watchtowers, forts, shrines, monasteries, lighthouses and the like Place Towns and Roads (or Reroll Places) puts down, each where the land, the roads and the realms put it, with a few of the wilds' secrets (lairs, caves, wrecks, standing stones, brigands, pirates, monsters). The bigger ones are labeled; the wilds' are marks only" },
   { path: "land.realms", label: "Realms", kind: "enum", values: ["none", "few", "some", "many"], overland: true, required: true, auto: "none", help: "How many realms Place Realms (or Reroll Realms) rules from the map's cities and towns, and Reroll Places keeps when it moves them (None: it takes the generator's away). It also sets how far each realm reaches, so changing it moves the borders of realms already placed" },
+  { path: "land.realmSizes", label: "Realm Sizes", kind: "enum", values: ["varied", "even"], overland: true, auto: "varied", help: "Varied gives each realm its own might, so some grow great and others stay small; even grows them alike. Used when realms are placed again" },
+  { path: "land.realmGrowth", label: "Realm Growth", kind: "enum", values: ["slow", "normal", "fast"], overland: true, auto: "normal", help: "How far realms reach from their capitals: slow leaves more wild land between them, fast fills the land" },
   { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name Sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   // The land itself (an overland map's Land group): changing one makes the land again, and the generator's towns,
   // roads and realms are placed again on it

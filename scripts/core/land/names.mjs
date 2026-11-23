@@ -207,14 +207,28 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
             // of Kingsdale)
             const a = r.pick(FIRST), b = r.pick(REALM_ENDS);
             const w = near ?? (inventedFeatures ? root() : /s$/i.test(a) && b[0] === "s" ? a + b.slice(1) : a + b);
-            return r.pick(realmForms(info.rank, w)).replace("{name}", w);
+            return r.pick(info.form && RULE_FORMS[info.form] ? RULE_FORMS[info.form] : realmForms(info.rank, w)).replace("{name}", w);
           }
+          // a people: the folk of a place-word, or a tongue's own word
+          case "culture": { const w = root(r.pick(FIRST)); return inventedFeatures ? r.pick([`the ${w}i`, `the ${w}an`, `the ${w}ar`]) : r.pick([`the ${w} Folk`, `the ${w}landers`, `the ${w}men`]); }
+          // a province within a realm: its seat's name, or a word of its own
+          case "province": { const w = info.near ?? root(r.pick(FIRST)); return /shire$/i.test(w) ? `the Province of ${w}` : r.pick([`${w}shire`, `the Province of ${w}`, `the ${w} Riding`]); }
+          // land no realm holds
+          case "wilds": { const w = root(r.pick(FIRST)); return r.pick([`the ${w} Wilds`, `the Waste of ${w}`, `the ${inventedFeatures ? root() : r.pick(LAND_ADJ)} Barrens`]); }
           default: return null;
         }
       });
     },
   };
 }
+
+/** A realm's name by its form of rule, when it isn't a monarchy (whose name is by its rank). */
+const RULE_FORMS = {
+  republic: ["the Republic of {name}", "the {name} Republic"],
+  league: ["the {name} League", "the League of {name}"],
+  horde: ["the {name} Horde", "the {name} Clans"],
+  "free city": ["the Free City of {name}"],
+};
 
 /** A realm's name by its rank (realms.mjs realmRank, a march being a duchy on a frontier with the wilds). */
 const REALM_FORMS = {
@@ -241,7 +255,7 @@ const COMMON = {
   monster: ["The Beast of {name}"],
   sea: ["the {name} Sea", "the Sea of {name}"], ocean: ["the {name} Ocean"], bay: ["{name} Bay", "the Bay of {name}"], lake: ["Lake {name}"], river: ["the {name}", "River {name}"],
   hills: ["the {name} Hills"], mountains: ["the {name} Mountains"], range: ["the {name} Range"], forest: ["the {name} Forest"], desert: ["the {name} Waste"], marsh: ["the {name} Marsh"],
-  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], delta: ["the {name} Delta"], estuary: ["the {name} Firth"], spit: ["{name} Spit"], lagoon: ["the {name} Lagoon"], "salt-pan": ["the {name} Pan"], "seasonal-lake": ["{name} Dry Lake"], "inland-marsh": ["the {name} Swamp"], oasis: ["{name} Oasis"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
+  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], delta: ["the {name} Delta"], estuary: ["the {name} Firth"], spit: ["{name} Spit"], lagoon: ["the {name} Lagoon"], "salt-pan": ["the {name} Pan"], "seasonal-lake": ["{name} Dry Lake"], "inland-marsh": ["the {name} Swamp"], oasis: ["{name} Oasis"], culture: ["the {name}"], province: ["{name}"], wilds: ["the {name} Wilds"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
   spring: ["{name} Springs"], tree: ["The {name} Oak"], stacks: ["The {name} Stacks"], land: ["{name}"], realm: ["the Kingdom of {name}", "{name}"],
 };
 
@@ -275,7 +289,7 @@ function customNamer(set, seed) {
     used.add(`${base} ${k}`); return `${base} ${k}`;
   };
   // (a realm with no pattern of the set's own takes its rank's words)
-  const pattern = (r, kind, name, rank) => { const own = set.kinds?.[kind], list = own?.length ? own : kind === "realm" && REALM_FORMS[rank] ? realmForms(rank, name) : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };
+  const pattern = (r, kind, name, rank, form = null) => { const own = set.kinds?.[kind], list = own?.length ? own : kind === "realm" && form && RULE_FORMS[form] ? RULE_FORMS[form] : kind === "realm" && REALM_FORMS[rank] ? realmForms(rank, name) : COMMON[kind] ?? ["{name}"]; return r.pick(list).replace(/\{name\}/g, name); };
   // (a word that took one of the set's endings gives it up for a suffix that says more: not Bricadunmagos)
   const endings = (set.sounds?.endings ?? []).slice().sort((a, b) => b.length - a.length);
   // (a word that's little more than its ending can't give it up: null)
@@ -329,7 +343,8 @@ function customNamer(set, seed) {
           return named && e.type !== "pattern" && set.kinds?.[k]?.length ? pattern(r, k, named) : named;
         }
         const pk = kinds.find((x) => set.kinds?.[x]) ?? kinds[0];
-        return pattern(r, pk, root, info.rank);
+        // (a province by its seat's name, a realm by its form of rule when the set gives no words of its own)
+        return pattern(r, pk, kind === "province" && info.near ? info.near : root, info.rank, info.form ?? null);
       });
     },
   };

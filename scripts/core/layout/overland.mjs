@@ -12,7 +12,8 @@ import { extentOf } from "../land/units.mjs";
 import { sample } from "../land/field.mjs";
 import { BIOMES } from "../land/biome.mjs";
 import { LAKE_BIOME, SEA_BIOME } from "../land/raster.mjs";
-import { realmsOf, growRealms, realmGrid, realmReach } from "../land/realms.mjs";
+import { realmsOf, growRealms, realmGrid, realmReach, relationOf, provincesOf, wildsOf } from "../land/realms.mjs";
+import { culturesOf, growCultures } from "../land/cultures.mjs";
 import { keptFor } from "../land/kept.mjs";
 import { settledField, settledKey, SETTLED } from "../land/settled.mjs";
 import { landmarksOf } from "./landmarks.mjs";
@@ -99,7 +100,7 @@ let lastLand = null;
 export function forgetLand() { lastLand = null; }
 /** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, ...landIn } = plan.land ?? {};
+  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, ...landIn } = plan.land ?? {};
   // (and whether a kept land's file was read: a land made without it isn't kept once the file comes)
   return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]);
 }
@@ -127,13 +128,19 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     else if (f.type === "crossing" && Array.isArray(f.at)) items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], angle: f.angle ?? 0 });
   }
   // Realms: grown from their crowns over the land; each capital's mark crowned
+  // Cultures: grown from their hearths over the land (each node's culture names the places on it)
+  const cultureList = culturesOf(plan);
+  const cultures = cultureList.length ? { list: cultureList, owner: growCultures(land, cultureList) } : null;
   const realmList = realmsOf(plan);
   let realms = null;
   if (realmList.length) {
     const count = ["few", "some", "many"].includes(plan.land?.realms) ? plan.land.realms : "some";
-    const { owner } = growRealms(land, realmList, { reach: realmReach(land, count) });
-    const G = realmGrid(land, owner, realmList.length);
-    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders };
+    const islands = (plan.features ?? []).some((q) => q.type === "realm" && typeof q.kind === "string");
+    const { owner } = growRealms(land, realmList, { reach: realmReach(land, count, plan.land?.realmGrowth), islands });
+    const G = realmGrid(land, owner, realmList.length, { relation: (a, b) => relationOf(realmList, a, b) });
+    // (provinces from the places on the plan, and the wild lands no realm holds)
+    const P = provincesOf(land, owner, realmList, (plan.features ?? []).filter((q) => q.type === "place" && Array.isArray(q.at)), G);
+    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders, kinds: G.kinds, provinces: P.list, provinceLines: P.lines, wilds: wildsOf(land, owner) };
     const caps = new Set(realmList.map((q) => q.capital).filter(Boolean));
     for (const it of items) if (it.kind === "place" && caps.has(it.id)) it.capital = true;
   }
@@ -167,7 +174,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   const shape = { size, cornerLand, title, items, overland: true, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, realms, showRealms: plan.output?.realms !== false, covers };
   const keepOut = dressingBoxes(shape, { miles: true, pad: Math.min(W, H) / 100 });
   const keyBox = keyOf(shape);
-  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [], settled, landmarks });
+  const named = overlandLabels(plan, land, items, { keepOut, hidden: keyBox ? [[keyBox.x, keyBox.y, keyBox.x + keyBox.w, keyBox.y + keyBox.h]] : [], realms: plan.output?.realms !== false ? realms?.list ?? [] : [], borders: plan.output?.realms !== false ? realms?.borders ?? [] : [], settled, landmarks, cultures, provinces: plan.output?.realms !== false ? realms?.provinces ?? [] : [], wilds: plan.output?.realms !== false ? realms?.wilds ?? [] : [] });
   for (const it of items) if (it.kind === "place") it.name = named.placeNames.get(it.id) ?? it.name;
   // places standing in water and roads running through it (a GM's edit, or land that changed under them)
   { const fr = L.frame;
@@ -201,7 +208,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     size,
     season: plan.season ?? "summer", style: "painted",
     title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
-    realms, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers, landmarks,
+    realms, cultures: cultures ? { list: cultures.list, owner: cultures.owner } : null, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers, landmarks,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...own, ...named.labels.filter((l) => !shadowed.has(l.id))], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
 }

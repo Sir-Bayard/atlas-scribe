@@ -192,7 +192,9 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
   let owner = null;
   if (realmList.length) {
     const rc = ["few", "some", "many"].includes(plan.land?.realms) ? plan.land.realms : "some";
-    owner = growRealms(land, realmList.map((q) => ({ at: q.at })), { reach: realmReach(land, rc) }).owner;
+    // (grown as the layout grows them: each realm's kind and might, the map's growth, islands on newer maps)
+    const islands = realmList.some((q) => typeof q.kind === "string");
+    owner = growRealms(land, realmList.map((q) => ({ at: q.at, kind: q.kind, might: q.might })), { reach: realmReach(land, rc, plan.land?.realmGrowth), islands }).owner;
   }
   const border = new Uint8Array(n), frontier = new Uint8Array(n);
   if (owner) for (let i = 0; i < n; i++) {

@@ -21,6 +21,16 @@ export const madeMark = (f) => {
   return fnv(JSON.stringify(keep.map((k) => [k, f[k]])));
 };
 
+/**
+ * The plan with every feature of a type kept as the GM's: the generator's mark taken off them, so Reroll Places and a
+ * land change leave them as they are (Keep the Realms, Keep the Cultures). Returns { plan, kept }.
+ */
+export function keepFeatures(plan, type) {
+  let kept = 0;
+  const features = (plan.features ?? []).map((f) => { if (f.type !== type || !untouched(f)) return f; kept++; const { made, ...rest } = f; return rest; });
+  return { plan: { ...plan, features }, kept };
+}
+
 /** Whether a feature is the generator's, as it made it (not moved, renamed or changed since). */
 export const untouched = (f) => typeof f?.made === "string" && f.made === madeMark(f);
 
@@ -55,8 +65,9 @@ export function stillNeeded(features) {
 export function placeTowns(plan, land, { seed = 1, density = null } = {}) {
   const all = plan.features ?? [];
   const need = stillNeeded(all);
-  // (realms are left to placeRealms, which rules them again from the new towns: render/jobs.mjs)
-  const keep = all.filter((f) => f?.type === "realm" || !untouched(f) || need.has(f.id));
+  // (realms are left to placeRealms, which rules them again from the new towns, and cultures to placeCultures:
+  // render/jobs.mjs)
+  const keep = all.filter((f) => f?.type === "realm" || f?.type === "culture" || !untouched(f) || need.has(f.id));
   const gone = all.filter((f) => !keep.includes(f)).map((f) => f.id);
   const full = normalize({ ...plan, features: keep });
   const out = settle(land, full, { seed, density: density ?? full.land?.towns ?? "some", reserve: gone });

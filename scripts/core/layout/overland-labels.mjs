@@ -7,6 +7,7 @@
  * the rest over their middle. Pure.
  */
 import { namer } from "../land/names.mjs";
+import { namerOf } from "../land/cultures.mjs";
 import { parseNameSet, usesRiver } from "../land/namesets.mjs";
 import { readable, cleanFont } from "../labels.mjs";
 import { Heap } from "../land/heap.mjs";
@@ -14,16 +15,18 @@ import { woodSpot } from "../land/settled.mjs";
 import { MARK_ONLY } from "../land/sites.mjs";
 
 /** Each label's font size in pixels on a picture 3600 px on its long side (larger pictures, larger labels alike). */
-export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, landmark: 16, quarry: 16, fort: 20, monastery: 18, lighthouse: 17, customs: 16, battlefield: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19, delta: 22, estuary: 21, spit: 17, lagoon: 19, "salt-pan": 20, "seasonal-lake": 19, "inland-marsh": 20 };
+export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, landmark: 16, quarry: 16, fort: 20, monastery: 18, lighthouse: 17, customs: 16, battlefield: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19, province: 19, wilds: 30, delta: 22, estuary: 21, spit: 17, lagoon: 19, "salt-pan": 20, "seasonal-lake": 19, "inland-marsh": 20 };
 // (each mark's half size, in the same pixels as the markers: the label sits beside it)
 const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6, quarry: 9, fort: 12, monastery: 14, lighthouse: 16, customs: 10, battlefield: 9, falls: 8, pass: 9, volcano: 12, spring: 9, tree: 10, stacks: 9, oasis: 10 };
+// (names over an area, laid across the towns in it as an atlas's are: only the dressing keeps them off)
+const AREA_NAMES = new Set(["realm", "province", "wilds"]);
 const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river", "estuary", "lagoon"]);
 // (each look's colors: Foundry outlines a light label in black and a dark one in white, so "bold" is white with a black
 // outline and "ink" dark with a light one)
 const LOOKS = { bold: { water: "#e8f3ff", land: "#fff8ec", place: "#ffffff" }, ink: { water: "#1d4a6e", land: "#4b3621", place: null } };
 const FONT = { water: "Amiri", land: "Vollkorn" };
 // (the order labels are placed in: the first placed keeps its spot, later ones step around it)
-const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "fort", "monastery", "forest", "desert", "marsh", "island", "village", "cape", "delta", "estuary", "lagoon", "spit", "salt-pan", "seasonal-lake", "inland-marsh", "ruin", "tower", "temple", "lighthouse", "inn", "mine", "quarry", "customs", "battlefield", "landmark", "hamlet", "place"];
+const ORDER = ["ocean", "sea", "land", "realm", "wilds", "province", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "fort", "monastery", "forest", "desert", "marsh", "island", "village", "cape", "delta", "estuary", "lagoon", "spit", "salt-pan", "seasonal-lake", "inland-marsh", "ruin", "tower", "temple", "lighthouse", "inn", "mine", "quarry", "customs", "battlefield", "landmark", "hamlet", "place"];
 
 /**
  * plan: the normalized plan; land: the layout's compact land; items: the layout's items so far; keepOut: boxes in map
@@ -32,7 +35,7 @@ const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river"
  * placeNames: Map(place id -> name), featureNames: Map(inventory id -> name, for each named feature) }; labels are in labelsOf's shape plus `em` (font size in map units) and `gen`
  * (made here, not a plan label).
  */
-export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [], settled = null, landmarks = [] } = {}) {
+export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], realms = [], borders = [], settled = null, landmarks = [], cultures = null, provinces = [], wilds = [] } = {}) {
   const f = land.frame, mpu = f.mpu, M = f.margin;
   const MW = f.mapW / mpu, MH = f.mapH / mpu, side = Math.max(MW, MH);
   const em = (px) => (px * side) / 3600;
@@ -49,12 +52,28 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   const byId = new Map((plan.features ?? []).map((q) => [q.id, q]));
   const clean = (s) => (typeof s === "string" && s.trim() ? s.replace(/\s+/g, " ").trim() : null);
   // (names the plan gives are taken first, so an invented one never repeats them)
-  for (const q of plan.features ?? []) if (q.type === "place" && clean(q.name)) nm.take(clean(q.name));
-  for (const v of Object.values(given)) if (clean(v)) nm.take(clean(v));
+  // (each culture's own namer, for the places and land on it; the map's for the sea and where there are no cultures)
+  const cNamers = (cultures?.list ?? []).map((c) => namerOf(c, plan));
+  for (const m of [nm, ...cNamers]) {
+    for (const q of plan.features ?? []) if ((q.type === "place" || (q.type === "realm" && cNamers.length)) && clean(q.name)) m.take(clean(q.name));
+    for (const v of Object.values(given)) if (clean(v)) m.take(clean(v));
+  }
   // a nearest-node lookup, for heights under a range
   const cell = Math.max(land.spacing * 2, 1e-6), gw = Math.ceil(f.W / cell) + 1, buckets = new Map();
   for (let i = 0; i < land.n; i++) { const k = Math.floor(land.x[i] / cell) + Math.floor(land.y[i] / cell) * gw; (buckets.get(k) ?? buckets.set(k, []).get(k)).push(i); }
   const nearest = (x, y) => { let b = -1, bd = Infinity; const cx = Math.floor(x / cell), cy = Math.floor(y / cell); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (const i of buckets.get(cx + dx + (cy + dy) * gw) ?? []) { const d = (land.x[i] - x) ** 2 + (land.y[i] - y) ** 2; if (d < bd || (d === bd && i < b)) { bd = d; b = i; } } return b; };
+  // (the namer for a spot in frame miles: the culture's of the land there or by it (a port's nearest node may be at
+  // sea), else the map's; each name it makes is taken by every namer, so no two cultures give the same name)
+  const landBy = (x, y) => {
+    const i = nearest(x, y);
+    if (i < 0 || land.landMask[i]) return i;
+    let b = -1, bd = Infinity;
+    for (let q = land.indptr[i]; q < land.indptr[i + 1]; q++) { const j = land.indices[q]; if (!land.landMask[j]) continue; const d = (land.x[j] - x) ** 2 + (land.y[j] - y) ** 2; if (d < bd || (d === bd && j < b)) { bd = d; b = j; } }
+    return b;
+  };
+  const sharing = (m) => (cNamers.length ? { place: (...a) => takeAll(m.place(...a)), feature: (...a) => takeAll(m.feature(...a)) } : m);
+  const takeAll = (s) => { if (typeof s === "string") for (const m of [nm, ...cNamers]) m.take(s); return s; };
+  const namerAt = (x, y) => { if (!cNamers.length) return nm; const i = landBy(x, y); const c = i >= 0 && land.landMask[i] ? cultures.owner[i] : -1; return sharing(c >= 0 ? cNamers[c] : nm); };
 
   // ---- what's to be named ----
   const inv = (land.inventory ?? []).filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
@@ -64,7 +83,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   const named = (q, kind, info = {}) => {
     if (madeNames.has(q.id)) return madeNames.get(q.id);
     const near = ["bay", "lake", "marsh", "cape", "delta", "estuary", "spit", "lagoon", "salt-pan", "seasonal-lake", "inland-marsh", "falls", "spring", "stacks", "oasis"].includes(kind) ? nearTown(q) : null;
-    const name = clean(given[q.id]) ?? nm.feature(kind, { ...info, near }, q.id);
+    const name = clean(given[q.id]) ?? namerAt(q.x, q.y).feature(kind, { ...info, near }, q.id);
     madeNames.set(q.id, name);
     return name;
   };
@@ -87,7 +106,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     const raw = byId.get(p.from ?? p.id);
     const site = raw?.site && typeof raw.site === "object" ? { ...raw.site, mouth: !!raw.site.river && raw.site.coast != null } : {};
     if (riverOf && site.river?.id !== undefined) site.riverName = riverOf(site.river.id);
-    const name = clean(raw?.name) ?? clean(p.name) ?? nm.place(p.class, site, p.id);
+    const name = clean(raw?.name) ?? clean(p.name) ?? namerAt(p.x * mpu + M, p.y * mpu + M).place(p.class, site, p.id);
     placeNames.set(p.id, name);
     // (a mark-only kind keeps its name, unlabeled)
     if (MARK_ONLY.includes(p.class)) continue;
@@ -101,6 +120,20 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     const letters = R.name.toUpperCase().replace(/\s+/g, " ").length, full = em(LABEL_PX.realm);
     const fits = (2 * R.room) / Math.max(1, letters * 0.66 * 1.4);
     want.push({ id: `@realm:${R.id}`, kind: "realm", text: R.name, spot: R.spot, caps: true, spaced: true, px: Math.max(22, Math.min(LABEL_PX.realm, (LABEL_PX.realm * Math.min(full, fits)) / full)) });
+  }
+  // provinces: each one's name, from its seat's, over its middle (the capital's province is the realm's own, unnamed)
+  for (const P of provinces) {
+    if (!P.spot || !P.seat || realms[P.realm]?.capital === P.seat) continue;
+    const id = `province:${P.seat}`, seatName = placeNames.get(P.seat) ?? null;
+    const name = clean(given[id]) ?? namerAt(P.at[0] * mpu + M, P.at[1] * mpu + M).feature("province", { near: seatName }, id);
+    madeNames.set(id, name);
+    if (inside(P.spot[0], P.spot[1])) want.push({ id: `@land:${id}`, kind: "province", text: name, spot: P.spot });
+  }
+  // the wild lands no realm holds, each named over its heart
+  for (const w of wilds) {
+    const q = { id: w.id, x: w.at[0] * mpu + M, y: w.at[1] * mpu + M };
+    const name = named(q, "wilds");
+    if (inside(w.at[0], w.at[1])) want.push({ id: `@land:${w.id}`, kind: "wilds", text: name, spot: w.at, caps: true });
   }
   // features: by kind, the biggest first, with limits so a map isn't flooded with small ones
   const kindsOf = (k) => inv.filter((q) => q.kind === k).sort((a, b) => (b.size ?? 0) - (a.size ?? 0) || (a.id < b.id ? -1 : 1));
@@ -267,7 +300,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
         if (!r?.length) continue;
         at = fit(r[Math.floor(r.length / 2)], w, h, 0);
       }
-    } else if (L.kind === "realm") {
+    } else if (L.kind === "realm" || L.kind === "province" || L.kind === "wilds") {
       // (over its spot, or a little off it where another label is)
       const step = h * 1.2, b = L.spot;
       at = least([b, [b[0], b[1] - step], [b[0], b[1] + step], [b[0] - w * 0.25, b[1]], [b[0] + w * 0.25, b[1]]].map((s) => ({ at: fit(s, w, h, 0) })), w, h).at;
@@ -282,8 +315,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     if (!inside(at[0], at[1])) continue;
     // (a feature's name that could only go over the compass rose, the scale bar, the cartouche or a place's mark is left
     // off: the GM can add it; a place's stays, beside its mark)
-    // (a realm's name spans its land as an atlas's does, over the towns in it: only the dressing keeps it off)
-    if (!L.place && (onDressing(at, angle, w, h) > 0.15 || (L.kind !== "realm" && onMarks(at, angle, w, h) > 0))) continue;
+    // (a realm's, a province's and the wilds' names span their land as an atlas's do, over the towns in it)
+    if (!L.place && (onDressing(at, angle, w, h) > 0.15 || (!AREA_NAMES.has(L.kind) && onMarks(at, angle, w, h) > 0))) continue;
     boxes.push(boxOf(at, angle, w, h));
     const water = WATER.has(L.kind);
     labels.push({

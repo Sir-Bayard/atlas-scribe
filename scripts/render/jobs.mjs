@@ -9,6 +9,7 @@ import { pinnables } from "../core/pin.mjs";
 import { zoomPlan } from "../core/zoom.mjs";
 import { placeTowns, keepNames, untouched } from "../core/land/places.mjs";
 import { placeRealms, REALM_COUNTS } from "../core/land/realms.mjs";
+import { placeCultures } from "../core/land/cultures.mjs";
 import { placeSites, BORDER_SITES, SITE_CLASSES, MARK_ONLY } from "../core/land/sites.mjs";
 import { normalize } from "../core/plan.mjs";
 import { generateLand } from "../core/land/index.mjs";
@@ -66,7 +67,7 @@ export const LAND_VIEWS = ["shade", "uplift", "rain", "temp", "flow", "biome", "
 // (the last full land made for a layer view, so switching views doesn't make it again)
 let viewLand = null;
 // (as the layout's own key: what the land is made from, and whether its kept file was read)
-const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
+const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
 
 export const jobs = {
   /**
@@ -140,8 +141,11 @@ export const jobs = {
    */
   async placeTowns({ plan, seed, density = null }, progress) {
     const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.9 * p, l) });
+    // (the cultures first, from the land: the places and realms are named in their tongues)
+    progress(0.91, "Placing cultures");
+    const cult = placeCultures(plan, layout.land, { seed });
     progress(0.92, "Placing towns and roads");
-    const { plan: out, added, removed, gone, notes } = placeTowns(plan, layout.land, { seed, density });
+    const { plan: out, added, removed, gone, notes } = placeTowns(cult.plan, layout.land, { seed, density });
     // (realms ruled from the new towns, when the plan asks for them or still has some the generator made)
     // (a plan with the generator's realms but no count, from a script, keeps some; one whose realms are all the GM's
     // gets none added)

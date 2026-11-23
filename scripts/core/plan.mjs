@@ -327,7 +327,21 @@ export const TYPES = {
     // crowns at every layout (core/land/realms.mjs), so moving a crown redraws the borders
     geometry: "point",
     classes: ["realm"],
-    fields: { name: str(), color: str(null), capital: str(null), made: { kind: "data", default: null } },
+    // (kind: how it grows, naval, river, highland, nomadic or generic; form: its rule; might: how far it grows against its
+    // neighbors; relations: how it stands with each realm by id; culture: the culture of its capital, by id)
+    fields: {
+      name: str(), color: str(null), capital: str(null), made: { kind: "data", default: null },
+      kind: oneOf(["naval", "river", "highland", "nomadic", "generic"], "generic"), form: oneOf(["monarchy", "republic", "league", "horde", "free city"], "monarchy"),
+      might: num(1, { min: 0.3, max: 3 }), relations: { kind: "data", default: null }, culture: str(null),
+    },
+  },
+  culture: {
+    // A culture on an overland map: its hearth, a point; its land is grown from the hearths at every layout
+    // (core/land/cultures.mjs), and the places and realms on it are named in its way (the map's Names style with its own
+    // seed; nameSet: a name set the GM gave it)
+    geometry: "point",
+    classes: ["culture"],
+    fields: { name: str(), seed: num(1, { min: 1, integer: true }), nameSet: { kind: "data", default: null }, made: { kind: "data", default: null } },
   },
   prop: {
     geometry: "point",

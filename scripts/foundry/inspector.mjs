@@ -269,7 +269,7 @@ function overlandActionsHTML(plan, working, nameSets = []) {
   // (realms need a city or town to rule from)
   const feats = Array.isArray(plan.features) ? plan.features : [];
   const seats = feats.some((f) => f?.type === "place" && (f.class === "city" || f.class === "town"));
-  const realms = feats.some((f) => f?.type === "realm");
+  const realms = feats.some((f) => f?.type === "realm"), realmsMade = feats.some((f) => f?.type === "realm" && typeof f.made === "string"), cultures = feats.some((f) => f?.type === "culture" && typeof f.made === "string");
   // (the map's own name set: its name, and whether the library's copy has changed since)
   const ns = plan.land.nameSet && typeof plan.land.nameSet.text === "string" ? plan.land.nameSet : null;
   const lib = ns?.from ? nameSets.find((s) => s.id === ns.from) : null;
@@ -282,6 +282,8 @@ function overlandActionsHTML(plan, working, nameSets = []) {
       <button type="button" data-action="asPlaceTowns"${labelAttr(made ? "Place them again: the towns, roads and bridges the generator made and you haven't changed are replaced; any you moved, renamed or placed stay, and the new ones join them" : "Towns, villages, castles, ruins, roads and bridges placed where people would build them; they're kept in the plan, so they stay put")} ${dis}><i class="fa-solid ${made ? "fa-dice" : "fa-city"}" aria-hidden="true"></i> ${made ? "Reroll Places" : "Place Towns and Roads"}</button>
       ${seats ? `<button type="button" data-action="asPlaceRealms"${labelAttr(realms ? "Rule them again from other cities and towns: the realms the generator made and you haven't changed are replaced; any you renamed, recolored or gave another capital stay" : "Realms ruled from the biggest cities and towns, their borders grown over the land along ranges and rivers (as many as Realms below says, else some)")} ${dis}><i class="fa-solid ${realms ? "fa-dice" : "fa-crown"}" aria-hidden="true"></i> ${realms ? "Reroll Realms" : "Place Realms"}</button>` : ""}
       <button type="button" data-action="asKeepNames"${labelAttr("Write the names the map made into the plan, so they stay when the land is made again or places move")} ${dis}><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Keep the Names</button>
+      ${realmsMade ? `<button type="button" data-action="asKeepRealms"${labelAttr("Keep the realms as they are: Reroll Places and a change to the land leave them, as if you had made them")} ${dis}><i class="fa-solid fa-flag" aria-hidden="true"></i> Keep the Realms</button>` : ""}
+      ${cultures ? `<button type="button" data-action="asKeepCultures"${labelAttr("Keep the cultures as they are: Reroll Places and a change to the land leave them and the tongues they name places in")} ${dis}><i class="fa-solid fa-people-group" aria-hidden="true"></i> Keep the Cultures</button>` : ""}
     </div>`;
 }
 
