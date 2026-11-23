@@ -37,7 +37,7 @@ sounds:
 # examples: Name, Name, Name
 # Word parts that mean something, used where the land shows it: a suffix (-ford), a prefix (inver-) or a
 # pattern ({name} the made word, {river} the river's name). river mouth, confluence, ford, bridge, coast, lake,
-# pass, river, mountains, hills, forest, marsh, plain; or a kind of feature: sea, bay, lake, river, cape, island...
+# pass, river, mountains, hills, forest, marsh, plain; or a kind of feature: sea, bay, lake, river, cape, delta, island...
 # "place lake:" or "feature lake:" says which a word like lake means; without it, it's both
 elements:
   coast: -port

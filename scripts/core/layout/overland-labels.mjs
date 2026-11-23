@@ -14,16 +14,16 @@ import { woodSpot } from "../land/settled.mjs";
 import { MARK_ONLY } from "../land/sites.mjs";
 
 /** Each label's font size in pixels on a picture 3600 px on its long side (larger pictures, larger labels alike). */
-export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, landmark: 16, quarry: 16, fort: 20, monastery: 18, lighthouse: 17, customs: 16, battlefield: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19 };
+export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17, castle: 21, ruin: 18, tower: 18, temple: 18, inn: 17, mine: 17, landmark: 16, quarry: 16, fort: 20, monastery: 18, lighthouse: 17, customs: 16, battlefield: 17, place: 18, sea: 62, ocean: 80, land: 72, range: 36, river: 23, lake: 26, bigLake: 34, bay: 28, forest: 27, desert: 30, marsh: 23, island: 25, cape: 19, delta: 22, estuary: 21, spit: 17, lagoon: 19 };
 // (each mark's half size, in the same pixels as the markers: the label sits beside it)
 const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6, quarry: 9, fort: 12, monastery: 14, lighthouse: 16, customs: 10, battlefield: 9, falls: 8, pass: 9, volcano: 12, spring: 9, tree: 10, stacks: 9 };
-const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river"]);
+const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river", "estuary", "lagoon"]);
 // (each look's colors: Foundry outlines a light label in black and a dark one in white, so "bold" is white with a black
 // outline and "ink" dark with a light one)
 const LOOKS = { bold: { water: "#e8f3ff", land: "#fff8ec", place: "#ffffff" }, ink: { water: "#1d4a6e", land: "#4b3621", place: null } };
 const FONT = { water: "Amiri", land: "Vollkorn" };
 // (the order labels are placed in: the first placed keeps its spot, later ones step around it)
-const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "fort", "monastery", "forest", "desert", "marsh", "island", "village", "cape", "ruin", "tower", "temple", "lighthouse", "inn", "mine", "quarry", "customs", "battlefield", "landmark", "hamlet", "place"];
+const ORDER = ["ocean", "sea", "land", "realm", "range", "city", "town", "river", "bigLake", "lake", "bay", "castle", "fort", "monastery", "forest", "desert", "marsh", "island", "village", "cape", "delta", "estuary", "lagoon", "spit", "ruin", "tower", "temple", "lighthouse", "inn", "mine", "quarry", "customs", "battlefield", "landmark", "hamlet", "place"];
 
 /**
  * plan: the normalized plan; land: the layout's compact land; items: the layout's items so far; keepOut: boxes in map
@@ -63,7 +63,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   const madeNames = new Map();
   const named = (q, kind, info = {}) => {
     if (madeNames.has(q.id)) return madeNames.get(q.id);
-    const near = ["bay", "lake", "marsh", "cape", "falls", "spring", "stacks"].includes(kind) ? nearTown(q) : null;
+    const near = ["bay", "lake", "marsh", "cape", "delta", "estuary", "spit", "lagoon", "falls", "spring", "stacks"].includes(kind) ? nearTown(q) : null;
     const name = clean(given[q.id]) ?? nm.feature(kind, { ...info, near }, q.id);
     madeNames.set(q.id, name);
     return name;
@@ -150,6 +150,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   }
   for (const q of kindsOf("island").slice(0, 10)) want.push({ id: `@land:${q.id}`, kind: "island", text: named(q, "island"), q });
   for (const q of kindsOf("cape").slice(0, 6)) want.push({ id: `@land:${q.id}`, kind: "cape", text: named(q, "cape"), q });
+  // (the coast's forms: the biggest few of each)
+  for (const k of ["delta", "estuary", "lagoon", "spit"]) for (const q of kindsOf(k).slice(0, 3)) want.push({ id: `@land:${q.id}`, kind: k, text: named(q, k), q });
 
   // (open water: the water node farthest from its shore, in the map, among the water joined to the feature's point;
   // a sea's or a lake's name goes there, clear of the land)

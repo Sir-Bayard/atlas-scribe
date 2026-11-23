@@ -15,7 +15,7 @@ export function landSeedOf(plan) {
 }
 
 /** The generator's version: a change that moves land bumps it (plans record it as land.gen). */
-export const GEN = 2;
+export const GEN = 3;
 /**
  * The oldest generator whose points come out as this one's: a land it kept is read back exactly from its node block
  * (raise it when a change moves the points, and older blocks are read from their height files instead).

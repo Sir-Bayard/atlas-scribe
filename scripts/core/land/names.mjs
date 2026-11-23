@@ -185,6 +185,10 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
           case "marsh": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Fen`, `${w} Marsh`, `the ${w} Mire`, `${w} Moss`]); }
           case "island": { const w = root(r.pick(FIRST)); return r.pick([`${w} Isle`, `the Isle of ${w}`, inventedFeatures ? `${w}` : `${w}holm`]); }
           case "cape": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Head`, `${w} Point`, `Cape ${w}`, inventedFeatures || near ? `${w} Point` : `${w}ness`]); }
+          case "delta": { const w = near ?? root(r.pick(FIRST)); return r.pick([`the ${w} Delta`, `the ${w} Mouths`, `${w} Flats`]); }
+          case "estuary": { const w = near ?? root(r.pick(FIRST)); return r.pick([`the ${w} Firth`, `${w} Water`, `the ${w} Estuary`]); }
+          case "spit": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Spit`, `${w} Bar`, `the ${w} Strand`]); }
+          case "lagoon": { const w = near ?? root(r.pick(WATER_ADJ)); return r.pick([`the ${w} Lagoon`, `${w} Broad`, `the ${w} Pool`]); }
           case "falls": { const w = near ?? root(r.pick(FIRST)); return r.pick([`${w} Falls`, `${w} Force`, `the ${w} Linn`]); }
           case "pass": { const w = root(r.pick(FIRST)); return r.pick([`${w} Pass`, `the ${w} Gap`, `${w} Col`]); }
           case "volcano": { const w = root(r.pick(FIRST)); return r.pick([`Mount ${w}`, `the ${w} Fire`, `${w} Smoke`]); }
@@ -233,7 +237,7 @@ const COMMON = {
   monster: ["The Beast of {name}"],
   sea: ["the {name} Sea", "the Sea of {name}"], ocean: ["the {name} Ocean"], bay: ["{name} Bay", "the Bay of {name}"], lake: ["Lake {name}"], river: ["the {name}", "River {name}"],
   hills: ["the {name} Hills"], mountains: ["the {name} Mountains"], range: ["the {name} Range"], forest: ["the {name} Forest"], desert: ["the {name} Waste"], marsh: ["the {name} Marsh"],
-  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
+  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], delta: ["the {name} Delta"], estuary: ["the {name} Firth"], spit: ["{name} Spit"], lagoon: ["the {name} Lagoon"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
   spring: ["{name} Springs"], tree: ["The {name} Oak"], stacks: ["The {name} Stacks"], land: ["{name}"], realm: ["the Kingdom of {name}", "{name}"],
 };
 

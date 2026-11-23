@@ -520,7 +520,7 @@ export function settle(land, plan, { density = "some", seed = plan?.seed ?? 1, r
   }
   function siteOf(i) {
     const at = U(i);
-    const bearing = (to) => Math.round(((atan2(to[0] - at[0], -(to[1] - at[1])) * 180) / PI + 360) % 360);
+    const bearing = (to) => Math.round(((atan2(to[0] - at[0], -(to[1] - at[1])) * 180) / PI + 360) % 360) % 360;
     // its river: its own node if a drawn river runs through it, else its neighbor on the biggest river; the way
     // upstream and down from there
     let rn = -1; if (riverF[i] > 0) rn = i; else for (let k = indptr[i]; k < indptr[i + 1]; k++) if (riverF[indices[k]] > (rn >= 0 ? riverF[rn] : 0)) rn = indices[k];

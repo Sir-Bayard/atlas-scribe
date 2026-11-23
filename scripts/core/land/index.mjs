@@ -10,7 +10,8 @@ import { shapeField } from "./recipes.mjs";
 import { GEN, POINTS_GEN, normalizeLand, landSeedOf } from "./schema.mjs";
 import { makePoints, makeGraph, nodeGrid } from "./graph.mjs";
 import { distanceTo, atNodes } from "./field.mjs";
-import { upliftStage, SOLVER, components, landforms, scourHollows } from "./uplift.mjs";
+import { upliftStage, SOLVER, components, landforms, scourHollows, graphDistance, refadePlateau } from "./uplift.mjs";
+import { coastForms } from "./coasts.mjs";
 import { workFor, fillRoute, accumulate, step } from "./solver.mjs";
 import { climateStage } from "./climate.mjs";
 import { remapHeights } from "./hypso.mjs";
@@ -79,7 +80,9 @@ export function generateOnce(plan, opts = {}) {
   const subSeed = attempt ? seed * 1000003 + attempt : seed;
 
   progress(0.02, "Land and sea");
-  const shapeF = shapeField(frame, land, subSeed, r.fork("recipe"));
+  // (the recipes as the generator that kept a land made them, so its points come out the same)
+  const shapeGen = opts.kept?.nodes && opts.kept.nodes.gen >= POINTS_GEN ? Math.min(GEN, opts.kept.nodes.gen) : GEN;
+  const shapeF = shapeField(frame, land, subSeed, r.fork("recipe"), { gen: shapeGen, scale: frame.scale });
 
   // the graph: every point near land and inside the map, one in four far out at sea and in the margin
   progress(0.08, "Points");
@@ -160,9 +163,30 @@ export function generateOnce(plan, opts = {}) {
   const Ueff = new Float64Array(n);
   let weight = Float64Array.from(g.area), rainNow = null;
   let meanArea = 0; for (let i = 0; i < n; i++) meanArea += g.area[i]; meanArea /= n;
-  const p = { U: Ueff, K, dt: SOLVER.dt, fill: 0.008, smallArea: Math.max(15, 3 * meanArea), D, passes: 2, talus, outlet, fixed };
+  // coasts with a cause (generator 3): the sea risen up the valleys, skerries, estuaries, deltas, spits and lagoons, made
+  // part way through the wearing down, before the rain comes from the wind (so the climate, the hemisphere and the
+  // plateaus never move the coast) and early enough that the rivers grade to the new shore
+  // (a kept land: the forms its keeper made, from its node block; their places are in miles, so they hold even when the
+  // land is read from its height file)
+  let coastFeatures = opts.kept?.nodes?.coasts ?? [];
+  const coastsNow = () => {
+    if (allKept || stepsGen < 3 || land.type === "landlocked") return;
+    const np0 = fillRoute(g, h, outlet, w);
+    accumulate(w, g.area, np0);
+    const inMap0 = (i) => landMask[i] && frame.inMap(g.x[i], g.y[i]);
+    const fit0 = Math.min(1, Math.max(0.1, Math.max(0, ...components(g, inMap0).areas) / (0.25 * frame.mapW * frame.mapH)));
+    const forms = coastForms({ g, h, landMask, outlet, fixedH, held: fixed, A: w.A, rec: w.rec, frame, seed: subSeed, scale: frame.scale, threshold: RIVER_CATCHMENT[frame.scale] * fit0, spacing: up.spacing });
+    coastFeatures = forms.features.map(({ nodes, ...f }) => ({ ...f, size: Math.round(nodes.reduce((t, i) => t + g.area[i], 0) * 10) / 10, n: nodes.length }));
+    // (the distance from the sea, from the new coast: a plateau fades to it, and the hollows keep off it)
+    if (forms.drowned || forms.raised) { up.distSea = graphDistance(g, Uint8Array.from(landMask, (v) => (v ? 0 : 1))); refadePlateau(g, up, landMask); }
+  };
+  // (until the coast is made, the rock without a plateau's: see coastsNow)
+  const p = { U: Ueff, K: up.early?.K ?? K, dt: SOLVER.dt, fill: 0.008, smallArea: Math.max(15, 3 * meanArea), D: up.early?.D ?? D, passes: 2, talus: up.early?.talus ?? talus, outlet, fixed };
   for (let s = 0; s < (allKept ? 0 : steps); s++) {
     if (s === Math.floor(steps * 0.45)) {
+      progress(0.25 + 0.4 * (s / steps), "Coasts");
+      coastsNow();
+      p.K = K; p.D = D; p.talus = talus;
       const c = climateStage({ g, frame, h, landMask, lat, land, seaSide: shapeF.seaSide, grid, intent: climateIntent, zones: zoneTargets, gen: stepsGen });
       rainNow = c.rain;
       let sum = 0, cnt = 0;
@@ -238,7 +262,7 @@ export function generateOnce(plan, opts = {}) {
     landMask, outlet, U, hard: up.hard, spines: up.spines, plates: up.plates, distSea: up.distSea,
     rain: climate.rain, temp: climate.temp, rainF: climate.rainF, tempF: climate.tempF,
     F: lk.F, lake: lk.lake, salt: lk.salt, lakes: lk.lakes, lakeId: lk.lakeId, rivers: rv.rivers, riverOf: rv.riverOf, marks,
-    biome, hypso, threshold, spacing: up.spacing, fixed, kept: !!opts.kept, keptExact: !!opts.kept && exact, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
+    biome, hypso, threshold, spacing: up.spacing, coasts: coastFeatures, fixed, kept: !!opts.kept, keptExact: !!opts.kept && exact, zones: intent?.zones ?? [], zone: intent?.zone ?? null,
     // (the volcanoes, [{ at: [x, y] frame miles, rad, ht }], when the land is volcanic)
     ...(up.cones ? { cones: up.cones.filter((c) => landMask[grid.nearest(c.at[0], c.at[1])]) } : {}),
   };

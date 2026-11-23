@@ -237,7 +237,7 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
   };
   const ok = (i) => !wet(i) && h[i] < 0.75;
   // (the way to the sea from a coast node, in degrees from north, as a town's site gives it)
-  const seaBearing = (i) => { let sx = 0, sy = 0; for (let k = indptr[i]; k < indptr[i + 1]; k++) { const j = indices[k]; if (sea(j)) { sx += x[j] - x[i]; sy += y[j] - y[i]; } } return Math.round(((atan2(sx, -sy) * 180) / PI + 360) % 360); };
+  const seaBearing = (i) => { let sx = 0, sy = 0; for (let k = indptr[i]; k < indptr[i + 1]; k++) { const j = indices[k]; if (sea(j)) { sx += x[j] - x[i]; sy += y[j] - y[i]; } } return Math.round(((atan2(sx, -sy) * 180) / PI + 360) % 360) % 360; };
 
   // hamlets: farmed country between the villages, near a road
   placeKind("hamlet", (i) => (ok(i) && settled[i] > 0.3 && settled[i] < 0.85 && h[i] < 0.4 ? fertile(i) + 0.5 * settled[i] - 0.2 * slope[i] * 10 - (roadMiles[i] > 6 ? 1 : 0) : -Infinity));
@@ -293,8 +293,8 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
       }
     }
   }
-  // battlefields: open, gentle ground on a border
-  if (owner) placeKind("battlefield", (i) => (ok(i) && border[i] && h[i] < 0.3 && slope[i] < 0.04 && !FOREST.has(biomeOf(i)) ? 1 - 10 * slope[i] + 0.3 * settled[i] : -Infinity), { site: () => ({ border: true }) });
+  // battlefields: open, gentle ground on a border (a wood's farmland is open too)
+  if (owner) placeKind("battlefield", (i) => (ok(i) && border[i] && h[i] < 0.3 && slope[i] < 0.06 && (!FOREST.has(biomeOf(i)) || settled[i] > 0.3) ? 1 - 10 * slope[i] + 0.3 * settled[i] : -Infinity), { site: () => ({ border: true }) });
 
   // ---- the wilds (a few kinds a map, by its seed) ----
   // standing stones: hilltops on open downs; barrows near them along the ridges

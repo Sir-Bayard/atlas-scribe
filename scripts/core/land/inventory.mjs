@@ -9,7 +9,7 @@ import { hashAt } from "../rng.mjs";
 import { makeField, blur, regions } from "./field.mjs";
 import { components } from "./uplift.mjs";
 
-const KIND_CODE = { sea: 1, land: 2, lake: 3, river: 4, range: 5, peak: 6, pass: 7, bay: 8, cape: 9, basin: 10, desert: 11, forest: 12, marsh: 13, falls: 14, island: 15 };
+const KIND_CODE = { sea: 1, land: 2, lake: 3, river: 4, range: 5, peak: 6, pass: 7, bay: 8, cape: 9, basin: 10, desert: 11, forest: 12, marsh: 13, falls: 14, island: 15, delta: 16, estuary: 17, spit: 18, lagoon: 19 };
 
 /** A stable id: the kind and a position rounded to about 4% of the map. */
 function idFor(L, kind, x, y, extra = 0) {
@@ -70,6 +70,8 @@ export function inventoryOf(L) {
     const mid = p[Math.floor(p.length / 2)], mouth = p[p.length - 1];
     out.push({ id: idFor(L, "river", mouth[0], mouth[1], lengthClass(length)), kind: "river", x: mid[0], y: mid[1], size: length, river: R.id, order: R.order, ends: R.ends, flow: mouth[2] });
   }
+  // the coast's forms: deltas, estuaries, spits and lagoons (in the map)
+  for (const c of L.coasts ?? []) if (frame.inMap(c.x, c.y)) out.push({ id: idFor(L, c.kind, c.x, c.y), kind: c.kind, x: c.x, y: c.y, size: c.size });
   for (const [x, y, rid] of L.marks?.falls ?? []) out.push({ id: idFor(L, "falls", x, y), kind: "falls", x, y, size: 0, river: rid });
 
   // ranges: from their spines, where they stand on land

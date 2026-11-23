@@ -64,8 +64,9 @@ export function keptRaster(L) {
  */
 export async function makeKept(L) {
   const R = keptRaster(L);
-  // (the node block: a header, then each node's height (Float64) and whether it's land)
-  const n = L.g.n, head = new TextEncoder().encode(JSON.stringify({ gen: L.gen ?? GEN, attempt: L.attempt ?? 0, n, pos: pointsHash(L.g) }));
+  // (the node block: a header (with the coast's forms, when it has any), then each node's height (Float64) and whether
+  // it's land)
+  const n = L.g.n, head = new TextEncoder().encode(JSON.stringify({ gen: L.gen ?? GEN, attempt: L.attempt ?? 0, n, pos: pointsHash(L.g), ...(L.coasts?.length ? { coasts: L.coasts } : {}) }));
   const block = new Uint8Array(4 + head.length + n * 9);
   new DataView(block.buffer).setUint32(0, head.length);
   block.set(head, 4);
@@ -84,7 +85,7 @@ export function pointsHash(g) {
   return bytesHash(new Uint8Array(xy.buffer));
 }
 
-/** The node block of a kept file: { gen, attempt, n, pos, h: Float64Array, mask: Uint8Array }, or null. */
+/** The node block of a kept file: { gen, attempt, n, pos, h: Float64Array, mask: Uint8Array, coasts }, or null. */
 function readNodes(bytes) {
   let block;
   try { block = readChunk(bytes, "asND"); } catch { return null; }
@@ -96,7 +97,7 @@ function readNodes(bytes) {
   if (!(Number.isInteger(n) && n > 0 && block.length === 4 + hl + n * 9)) return null;
   const h = new Float64Array(n);
   new Uint8Array(h.buffer).set(block.subarray(4 + hl, 4 + hl + n * 8));
-  return { gen: head.gen, attempt: head.attempt ?? 0, n, pos: head.pos, h, mask: Uint8Array.from(block.subarray(4 + hl + n * 8)) };
+  return { gen: head.gen, attempt: head.attempt ?? 0, n, pos: head.pos, h, mask: Uint8Array.from(block.subarray(4 + hl + n * 8)), coasts: Array.isArray(head.coasts) ? head.coasts : [] };
 }
 
 /** The kept file read into fields over the frame: { heights, land, nodes } (land 1 or 0, nearest pixel; nodes the exact block or null), or { error }. */

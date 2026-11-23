@@ -57,8 +57,10 @@ export const RANGE_ROOM = 0.04;
 /**
  * ctx: { g, frame, land (normalized land block), seed, r (random stream), shapeF (the shape field), terrain (the
  * plan's terrain features in frame miles: [{ class, path | at, ...fields }]), intent (sampled intent layers per node,
- * or null), gen (the generator to run as; left out, the newest) }. Returns { shape, U, Uold, K, hard, talus, D, landMask,
- * outlet, fixedH, spines, plates, distSea, rangeT (how high a range stands before it makes land of the sea) }.
+ * or null), gen (the generator to run as; left out, the newest) }. Returns { shape, U, Uold, K, hard, talus, D, early
+ * (K, talus, D and hard without a plateau's rock, for the wearing down before the coast is made; null when the
+ * same), landMask, outlet, fixedH, spines, plates, distSea, rangeT (how high a range stands before it makes land of
+ * the sea) }.
  */
 export function upliftStage(ctx) {
   const { g, frame, land, seed, r, shapeF } = ctx;
@@ -198,6 +200,8 @@ export function upliftStage(ctx) {
   }
   // a plateau's hard rock, once the coast is known: it fades to the sea as the plateau's top does (landforms), so a
   // shore stays where the sea wears it
+  // (the rock before it, for the wearing down until the coast is made, so plateaus never move the coast)
+  const hardBefore = out.plateau && (ctx.gen ?? Infinity) >= 3 ? Float64Array.from(hard) : null;
   if (out.plateau) for (let i = 0; i < n; i++) if (landMask[i] && out.plateau[i]) hard[i] = Math.max(hard[i], PLATEAU_HARD * out.plateau[i] * coastFade(g, distSea, i));
   // intent relief: raise or flatten
   // (raise toward mountains; below zero flatten, and past -0.5 sink: a basin)
@@ -207,15 +211,35 @@ export function upliftStage(ctx) {
   const spacing = Math.sqrt((frame.W * frame.H) / n);
   const age = ["young", "mature", "old"].includes(land.age) ? land.age : "mature";
   const Dphys = SOLVER.diffusion[age];
+  const early = hardBefore ? { K: new Float64Array(n), talus: new Float64Array(n), D: new Float64Array(n), hard: hardBefore } : null;
   for (let i = 0; i < n; i++) {
     let rock = 1 + 0.3 * Math.max(-1, Math.min(1, province[i]));
-    if (ctx.intent?.rock) { rock *= 1.6 - 1.2 * ctx.intent.rock[i]; if (ctx.intent.rock[i] > 0.6 && ctx.intent.rock[i] > hard[i]) hard[i] = ctx.intent.rock[i]; }
+    if (ctx.intent?.rock) { rock *= 1.6 - 1.2 * ctx.intent.rock[i]; if (ctx.intent.rock[i] > 0.6 && ctx.intent.rock[i] > hard[i]) hard[i] = ctx.intent.rock[i]; if (hardBefore && ctx.intent.rock[i] > 0.6 && ctx.intent.rock[i] > hardBefore[i]) hardBefore[i] = ctx.intent.rock[i]; }
     K[i] = SOLVER.K0 * rock * (1 - 0.55 * hard[i]);
     const s = Math.sqrt(g.area[i]) || spacing;
     talus[i] = SOLVER.talus * pow(s, -0.3) * (1 + 0.6 * hard[i]);
     D[i] = (Dphys * (1 - 0.6 * hard[i])) / SOLVER.dt;
+    if (early) { early.K[i] = SOLVER.K0 * rock * (1 - 0.55 * hardBefore[i]); early.talus[i] = SOLVER.talus * pow(s, -0.3) * (1 + 0.6 * hardBefore[i]); early.D[i] = (Dphys * (1 - 0.6 * hardBefore[i])) / SOLVER.dt; }
   }
-  return { shape, U, Uold, K, hard, talus, D, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null, rangeT };
+  return { shape, U, Uold, K, hard, talus, D, early, landMask, outlet, fixedH, spines: used, plates, distSea, spacing, age, plateau: out.plateau ?? null, cones: out.cones ?? null, rangeT };
+}
+
+/**
+ * A plateau's rock faded again to the coast as the coast forms left it (up.distSea, recomputed): its hardness, and the
+ * K, talus and D it gives, on up in place. Needs up.early (a plateau on a generator 3 land); otherwise does nothing.
+ */
+export function refadePlateau(g, up, landMask) {
+  if (!up.early || !up.plateau) return;
+  const { early, hard, K, talus, D } = up;
+  for (let i = 0; i < g.n; i++) {
+    const was = hard[i], now = landMask[i] && up.plateau[i] ? Math.max(early.hard[i], PLATEAU_HARD * up.plateau[i] * coastFade(g, up.distSea, i)) : early.hard[i];
+    if (now === was) continue;
+    hard[i] = now;
+    const b = early.hard[i];
+    K[i] = (early.K[i] * (1 - 0.55 * now)) / (1 - 0.55 * b);
+    talus[i] = (early.talus[i] * (1 + 0.6 * now)) / (1 + 0.6 * b);
+    D[i] = (early.D[i] * (1 - 0.6 * now)) / (1 - 0.6 * b);
+  }
 }
 
 /** How hard a plateau's rock is at its heart. */
