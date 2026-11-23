@@ -39,8 +39,8 @@ export const hasMadePlaces = (plan) => (plan?.features ?? []).some((f) => typeof
 
 /**
  * Which of the generator's untouched features must still stay: those a label follows (its `of`), the places at the
- * ends of a road that stays (so it still runs between places), and the capital of a realm the GM changed (so it's
- * still ruled from a place). Returns a Set of ids.
+ * ends of a road or route that stays (so it still runs between places), and the capital of a realm the GM changed (so
+ * it's still ruled from a place). Returns a Set of ids.
  */
 export function stillNeeded(features) {
   const need = new Set((features ?? []).filter((f) => f?.type === "label" && typeof f.of === "string").map((f) => f.of));
@@ -49,6 +49,8 @@ export function stillNeeded(features) {
   for (const r of (features ?? []).filter((f) => f?.type === "road" && Array.isArray(f.path) && f.path.length >= 2 && kept(f)))
     for (const p of features) if (p?.type === "place" && untouched(p) && (at(p.at, r.path[0]) || at(p.at, r.path[r.path.length - 1]))) need.add(p.id);
   for (const q of (features ?? []).filter((f) => f?.type === "realm" && typeof f.capital === "string" && !untouched(f))) need.add(q.capital);
+  // (the places at the ends of a route the GM kept, so it still runs between them)
+  for (const r of (features ?? []).filter((f) => f?.type === "route" && !untouched(f))) for (const id of [r.from, r.to]) if (typeof id === "string") need.add(id);
   // (the generator's bridges and fords on a road that stays, which the new roads won't cross again)
   const keptRoads = (features ?? []).filter((f) => f?.type === "road" && Array.isArray(f.path) && f.path.length >= 2 && kept(f));
   for (const c of (features ?? []).filter((f) => f?.type === "crossing" && untouched(f) && Array.isArray(f.at)))

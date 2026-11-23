@@ -124,7 +124,8 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   if (L.keptError) notes.push({ level: "warning", id: null, message: `This map's kept land couldn't be read (${L.keptError}), so it was made from its settings and may differ. Put its file back at ${plan.land?.keep?.path ?? "its path"}, or Forget the Kept Land.` });
   for (const f of plan.features) {
     if (f.type === "road" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "way", id: f.id, from: f.id, class: f.class, path: f.path, width: REGION_WIDTHS[f.class] ?? 0.12 });
-    else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null });
+    else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null, ...(f.site?.port ? { port: true } : {}) });
+    else if (f.type === "route" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "route", id: f.id, from: f.id, class: f.class, path: f.path });
     else if (f.type === "crossing" && Array.isArray(f.at)) items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], angle: f.angle ?? 0 });
   }
   // Realms: grown from their crowns over the land; each capital's mark crowned

@@ -10,6 +10,7 @@ import { zoomPlan } from "../core/zoom.mjs";
 import { placeTowns, keepNames, untouched } from "../core/land/places.mjs";
 import { placeRealms, REALM_COUNTS } from "../core/land/realms.mjs";
 import { placeCultures } from "../core/land/cultures.mjs";
+import { placeRoutes } from "../core/land/routes.mjs";
 import { placeSites, BORDER_SITES, SITE_CLASSES, MARK_ONLY } from "../core/land/sites.mjs";
 import { normalize } from "../core/plan.mjs";
 import { generateLand } from "../core/land/index.mjs";
@@ -159,7 +160,11 @@ export const jobs = {
     // (then the points of interest, by the roads, the settled land and the realms' borders)
     progress(0.98, "Placing points of interest");
     const S = placeSites(next, layout.land, { seed, reserve: gone });
-    return { plan: S.plan, added, removed, notes: [...notes, ...S.notes], ...(realms ? { realms } : {}), sites: S.added };
+    // (and last the ports, sea lanes, ferries, caravan routes and trails, which join them all)
+    progress(0.99, "Placing routes");
+    const T = placeRoutes(S.plan, layout.land, { seed, reserve: gone });
+    const routes = T.added["sea-lane"] + T.added.ferry + T.added.caravan + T.added.trail;
+    return { plan: T.plan, added, removed, notes: [...notes, ...S.notes], ...(realms ? { realms } : {}), sites: S.added, routes, ports: T.added.ports };
   },
 
   /**
@@ -178,7 +183,9 @@ export const jobs = {
     // (the points of interest that follow the borders, placed again by the new ones: on a plan that has points of
     // interest, or asks for them)
     const has = ruled.features.some((q) => q.type === "place" && SITE_CLASSES.includes(q.class)) || (ruled.land?.sites && ruled.land.sites !== "none");
-    return { ...res, plan: has ? placeSites(ruled, layout.land, { seed, only: BORDER_SITES }).plan : ruled };
+    const sited = has ? placeSites(ruled, layout.land, { seed, only: BORDER_SITES }).plan : ruled;
+    // (the routes made again too, where they lead to points of interest that moved; the GM's own stay)
+    return { ...res, plan: sited.features.some((q) => q.type === "route") ? placeRoutes(sited, layout.land, { seed }).plan : sited };
   },
 
   /** The names an overland plan's map makes, kept in the plan (land/places.mjs keepNames). Returns { plan, places, features }. */

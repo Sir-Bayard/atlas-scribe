@@ -18,6 +18,8 @@ export const KEY_ENTRIES = [
   { kind: "site", cls: "grove", text: "Sacred Grove" }, { kind: "site", cls: "camp", text: "Brigands" }, { kind: "site", cls: "cove", text: "Pirates" },
   { kind: "site", cls: "monster", text: "Monster" },
   { kind: "way", cls: "highway", text: "Highway" }, { kind: "way", cls: "street", text: "Road" }, { kind: "way", cls: "track", text: "Track" },
+  { kind: "route", cls: "sea-lane", text: "Sea Lane" }, { kind: "route", cls: "ferry", text: "Ferry" }, { kind: "route", cls: "caravan", text: "Caravan Route" },
+  { kind: "route", cls: "trail", text: "Trail" }, { kind: "port", cls: "port", text: "Port" },
   { kind: "crossing", cls: "bridge", text: "Bridge" }, { kind: "crossing", cls: "footbridge", text: "Footbridge" }, { kind: "crossing", cls: "ford", text: "Ford" },
   { kind: "realm", cls: "border", text: "Border" }, { kind: "realm", cls: "capital", text: "Capital" },
   // (an overland map's land covers, as swatches: those its layout lists in `covers`)
@@ -48,7 +50,7 @@ function keyFor(L, miles, withCovers = true) {
   if (!L.dressing || !L.overland || L.legend === false || L.places === false || !(L.size?.squares?.[0] > 0)) return null;
   const items = L.items ?? [];
   const realms = L.showRealms !== false && L.realms?.list?.length > 0;
-  const has = (kind, cls) => (kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === (kind === "site" ? "place" : kind) && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
+  const has = (kind, cls) => (kind === "port" ? items.some((i) => i.kind === "place" && i.port) : kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === (kind === "site" ? "place" : kind) && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
   const shown = KEY_ENTRIES.filter((e) => has(e.kind, e.cls));
   if (!shown.some((e) => e.kind === "place" || e.kind === "way")) return null;
   const [mw, mh] = L.size.squares;

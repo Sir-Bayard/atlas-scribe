@@ -23,7 +23,7 @@ function clean(pts) {
 }
 
 /** The types whose paths can be reshaped. */
-const PATHS = new Set(["road", "water", "wall", "dock", "trail", "tether", "terrain"]);
+const PATHS = new Set(["road", "water", "wall", "dock", "trail", "tether", "terrain", "route"]);
 
 /**
  * A feature's shape as handles see it: { kind: "poly", pts } | { kind: "path", pts } | { kind: "circle", c, r } |

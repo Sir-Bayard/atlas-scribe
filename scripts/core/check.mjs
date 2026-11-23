@@ -224,6 +224,7 @@ export function checkPlan(raw) {
   // was, uncrowned), no two from one spot (the second would have no land), and colored with a #rrggbb color
   const realmList = plan.features.filter((f) => f.type === "realm");
   if (realmList.length && !overland) for (const f of realmList) warn(f.id, "type", `The realm "${f.name ?? f.id}" is drawn on overland maps only; it stays in the plan but won't appear on this map.`);
+  if (!overland) for (const f of plan.features.filter((q) => q.type === "route")) warn(f.id, "type", `The route "${f.name ?? f.id}" is drawn on overland maps only; it stays in the plan but won't appear on this map.`);
   if (!overland) for (const f of plan.features.filter((q) => q.type === "culture")) warn(f.id, "type", `The culture "${f.name ?? f.id}" is used on overland maps only; it stays in the plan but does nothing on this map.`);
   for (const f of realmList.filter((f) => typeof f.capital === "string")) {
     const seat = plan.features.find((q) => q.id === f.capital);

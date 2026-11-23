@@ -3,7 +3,7 @@
  * the overland painted styles, and an overland map's key (the map's name is a tile of its own: title.mjs).
  */
 import { compassOf, scaleBarOf, keyOf } from "../../core/dressing.mjs";
-import { placeMark, strokeRoad, crossingMark, crownMark } from "./atlas.mjs";
+import { placeMark, strokeRoad, crossingMark, crownMark, strokeRoute, portMark } from "./atlas.mjs";
 
 /**
  * Map dressing: a ruled frame, a compass rose and a scale bar (in feet, or miles on an overland map), each in the
@@ -109,6 +109,8 @@ export function paintKey(ctx, P, { miles = true, covers = {} } = {}) {
   for (const col of key.columns) for (const e of col.entries) {
     const mx = X(col.x + u * 1.9), my = Y(e.y);
     if (e.kind === "place" || e.kind === "site") placeMark(g, mx, my, e.cls, mu);
+    else if (e.kind === "route") strokeRoute(g, e.cls, mu, () => { g.beginPath(); g.moveTo(X(col.x + u * 0.2), my); g.lineTo(X(col.x + u * 3.6), my); });
+    else if (e.kind === "port") portMark(g, mx, my, mu);
     else if (e.kind === "way") strokeRoad(g, e.cls, mu, () => { g.beginPath(); g.moveTo(X(col.x + u * 0.2), my); g.lineTo(X(col.x + u * 3.6), my); });
     else if (e.kind === "cover") {
       // (a swatch of the land cover as the map paints it, in a thin frame)

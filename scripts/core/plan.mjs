@@ -335,6 +335,14 @@ export const TYPES = {
       might: num(1, { min: 0.3, max: 3 }), relations: { kind: "data", default: null }, culture: str(null),
     },
   },
+  route: {
+    // A route on an overland map beyond its roads (core/land/routes.mjs): a sea lane between ports, a ferry over a
+    // strait, a caravan route over open or dry country, a trail out to a lonely place; from and to: the places at
+    // its ends, by id
+    geometry: "path",
+    classes: ["sea-lane", "ferry", "caravan", "trail"],
+    fields: { name: str(), from: str(null), to: str(null), made: { kind: "data", default: null } },
+  },
   culture: {
     // A culture on an overland map: its hearth, a point; its land is grown from the hearths at every layout
     // (core/land/cultures.mjs), and the places and realms on it are named in its way (the map's Names style with its own

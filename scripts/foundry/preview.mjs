@@ -367,7 +367,7 @@ export class AtlasScribeApp extends Base {
   #paths() {
     const plan = normalize(this.#plan);
     const sq = plan.size.ftPerSquare || 25;
-    return plan.features.filter((f) => ["road", "water", "wall", "dock", "trail", "tether", "terrain"].includes(f.type) && Array.isArray(f.path) && f.path.length >= 2)
+    return plan.features.filter((f) => ["road", "water", "wall", "dock", "trail", "tether", "terrain", "route"].includes(f.type) && Array.isArray(f.path) && f.path.length >= 2)
       // (a painted range: picked within a quarter of its core's width, at least a third of a square)
       .map((f) => (f.type === "terrain" ? { ...f, path: f.path, _half: Math.min(1.5, Math.max(0.33, ((Number(f.width) || 30) * 5280) / sq / 4)) } : f))
       // (a cliff along the middle of its face, as wide as the face, so it's picked anywhere on it)
@@ -575,7 +575,7 @@ export class AtlasScribeApp extends Base {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(row(f.id, f.name ?? f.text ?? f.id, kind, rolls.get(f.id) ?? null));
     }
-    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines", place: "Places", realm: "Realms", culture: "Cultures", terrain: "Painted Terrain" };
+    const TITLES = { district: "Districts", area: "Areas", height: "Rises and Hollows", water: "Water", road: "Roads", wall: "Walls", square: "Squares", building: "Buildings", landmark: "Landmarks", crossing: "Bridges and Fords", dock: "Docks", prop: "Props", label: "Labels", boundary: "Boundaries", light: "Lights", region: "Regions", trail: "Trails", tether: "Picket Lines", place: "Places", realm: "Realms", culture: "Cultures", route: "Routes", terrain: "Painted Terrain" };
     return [...groups].map(([g, list]) => `<li class="as-pv-group" role="presentation"><strong>${esc(TITLES[g] ?? g)}</strong></li>${list.join("")}`).join("");
   }
 
@@ -1380,7 +1380,7 @@ export class AtlasScribeApp extends Base {
 
   /** An overland plan: towns and roads placed (or placed again) by the generator, one step Undo takes back. */
   static async #onPlaceTowns() {
-    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.sites ? `, ${res.sites} point${res.sites === 1 ? "" : "s"} of interest` : ""}${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}. Undo takes them back.`, "Placing towns and roads");
+    await this.#placeJob((plan) => this.#host.placeTowns(plan), (res) => `AtlasScribe: placed ${res.added} towns, roads and bridges${res.sites ? `, ${res.sites} point${res.sites === 1 ? "" : "s"} of interest` : ""}${res.removed ? `, in place of ${res.removed} the generator had made` : ""}${res.realms ? `, and ${res.realms} realm${res.realms === 1 ? "" : "s"}` : ""}${res.routes ? `, with ${res.routes} route${res.routes === 1 ? "" : "s"} (sea lanes, ferries, caravan routes and trails)` : ""}. Undo takes them back.`, "Placing towns and roads");
   }
 
   /** An overland plan: a new land of the same kind, from a new land seed (its towns placed again: #change). */

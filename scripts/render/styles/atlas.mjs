@@ -27,6 +27,13 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
   const line = (pts) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); };
   g.save();
   g.lineCap = "round"; g.lineJoin = "round";
+  // routes under the roads: sea lanes and ferries on the water, caravan routes and trails over the land
+  // (by its box: a long straight leg can cross a tile with no point of it near)
+  const boxNear = (pts) => { let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; for (const [x, y] of pts) { a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); } return c >= x0 - pad && d >= y0 - pad && a <= tx1 + pad && b <= ty1 + pad; };
+  for (const r of items) {
+    if (r.kind !== "route" || !Array.isArray(r.path) || r.path.length < 2 || !boxNear(r.path)) continue;
+    strokeRoute(g, r.class, u, () => line(r.path));
+  }
   // roads, lowest class first, so a highway runs over a road where they meet
   for (const w of ways) {
     if (!near(w.line)) continue;
@@ -50,6 +57,8 @@ export function drawAtlas(ctx, layout, rivers, outPx) {
   for (const p of places) {
     if (!near([[p.x, p.y]])) continue;
     placeMark(g, X(p.x), Y(p.y), p.class, u);
+    // (a port's anchor below and beside its mark)
+    if (p.port) portMark(g, X(p.x) + 13 * u, Y(p.y) + 12 * u, u);
   }
   g.restore();
 }
@@ -77,6 +86,32 @@ export function strokeRoad(g, cls, u, path) {
     g.strokeStyle = "rgba(250,240,220,0.6)"; g.lineWidth = 5.5 * u; path(); g.stroke();
     g.strokeStyle = rgba(RED, 0.95); g.lineWidth = 3 * u; path(); g.stroke();
   }
+}
+
+/**
+ * Strokes a route of a class (path() builds the path): a sea lane in long blue-gray dashes, a ferry in short dark
+ * dashes, a caravan route in brown dashes and dots, a trail in fine dots. Shared with the map's key.
+ */
+export function strokeRoute(g, cls, u, path) {
+  const STYLE = { "sea-lane": ["rgba(58,82,104,0.75)", 2.2, [14, 9]], ferry: ["rgba(36,40,48,0.9)", 2.2, [5, 4]], caravan: ["rgba(110,70,36,0.85)", 2.4, [12, 5, 2, 5]], trail: ["rgba(52,40,30,0.75)", 1.5, [1.5, 4.5]] };
+  const [ink, w, dash] = STYLE[cls] ?? STYLE.trail;
+  g.save();
+  g.lineCap = "round";
+  if (cls === "sea-lane" || cls === "ferry") { g.strokeStyle = "rgba(240,246,250,0.45)"; g.lineWidth = (w + 2.5) * u; g.setLineDash(dash.map((v) => v * u)); path(); g.stroke(); }
+  g.strokeStyle = ink; g.lineWidth = Math.max(1, w * u); g.setLineDash(dash.map((v) => v * u)); path(); g.stroke();
+  g.restore();
+}
+
+/** A port's anchor beside its place's mark, its middle at (x, y). Shared with the map's key. */
+export function portMark(g, x, y, u) {
+  const s = u * 1.15;
+  g.save();
+  g.strokeStyle = "rgba(250,246,236,0.9)"; g.lineWidth = 4.5 * s; g.lineCap = "round";
+  const anchor = () => { g.beginPath(); g.moveTo(x, y - 6 * s); g.lineTo(x, y + 6 * s); g.moveTo(x - 4 * s, y - 3 * s); g.lineTo(x + 4 * s, y - 3 * s); g.moveTo(x - 6 * s, y + 2 * s); g.quadraticCurveTo(x - 5 * s, y + 7 * s, x, y + 7 * s); g.quadraticCurveTo(x + 5 * s, y + 7 * s, x + 6 * s, y + 2 * s); };
+  anchor(); g.stroke();
+  g.strokeStyle = "rgba(30,48,70,0.95)"; g.lineWidth = 1.8 * s; anchor(); g.stroke();
+  g.beginPath(); g.arc(x, y - 7.5 * s, 1.7 * s, 0, 2 * Math.PI); g.stroke();
+  g.restore();
 }
 
 /** A crossing's mark at the origin, along x: )( for a bridge, two dots for a ford, beside a road of class road. */
