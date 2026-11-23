@@ -5,6 +5,7 @@
  */
 import { CITIES } from "./quick.mjs";
 import { apartDeg, THROUGH_APART } from "./directions.mjs";
+import { peopleWords } from "./land/facts.mjs";
 
 /** The places a town's map can be made of, and the size each makes. */
 export const TOWN_SIZES = { city: "city", town: "town", village: "village", hamlet: "hamlet" };
@@ -37,7 +38,7 @@ const list = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", "
  * (phrases that follow "A town": what the region shows of it, "on a large river flowing east", "with roads to the
  * north and west") }, or null for a place that has no map of its own this way.
  */
-export function townFromPlace(plan, f, { name = null } = {}) {
+export function townFromPlace(plan, f, { name = null, facts: known = null } = {}) {
   const size = TOWN_SIZES[f?.class];
   if (!size) return null;
   const site = f.site && typeof f.site === "object" ? f.site : {};
@@ -56,8 +57,13 @@ export function townFromPlace(plan, f, { name = null } = {}) {
   const roads = roadsAt.length >= 4 ? "crossroads" : roadsAt.length === 3 || (roadsAt.length === 2 && apartDeg(roadsAt[0], roadsAt[1]) < THROUGH_APART) ? "fork" : "through";
   const surroundings = AROUND[site.biome] ?? "mixed";
   const high = city ? null : site.pass || site.ground === "high" ? "mountains" : site.ground === "hills" ? "hills" : null;
+  // (what the map decided of it: walls, a temple, a citadel; land/facts.mjs)
+  const K = known && typeof known === "object" ? known : null;
+  const has = K && !city ? { walled: !!K.walls, temple: !!K.temple } : null;
   const options = {
     size, season: plan.season ?? "summer", water, roads, surroundings,
+    ...(has ? { has } : {}),
+    ...(K && city ? { outside: { citadel: !!K.citadel } } : {}),
     ...(city && river && site.confluence && water === "river" ? { river: "meeting" } : {}),
     ...(high ? { high } : {}),
     ...(name || f.name ? { name: name || f.name } : {}),
@@ -82,5 +88,15 @@ export function townFromPlace(plan, f, { name = null } = {}) {
   if (site.pass) facts.push("at the foot of a pass");
   else if (site.ground === "hills" || site.ground === "high") facts.push(site.ground === "high" ? "in high country" : "in hills");
   if (site.biome && BIOME_WORDS[site.biome]) facts.push(`among ${BIOME_WORDS[site.biome]}`);
+  if (K) {
+    if (K.port) facts.unshift("with a harbor");
+    if (K.walls && !city) facts.push("walled");
+    if (Number.isFinite(K.people)) facts.push(`of ${peopleWords(K.people)} people`);
+    // (a made name in the middle of a sentence: "in the Kingdom of Vance", not "in The Kingdom")
+    const mid = (s) => s.replace(/^The /, "the ");
+    if (K.realm?.name) facts.push(`${K.capital ? "the capital of" : "in"} ${mid(K.realm.name)}`);
+    if (K.province?.name) facts.push(`in ${mid(K.province.name)}`);
+    if (K.culture?.name) facts.push(`home to ${K.culture.name.replace(/^The /, "the ")}`);
+  }
   return { options, directions: Object.keys(directions).length ? directions : null, facts };
 }

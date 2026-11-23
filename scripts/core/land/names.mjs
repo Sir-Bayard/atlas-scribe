@@ -212,7 +212,7 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
           // a people: the folk of a place-word, or a tongue's own word
           case "culture": { const w = root(r.pick(FIRST)); return inventedFeatures ? r.pick([`the ${w}i`, `the ${w}an`, `the ${w}ar`]) : r.pick([`the ${w} Folk`, `the ${w}landers`, `the ${w}men`]); }
           // a province within a realm: its seat's name, or a word of its own
-          case "province": { const w = info.near ?? root(r.pick(FIRST)); return /shire$/i.test(w) ? `the Province of ${w}` : r.pick([`${w}shire`, `the Province of ${w}`, `the ${w} Riding`]); }
+          case "province": { const w = info.near ?? root(r.pick(FIRST)); return /shire$/i.test(w) ? `the Province of ${w}` : r.pick([/s$/i.test(w) ? `the ${w} Riding` : `${w}shire`, `the Province of ${w}`, `the ${w} Riding`]); }
           // land no realm holds
           case "wilds": { const w = root(r.pick(FIRST)); return r.pick([`the ${w} Wilds`, `the Waste of ${w}`, `the ${inventedFeatures ? root() : r.pick(LAND_ADJ)} Barrens`]); }
           default: return null;

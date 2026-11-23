@@ -34,6 +34,7 @@ import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs"
 import { MOD, note } from "./foundry/util.mjs";
 import { drawScene, SNAPSHOT } from "./foundry/snapshot.mjs";
 import { registerLabels } from "./foundry/labels-layer.mjs";
+import { makeGazetteer } from "./foundry/gazetteer.mjs";
 
 // (on the page instead when the Render in a worker setting is off: a browser or host where workers fail)
 const worker = new WorkerClient({
@@ -818,6 +819,32 @@ const api = {
     return nameSetsWindow.open();
   },
 
+  /**
+   * Make Gazetteer: a journal entry for the GM with a page per realm, the towns, the points of interest and the secrets,
+   * and map notes on the towns of the scene the plan's map is on (the current scene when it is, else the newest made
+   * from the plan). Made again, it replaces its pages and notes. Returns { entry, pages, notes }.
+   */
+  async makeGazetteer(input) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    if (plan.kind !== "region" || !plan.land || typeof plan.land !== "object") throw new Error("AtlasScribe: a gazetteer is of an overland map (a region plan with land)");
+    planOrThrow(plan);
+    const G = await exclusive(() => worker.run("gazetteer", { plan }));
+    const mine = (s) => s?.flags?.[MOD]?.plan === (plan.id ?? null);
+    const scene = mine(canvas?.scene) ? canvas.scene : [...game.scenes].filter(mine).sort((a, b) => (b.flags[MOD].built ?? 0) - (a.flags[MOD].built ?? 0))[0] ?? null;
+    return makeGazetteer(G, { planId: plan.id ?? plan.name ?? "map", scene, pps: plan.output?.pxPerSquare ?? 100 });
+  },
+
+  /** What an overland plan's map decided of one of its towns (its walls, port, people, realm, province, culture), or null. */
+  async townFacts(input, id) {
+    requireGM();
+    const { plan, error } = readPlan(input);
+    if (!plan) throw new Error(`AtlasScribe: ${error}`);
+    if (plan.kind !== "region" || !plan.land || typeof plan.land !== "object") return null;
+    return worker.run("townFacts", { plan, id });
+  },
+
   /** The names an overland plan's map makes, kept in the plan so they stay when the land is made again. Returns { plan, places, features }. */
   async keepNames(input) {
     requireGM();
@@ -950,6 +977,8 @@ const host = {
   landView: (plan, options) => worker.run("landView", { plan: readPlan(plan).plan ?? plan, ...options }),
   layerViews: () => { try { return game.settings.get(MOD, "layerViews") === true; } catch { return false; } },
   keepNames: (plan) => api.keepNames(plan),
+  townFacts: (plan, id) => api.townFacts(plan, id),
+  makeGazetteer: (plan) => api.makeGazetteer(plan),
   nameSets: () => storedNameSets(),
   openNameSets: () => api.openNameSets(),
   // The last plan opened here, for this world only (a client setting is shared by every world on the browser)

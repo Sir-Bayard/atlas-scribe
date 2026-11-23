@@ -408,7 +408,7 @@ export function provincesOf(land, owner, realms, places, G) {
     if (r + 1 < G.h && pid[k + G.w] >= 0 && pid[k + G.w] !== pid[k] && G.ids[k + G.w] === G.ids[k]) segs.push([[c, r + 1], [c + 1, r + 1]]);
   }
   const lines = chainSegments(segs).map((line) => smooth(simplify(line, 1.1).map(([c, r]) => [c * G.cell, r * G.cell]), 3));
-  return { prov, list, lines };
+  return { prov, list, lines, pid };
 }
 
 /**

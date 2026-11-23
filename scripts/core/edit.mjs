@@ -154,6 +154,7 @@ export const FIELD_TEXT = {
   "realm.relations": { hidden: true },
   "realm.culture": { hidden: true },
   "culture.class": { hidden: true },
+  "place.note": { label: "Notes", help: "For the GM: what it is and a use for it. The gazetteer writes it out." },
   "route.class": { names: { "sea-lane": "sea lane", ferry: "ferry", caravan: "caravan route", trail: "trail" } },
   "route.from": { hidden: true },
   "route.to": { hidden: true },
@@ -245,7 +246,7 @@ export function landMoved(before, after) {
   const sameKeep = keptBefore && keptAfter && before.land.keep.hash === after.land.keep.hash && before.land.keep.path === after.land.keep.path;
   const key = (plan) => {
     if (!isObj(plan?.land)) return null;
-    const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, keep, ...landIn } = plan.land;
+    const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, keep, ...landIn } = plan.land;
     // (the land's own seed, or the plan's when it has none: the same land either way)
     landIn.seed = landSeedOf(plan);
     return JSON.stringify([landIn, plan.size, plan.output?.grid ?? null, (plan.features ?? []).filter((f) => isObj(f) && ((f.type === "terrain" && !sameKeep) || f.type === "water"))]);
@@ -269,9 +270,10 @@ export const PLAN_FIELDS = [
   { path: "@scale", label: "Scale", kind: "enum", values: Object.keys(SCALES), overland: true, required: true, auto: "custom", names: { kingdom: "kingdom (240 by 160 mi)", realm: "realm (720 by 480 mi)", continent: "continent (2,400 by 1,600 mi)", world: "world (7,200 by 4,800 mi)", custom: "your own size" }, help: "Sets the map's size and its cells. The land is made again at the new size and the generator's towns, roads and realms are placed again on it; what you placed keeps its spot on the map" },
   { path: "output.grid", label: "Grid", kind: "enum", values: ["hex", "square"], overland: true, auto: "square", names: { hex: "hexes", square: "squares" }, help: "Hexes or squares, in the scene and for the map's size: the map keeps its miles" },
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
-  { path: "land.sites", label: "Points of Interest", kind: "enum", values: ["none", "few", "some", "many"], overland: true, auto: "some", help: "How many inns, mines, watchtowers, forts, shrines, monasteries, lighthouses and the like Place Towns and Roads (or Reroll Places) puts down, each where the land, the roads and the realms put it, with a few of the wilds' secrets (lairs, caves, wrecks, standing stones, brigands, pirates, monsters). The bigger ones are labeled; the wilds' are marks only" },
+  { path: "land.sites", label: "Points of Interest", kind: "enum", values: ["none", "few", "some", "many"], overland: true, auto: "some", help: "How many inns, mines, watchtowers, forts, shrines, monasteries, lighthouses and the like Place Towns and Roads (or Reroll Places) puts down, each where the land, the roads and the realms put it, with a few of the wilds' secrets (lairs, caves, wrecks, standing stones, brigands, pirates, monsters). The bigger ones are labeled, and the wilds' are marks only. The secret ones (lairs, monsters, brigands, pirates and caves) are on a tile only the GM sees." },
   { path: "land.realms", label: "Realms", kind: "enum", values: ["none", "few", "some", "many"], overland: true, required: true, auto: "none", help: "How many realms Place Realms (or Reroll Realms) rules from the map's cities and towns, and Reroll Places keeps when it moves them (None: it takes the generator's away). It also sets how far each realm reaches, so changing it moves the borders of realms already placed" },
   { path: "land.realmSizes", label: "Realm Sizes", kind: "enum", values: ["varied", "even"], overland: true, auto: "varied", help: "Varied gives each realm its own might, so some grow great and others stay small; even grows them alike. Used when realms are placed again" },
+  { path: "land.troubles", label: "Troubles", kind: "enum", values: ["none", "few", "some", "many"], overland: true, auto: "none", help: "Invasions, rebels, floods and plague are hatched on a tile only the GM sees." },
   { path: "land.realmGrowth", label: "Realm Growth", kind: "enum", values: ["slow", "normal", "fast"], overland: true, auto: "normal", help: "How far realms reach from their capitals: slow leaves more wild land between them, fast fills the land" },
   { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name Sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   // The land itself (an overland map's Land group): changing one makes the land again, and the generator's towns,

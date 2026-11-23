@@ -236,6 +236,8 @@ export function wireSettlementTab(root, fill = null) {
   el("name")?.addEventListener("input", () => setHand("name", el("name").value));
   // (a region's place: its choices as if set by hand, so the Describe box can still change them)
   if (fill) for (const k of ["size", "season", "water", "roads", "surroundings", "river", "high", "name"]) if (fill[k] !== undefined && fill[k] !== null) setHand(k, fill[k]);
+  // (what the region map decided of it: walls and a temple, a city's citadel)
+  if (fill) { for (const [k, v] of Object.entries(fill.has ?? {})) if (HAS.includes(k)) setHand(`has.${k}`, !!v); if (fill.outside && "citadel" in fill.outside) setHand("outside.citadel", !!fill.outside.citadel); }
   draw();
 
   /** Quick Start's options from the form: choices on Any, and boxes neither said nor set by hand, left out. */

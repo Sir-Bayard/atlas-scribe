@@ -5,6 +5,7 @@
  * either side of a road at a bridge, two dots at a ford. Sized by the picture's long side, so a map reads the same at
  * any picture size. Painting only.
  */
+import { SECRET_SITES } from "../../core/land/sites.mjs";
 import { chaikin } from "../../core/land/raster.mjs";
 
 const INK = "rgb(24,20,18)", PAPER = "rgb(252,246,232)", RED = [168, 40, 32], HIGH = [196, 64, 44];
@@ -15,9 +16,21 @@ const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
  * crossing and place items); rivers: the painted river lines in map units ([[x, y, t]...]), so a bridge sits where its
  * road crosses the river as drawn; outPx: the picture's long side in pixels.
  */
-export function drawAtlas(ctx, layout, rivers, outPx) {
+export function drawAtlas(ctx, layout, rivers, outPx, { only = null } = {}) {
   const { ways, crossings } = preparedFor(layout, rivers);
-  const items = layout.items ?? [];
+  // (the secret points of interest on their own hidden tile, and only there, with the trails that lead to them)
+  const secretIds = new Set((layout.items ?? []).filter((i) => i.kind === "place" && SECRET_SITES.includes(i.class)).map((i) => i.id));
+  const secret = (i) => (i.kind === "place" && secretIds.has(i.id)) || (i.kind === "route" && secretIds.has(i.to));
+  const items = (layout.items ?? []).filter((i) => (only === "secrets" ? secret(i) : !secret(i)));
+  if (only === "secrets") {
+    const { g, x0, y0, pp } = ctx, u = outPx / 3600;
+    const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;
+    g.save(); g.lineCap = "round"; g.lineJoin = "round";
+    for (const r of items) if (r.kind === "route" && Array.isArray(r.path) && r.path.length >= 2) strokeRoute(g, r.class, u, () => { g.beginPath(); r.path.forEach(([x, y], k) => (k ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); });
+    g.restore();
+    for (const p of items) if (p.kind === "place") placeMark(g, X(p.x), Y(p.y), p.class, u);
+    return;
+  }
   const { g, W, H, x0, y0, pp } = ctx;
   const u = outPx / 3600;
   const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp;

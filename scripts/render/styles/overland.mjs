@@ -16,6 +16,7 @@ import { BIOMES, BIOME_CLIMATE } from "../../core/land/biome.mjs";
 import { LAPSE } from "../../core/land/climate.mjs";
 import { SETTLED } from "../../core/land/settled.mjs";
 import { glyphsOf } from "../../core/label-curve.mjs";
+import { SECRET_SITES } from "../../core/land/sites.mjs";
 
 export const MAX_BLUR = 0.5;
 export const rolesFor = () => [];
@@ -634,7 +635,9 @@ export function layers(layout) {
   // (realms under the places: their wash and borders, so the GM can hide them and keep the towns)
   // (the political and cultural views: hidden tiles over the map the GM switches to)
   const views = [...(layout.realms?.list?.length && layout.showRealms !== false ? [{ name: "political", shown: false }] : []), ...(layout.cultures?.grid ? [{ name: "cultural", shown: false }] : [])];
-  return [...(layout.realms?.list?.length ? [{ name: "realms", shown: layout.showRealms !== false }] : []), ...views, { name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
+  // (the GM's own tiles, kept hidden from the players: the secret points of interest and the troubles)
+  const gmOnly = [...((layout.items ?? []).some((i) => i.kind === "place" && SECRET_SITES.includes(i.class)) ? [{ name: "secrets", shown: false }] : []), ...(layout.troubles?.length ? [{ name: "troubles", shown: false }] : [])];
+  return [...(layout.realms?.list?.length ? [{ name: "realms", shown: layout.showRealms !== false }] : []), ...views, { name: "places", shown: layout.places !== false }, ...gmOnly, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
 }
 
 /**
@@ -646,6 +649,17 @@ export function paint(ctx) {
   const { g, W, H, x0, y0, pp, layout: L, progress = () => {}, layer } = ctx;
   if (layer === "realms") {
     paintRealms(ctx, L, prepared(L, pp), Math.max(L.size.squares[0], L.size.squares[1]) * pp);
+    progress(1, "Done");
+    return;
+  }
+  if (layer === "troubles") {
+    paintTroubles(ctx, L, Math.max(L.size.squares[0], L.size.squares[1]) * pp);
+    progress(1, "Done");
+    return;
+  }
+  if (layer === "secrets") {
+    const [MW1, MH1] = L.size.squares;
+    drawAtlas(ctx, L, prepared(L, pp).rivers, Math.max(MW1, MH1) * pp, { only: "secrets" });
     progress(1, "Done");
     return;
   }
@@ -820,6 +834,57 @@ export function realmBand(L, S) {
   if (held) { held.img.width = 1; held.img.height = 1; }
   BAND.set(S, { R, img: out });
   return out;
+}
+
+// (each trouble's ink: an invasion red, rebels orange, a flood blue, a plague a sick green)
+const TROUBLE_INK = { invasion: [170, 30, 26], rebels: [196, 112, 20], flood: [30, 90, 170], plague: [96, 120, 24] };
+
+/**
+ * The troubles, for the GM's eyes: each its shape hatched in its ink (a band along a line, a ring about a point) with
+ * its few words beside it, on a clear tile laid over the map and kept hidden from the players.
+ */
+function paintTroubles(ctx, L, outPx) {
+  const { g, W, H, x0, y0, pp } = ctx;
+  const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp, u = outPx / 3600;
+  const list = L.troubles ?? [];
+  if (!list.length) return;
+  // (one scratch canvas for them all, the painter's own mask when it has one)
+  const m = ctx.mask ?? canvasOf(W, H), s = m.getContext("2d");
+  const tx1 = x0 + W / pp, ty1 = y0 + H / pp;
+  for (const t of list) {
+    const [r, gg, b] = TROUBLE_INK[t.kind] ?? TROUBLE_INK.invasion;
+    // (a trouble that misses this tile, its words included, is skipped)
+    const pad = (t.width ?? 0) + (t.radius ?? 0) + (300 * u) / pp;
+    const pts = [...(Array.isArray(t.line) ? t.line : []), ...(Array.isArray(t.at) ? [t.at] : [])];
+    if (!pts.some(([x, y]) => x >= x0 - pad && y >= y0 - pad && x <= tx1 + pad && y <= ty1 + pad)) continue;
+    // (the shape on the scratch canvas, then hatched through it)
+    s.setTransform(1, 0, 0, 1, 0, 0); s.globalCompositeOperation = "source-over"; s.clearRect(0, 0, W, H);
+    s.lineCap = "round"; s.lineJoin = "round"; s.strokeStyle = "#000"; s.fillStyle = "#000";
+    if (Array.isArray(t.line) && t.line.length >= 2) {
+      s.lineWidth = Math.max(2, (t.width ?? 1) * pp);
+      s.beginPath(); t.line.forEach(([x, y], k) => (k ? s.lineTo(X(x), Y(y)) : s.moveTo(X(x), Y(y)))); s.stroke();
+    }
+    if (Array.isArray(t.at)) { s.beginPath(); s.arc(X(t.at[0]), Y(t.at[1]), Math.max(2, (t.radius ?? 1) * pp), 0, 2 * Math.PI); s.fill(); }
+    s.globalCompositeOperation = "source-in";
+    s.fillStyle = `rgba(${r},${gg},${b},0.28)`; s.fillRect(0, 0, W, H);
+    // (hatched through the tinted shape, on lines x - y = a whole number of steps over the whole picture, so tiles join)
+    s.globalCompositeOperation = "source-atop";
+    s.strokeStyle = `rgba(${r},${gg},${b},0.85)`; s.lineWidth = Math.max(1.5, 3.5 * u);
+    const step = Math.max(5, 18 * u), off = (((y0 - x0) * pp) % step + step) % step;
+    s.beginPath();
+    for (let k = off - Math.ceil((H + step) / step) * step; k < W + step; k += step) { s.moveTo(k, 0); s.lineTo(k + H, H); }
+    s.stroke();
+    g.drawImage(m, 0, 0);
+    // (its words, over its middle)
+    const mid = Array.isArray(t.at) ? t.at : t.line[Math.floor(t.line.length / 2)];
+    const size = Math.max(12, 44 * u);
+    g.save();
+    g.font = `bold italic ${Math.round(size)}px serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.lineJoin = "round"; g.strokeStyle = "rgba(255,250,240,0.9)"; g.lineWidth = Math.max(2, size * 0.18);
+    g.fillStyle = `rgba(${Math.round(r * 0.7)},${Math.round(gg * 0.7)},${Math.round(b * 0.7)},1)`;
+    g.strokeText(t.text, X(mid[0]), Y(mid[1])); g.fillText(t.text, X(mid[0]), Y(mid[1]));
+    g.restore();
+  }
 }
 
 /**

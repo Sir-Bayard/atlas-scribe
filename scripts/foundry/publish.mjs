@@ -287,9 +287,12 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     // (a kind the plan no longer has, as a key turned off, is hidden)
     const want = (t) => shown.get(t.flags[MOD].kind) ?? false;
     // (the views' tiles stay as the GM last switched them)
-    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && !VIEW_LAYERS.has(t.flags[MOD].kind) && t.hidden === want(t)).map((t) => ({ _id: t.id, hidden: !want(t) }));
+    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && !VIEW_LAYERS.has(t.flags[MOD].kind) && !GM_LAYERS.has(t.flags[MOD].kind) && t.hidden === want(t)).map((t) => ({ _id: t.id, hidden: !want(t) }));
     if (fix.length) await sceneById(sceneId).updateEmbeddedDocuments("Tile", fix).catch(() => {});
     warnings.push("The places, roads and dressing over the map were kept from its last render (they come only with a map rendered for the scene), so they may be out of date.");
+    // (a places tile from before the secret points of interest had a tile of their own shows them to players)
+    const kinds = new Set(sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id)).map((t) => t.flags[MOD].kind));
+    if (shown.has("secrets") && !kinds.has("secrets")) warnings.push("The kept places tile was rendered before the secret points of interest (lairs, monsters, brigands, pirates and caves) had a hidden tile of their own, so players see them until the map is rendered again.");
   } else if (layout && overlandLayers(layout).length) warnings.push("This map's places, roads and dressing weren't placed: they come only with a map rendered for the scene, and the map's image is the bare land.");
 
   // A battle map's mist, fog overlays over its low places (lying on the map, under the tokens): new ones in, the old out
@@ -489,7 +492,8 @@ export function hexGridType(width, height, padding, size, warnings = []) {
 
 /** Each layer's place in the stack over the ground: the places, the dressing over them, the key (the title tile is 200). */
 const VIEW_LAYERS = new Set(["political", "cultural"]);
-const LAYER_SORT = { realms: 95, political: 96, cultural: 97, places: 100, dressing: 110, legend: 120 };
+const GM_LAYERS = new Set(["secrets", "troubles"]);
+const LAYER_SORT = { realms: 95, political: 96, cultural: 97, places: 100, secrets: 101, troubles: 102, dressing: 110, legend: 120 };
 
 /**
  * A layer (render's { path, kind, x, y, width, height }, px from the map's corner) as Tile data: on the map, under the
@@ -504,7 +508,8 @@ function layerTile(o, sceneX, sceneY, plan) {
     width: o.width, height: o.height, elevation: 0, sort: LAYER_SORT[o.kind] ?? 100,
     // (the political and cultural views wait clear until the GM switches to one: clear, not hidden, as the GM sees a
     // hidden tile faintly)
-    hidden: VIEW_LAYERS.has(o.kind) ? false : plan.output?.[o.kind] === false, ...(VIEW_LAYERS.has(o.kind) ? { alpha: 0 } : {}),
+    // (the secrets and the troubles are the GM's: hidden from the players always)
+    hidden: VIEW_LAYERS.has(o.kind) ? false : GM_LAYERS.has(o.kind) ? true : plan.output?.[o.kind] === false, ...(VIEW_LAYERS.has(o.kind) ? { alpha: 0 } : {}),
     locked: true,
     flags: { [MOD]: { layer: plan.id ?? null, kind: o.kind } },
   };

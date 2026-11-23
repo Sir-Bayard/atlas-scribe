@@ -4,6 +4,7 @@
  * foot and the compass beside it) in the emptiest corner and the cartouche in the next. The painter draws them from
  * here and an overland map's labels keep off them, so the two always agree. Pure. All sizes in squares (map units).
  */
+import { SECRET_SITES } from "./land/sites.mjs";
 
 /** What a key can list, in its order: places, then roads, then crossings; only those the map has are shown. */
 export const KEY_ENTRIES = [
@@ -51,7 +52,8 @@ function keyFor(L, miles, withCovers = true) {
   const items = L.items ?? [];
   const realms = L.showRealms !== false && L.realms?.list?.length > 0;
   const has = (kind, cls) => (kind === "port" ? items.some((i) => i.kind === "place" && i.port) : kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === (kind === "site" ? "place" : kind) && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
-  const shown = KEY_ENTRIES.filter((e) => has(e.kind, e.cls));
+  // (the secret points of interest stay out of the key the players see)
+  const shown = KEY_ENTRIES.filter((e) => !(e.kind === "site" && SECRET_SITES.includes(e.cls)) && has(e.kind, e.cls));
   if (!shown.some((e) => e.kind === "place" || e.kind === "way")) return null;
   const [mw, mh] = L.size.squares;
   const { unit: u, corners } = cornersOf(L);

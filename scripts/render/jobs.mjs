@@ -11,6 +11,8 @@ import { placeTowns, keepNames, untouched } from "../core/land/places.mjs";
 import { placeRealms, REALM_COUNTS } from "../core/land/realms.mjs";
 import { placeCultures } from "../core/land/cultures.mjs";
 import { placeRoutes } from "../core/land/routes.mjs";
+import { placeFacts } from "../core/land/facts.mjs";
+import { gazetteerOf } from "../core/land/gazetteer.mjs";
 import { placeSites, BORDER_SITES, SITE_CLASSES, MARK_ONLY } from "../core/land/sites.mjs";
 import { normalize } from "../core/plan.mjs";
 import { generateLand } from "../core/land/index.mjs";
@@ -68,7 +70,7 @@ export const LAND_VIEWS = ["shade", "uplift", "rain", "temp", "flow", "biome", "
 // (the last full land made for a layer view, so switching views doesn't make it again)
 let viewLand = null;
 // (as the layout's own key: what the land is made from, and whether its kept file was read)
-const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
+const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
 
 export const jobs = {
   /**
@@ -186,6 +188,18 @@ export const jobs = {
     const sited = has ? placeSites(ruled, layout.land, { seed, only: BORDER_SITES }).plan : ruled;
     // (the routes made again too, where they lead to points of interest that moved; the GM's own stay)
     return { ...res, plan: sited.features.some((q) => q.type === "route") ? placeRoutes(sited, layout.land, { seed }).plan : sited };
+  },
+
+  /** An overland plan's gazetteer contents (land/gazetteer.mjs). Returns gazetteerOf's. */
+  async gazetteer({ plan }, progress) {
+    const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.95 * p, l) });
+    return gazetteerOf(layout, normalize(plan));
+  },
+
+  /** What an overland plan's map decided of one of its towns (land/facts.mjs), for Make This Town. Returns the facts or null. */
+  async townFacts({ plan, id }, progress) {
+    const layout = layoutPlan(normalize(plan), { onProgress: (p, l) => progress(0.95 * p, l) });
+    return placeFacts(layout, normalize(plan)).get(id) ?? null;
   },
 
   /** The names an overland plan's map makes, kept in the plan (land/places.mjs keepNames). Returns { plan, places, features }. */

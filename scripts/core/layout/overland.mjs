@@ -14,6 +14,7 @@ import { BIOMES } from "../land/biome.mjs";
 import { LAKE_BIOME, SEA_BIOME } from "../land/raster.mjs";
 import { realmsOf, growRealms, realmGrid, realmReach, relationOf, provincesOf, wildsOf } from "../land/realms.mjs";
 import { culturesOf, growCultures } from "../land/cultures.mjs";
+import { troublesOf } from "../land/troubles.mjs";
 import { keptFor } from "../land/kept.mjs";
 import { settledField, settledKey, SETTLED } from "../land/settled.mjs";
 import { landmarksOf } from "./landmarks.mjs";
@@ -100,7 +101,7 @@ let lastLand = null;
 export function forgetLand() { lastLand = null; }
 /** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, ...landIn } = plan.land ?? {};
+  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, ...landIn } = plan.land ?? {};
   // (and whether a kept land's file was read: a land made without it isn't kept once the file comes)
   return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]);
 }
@@ -125,7 +126,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   for (const f of plan.features) {
     if (f.type === "road" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "way", id: f.id, from: f.id, class: f.class, path: f.path, width: REGION_WIDTHS[f.class] ?? 0.12 });
     else if (f.type === "place" && Array.isArray(f.at)) items.push({ kind: "place", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], name: f.name ?? null, ...(f.site?.port ? { port: true } : {}) });
-    else if (f.type === "route" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "route", id: f.id, from: f.id, class: f.class, path: f.path });
+    else if (f.type === "route" && Array.isArray(f.path) && f.path.length >= 2) items.push({ kind: "route", id: f.id, from: f.id, class: f.class, path: f.path, ...(typeof f.to === "string" ? { to: f.to } : {}) });
     else if (f.type === "crossing" && Array.isArray(f.at)) items.push({ kind: "crossing", id: f.id, from: f.id, class: f.class, x: f.at[0], y: f.at[1], angle: f.angle ?? 0 });
   }
   // Realms: grown from their crowns over the land; each capital's mark crowned
@@ -146,7 +147,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     const G = realmGrid(land, owner, realmList.length, { relation: (a, b) => relationOf(realmList, a, b) });
     // (provinces from the places on the plan, and the wild lands no realm holds)
     const P = provincesOf(land, owner, realmList, (plan.features ?? []).filter((q) => q.type === "place" && Array.isArray(q.at)), G);
-    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells, axis: G.realms[k].axis })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders, kinds: G.kinds, provinces: P.list, provinceLines: P.lines, wilds: wildsOf(land, owner) };
+    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells, axis: G.realms[k].axis })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders, kinds: G.kinds, provinces: P.list, provinceLines: P.lines, provinceIds: P.pid, wilds: wildsOf(land, owner) };
     const caps = new Set(realmList.map((q) => q.capital).filter(Boolean));
     for (const it of items) if (it.kind === "place" && caps.has(it.id)) it.capital = true;
   }
@@ -209,7 +210,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   });
   const shadowed = new Set(own.filter((l) => l.placeName).map((l) => `@place:${l.of}`));
   progress(1, "Done");
-  return {
+  const out = {
     atlasScribe: LAYOUT_VERSION, plan: plan.id ?? null, kind: "region", overland: true, seed: plan.seed,
     size,
     season: plan.season ?? "summer", style: "painted",
@@ -217,4 +218,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     realms, cultures, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers, landmarks,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...own, ...named.labels.filter((l) => !shadowed.has(l.id))], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
+  // (the troubles, for the GM's hidden tile: from the finished layout's realms, names and routes; land/troubles.mjs)
+  out.troubles = troublesOf(out, { count: plan.land?.troubles ?? "none", seed: plan.seed ?? 1 });
+  return out;
 }

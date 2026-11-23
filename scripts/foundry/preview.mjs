@@ -125,6 +125,7 @@ export class AtlasScribeApp extends Base {
       asKeepNames: AtlasScribeApp.#onKeepNames,
       asKeepRealms: AtlasScribeApp.#onKeepRealms,
       asKeepCultures: AtlasScribeApp.#onKeepCultures,
+      asGazetteer: AtlasScribeApp.#onGazetteer,
       asNameSets: AtlasScribeApp.#onNameSets,
       asNameSetUpdate: AtlasScribeApp.#onNameSetUpdate,
       asPlan: AtlasScribeApp.#onPlan,
@@ -1414,6 +1415,17 @@ export class AtlasScribeApp extends Base {
     await this.#placeJob((plan) => this.#host.keepNames(plan), (res) => res.places + res.features ? `AtlasScribe: kept ${res.places} place names and ${res.features} names of the land in the plan. They stay now when the land changes.` : "AtlasScribe: every name is already in the plan.", "Keeping the names");
   }
 
+  /** Make Gazetteer: the map's gazetteer as a journal entry for the GM, with map notes on its scene's towns. */
+  static async #onGazetteer() {
+    if (!this.#plan || this.#working) return;
+    try {
+      const res = await this.#host.makeGazetteer(this.#plan);
+      ui.notifications.info(`AtlasScribe: the gazetteer "${res.entry.name}" has ${res.pages} page${res.pages === 1 ? "" : "s"}${res.notes ? `, with ${res.notes} map note${res.notes === 1 ? "" : "s"} on its scene` : ", and no map notes: make the scene first to have them"}. Only you can see it until you share it.`);
+    } catch (e) {
+      note.error(e.message);
+    }
+  }
+
   /** Keep the Realms and Keep the Cultures: the generator's realms or cultures kept as the GM's. */
   static async #onKeepRealms() { await this.#keepMade("realm", "realm"); }
   static async #onKeepCultures() { await this.#keepMade("culture", "culture"); }
@@ -1931,7 +1943,15 @@ export class AtlasScribeApp extends Base {
     if (!f || this.#working) return;
     // (the name the map shows for it: its own, else the one the map made)
     const shown = (this.#result?.labels ?? []).find((l) => l.id === `@place:${f.id}` || (l.placeName && l.of === f.id))?.text ?? null;
-    const town = townFromPlace(this.#plan, f, { name: shown });
+    // (what the map decided of it, on an overland map: worked out in the worker from the layout)
+    // (only for a town, village or hamlet; if the plan changes while it's worked out, nothing more is done)
+    let facts = null;
+    const asked = this.#plan;
+    if (["city", "town", "village", "hamlet"].includes(f.class) && overlandPlan(asked)) {
+      try { facts = await this.#host.townFacts?.(asked, f.id); } catch { facts = null; }
+      if (this.#plan !== asked) return;
+    }
+    const town = townFromPlace(this.#plan, f, { name: shown, facts });
     if (town) return this.#quickStart({ fill: town });
     if (!(await this.#mayDiscard())) return;
     const seed = Number(f.seed) || 1 + (Math.abs([...`${this.#plan.seed}:${f.id}`].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)) % 999999);

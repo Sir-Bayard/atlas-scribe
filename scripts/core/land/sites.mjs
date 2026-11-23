@@ -18,6 +18,7 @@ import { growRealms, realmReach, nearestOf } from "./realms.mjs";
 import { normalize } from "../plan.mjs";
 import { untouched, madeMark, stillNeeded } from "./places.mjs";
 import { atan2, PI } from "./dmath.mjs";
+import { siteNote } from "./notes.mjs";
 
 /** The Points of Interest choice's values, and how many of each kind they mean (a share of the full count). */
 export const SITE_COUNTS = ["none", "few", "some", "many"];
@@ -51,6 +52,8 @@ export const SITE_KINDS = {
 };
 /** The classes of place that are points of interest (what Place Towns and Roads puts down after the towns). */
 export const SITE_CLASSES = Object.keys(SITE_KINDS);
+/** The kinds kept secret: drawn on a hidden tile of their own for the GM, left out of the key and the places' layer. */
+export const SECRET_SITES = ["lair", "monster", "camp", "cove", "cave"];
 /** The kinds drawn as a mark with no label (their names are kept for the gazetteer): secrets and small things. */
 export const MARK_ONLY = ["stones", "barrow", "wreck", "lair", "cave", "grove", "camp", "cove", "monster"];
 /** The kinds whose place depends on the realms' borders (placed again when the realms are). */
@@ -85,7 +88,9 @@ export function placeSites(plan, land, { count = null, seed = plan?.seed ?? 1, o
   const made = spots.map((s) => {
     let id; do id = `${s.kind}-${(counts[s.kind] = (counts[s.kind] ?? 0) + 1)}`; while (ids.has(id));
     ids.add(id);
-    const feat = { id, type: "place", class: s.kind, at: s.at, site: s.site };
+    // (with a note the GM can keep, change or clear: land/notes.mjs)
+    const note = siteNote(s.kind, id, seed);
+    const feat = { id, type: "place", class: s.kind, at: s.at, site: s.site, ...(note ? { note } : {}) };
     return { ...feat, made: madeMark(feat) };
   });
   return out(made);
