@@ -316,6 +316,20 @@ export const PLAN_FIELDS = [
 
 const textOf = (type, name) => FIELD_TEXT[`${type}.${name}`] ?? FIELD_TEXT[`*.${name}`] ?? {};
 
+/**
+ * A culture given a name set of its own (set: { name, text, from }), or given back to the map's names (null). Returns
+ * { plan } or { error }.
+ */
+export function setCultureNameSet(plan, id, set) {
+  const f = featureOf(plan, id);
+  if (!f || f.type !== "culture") return { error: `There's no culture "${id}".` };
+  if (set && (typeof set.text !== "string" || !set.text.trim())) return { error: "That name set has no rules in it." };
+  const next = structuredClone(plan), g = featureOf(next, id);
+  if (set) g.nameSet = { name: typeof set.name === "string" && set.name.trim() ? set.name.trim() : "Name Set", text: set.text, ...(set.from ? { from: set.from } : {}) };
+  else delete g.nameSet;
+  return { plan: next };
+}
+
 /** The feature with this id, or null. */
 export function featureOf(plan, id) {
   return (Array.isArray(plan?.features) ? plan.features : []).find((f) => isObj(f) && f.id === id) ?? null;

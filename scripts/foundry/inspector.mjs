@@ -122,7 +122,7 @@ export function rerollButtons(id, name, locked, working) {
  * The inspector for one feature: its kind, reroll and lock (for whatever a reroll can redraw: seeds.mjs rerollable),
  * its settings, Delete.
  */
-export function featureHTML(plan, id, { working = false, fonts = [], madeNames = null } = {}) {
+export function featureHTML(plan, id, { working = false, fonts = [], madeNames = null, nameSets = [] } = {}) {
   const f = featureOf(plan, id);
   if (!f) return "";
   // (a realm's capital choices: a place with no name of its own by the name the map made for it)
@@ -141,6 +141,15 @@ export function featureHTML(plan, id, { working = false, fonts = [], madeNames =
   const roll = rerollable(f)
     ? rerollButtons(id, f.name ?? id, locked, working)
     : "";
+  // (a culture names in the map's way unless it's given a name set of its own from the library)
+  const own = f.type === "culture" && f.nameSet && typeof f.nameSet.text === "string" ? f.nameSet : null;
+  const cultureSet = f.type !== "culture" ? "" : `<div class="as-pv-field"><label for="as-pv-cset">Name Set</label>
+      <select id="as-pv-cset" data-culture-set data-id="${esc(id)}" ${working ? "disabled" : ""}>
+        <option value="" ${own ? "" : "selected"}>The Map's Names</option>
+        ${nameSets.map((s) => `<option value="${esc(s.id)}" ${own?.from === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+        ${own && !nameSets.some((s) => s.id === own.from) ? `<option value="@kept" selected>${esc(own.name)} (kept in the plan)</option>` : ""}
+      </select>
+      <p class="as-pv-hint">The places, realms and land on this culture's ground are named by it. Name Sets in Plan Settings makes and keeps them.</p></div>`;
   const parts = f.type === "landmark" && Array.isArray(f.buildings) ? `<p class="as-pv-hint">${f.buildings.length} building${f.buildings.length === 1 ? "" : "s"}; their own settings can't be changed here yet.</p>` : "";
   return `<section class="as-pv-insp" data-id="${esc(id)}">
       <header>
@@ -148,7 +157,7 @@ export function featureHTML(plan, id, { working = false, fonts = [], madeNames =
         <span class="as-pv-name"><strong>${esc(f.name ?? f.text ?? id)}</strong><em>${esc(titleCase(kindOf(f)))}${f.name || f.text ? ` · ${esc(id)}` : ""}</em></span>
         ${roll}
       </header>
-      <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${parts}</div>
+      <div class="as-pv-fields">${fields.length ? groupsHTML(fields, working, fonts) : `<p class="as-pv-hint">Nothing to set.</p>`}${cultureSet}${parts}</div>
       <div class="as-pv-tools">
         ${f.type === "place" && ["city", "town", "village", "hamlet", "castle"].includes(f.class) ? `<button type="button" data-action="asPlaceMap" data-id="${esc(id)}"${labelAttr(f.class === "castle" ? "A battle map of this castle, named for it" : "Quick Start with this place filled in: its size, name, water, roads and the way they run, and what's around it, to change before making it")} ${working ? "disabled" : ""}><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> ${f.class === "castle" ? "Make This Castle" : "Make This Town"}</button>` : ""}
         ${f.type === "district" ? `<button type="button" data-action="asWallIn" data-id="${esc(id)}" data-tooltip-text="A town wall around it, just outside its edge, with a gate wherever a road crosses" ${working ? "disabled" : ""}><i class="fa-solid fa-chess-rook"></i> Wall In</button>` : ""}

@@ -33,6 +33,7 @@ import { registerHeight } from "./foundry/height.mjs";
 import { registerRules, registerRulesSetting, rules } from "./foundry/rules.mjs";
 import { MOD, note } from "./foundry/util.mjs";
 import { drawScene, SNAPSHOT } from "./foundry/snapshot.mjs";
+import { registerLabels } from "./foundry/labels-layer.mjs";
 
 // (on the page instead when the Render in a worker setting is off: a browser or host where workers fail)
 const worker = new WorkerClient({
@@ -993,6 +994,7 @@ function theWindow() {
 }
 
 Hooks.once("init", () => {
+  registerLabels();
   game.settings.register(MOD, "outputFolder", {
     name: "Output Folder",
     hint: "Where AtlasScribe saves plans, maps, thumbnails and scene backups, under the Data folder. Leave empty for this world's own atlas-scribe folder.",

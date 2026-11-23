@@ -7,6 +7,7 @@
 import { esc } from "./util.mjs";
 import { LABEL_SIZES } from "../core/plan.mjs";
 import { cleanFont } from "../core/labels.mjs";
+import { glyphsOf } from "../core/label-curve.mjs";
 
 /** The middle of a polygon (its area centroid; the mean of its points if it has no area). */
 export function centroid(poly) {
@@ -71,6 +72,11 @@ export const pickableLabel = (l) => !String(l?.id ?? "").startsWith("@");
 /** A label's half width and half height in squares, guessed from its text before the browser has measured it. */
 export function labelBox(l) {
   const em = Number.isFinite(l.em) && l.em > 0 ? l.em : LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
+  // (a spaced or bent name by its letters as the map sets them, its rise added to its height)
+  if ((Number(l.bend) || 0) !== 0 || (Number(l.spacing) || 0) > 0) {
+    const caps = l.text === String(l.text).toUpperCase(), g = glyphsOf(l.text, { size: em, spacing: l.spacing, bend: l.bend }, (ch) => em * (ch === " " ? 0.3 : caps ? 0.66 : 0.5));
+    return { em, curved: true, hw: g.width / 2 + em * 0.15, hh: em * 0.62 + (Math.abs(Number(l.bend) || 0) * g.width) / 2 };
+  }
   return { em, hw: (String(l.text).length * em * 0.55) / 2 + em * 0.15, hh: em * 0.62 };
 }
 
@@ -101,9 +107,16 @@ export function overlaySVG(o) {
     const { em, hw, hh } = labelBox(l), on = l.id === o.selected;
     // (outlined as Foundry outlines a drawing's text: black around a light color, white around a dark one)
     const dark = !(/^#[0-9a-f]{6}$/i.test(l.color) && Math.max(...[1, 3, 5].map((i) => parseInt(l.color.slice(i, i + 2), 16))) / 255 > 0.6);
+    const look = `font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "#ffffff" : "#000000"}; stroke-width: ${em * 0.07}; paint-order: stroke; stroke-linejoin: round`;
+    // (a curved or spaced name letter by letter, as the scene's labels layer sets it; widths guessed from the font size)
+    const curved = (Number(l.bend) || 0) !== 0 || (Number(l.spacing) || 0) > 0;
+    const caps = l.text === String(l.text).toUpperCase();
+    const text = curved
+      ? glyphsOf(l.text, { size: em, spacing: l.spacing, bend: l.bend }, (ch) => em * (ch === " " ? 0.3 : caps ? 0.66 : 0.5)).glyphs.filter((g) => g.ch !== " ").map((g) => `<text class="as-pv-label" data-id="${esc(l.id)}" transform="translate(${g.x.toFixed(4)} ${g.y.toFixed(4)}) rotate(${((g.rot * 180) / Math.PI).toFixed(2)})" x="0" y="0" font-size="${em}" style="${look}">${esc(g.ch)}</text>`).join("")
+      : `<text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="${look}">${esc(l.text)}</text>`;
     return `<g class="as-pv-label-g ${on ? "as-selected" : ""}" data-id="${esc(l.id)}" transform="translate(${l.at[0]} ${l.at[1]}) rotate(${Number(l.angle) || 0})">
         ${on ? `<rect class="as-pv-label-box" data-id="${esc(l.id)}" x="${-hw}" y="${-hh}" width="${hw * 2}" height="${hh * 2}" vector-effect="non-scaling-stroke"></rect>` : ""}
-        <text class="as-pv-label" data-id="${esc(l.id)}" x="0" y="0" font-size="${em}" style="font-family: '${esc(cleanFont(l.font) ?? "")}'; fill: ${esc(l.color)}; opacity: ${Number(l.alpha) || 1}; stroke: ${dark ? "#ffffff" : "#000000"}; stroke-width: ${em * 0.07}; paint-order: stroke; stroke-linejoin: round">${esc(l.text)}</text>
+        ${text}
         ${on && !o.drawing ? `<circle class="as-pv-handle as-turn" data-id="${esc(l.id)}" cx="${hw + em * 0.6}" cy="0" r="0.3"></circle>` : ""}
       </g>`;
   }).join("");

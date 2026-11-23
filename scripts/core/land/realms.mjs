@@ -4,6 +4,7 @@
  * on its capital) with a name and a color; its land is grown again from the crowns at every layout, so moving a crown
  * redraws the borders and nothing else is stored. Pure.
  */
+import { axisOf } from "../label-curve.mjs";
 import { Heap } from "./heap.mjs";
 import { log, len } from "./dmath.mjs";
 import { rng } from "../rng.mjs";
@@ -295,16 +296,26 @@ export function realmGrid(land, owner, count, { relation = null } = {}) {
       for (const [cc, rr, dd] of nb) { if (cc < 0 || rr < 0 || cc >= w || rr >= h) continue; const v = dist[rr * w + cc] + dd; if (v < dist[k]) dist[k] = v; }
     }
   }
-  const realms = Array.from({ length: count }, () => ({ cells: 0, spot: null, room: 0 }));
+  const realms = Array.from({ length: count }, () => ({ cells: 0, spot: null, room: 0, axis: null }));
+  const pts = realms.map(() => []);
   for (let k = 0; k < w * h; k++) {
     const me = ids[k];
     if (me < 0) continue;
     const R = realms[me];
     if (!R) continue;
     R.cells++;
+    pts[me].push([((k % w) + 0.5) * cell, (Math.floor(k / w) + 0.5) * cell]);
     if (dist[k] > R.room) { R.room = dist[k]; R.spot = [((k % w) + 0.5) * cell, (Math.floor(k / w) + 0.5) * cell]; }
   }
-  for (const R of realms) R.room *= cell;
+  // (each realm's long axis, for its name curved along it)
+  // (its name's middle at the axis's middle when that's its own land, else at its spot)
+  // (with the room about it, the distance to its nearest border, which caps the name's size there)
+  const cellOf = (p) => { const c = Math.floor(p[0] / cell), r = Math.floor(p[1] / cell); return c >= 0 && r >= 0 && c < w && r < h ? r * w + c : -1; };
+  realms.forEach((R, m) => {
+    R.room *= cell; R.axis = axisOf(pts[m]);
+    const k = cellOf(R.axis.mid), mine = k >= 0 && ids[k] === m;
+    R.axis.at = mine ? R.axis.mid : R.spot; R.axis.room = mine ? dist[k] * cell : R.room;
+  });
   // borders: the cell edges between two different land ids, by kind (BORDER_KINDS: a frontier with the wilds, a
   // disputed line between enemies, a river, a crest, else across open country), each kind chained into lines and smoothed
   const segs = Object.fromEntries(BORDER_KINDS.map((k) => [k, []]));
@@ -378,7 +389,11 @@ export function provincesOf(land, owner, realms, places, G) {
   const pid = new Int16Array(G.w * G.h).fill(-1), sum = list.map(() => [0, 0, 0]);
   for (let r = 0; r < G.h; r++) for (let c = 0; c < G.w; c++) { const i = nearest((c + 0.5) * G.cell, (r + 0.5) * G.cell); const v = i >= 0 ? prov[i] : -1; pid[r * G.w + c] = v; if (v >= 0) { sum[v][0] += c + 0.5; sum[v][1] += r + 0.5; sum[v][2]++; } }
   // (its own cell nearest its middle, so a bent province's name sits inside it)
+  const cellsOf = list.map(() => []);
+  for (let k = 0; k < pid.length; k++) if (pid[k] >= 0) cellsOf[pid[k]].push([(k % G.w + 0.5) * G.cell, (Math.floor(k / G.w) + 0.5) * G.cell]);
   list.forEach((p, m) => {
+    p.axis = axisOf(cellsOf[m]);
+    { const c = Math.floor(p.axis.mid[0] / G.cell), r = Math.floor(p.axis.mid[1] / G.cell); p.axis.at = c >= 0 && r >= 0 && c < G.w && r < G.h && pid[r * G.w + c] === m ? p.axis.mid : null; }
     if (!sum[m][2]) return;
     const mx = sum[m][0] / sum[m][2], my = sum[m][1] / sum[m][2];
     let bk = -1, bd = Infinity;
@@ -415,8 +430,9 @@ export function wildsOf(land, owner) {
     // (its spot: the node farthest both from held land and from the map's edge, so its name sits inside it)
     const room = (i) => { const [u, v] = U(i); return Math.min((steps[i] < 0 ? 1e9 : steps[i]) * land.spacing, Math.min(u, v, MW - u, MH - v) * f.mpu); };
     const st = [s]; seen[s] = 1; let a = 0, best = s;
-    while (st.length) { const i = st.pop(); if (inMap(i)) { a += area[i]; const ri = room(i), rb = inMap(best) ? room(best) : -1; if (ri > rb || (ri === rb && i < best)) best = i; } for (let e = land.indptr[i]; e < land.indptr[i + 1]; e++) { const j = land.indices[e]; if (!seen[j] && owner[j] === -2) { seen[j] = 1; st.push(j); } } }
-    if (a >= 0.03 * total) out.push({ id: `wilds-${best}`, at: U(best), area: Math.round(a) });
+    const pts = [];
+    while (st.length) { const i = st.pop(); if (inMap(i)) { a += area[i]; pts.push(U(i)); const ri = room(i), rb = inMap(best) ? room(best) : -1; if (ri > rb || (ri === rb && i < best)) best = i; } for (let e = land.indptr[i]; e < land.indptr[i + 1]; e++) { const j = land.indices[e]; if (!seen[j] && owner[j] === -2) { seen[j] = 1; st.push(j); } } }
+    if (a >= 0.03 * total) out.push({ id: `wilds-${best}`, at: U(best), area: Math.round(a), axis: axisOf(pts) });
   }
   return out;
 }

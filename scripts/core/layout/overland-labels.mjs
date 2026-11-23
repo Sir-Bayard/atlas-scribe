@@ -9,7 +9,8 @@
 import { namer } from "../land/names.mjs";
 import { namerOf } from "../land/cultures.mjs";
 import { parseNameSet, usesRiver } from "../land/namesets.mjs";
-import { readable, cleanFont } from "../labels.mjs";
+import { readable, cleanFont, wrapAngle } from "../labels.mjs";
+import { bendThrough } from "../label-curve.mjs";
 import { Heap } from "../land/heap.mjs";
 import { woodSpot } from "../land/settled.mjs";
 import { MARK_ONLY } from "../land/sites.mjs";
@@ -20,6 +21,9 @@ export const LABEL_PX = { realm: 46, city: 34, town: 27, village: 19, hamlet: 17
 const MARK_PX = { city: 13, town: 9.6, village: 5, hamlet: 3.4, castle: 12, ruin: 11, tower: 13, temple: 7, inn: 4.5, mine: 6, quarry: 9, fort: 12, monastery: 14, lighthouse: 16, customs: 10, battlefield: 9, falls: 8, pass: 9, volcano: 12, spring: 9, tree: 10, stacks: 9, oasis: 10 };
 // (names over an area, laid across the towns in it as an atlas's are: only the dressing keeps them off)
 const AREA_NAMES = new Set(["realm", "province", "wilds"]);
+// (an area name's letters spaced as an atlas spaces a country's name: at least this much, in ems, and at most this, the
+// room between filled out to span its land)
+const SPACED = { realm: [0.3, 0.8], wilds: [0.25, 0.8], province: [0.1, 0.5] };
 const WATER = new Set(["sea", "ocean", "bay", "lake", "bigLake", "river", "estuary", "lagoon"]);
 // (each look's colors: Foundry outlines a light label in black and a dark one in white, so "bold" is white with a black
 // outline and "ink" dark with a light one)
@@ -119,7 +123,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     if (!R.spot || !R.name) continue;
     const letters = R.name.toUpperCase().replace(/\s+/g, " ").length, full = em(LABEL_PX.realm);
     const fits = (2 * R.room) / Math.max(1, letters * 0.66 * 1.4);
-    want.push({ id: `@realm:${R.id}`, kind: "realm", text: R.name, spot: R.spot, caps: true, spaced: true, px: Math.max(22, Math.min(LABEL_PX.realm, (LABEL_PX.realm * Math.min(full, fits)) / full)) });
+    want.push({ id: `@realm:${R.id}`, kind: "realm", text: R.name, spot: R.spot, room: R.room, axis: R.axis ?? null, caps: true, px: Math.max(22, Math.min(LABEL_PX.realm, (LABEL_PX.realm * Math.min(full, fits)) / full)) });
   }
   // provinces: each one's name, from its seat's, over its middle (the capital's province is the realm's own, unnamed)
   for (const P of provinces) {
@@ -127,13 +131,13 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     const id = `province:${P.seat}`, seatName = placeNames.get(P.seat) ?? null;
     const name = clean(given[id]) ?? namerAt(P.at[0] * mpu + M, P.at[1] * mpu + M).feature("province", { near: seatName }, id);
     madeNames.set(id, name);
-    if (inside(P.spot[0], P.spot[1])) want.push({ id: `@land:${id}`, kind: "province", text: name, spot: P.spot });
+    if (inside(P.spot[0], P.spot[1])) want.push({ id: `@land:${id}`, kind: "province", text: name, spot: P.spot, axis: P.axis ?? null });
   }
   // the wild lands no realm holds, each named over its heart
   for (const w of wilds) {
     const q = { id: w.id, x: w.at[0] * mpu + M, y: w.at[1] * mpu + M };
     const name = named(q, "wilds");
-    if (inside(w.at[0], w.at[1])) want.push({ id: `@land:${w.id}`, kind: "wilds", text: name, spot: w.at, caps: true });
+    if (inside(w.at[0], w.at[1])) want.push({ id: `@land:${w.id}`, kind: "wilds", text: name, spot: w.at, axis: w.axis ?? null, caps: true });
   }
   // features: by kind, the biggest first, with limits so a map isn't flooded with small ones
   const kindsOf = (k) => inv.filter((q) => q.kind === k).sort((a, b) => (b.size ?? 0) - (a.size ?? 0) || (a.id < b.id ? -1 : 1));
@@ -227,6 +231,9 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
 
   // ---- where each label goes ----
   const boxes = [];
+  // (the area names, a realm's, a province's, the wilds': spread wide and lightly over the land as an atlas sets them,
+  // so another name may cross one at a quarter of the cost of crossing a place's name)
+  const areaBoxes = [];
   // (the dressing: covering it counts many times over covering another label, so a label goes there only when every
   // other spot is worse still)
   const hard = (keepOut ?? []).filter((b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite));
@@ -239,7 +246,7 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   };
   // (how much of a box other labels and marks already cover: the spot covering least wins when none is clear)
   const overlap = (b, o) => Math.max(0, Math.min(b[2], o[2]) - Math.max(b[0], o[0])) * Math.max(0, Math.min(b[3], o[3]) - Math.max(b[1], o[1]));
-  const cover = (b) => { let a = 0; for (const o of boxes) a += overlap(b, o); for (const o of marks) a += 4 * overlap(b, o); for (const o of hard) a += 8 * overlap(b, o); return a; };
+  const cover = (b) => { let a = 0; for (const o of boxes) a += overlap(b, o); for (const o of areaBoxes) a += 0.25 * overlap(b, o); for (const o of marks) a += 4 * overlap(b, o); for (const o of hard) a += 8 * overlap(b, o); return a; };
   // (the realms' borders as points a little apart: a river's or range's name over a border's dashes costs as much as
   // covering a mark, by the length of border under it)
   const bstep = 0.004 * side, bpts = [];
@@ -258,7 +265,8 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     }
     return 4 * n * bstep * h;
   };
-  const least = (list, w, h, extra = () => 0) => { let best = null, bc = Infinity; for (const c of list) { const v = cover(boxOf(c.at, c.angle ?? 0, w, h)) + extra(c.at, c.angle ?? 0, w, h); if (v < bc - 1e-12) { bc = v; best = c; } if (v === 0) break; } return best; };
+  // (a candidate's own height when it has one: a bent name's box is taller)
+  const least = (list, w, h, extra = () => 0) => { let best = null, bc = Infinity; for (const c of list) { const ch = c.h ?? h, v = cover(boxOf(c.at, c.angle ?? 0, w, ch)) + extra(c.at, c.angle ?? 0, w, ch); if (v < bc - 1e-12) { bc = v; best = c; } if (v === 0) break; } return best; };
   // (how much of a label's box the dressing covers, as a share of it)
   const onDressing = (at, angle, w, h) => { const b = boxOf(at, angle, w, h), A = (b[2] - b[0]) * (b[3] - b[1]) || 1; let a = 0; for (const o of hard) a += overlap(b, o); return a / A; };
   const onMarks = (at, angle, w, h) => { const b = boxOf(at, angle, w, h); return marks.filter((o) => overlap(b, o) > 0.25 * (o[2] - o[0]) * (o[3] - o[1])).length; };
@@ -272,11 +280,23 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
   // (each feature's name as made, before capitals, labeled or not: for keepNames)
   const featureNames = madeNames;
   for (const L of want.sort((a, b) => rank(a.kind) - rank(b.kind))) {
-    const size = em(L.px ?? LABEL_PX[L.kind] ?? 20), caps = L.caps ? L.text.toUpperCase() : L.text;
-    // (a realm's letters spread with thin spaces, its words with wider ones, as an atlas sets a country's name)
-    const text = L.spaced ? caps.split(" ").map((w0) => [...w0].join("\u2009")).join("\u2002") : caps;
-    const w = caps.length * size * (L.caps ? 0.66 : 0.5) * (L.spaced ? 1.4 : 1), h = size * 1.2;
+    const caps = L.caps ? L.text.toUpperCase() : L.text, text = caps, n = [...caps].length, fw = L.caps ? 0.66 : 0.5;
+    let size = em(L.px ?? LABEL_PX[L.kind] ?? 20), spacing = 0, bend = 0, turn = 0;
+    // (an area's name along its land, as an atlas sets it: turned and bent to its long axis, its letters spaced out to
+    // span it; a realm's as big as its length carries, and no taller than its land is wide about its spot)
+    const AX = AREA_NAMES.has(L.kind) && L.axis && L.axis.length > 0 ? L.axis : null;
+    if (AREA_NAMES.has(L.kind)) {
+      const [lo, hi] = SPACED[L.kind], reach = (AX?.length ?? 0) * (L.kind === "province" ? 0.45 : 0.6);
+      // (its room where the name goes: about the axis's middle when it's turned there, else about its spot)
+      const room = AX && AX.length > n * fw * size * 0.8 && AX.at ? AX.room ?? L.room : L.room;
+      if (L.kind === "realm" && AX) size = Math.min(em(LABEL_PX.realm), Math.max(em(22), Math.min(reach / Math.max(1, n * (fw + lo)), (room ?? Infinity) * 1.4)));
+      spacing = Math.max(lo, Math.min(hi, n > 1 ? (reach - n * fw * size) / ((n - 1) * size) : lo));
+      if (AX && AX.length > n * fw * size * 0.8) { turn = AX.angle; bend = AX.bend; }
+    }
+    const w = n * size * fw + spacing * size * Math.max(0, n - 1), h0 = size * 1.2;
     let at = null, angle = 0;
+    // (the box a bent label takes: its rise added to its height; worked out again once the bend is known)
+    let h = h0 + 0.5 * Math.abs(bend) * w;
     if (L.place) {
       const p = L.place, r = em(MARK_PX[p.class] ?? 4.4), gap = size * 0.25;
       const spots = [[p.x + r + gap + w / 2, p.y], [p.x - r - gap - w / 2, p.y], [p.x, p.y - r - gap - h / 2], [p.x, p.y + r + gap + h / 2]];
@@ -290,10 +310,14 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
       const cand = [];
       for (const st of stretches.slice(0, 12)) {
         const ang = readable(st.angle), a = (ang * Math.PI) / 180, offs = L.kind === "river" ? [size * 0.8, -size * 0.8] : [0, size * 0.9, -size * 0.9, size * 1.8, -size * 1.8];
-        for (const off of offs) cand.push({ at: fit([st.mid[0] + Math.sin(a) * off, st.mid[1] - Math.cos(a) * off], w, h, ang), angle: ang });
+        // (bent as the stretch bends, gently: a name beside a river follows it)
+        const b = Math.max(-0.2, Math.min(0.2, bendThrough(st.a, st.m ?? st.mid, st.b, Math.abs(wrapAngle(st.angle - ang)) > 90)));
+        for (const off of offs) cand.push({ at: fit([st.mid[0] + Math.sin(a) * off, st.mid[1] - Math.cos(a) * off], w, h0 + 0.5 * Math.abs(b) * w, ang), angle: ang, bend: b, h: h0 + 0.5 * Math.abs(b) * w });
       }
-      const pick = least(cand, w, h, onBorders);
-      if (pick) ({ at, angle } = pick);
+      // (of the spots that keep off the places' marks and the dressing, which would leave the name off, the clearest)
+      const fair = cand.filter((c) => onMarks(c.at, c.angle, w, c.h) === 0 && onDressing(c.at, c.angle, w, c.h) <= 0.15);
+      const pick = least(fair.length ? fair : cand, w, h, onBorders);
+      if (pick) { ({ at, angle } = pick); bend = pick.bend; h = h0 + 0.5 * Math.abs(bend) * w; }
       else {
         // (no stretch long enough: flat, at the middle of the longest part in the map)
         const r = L.vis.runs[0]?.r;
@@ -302,8 +326,10 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
       }
     } else if (L.kind === "realm" || L.kind === "province" || L.kind === "wilds") {
       // (over its spot, or a little off it where another label is)
-      const step = h * 1.2, b = L.spot;
-      at = least([b, [b[0], b[1] - step], [b[0], b[1] + step], [b[0] - w * 0.25, b[1]], [b[0] + w * 0.25, b[1]]].map((s) => ({ at: fit(s, w, h, 0) })), w, h).at;
+      // (a turned name across the middle of its land's axis, where that's its own land; else over its spot)
+      const step = h0 * 1.2, b = turn !== 0 && AX?.at ? AX.at : L.spot;
+      angle = turn;
+      at = least([b, [b[0], b[1] - step], [b[0], b[1] + step], [b[0] - w * 0.25, b[1]], [b[0] + w * 0.25, b[1]]].map((s) => ({ at: fit(s, w, h, angle), angle })), w, h).at;
     } else {
       const open = ["sea", "ocean", "lake", "bigLake"].includes(L.kind) ? openWater(L.q, (L.kind === "lake" || L.kind === "bigLake") && !L.shut) : null;
       const step = h * 1.1;
@@ -317,10 +343,11 @@ export function overlandLabels(plan, land, items, { keepOut = [], hidden = [], r
     // off: the GM can add it; a place's stays, beside its mark)
     // (a realm's, a province's and the wilds' names span their land as an atlas's do, over the towns in it)
     if (!L.place && (onDressing(at, angle, w, h) > 0.15 || (!AREA_NAMES.has(L.kind) && onMarks(at, angle, w, h) > 0))) continue;
-    boxes.push(boxOf(at, angle, w, h));
+    (AREA_NAMES.has(L.kind) ? areaBoxes : boxes).push(boxOf(at, angle, w, h));
     const water = WATER.has(L.kind);
     labels.push({
       id: L.id, of: null, text, at: [Math.round(at[0] * 1000) / 1000, Math.round(at[1] * 1000) / 1000], angle, size: "normal", em: Math.round(size * 1000) / 1000, show: "gm",
+      ...(Math.abs(bend) >= 0.005 ? { bend: Math.round(bend * 1000) / 1000 } : {}), ...(spacing > 0 ? { spacing: Math.round(spacing * 100) / 100 } : {}),
       color: L.place && !L.mark ? placeColor : water ? COLOR.water : COLOR.land, font: L.place && !L.mark ? placeFont : water ? FONT.water : FONT.land, alpha: 1, gen: true,
     });
   }
@@ -351,7 +378,7 @@ function straightest(line, len, inside) {
   if (!(total > 0)) return [];
   const at = (s) => { let k = 1; while (k < cum.length - 1 && cum[k] < s) k++; const t = (s - cum[k - 1]) / Math.max(1e-12, cum[k] - cum[k - 1]); return [line[k - 1][0] + (line[k][0] - line[k - 1][0]) * t, line[k - 1][1] + (line[k][1] - line[k - 1][1]) * t]; };
   const chord = (s0, s1) => { const a = at(s0), b = at(s1); return { mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], angle: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI, a, b }; };
-  if (total <= len) { const c = chord(0, total); return inside(c.mid[0], c.mid[1], 0.2) ? [{ ...c, score: 1 }] : []; }
+  if (total <= len) { const c = chord(0, total); return inside(c.mid[0], c.mid[1], 0.2) ? [{ ...c, m: at(total / 2), score: 1 }] : []; }
   const all = [];
   const n = Math.max(4, Math.min(60, Math.ceil((total - len) / (len * 0.1))));
   for (let k = 0; k <= n; k++) {
@@ -367,7 +394,7 @@ function straightest(line, len, inside) {
     }
     if (out) continue;
     const score = dev / len + 0.35 * Math.abs((s0 + len / 2) / total - 0.5);
-    all.push({ ...c, score });
+    all.push({ ...c, m: at(s0 + len / 2), score });
   }
   return all.sort((a, b) => a.score - b.score);
 }

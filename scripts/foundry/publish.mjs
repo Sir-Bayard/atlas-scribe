@@ -7,6 +7,7 @@
 import { upload, freeName } from "./files.mjs";
 import { LABEL_SIZES, isObj } from "../core/plan.mjs";
 import { labelsOf, useLabelsOf } from "../core/labels.mjs";
+import { sceneLabelsOf } from "../core/scene-labels.mjs";
 import { titleBox, paintTitle } from "../render/styles/title.mjs";
 import { layers as overlandLayers } from "../render/styles/overland.mjs";
 import { footprint, roofHeight, ROOF_HEIGHT } from "../core/layout/battle.mjs";
@@ -44,6 +45,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   const opts = plan.output.scene;
   const R = rulesInUse();
   let backup = null;
+  // (the plan the scene held before, so the GM's label changes carry over only to the same plan's map)
+  const heldPlan = sceneId ? sceneById(sceneId)?.flags?.[MOD]?.plan ?? null : null;
 
   // The scene to update, if one was named, and a backup of it first
   if (sceneId) {
@@ -167,10 +170,28 @@ export async function publish({ plan, image, width, height, folder, layout = nul
   onProgress(0.85, "Placing the labels");
   // The new labels go in before the old ones come out, so a failure never leaves the scene with none
   scene = sceneById(sceneId);
-  const old = scene.drawings.filter((d) => isObj(d.flags?.[MOD]) && "batch" in d.flags[MOD]).map((d) => d.id);
-  const labels = (await labelDrawings(plan, sceneById(sceneId), warnings, layout)).map((d) => (levelOf?.get(0) ? { ...d, levels: [levelOf.get(0)] } : d));
-  if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", tagAll(labels));
-  if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
+  const oldDrawings = scene.drawings.filter((d) => isObj(d.flags?.[MOD]) && "batch" in d.flags[MOD]);
+  const old = oldDrawings.map((d) => d.id);
+  let labels = [];
+  if (layout?.overland) {
+    // An overland map's names go on AtlasScribe's labels layer, kept in the scene's flag: a label the GM moved, bent or
+    // edited stays as they left it, and every label stays shown or hidden as it was (an older scene's label drawings
+    // carry over that way, and come out)
+    const { sceneX, sceneY } = scene.dimensions;
+    const drawings = oldDrawings.map((d) => ({ feature: d.flags[MOD].feature ?? null, hidden: d.hidden }));
+    const same = !heldPlan || heldPlan === (plan.id ?? null);
+    const made = sceneLabelsOf(layout.labels ?? [], { pps: plan.output.pxPerSquare, sceneX, sceneY, old: same ? scene.flags?.[MOD]?.labels : [], drawings: same ? drawings : [] });
+    await scene.update({ [`flags.${MOD}.labels`]: made.labels });
+    labels = made.labels;
+    if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
+    if (made.kept) warnings.push(`${made.kept} label${made.kept === 1 ? "" : "s"} you had moved or edited ${made.kept === 1 ? "was" : "were"} kept as you left ${made.kept === 1 ? "it" : "them"}; Put Back in a label's window lays one out as the map makes it.`);
+  } else {
+    labels = (await labelDrawings(plan, sceneById(sceneId), warnings, layout)).map((d) => (levelOf?.get(0) ? { ...d, levels: [levelOf.get(0)] } : d));
+    if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", tagAll(labels));
+    if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
+    // (a scene that held an overland map's labels and now holds another kind of map: those labels go)
+    if (Array.isArray(sceneById(sceneId).flags?.[MOD]?.labels)) await sceneById(sceneId).unsetFlag(MOD, "labels");
+  }
 
   /**
    * A document's data on its floor's level (_floor; _floors, several; _all, every level), its floor notes taken off.
@@ -265,7 +286,8 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     const shown = new Map((layout ? overlandLayers(layout) : []).map((q) => [q.name, q.shown]));
     // (a kind the plan no longer has, as a key turned off, is hidden)
     const want = (t) => shown.get(t.flags[MOD].kind) ?? false;
-    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && t.hidden === want(t)).map((t) => ({ _id: t.id, hidden: !want(t) }));
+    // (the views' tiles stay as the GM last switched them)
+    const fix = sceneById(sceneId).tiles.filter((t) => oldLayers.includes(t.id) && !VIEW_LAYERS.has(t.flags[MOD].kind) && t.hidden === want(t)).map((t) => ({ _id: t.id, hidden: !want(t) }));
     if (fix.length) await sceneById(sceneId).updateEmbeddedDocuments("Tile", fix).catch(() => {});
     warnings.push("The places, roads and dressing over the map were kept from its last render (they come only with a map rendered for the scene), so they may be out of date.");
   } else if (layout && overlandLayers(layout).length) warnings.push("This map's places, roads and dressing weren't placed: they come only with a map rendered for the scene, and the map's image is the bare land.");
@@ -466,7 +488,8 @@ export function hexGridType(width, height, padding, size, warnings = []) {
 }
 
 /** Each layer's place in the stack over the ground: the places, the dressing over them, the key (the title tile is 200). */
-const LAYER_SORT = { realms: 95, places: 100, dressing: 110, legend: 120 };
+const VIEW_LAYERS = new Set(["political", "cultural"]);
+const LAYER_SORT = { realms: 95, political: 96, cultural: 97, places: 100, dressing: 110, legend: 120 };
 
 /**
  * A layer (render's { path, kind, x, y, width, height }, px from the map's corner) as Tile data: on the map, under the
@@ -479,7 +502,9 @@ function layerTile(o, sceneX, sceneY, plan) {
     texture: { src: o.path },
     x: Math.round(sceneX + o.x + o.width / 2), y: Math.round(sceneY + o.y + o.height / 2),
     width: o.width, height: o.height, elevation: 0, sort: LAYER_SORT[o.kind] ?? 100,
-    hidden: plan.output?.[o.kind] === false,
+    // (the political and cultural views wait clear until the GM switches to one: clear, not hidden, as the GM sees a
+    // hidden tile faintly)
+    hidden: VIEW_LAYERS.has(o.kind) ? false : plan.output?.[o.kind] === false, ...(VIEW_LAYERS.has(o.kind) ? { alpha: 0 } : {}),
     locked: true,
     flags: { [MOD]: { layer: plan.id ?? null, kind: o.kind } },
   };

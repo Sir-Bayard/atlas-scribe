@@ -15,6 +15,7 @@ import { contours, smoothLine } from "../../core/land/vector.mjs";
 import { BIOMES, BIOME_CLIMATE } from "../../core/land/biome.mjs";
 import { LAPSE } from "../../core/land/climate.mjs";
 import { SETTLED } from "../../core/land/settled.mjs";
+import { glyphsOf } from "../../core/label-curve.mjs";
 
 export const MAX_BLUR = 0.5;
 export const rolesFor = () => [];
@@ -631,7 +632,9 @@ const keyBox = (layout) => { const k = keyOf(layout); if (!k) return null; const
 export function layers(layout) {
   if (!layout.overland || !(layout.items ?? []).some((i) => i.kind === "place" || i.kind === "way" || i.kind === "crossing")) return [];
   // (realms under the places: their wash and borders, so the GM can hide them and keep the towns)
-  return [...(layout.realms?.list?.length ? [{ name: "realms", shown: layout.showRealms !== false }] : []), { name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
+  // (the political and cultural views: hidden tiles over the map the GM switches to)
+  const views = [...(layout.realms?.list?.length && layout.showRealms !== false ? [{ name: "political", shown: false }] : []), ...(layout.cultures?.grid ? [{ name: "cultural", shown: false }] : [])];
+  return [...(layout.realms?.list?.length ? [{ name: "realms", shown: layout.showRealms !== false }] : []), ...views, { name: "places", shown: layout.places !== false }, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
 }
 
 /**
@@ -643,6 +646,11 @@ export function paint(ctx) {
   const { g, W, H, x0, y0, pp, layout: L, progress = () => {}, layer } = ctx;
   if (layer === "realms") {
     paintRealms(ctx, L, prepared(L, pp), Math.max(L.size.squares[0], L.size.squares[1]) * pp);
+    progress(1, "Done");
+    return;
+  }
+  if (layer === "political" || layer === "cultural") {
+    paintView(ctx, L, prepared(L, pp), Math.max(L.size.squares[0], L.size.squares[1]) * pp, layer);
     progress(1, "Done");
     return;
   }
@@ -771,48 +779,9 @@ const BAND = new WeakMap();
 export function realmBand(L, S) {
   const R = L.realms, held = BAND.get(S);
   if (held && held.R === R) return held.img;
-  const { rw, rh, cell: rc, land, lake, bare } = S.R, N = rw * rh;
-  const { w: gw, h: gh, cell: gc, ids } = R.grid;
+  const { rw, rh, cell: rc, bare } = S.R, N = rw * rh;
   const f = L.land.frame, [MW, MH] = L.size.squares;
-  // (each relief pixel's realm: of the four grid cells about it, the land id with the most weight, so the edge between
-  // two realms runs smooth and close to the border line drawn over it)
-  // (a cell counts only if its middle is land: realms grow over the sea too, and the sea out of reach is marked as wilds)
-  const cellLand = new Uint8Array(gw * gh);
-  for (let r = 0; r < gh; r++) for (let c = 0; c < gw; c++) {
-    const x = Math.min(rw - 1, Math.floor(((c + 0.5) * gc) / rc)), y = Math.min(rh - 1, Math.floor(((r + 0.5) * gc) / rc));
-    cellLand[r * gw + c] = land[y * rw + x] && !lake[y * rw + x] ? 1 : 0;
-  }
-  const own = new Int16Array(N).fill(-1);
-  const wt = new Map();
-  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
-    const i = y * rw + x;
-    if (!land[i] || lake[i]) continue;
-    const gx = Math.min(gw - 1, Math.max(0, ((x + 0.5) * rc) / gc - 0.5)), gy = Math.min(gh - 1, Math.max(0, ((y + 0.5) * rc) / gc - 0.5));
-    const c0 = Math.floor(gx), r0 = Math.floor(gy), fx = gx - c0, fy = gy - r0, c1 = Math.min(gw - 1, c0 + 1), r1 = Math.min(gh - 1, r0 + 1);
-    wt.clear();
-    for (const [c, r, v] of [[c0, r0, (1 - fx) * (1 - fy)], [c1, r0, fx * (1 - fy)], [c0, r1, (1 - fx) * fy], [c1, r1, fx * fy]]) {
-      const id = ids[r * gw + c];
-      if (id !== -1 && cellLand[r * gw + c]) wt.set(id, (wt.get(id) ?? 0) + v);
-    }
-    let best = -3, bw = -1;
-    for (const [id, v] of wt) if (v > bw) { bw = v; best = id; }
-    own[i] = best;
-  }
-  // (a pixel with no land cell about it, on a spit, an islet or the coast's edge: its nearest neighbor's, by a flood)
-  let open = [];
-  for (let i = 0; i < N; i++) if (own[i] === -3) open.push(i);
-  while (open.length) {
-    const next = [], got = [];
-    for (const i of open) {
-      const x = i % rw;
-      for (const j of [x > 0 ? i - 1 : -1, x < rw - 1 ? i + 1 : -1, i - rw, i + rw]) if (j >= 0 && j < N && own[j] !== -3 && own[j] !== -1) { got.push(i, own[j]); break; }
-    }
-    if (!got.length) break;
-    for (let k = 0; k < got.length; k += 2) own[got[k]] = got[k + 1];
-    for (const i of open) if (own[i] === -3) next.push(i);
-    open = next;
-  }
-  for (const i of open) own[i] = -2;
+  const own = ownerRaster(R.grid, S);
   // distance in relief pixels from the realm's edge with another realm or the wilds (the sea and lakes aren't edges)
   const d = new Float32Array(N).fill(1e9);
   for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
@@ -851,6 +820,141 @@ export function realmBand(L, S) {
   if (held) { held.img.width = 1; held.img.height = 1; }
   BAND.set(S, { R, img: out });
   return out;
+}
+
+/**
+ * Each relief pixel's owner from a grid of ids over the map (a realm's or a culture's): of the four grid cells about it,
+ * the land id with the most weight, so the edge between two runs smooth and close to the border line drawn over it; a
+ * pixel with no land cell about it takes its nearest neighbor's. Returns an Int16Array over the relief raster (-1 sea
+ * or lake, -2 land no id holds).
+ */
+function ownerRaster(grid, S) {
+  const { rw, rh, cell: rc, land, lake } = S.R, N = rw * rh;
+  const { w: gw, h: gh, cell: gc, ids } = grid;
+  // (a cell counts only if its middle is land: realms grow over the sea too, and the sea out of reach is marked as wilds)
+  const cellLand = new Uint8Array(gw * gh);
+  for (let r = 0; r < gh; r++) for (let c = 0; c < gw; c++) {
+    const x = Math.min(rw - 1, Math.floor(((c + 0.5) * gc) / rc)), y = Math.min(rh - 1, Math.floor(((r + 0.5) * gc) / rc));
+    cellLand[r * gw + c] = land[y * rw + x] && !lake[y * rw + x] ? 1 : 0;
+  }
+  const own = new Int16Array(N).fill(-1);
+  const wt = new Map();
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+    const i = y * rw + x;
+    if (!land[i] || lake[i]) continue;
+    const gx = Math.min(gw - 1, Math.max(0, ((x + 0.5) * rc) / gc - 0.5)), gy = Math.min(gh - 1, Math.max(0, ((y + 0.5) * rc) / gc - 0.5));
+    const c0 = Math.floor(gx), r0 = Math.floor(gy), fx = gx - c0, fy = gy - r0, c1 = Math.min(gw - 1, c0 + 1), r1 = Math.min(gh - 1, r0 + 1);
+    wt.clear();
+    for (const [c, r, v] of [[c0, r0, (1 - fx) * (1 - fy)], [c1, r0, fx * (1 - fy)], [c0, r1, (1 - fx) * fy], [c1, r1, fx * fy]]) {
+      const id = ids[r * gw + c];
+      if (id !== -1 && cellLand[r * gw + c]) wt.set(id, (wt.get(id) ?? 0) + v);
+    }
+    let best = -3, bw = -1;
+    for (const [id, v] of wt) if (v > bw) { bw = v; best = id; }
+    own[i] = best;
+  }
+  // (a pixel with no land cell about it, on a spit, an islet or the coast's edge: its nearest neighbor's, by a flood)
+  let open = [];
+  for (let i = 0; i < N; i++) if (own[i] === -3) open.push(i);
+  while (open.length) {
+    const next = [], got = [];
+    for (const i of open) {
+      const x = i % rw;
+      for (const j of [x > 0 ? i - 1 : -1, x < rw - 1 ? i + 1 : -1, i - rw, i + rw]) if (j >= 0 && j < N && own[j] !== -3 && own[j] !== -1) { got.push(i, own[j]); break; }
+    }
+    if (!got.length) break;
+    for (let k = 0; k < got.length; k += 2) own[got[k]] = got[k + 1];
+    for (const i of open) if (own[i] === -3) next.push(i);
+    open = next;
+  }
+  for (const i of open) own[i] = -2;
+  return own;
+}
+
+/** The colors a culture is shown in on the cultural view, in turn. */
+export const CULTURE_COLORS = ["#b5763a", "#4f8a6e", "#8a5aa8", "#c2a23a", "#3f78a8", "#a84a4a", "#6e8a3a", "#a8688a"];
+
+// (each view's flat fill, made once per prepared land and grid)
+const FLAT = new WeakMap();
+
+/**
+ * A view's flat fill on the relief raster: each owner's color over its land (strength `alpha`), deepened along its edge
+ * with another owner; land no one holds left clear. Returns a canvas of the relief raster's size.
+ */
+function flatFill(S, grid, colors, alpha) {
+  const held = FLAT.get(S)?.get(grid);
+  if (held) return held;
+  const { rw, rh } = S.R, N = rw * rh, own = ownerRaster(grid, S);
+  const cols = colors.map((c) => hexColor(c) ?? [150, 130, 110]);
+  const out = canvasOf(rw, rh), og = out.getContext("2d"), id = og.createImageData(rw, rh);
+  for (let i = 0; i < N; i++) {
+    const me = own[i];
+    if (me < 0 || !cols[me]) continue;
+    const x = i % rw;
+    const edge = (x > 0 && own[i - 1] >= 0 && own[i - 1] !== me) || (x < rw - 1 && own[i + 1] >= 0 && own[i + 1] !== me) || (i >= rw && own[i - rw] >= 0 && own[i - rw] !== me) || (i + rw < N && own[i + rw] >= 0 && own[i + rw] !== me);
+    const k = edge ? 0.72 : 1;
+    for (let ch = 0; ch < 3; ch++) id.data[4 * i + ch] = cols[me][ch] * k;
+    id.data[4 * i + 3] = Math.round(255 * (edge ? Math.min(1, alpha + 0.25) : alpha));
+  }
+  og.putImageData(id, 0, 0);
+  if (!FLAT.has(S)) FLAT.set(S, new WeakMap());
+  FLAT.get(S).set(grid, out);
+  return out;
+}
+
+/**
+ * The political view: each realm in its own flat color, its borders and its provinces' lines, and each capital's crown;
+ * the cultural view: each culture's land in its own color, the lines between them, and each culture's name curved along
+ * its land. On a clear tile laid over the map, which the GM shows from the labels layer's controls.
+ */
+function paintView(ctx, L, S, outPx, view) {
+  const { g, W, H, x0, y0, pp } = ctx;
+  const X = (x) => (x - x0) * pp, Y = (y) => (y - y0) * pp, u = outPx / 3600;
+  const tx1 = x0 + W / pp, ty1 = y0 + H / pp, pad = Math.max(1, (40 * u) / pp + 0.5);
+  const near = (pts) => pts.some(([x, y]) => x >= x0 - pad && y >= y0 - pad && x <= tx1 + pad && y <= ty1 + pad);
+  const path = (pts) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); };
+  const C = view === "political" ? L.realms : L.cultures;
+  if (!C?.grid) return;
+  const colors = view === "political" ? C.list.map((q) => q.color) : C.list.map((q, k) => CULTURE_COLORS[k % CULTURE_COLORS.length]);
+  g.save();
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(flatFill(S, C.grid, colors, view === "political" ? 0.62 : 0.55), 0, 0, S.rw, S.rh, X(0), Y(0), S.rw * S.R.cell * pp, S.rh * S.R.cell * pp);
+  g.lineCap = "round"; g.lineJoin = "round";
+  // (borders: a pale halo and a firm dark line; provinces faint inside their realm)
+  for (const [stroke, width] of [["rgba(252,246,232,0.8)", 6], ["rgba(46,32,24,0.9)", 2.6]]) {
+    g.strokeStyle = stroke; g.lineWidth = Math.max(1, width * u);
+    for (const b of C.borders ?? []) { if (!near(b)) continue; path(b); g.stroke(); }
+  }
+  if (view === "political") {
+    g.strokeStyle = "rgba(46,32,24,0.55)"; g.lineWidth = Math.max(1, 1.6 * u); g.setLineDash([5 * u, 4 * u]);
+    for (const b of C.provinceLines ?? []) { if (!near(b)) continue; path(b); g.stroke(); }
+    g.setLineDash([]);
+    for (const p of L.items ?? []) if (p.kind === "place" && p.capital && near([[p.x, p.y]])) crownMark(g, X(p.x), Y(p.y) - (CROWN_LIFT[p.class] ?? 14) * u, u);
+  } else {
+    // (each culture's name along its land, in italic capitals, spaced)
+    const size = 34 * u;
+    // (a font every worker has, as the title and key use)
+    g.font = `italic ${Math.round(size)}px serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = "rgba(40,28,20,0.9)"; g.strokeStyle = "rgba(252,246,232,0.85)"; g.lineWidth = Math.max(1, size * 0.14);
+    C.list.forEach((q, k) => {
+      const a = C.areas?.[k];
+      if (!a?.spot || !q.name) return;
+      const text = q.name.toUpperCase(), ang = ((a.axis?.angle ?? 0) * Math.PI) / 180;
+      const { glyphs, width } = glyphsOf(text, { size, spacing: 0.35, bend: a.axis?.bend ?? 0 }, (ch) => g.measureText(ch).width);
+      // (drawn on every tile its letters reach, so a name across a tile's edge is whole)
+      const half = width / 2 / pp, ex = Math.abs(Math.cos(ang)) * half + size / pp, ey = Math.abs(Math.sin(ang)) * half + size / pp;
+      if (!near([[a.spot[0] - ex, a.spot[1] - ey], [a.spot[0] + ex, a.spot[1] + ey], [a.spot[0] - ex, a.spot[1] + ey], [a.spot[0] + ex, a.spot[1] - ey], a.spot])) return;
+      g.save(); g.translate(X(a.spot[0]), Y(a.spot[1])); g.rotate(ang);
+      for (const pass of ["stroke", "fill"]) for (const q2 of glyphs) {
+        if (q2.ch === " ") continue;
+        g.save(); g.translate(q2.x, q2.y); g.rotate(q2.rot);
+        if (pass === "stroke") g.strokeText(q2.ch, 0, 0); else g.fillText(q2.ch, 0, 0);
+        g.restore();
+      }
+      g.restore();
+    });
+  }
+  g.restore();
 }
 
 /**

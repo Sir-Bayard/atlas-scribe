@@ -9,7 +9,7 @@ import { normalize, LABEL_SIZES } from "../core/plan.mjs";
 import { estimatePlots, BIG_PLOTS } from "../core/check.mjs";
 import { labelsOf, moveLabel, turnLabel, linesOf, angleNear, wrapAngle } from "../core/labels.mjs";
 import { handlesOf, partnersOf, moveHandle, removeCorner, shapeProblem } from "../core/reshape.mjs";
-import { featureOf, setField, setPlanField, deleteFeature, withNameSet, keptNamesOf, landMoved, drawnLandChanged } from "../core/edit.mjs";
+import { featureOf, setField, setPlanField, deleteFeature, withNameSet, keptNamesOf, landMoved, drawnLandChanged, setCultureNameSet } from "../core/edit.mjs";
 import { hasMadePlaces, keepFeatures, untouched } from "../core/land/places.mjs";
 import { featureHTML, planHTML, paletteHTML, howText, readInput, generatedHTML, underlayHTML, battleHTML, battleSizeText, rerollButtons, kindOf } from "./inspector.mjs";
 import { pinHouse, pinStreet } from "../core/pin.mjs";
@@ -23,7 +23,7 @@ import { offsetLine, lowSign, cliffWidth } from "../core/cliffs.mjs";
 import { zoomSize, ZOOMS } from "../core/zoom.mjs";
 import { titleCase } from "../core/titles.mjs";
 import { esc, note, FP, MOD, labelAttr } from "./util.mjs";
-import { overlaySVG, draftSVG, battleBoxSVG, underStyle, pickableLabel } from "./overlay.mjs";
+import { overlaySVG, draftSVG, battleBoxSVG, underStyle, pickableLabel, labelBox } from "./overlay.mjs";
 import { regionPlan } from "../core/quick-region.mjs";
 import { landPlan } from "../core/quick-land.mjs";
 import { townFromPlace } from "../core/place-town.mjs";
@@ -437,6 +437,9 @@ export class AtlasScribeApp extends Base {
    */
   #labelBoxes() {
     return (this.#result?.labels ?? []).map((l) => {
+      // (a spaced or bent name is drawn letter by letter: its box from how the letters are set)
+      const box = labelBox(l);
+      if (box.curved) return { id: l.id, at: l.at, angle: l.angle ?? 0, hw: box.hw, hh: box.hh };
       const em = Number.isFinite(l.em) && l.em > 0 ? l.em : LABEL_SIZES[l.size] ?? LABEL_SIZES.normal;
       const t = this.element?.querySelector(`text.as-pv-label[data-id="${CSS.escape(l.id)}"]`);
       let w = 0;
@@ -539,7 +542,7 @@ export class AtlasScribeApp extends Base {
           : this.#inspect === "@plan" ? planHTML(this.#plan, { working: this.#working, fonts: fontChoices(), nameSets: this.#host.nameSets?.() ?? [], landOpen: this.#landOpen })
           : this.#inspect === "@underlay" && under ? underlayHTML(under, { working: this.#working })
           : this.#genOf(this.#inspect) ? generatedHTML(this.#genOf(this.#inspect), { working: this.#working, nameOf: (id) => this.#nameOf(id) })
-          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices(), madeNames: this.#madeNames() })
+          : this.#inspect ? featureHTML(this.#plan, this.#inspect, { working: this.#working, fonts: fontChoices(), madeNames: this.#madeNames(), nameSets: this.#host.nameSets?.() ?? [] })
           : `<div class="as-pv-list-bar"><button type="button" data-action="asEverything" aria-pressed="${this.#everything}" data-tooltip-text="Every feature in the plan, not only what a reroll redraws">Everything</button></div>
             <ul class="as-pv-list" tabindex="-1" data-focus-home data-keep-scroll="pv-list">${rows || `<li class="as-pv-hint">This plan has no districts or areas to reroll.</li>`}</ul>`}
         ${notes.length ? `<details class="as-pv-notes"><summary>${notes.length} note${notes.length === 1 ? "" : "s"}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
@@ -769,6 +772,13 @@ export class AtlasScribeApp extends Base {
           : k === "width" && Number.isFinite(v) && v >= 1 ? { rect: [x0, y0, x0 + v, y0 + v / aspect] } : null;
         if (!patch) return this.render();
         return this.#apply((plan) => ({ plan: setUnderlay(plan, patch) }));
+      }
+      // (a culture's name set, from the library or back to the map's)
+      const cs = ev.target.closest?.("[data-culture-set]");
+      if (cs && this.#plan) {
+        if (this.#publishing || this.#saving || cs.value === "@kept") return this.render();
+        const lib = cs.value ? (this.#host.nameSets?.() ?? []).find((s) => s.id === cs.value) : null;
+        return this.#apply((plan) => setCultureNameSet(plan, cs.dataset.id, lib ? { name: lib.name, text: lib.text, from: lib.id } : null));
       }
       const box = ev.target.closest?.(".as-pv-insp [data-field]");
       if (!box || !this.#plan) return;

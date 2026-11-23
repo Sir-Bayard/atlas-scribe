@@ -130,7 +130,12 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
   // Realms: grown from their crowns over the land; each capital's mark crowned
   // Cultures: grown from their hearths over the land (each node's culture names the places on it)
   const cultureList = culturesOf(plan);
-  const cultures = cultureList.length ? { list: cultureList, owner: growCultures(land, cultureList) } : null;
+  let cultures = null;
+  if (cultureList.length) {
+    // (and over the map as a grid, for the cultural view: each culture's land, the lines between them, its name's spot)
+    const owner = growCultures(land, cultureList), CG = realmGrid(land, owner, cultureList.length);
+    cultures = { list: cultureList, owner, grid: { w: CG.w, h: CG.h, cell: CG.cell, ids: CG.ids }, borders: CG.borders, areas: CG.realms.map((q) => ({ spot: q.spot, room: q.room, axis: q.axis })) };
+  }
   const realmList = realmsOf(plan);
   let realms = null;
   if (realmList.length) {
@@ -140,7 +145,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     const G = realmGrid(land, owner, realmList.length, { relation: (a, b) => relationOf(realmList, a, b) });
     // (provinces from the places on the plan, and the wild lands no realm holds)
     const P = provincesOf(land, owner, realmList, (plan.features ?? []).filter((q) => q.type === "place" && Array.isArray(q.at)), G);
-    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders, kinds: G.kinds, provinces: P.list, provinceLines: P.lines, wilds: wildsOf(land, owner) };
+    realms = { list: realmList.map((q, k) => ({ ...q, spot: G.realms[k].spot, room: G.realms[k].room, cells: G.realms[k].cells, axis: G.realms[k].axis })), grid: { w: G.w, h: G.h, cell: G.cell, ids: G.ids }, borders: G.borders, kinds: G.kinds, provinces: P.list, provinceLines: P.lines, wilds: wildsOf(land, owner) };
     const caps = new Set(realmList.map((q) => q.capital).filter(Boolean));
     for (const it of items) if (it.kind === "place" && caps.has(it.id)) it.capital = true;
   }
@@ -208,7 +213,7 @@ export function layoutOverland(plan, { onProgress = null } = {}) {
     size,
     season: plan.season ?? "summer", style: "painted",
     title, dressing: plan.output?.dressing === true, places: plan.output?.places !== false, legend: plan.output?.legend !== false, sun: plan.sun,
-    realms, cultures: cultures ? { list: cultures.list, owner: cultures.owner } : null, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers, landmarks,
+    realms, cultures, showRealms: plan.output?.realms !== false, settled, settledKey: settledKey(items), covers, landmarks,
     pxPerSquare: plan.output.pxPerSquare, items, labels: [...own, ...named.labels.filter((l) => !shadowed.has(l.id))], landNames: Object.fromEntries(named.featureNames), notes, cornerLand, land,
   };
 }
