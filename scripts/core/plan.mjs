@@ -332,7 +332,7 @@ export const TYPES = {
     // neighbors; relations: how it stands with each realm by id; culture: the culture of its capital, by id)
     fields: {
       name: str(), color: str(null), capital: str(null), made: { kind: "data", default: null },
-      kind: oneOf(["naval", "river", "highland", "nomadic", "generic"], "generic"), form: oneOf(["monarchy", "republic", "league", "horde", "free city"], "monarchy"),
+      kind: { ...oneOf(["naval", "river", "highland", "nomadic", "generic"], "generic"), fallback: "it grows as a land realm" }, form: { ...oneOf(["monarchy", "republic", "league", "horde", "free city"], "monarchy"), fallback: "it is ruled as a monarchy" },
       might: num(1, { min: 0.3, max: 3 }), relations: { kind: "data", default: null }, culture: str(null),
     },
   },

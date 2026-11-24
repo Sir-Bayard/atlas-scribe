@@ -17,7 +17,7 @@ import { settledField } from "./settled.mjs";
 import { growRealms, realmReach, nearestOf } from "./realms.mjs";
 import { normalize } from "../plan.mjs";
 import { untouched, madeMark, stillNeeded } from "./places.mjs";
-import { atan2, PI } from "./dmath.mjs";
+import { atan2, PI, len as hyp } from "./dmath.mjs";
 import { siteNote } from "./notes.mjs";
 
 /** The Points of Interest choice's values, and how many of each kind they mean (a share of the full count). */
@@ -167,7 +167,7 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
     const rank = RANK[r.class] ?? 2;
     let run = 0;
     for (let m = 1; m < r.path.length; m++) {
-      const [ax, ay] = r.path[m - 1], [bx, by] = r.path[m], len = Math.hypot(bx - ax, by - ay), k = Math.max(1, Math.ceil(len / sampleStep));
+      const [ax, ay] = r.path[m - 1], [bx, by] = r.path[m], len = hyp(bx - ax, by - ay), k = Math.max(1, Math.ceil(len / sampleStep));
       for (let q = m === 1 ? 0 : 1; q <= k; q++) {
         const p = [ax + ((bx - ax) * q) / k, ay + ((by - ay) * q) / k], i = nodeAt(p, (j) => !wet(j));
         if (i >= 0) roadClass[i] = Math.max(roadClass[i], rank);
@@ -257,7 +257,7 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
       const cand = roadPts.filter((q) => q.i >= 0 && q.rank >= 2 && townMiles[q.i] > 0.4 * DAY_MI && inMap(q.i, 1)).map((q) => ({ ...q, v: q.rank + Math.min(1, townMiles[q.i] / DAY_MI) + 0.3 * jit(q.i) })).sort((a, b) => b.v - a.v || a.i - b.i);
       for (const q of cand) {
         if (own.length >= want) break;
-        if (!own.every((o) => Math.hypot(o.p[0] - q.p[0], o.p[1] - q.p[1]) * mpu >= s) || !taken.every((j) => dist(q.i, j) >= gap)) continue;
+        if (!own.every((o) => hyp(o.p[0] - q.p[0], o.p[1] - q.p[1]) * mpu >= s) || !taken.every((j) => dist(q.i, j) >= gap)) continue;
         own.push(q); taken.push(q.i);
         out.push({ kind, at: [Math.round(q.p[0] * 100) / 100, Math.round(q.p[1] * 100) / 100], site: { biome: biomeOf(q.i), ground: h[q.i] < 0.16 ? "low" : "hills", road: q.road } });
       }
@@ -297,7 +297,7 @@ export function siteSpots(land, plan, { count = "some", seed = 1, kinds = new Se
       cross.sort((p, q) => q.rank - p.rank || p.i - q.i);
       for (const b of cross) {
         if (own.length >= want) break;
-        if (!own.every((o) => Math.hypot(o[0] - b.p[0], o[1] - b.p[1]) * mpu >= s) || !taken.every((j) => dist(b.i, j) >= gap)) continue;
+        if (!own.every((o) => hyp(o[0] - b.p[0], o[1] - b.p[1]) * mpu >= s) || !taken.every((j) => dist(b.i, j) >= gap)) continue;
         own.push(b.p); taken.push(b.i);
         out.push({ kind, at: [Math.round(b.p[0] * 100) / 100, Math.round(b.p[1] * 100) / 100], site: { biome: biomeOf(b.i), ground: "low", border: true, road: b.road } });
       }

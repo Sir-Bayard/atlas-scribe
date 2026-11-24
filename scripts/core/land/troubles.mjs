@@ -7,6 +7,7 @@
  */
 import { hashAt } from "../rng.mjs";
 import { strHash } from "./notes.mjs";
+import { len as hyp } from "./dmath.mjs";
 
 /** How many troubles a map has, by the Troubles setting. */
 export const TROUBLE_COUNTS = { none: 0, few: 1, some: 2, many: 4 };
@@ -36,7 +37,7 @@ export function troublesOf(layout, { count = "none", seed = 1 } = {}) {
     // (who's on each side: the grid either side of the line's middle)
     const g = R.grid, idAt = (p) => { const c = Math.floor(p[0] / g.cell), r = Math.floor(p[1] / g.cell); return c >= 0 && r >= 0 && c < g.w && r < g.h ? g.ids[r * g.w + c] : -1; };
     const a = b[Math.max(0, Math.floor(b.length / 2) - 1)], c = b[Math.min(b.length - 1, Math.floor(b.length / 2) + 1)];
-    const dx = c[0] - a[0], dy = c[1] - a[1], L = Math.hypot(dx, dy) || 1, off = side / 60;
+    const dx = c[0] - a[0], dy = c[1] - a[1], L = hyp(dx, dy) || 1, off = side / 60;
     const left = idAt([m[0] - (dy / L) * off, m[1] + (dx / L) * off]), right = idAt([m[0] + (dy / L) * off, m[1] - (dx / L) * off]);
     if (left < 0 || right < 0 || left === right) return;
     const [by, of] = hashAt(k, 111, seed) < 0.5 ? [left, right] : [right, left];
@@ -46,7 +47,7 @@ export function troublesOf(layout, { count = "none", seed = 1 } = {}) {
   for (const P of R?.provinces ?? []) {
     const cap = R.list[P.realm]?.at;
     if (!cap || !P.seat || !P.spot || R.list[P.realm]?.capital === P.seat) continue;
-    const d = Math.hypot(P.spot[0] - cap[0], P.spot[1] - cap[1]);
+    const d = hyp(P.spot[0] - cap[0], P.spot[1] - cap[1]);
     const name = names[`province:${P.seat}`];
     if (!name) continue;
     cand.push({ kind: "rebels", text: `Rebels in ${mid(name)}`, at: P.spot, radius: Math.max(side / 30, (P.axis?.length ?? side / 10) / 3), w: 2 + d / side + hashAt(strHash(P.seat) % 1000003, 113, seed) });
@@ -60,13 +61,13 @@ export function troublesOf(layout, { count = "none", seed = 1 } = {}) {
     const inv = (layout.land?.inventory ?? []).find((q) => q.kind === "river" && q.river === r.id);
     const name = inv ? names[inv.id] : null;
     if (!name) continue;
-    cand.push({ kind: "flood", text: `Flood on ${mid(name)}`, line: pts.slice(Math.floor(pts.length / 2)), width: side / 30, w: 2 + hashAt(r.id, 114, seed) });
+    cand.push({ kind: "flood", text: `Flood on ${/^River /.test(name) ? `the ${name}` : mid(name)}`, line: pts.slice(Math.floor(pts.length / 2)), width: side / 30, w: 2 + hashAt(r.id, 114, seed) });
   }
   // (a plague: the biggest port, else the biggest city, and the way out of it)
   const places = (layout.items ?? []).filter((i) => i.kind === "place" && (i.class === "city" || i.class === "town"));
   const ports = places.filter((p) => p.port);
   for (const p of [...new Set([...ports.filter((q) => q.class === "city"), ...places.filter((q) => q.class === "city"), ...ports])].slice(0, 2)) {
-    const route = (layout.items ?? []).find((i) => (i.kind === "route" || i.kind === "way") && Array.isArray(i.path) && i.path.some((q) => Math.hypot(q[0] - p.x, q[1] - p.y) < side / 80));
+    const route = (layout.items ?? []).find((i) => (i.kind === "route" || i.kind === "way") && Array.isArray(i.path) && i.path.some((q) => hyp(q[0] - p.x, q[1] - p.y) < side / 80));
     cand.push({ kind: "plague", text: `Plague in ${placeName.get(p.id) ?? p.name ?? "the city"}`, at: [p.x, p.y], radius: side / 22, ...(route ? { line: route.path, width: side / 45 } : {}), w: 2 + hashAt(strHash(p.id) % 1000003, 115, seed) });
   }
   // (the strongest of each kind first, then the rest, one of a kind before a second)

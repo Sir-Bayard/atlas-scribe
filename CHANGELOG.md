@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.4.0
+
+Overland maps grow up: settled country, drowned coasts and islands, rivers that run dry, realms with peoples, provinces and neighbors, ports and sea lanes, and names you can move and bend on the canvas.
+
+**Before you update an overland map**
+- **Keep This Land in 1.3.0 first** on any overland map whose land you want to keep. New overland maps use generator 3, and a land that wasn't kept is made again by it at the next open or render: its coasts, islands, rivers and ranges move, while its towns and roads stay where they were, so some may stand in the sea (each is warned about). **Reroll Places** places the generator's towns and roads again on the new land and keeps the ones you moved, renamed or changed. A kept land reads back exactly as its own generator made it.
+- On a map made before 1.4, these change at the next render even with a kept land:
+  - Realm color is a band along each border, not a wash; borders wander a little and are drawn by kind (along rivers and crests, a frontier facing the wilds), so they move a little, and a realm's rank can change.
+  - Every season is repainted, summer too: forests by kind, a lighter river ink with a dark casing, lakes colored by depth, the sea's shelf; a winter map gets frozen lakes, pack ice and bare woods.
+  - Fields and woods follow the towns and roads, and the key shows the land's covers.
+  - Landmarks (falls, passes, volcanoes, springs, sea stacks, a great tree) are drawn on every overland map.
+  - Realm maps get province lines and named wild lands.
+  - The names move from text drawings to AtlasScribe's labels layer: the drawings are taken out, and whether each was shown to players carries over, but a drawing you moved or edited in Foundry goes back to where the map puts it.
+  - Unnamed temples may take another name (a Shrine or a Chapel where there was an Abbey).
+- Points of interest (at Some) are placed on an older plan when its places are placed again, or its land is made again; set Points of Interest to None first to leave them off.
+- Deserts by their ground, beaches and cliffs, rock colors and oases come with generator 3 lands only, so a kept older land doesn't get them.
+
+**The land**
+- Drowned coasts: valleys flood into inlets, ridges become headlands, hilltops islands; skerries off steep coasts, deltas and estuaries at river mouths, spits and lagoons on low coasts, each named.
+- Archipelagos and worlds made of placed islands and continents, with straits and an open ocean.
+- Rivers lose water crossing dry country and run out in salt pans, seasonal lakes and marshes, their beds dashed where they run dry; oases in the deserts.
+- Rock by province (limestone, sandstone, granite, basalt), painted where it's bare; deserts by their ground: sand seas with dunes, stony plains, banded badlands.
+- The sea: a shelf with a break at its edge, turquoise over warm shallows, reefs, pack ice by the season, beaches and cliffs.
+- Seasons: snow by height and latitude, winter's frozen lakes and bare woods, autumn colors, spring floods.
+- Settled land: fields and pasture around the towns and along the roads, woods cut into named forests, meadows along rivers, all in the key.
+
+**Places and routes**
+- Points of interest (a Points of Interest setting): inns, mines, quarries, watchtowers, forts, shrines, monasteries, lighthouses, customs houses, battlefields, standing stones, barrows, shipwrecks, lairs, caves, groves, brigands, pirates and monsters, where they'd be, each with a short note for you.
+- The secret ones (lairs, monsters, brigands, pirates, caves) are on a tile of their own that players never see, and stay out of the key.
+- Ports with an anchor, sea lanes between them, ferries over straits, caravan routes on continents and worlds, trails out to lonely places on a kingdom or a realm.
+
+**Realms and peoples**
+- Cultures: peoples grown from the oldest good land, each naming the places on its ground in its own way (its own tongue on an invented map), or by a name set you give it.
+- Realms by kind (sea, river, highland, nomad, land), with Realm Sizes and Realm Growth; forms of rule (monarchy, republic, league, horde, free city) in their names; relations with their neighbors (allies, rivals, enemies, vassals); provinces named for their seats; borders by kind (along rivers and crests, disputed between enemies, a frontier facing the wilds); named wild lands; islands held across the water.
+- Keep the Realms and Keep the Cultures.
+
+**Names on the canvas**
+- Overland names are on AtlasScribe's own labels layer: area names curve along their land and space out to span it, river and range names bend with their course. On the AtlasScribe Labels and Views control: drag a name to move it, double-click to edit it (text, size, turn, bend, spacing, color, shown to players), right-click to show or hide it; Tab picks a name, the arrow keys move it, [ and ] bend it, Enter edits it. Names you change stay through later updates; Put Back lays one out again. A name changed there changes only the scene; rename a place or realm in the window to change it everywhere.
+- Political and cultural views: realms in flat color with provinces and capitals, or each people's land and name, switched from the same control.
+
+**Play**
+- Make This Town hands over what the map decided: walls, a temple, a city's citadel, and in words whether it's a port, how many live there, and its realm, province and people.
+- Troubles (Plan Settings): invasions, rebels, floods and plague, hatched on a tile only you see.
+- Make Gazetteer: a journal entry for you alone with a page per realm, the towns and their facts, the points of interest and the secrets, and map notes on the scene's towns.
+
 ## 1.3.0
 
 Overland maps: a kingdom, a continent or a whole world, its land made by simulation and painted like a hand-painted atlas, with its towns, roads, realms and names.

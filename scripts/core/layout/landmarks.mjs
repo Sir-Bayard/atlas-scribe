@@ -6,6 +6,7 @@
  */
 import { BIOMES } from "../land/biome.mjs";
 import { woodSpot, SETTLED } from "../land/settled.mjs";
+import { len as hyp } from "../land/dmath.mjs";
 
 /** The kinds of landmark, as their marks and names know them. */
 export const LANDMARK_KINDS = ["falls", "pass", "volcano", "spring", "tree", "stacks", "oasis"];
@@ -29,7 +30,7 @@ export function landmarksOf(land, settled, items = []) {
     const at = U(px, py);
     if (!inside(at) || out.filter((o) => o.kind === kind).length >= MOST[kind]) return false;
     // (clear of another landmark)
-    if (out.some((o) => Math.hypot(o.x - at[0], o.y - at[1]) < 1)) return false;
+    if (out.some((o) => hyp(o.x - at[0], o.y - at[1]) < 1)) return false;
     out.push({ id: inv ?? (of ? `${kind}:${of}` : `${kind}:${Math.round(px * 10)}:${Math.round(py * 10)}`), kind, x: at[0], y: at[1], inv });
     return true;
   };
@@ -44,7 +45,7 @@ export function landmarksOf(land, settled, items = []) {
     for (let k = 1; k < nodes.length; k++) {
       const a = nodes[k - 1], b = nodes[k];
       if (wet(a) || wet(b) || land.F[b] < 2 * T || h[a] < 0.06) continue;
-      const grade = ((h[a] - h[b]) * 3.1) / Math.max(1e-9, Math.hypot(x[a] - x[b], y[a] - y[b]));
+      const grade = ((h[a] - h[b]) * 3.1) / Math.max(1e-9, hyp(x[a] - x[b], y[a] - y[b]));
       if (grade > 0.012 && (!best || grade > best.grade)) best = { grade, i: b, flow: land.F[b] };
     }
     if (best) drops.push(best);
@@ -53,7 +54,7 @@ export function landmarksOf(land, settled, items = []) {
   for (const d of drops) add("falls", x[d.i], y[d.i]);
   // passes: those a road climbs to first, then the lowest
   const roads = items.filter((i) => i.kind === "way" && Array.isArray(i.path));
-  const nearRoad = (u, v, r) => roads.some((w) => w.path.some((p) => Math.hypot(p[0] - u, p[1] - v) < r));
+  const nearRoad = (u, v, r) => roads.some((w) => w.path.some((p) => hyp(p[0] - u, p[1] - v) < r));
   const passes = inv.filter((q) => q.kind === "pass").map((q) => { const [u, v] = U(q.x, q.y); return { q, road: nearRoad(u, v, Math.max(1, (3 * land.spacing) / mpu)) }; });
   passes.sort((a, b) => Number(b.road) - Number(a.road) || (a.q.height ?? 0) - (b.q.height ?? 0) || (a.q.id < b.q.id ? -1 : 1));
   for (const { q } of passes) add("pass", q.x, q.y, q.id);
@@ -64,7 +65,7 @@ export function landmarksOf(land, settled, items = []) {
     let best = -1, bv = -Infinity;
     for (let i = 0; i < n; i++) {
       if (wet(i)) continue;
-      const d = Math.hypot(x[i] - cx, y[i] - cy);
+      const d = hyp(x[i] - cx, y[i] - cy);
       if (d < rad * 0.8 || d > rad * 2) continue;
       const v = -h[i] - 0.001 * d;
       if (v > bv) { bv = v; best = i; }
@@ -96,7 +97,7 @@ export function landmarksOf(land, settled, items = []) {
         let deep = 0;
         for (const i of wood) if (depth[i] > deep) deep = depth[i];
         let best = -1, bv = -Infinity;
-        for (const i of wood) { if (depth[i] < 0.5 * deep) continue; const v = Math.hypot(x[i] - spot[0], y[i] - spot[1]); if (v > bv || (v === bv && i < best)) { bv = v; best = i; } }
+        for (const i of wood) { if (depth[i] < 0.5 * deep) continue; const v = hyp(x[i] - spot[0], y[i] - spot[1]); if (v > bv || (v === bv && i < best)) { bv = v; best = i; } }
         if (best >= 0 && deep >= 2) add("tree", x[best], y[best], null, forest.id);
       }
     }
@@ -113,7 +114,7 @@ export function landmarksOf(land, settled, items = []) {
     cand.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
     const gap = Math.max(10, 6 * land.spacing);
     const kept = [];
-    for (const [, i] of cand) { if (kept.some((j) => Math.hypot(x[i] - x[j], y[i] - y[j]) < gap)) continue; if (add("stacks", x[i], y[i])) kept.push(i); }
+    for (const [, i] of cand) { if (kept.some((j) => hyp(x[i] - x[j], y[i] - y[j]) < gap)) continue; if (add("stacks", x[i], y[i])) kept.push(i); }
   }
   // oases: the land's own (generator 3), in its deserts
   for (const o of land.oases ?? []) add("oasis", o.x, o.y);

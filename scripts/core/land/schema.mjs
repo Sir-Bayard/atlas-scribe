@@ -79,7 +79,7 @@ export function checkLand(raw) {
   for (const k of Object.keys(raw)) if (!known.has(k)) warn(k, `land.${k} isn't a setting AtlasScribe knows; it's kept but does nothing.`);
   if (raw.gen !== undefined && !(Number.isInteger(raw.gen) && raw.gen >= 1)) err("gen", "land.gen must be a whole number (the generator version).");
   else if (Number.isInteger(raw.gen) && raw.gen > GEN) warn("gen", `This land was made by a newer AtlasScribe (generator ${raw.gen}); this version makes generator ${GEN}, so the land will look different unless it was kept.`);
-  else if (Number.isInteger(raw.gen) && raw.gen < GEN && !raw.keep) warn("gen", `This land was made by an older generator (${raw.gen}); it will look different now. Keep This Land to stop that.`);
+  else if (Number.isInteger(raw.gen) && raw.gen < GEN && !raw.keep) warn("gen", `This land was made by an older generator (${raw.gen}), so it is made differently now: its coasts, rivers and ranges move, and towns may stand in the sea until Reroll Places places them again. Keep This Land holds the land as it is now.`);
   if (raw.type !== undefined && !LAND_TYPES.includes(raw.type)) err("type", `land.type "${raw.type}" isn't one AtlasScribe knows (${LAND_TYPES.join(", ")}).`);
   if (raw.seaSide !== undefined && !LAND_SIDES.includes(raw.seaSide)) warn("seaSide", `land.seaSide should be one of ${LAND_SIDES.join(", ")}; the seed picks one.`);
   const unit = (k, lo, hi) => { if (raw[k] !== undefined && !(Number.isFinite(raw[k]) && raw[k] >= lo && raw[k] <= hi)) err(k, `land.${k} must be a number from ${lo} to ${hi}.`); };

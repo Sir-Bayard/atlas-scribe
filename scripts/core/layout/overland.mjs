@@ -101,7 +101,7 @@ let lastLand = null;
 export function forgetLand() { lastLand = null; }
 /** What the land is made from: its settings (not the names given its features, their style or name set, or how many towns), seed, size, grid, picture scale, painted terrain and water. */
 function landKey(plan) {
-  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, ...landIn } = plan.land ?? {};
+  const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, gen, ...landIn } = plan.land ?? {};
   // (and whether a kept land's file was read: a land made without it isn't kept once the file comes)
   return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]);
 }

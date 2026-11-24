@@ -146,7 +146,7 @@ export const FIELD_TEXT = {
   "terrain.reacts": { label: "The world reacts", help: "Off: paints this biome here and changes nothing else. On: changes the rain and temperature here, so rivers and nearby land follow. Regenerates the land." },
   "terrain.rot": { label: "Turned", help: "Degrees clockwise", more: true },
   "realm.class": { hidden: true },
-  "realm.color": { label: "Color", kind: "color", help: "Its wash and border on the map; a realm the generator made never shares a color with a neighbor" },
+  "realm.color": { label: "Color", kind: "color", help: "The band inside its border and its color in the political view. A realm the generator made never shares a color with a neighbor." },
   "realm.capital": { label: "Capital", kind: "enum", required: true, help: "The place it's ruled from: its crown moves there, and its land is grown again from it, so the borders move too" },
   "realm.kind": { label: "Kind", names: { naval: "a sea realm", river: "a river realm", highland: "a highland realm", nomadic: "nomads", generic: "a land realm" }, help: "How it grows: a sea realm across water, a river realm along its rivers, a highland realm over the hills, nomads across open country" },
   "realm.form": { label: "Rule", help: "How it's ruled; its name follows when the generator names it" },
@@ -246,7 +246,7 @@ export function landMoved(before, after) {
   const sameKeep = keptBefore && keptAfter && before.land.keep.hash === after.land.keep.hash && before.land.keep.path === after.land.keep.path;
   const key = (plan) => {
     if (!isObj(plan?.land)) return null;
-    const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, keep, ...landIn } = plan.land;
+    const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, gen, keep, ...landIn } = plan.land;
     // (the land's own seed, or the plan's when it has none: the same land either way)
     landIn.seed = landSeedOf(plan);
     return JSON.stringify([landIn, plan.size, plan.output?.grid ?? null, (plan.features ?? []).filter((f) => isObj(f) && ((f.type === "terrain" && !sameKeep) || f.type === "water"))]);
@@ -272,9 +272,9 @@ export const PLAN_FIELDS = [
   { path: "land.towns", label: "Towns", kind: "enum", values: ["few", "some", "many"], overland: true, auto: "some", help: "How many towns, villages and castles Place Towns and Roads puts down" },
   { path: "land.sites", label: "Points of Interest", kind: "enum", values: ["none", "few", "some", "many"], overland: true, auto: "some", help: "How many inns, mines, watchtowers, forts, shrines, monasteries, lighthouses and the like Place Towns and Roads (or Reroll Places) puts down, each where the land, the roads and the realms put it, with a few of the wilds' secrets (lairs, caves, wrecks, standing stones, brigands, pirates, monsters). The bigger ones are labeled, and the wilds' are marks only. The secret ones (lairs, monsters, brigands, pirates and caves) are on a tile only the GM sees." },
   { path: "land.realms", label: "Realms", kind: "enum", values: ["none", "few", "some", "many"], overland: true, required: true, auto: "none", help: "How many realms Place Realms (or Reroll Realms) rules from the map's cities and towns, and Reroll Places keeps when it moves them (None: it takes the generator's away). It also sets how far each realm reaches, so changing it moves the borders of realms already placed" },
-  { path: "land.realmSizes", label: "Realm Sizes", kind: "enum", values: ["varied", "even"], overland: true, auto: "varied", help: "Varied gives each realm its own might, so some grow great and others stay small; even grows them alike. Used when realms are placed again" },
+  { path: "land.realmSizes", label: "Realm Sizes", kind: "enum", values: ["varied", "even"], overland: true, auto: "varied", help: "Varied gives each realm its own might, so some grow great and others stay small; even grows them alike. Used when realms are placed again." },
   { path: "land.troubles", label: "Troubles", kind: "enum", values: ["none", "few", "some", "many"], overland: true, auto: "none", help: "Invasions, rebels, floods and plague are hatched on a tile only the GM sees." },
-  { path: "land.realmGrowth", label: "Realm Growth", kind: "enum", values: ["slow", "normal", "fast"], overland: true, auto: "normal", help: "How far realms reach from their capitals: slow leaves more wild land between them, fast fills the land" },
+  { path: "land.realmGrowth", label: "Realm Growth", kind: "enum", values: ["slow", "normal", "fast"], overland: true, auto: "normal", help: "How far realms reach from their capitals: slow leaves more wild land between them, fast fills the land. The borders move at once; Reroll Realms puts the customs houses, forts and battlefields on the new borders." },
   { path: "land.nameStyle", label: "Names", kind: "enum", values: NAME_STYLES, overland: true, names: { english: "English countryside", mixed: "English places, older features", invented: "one invented tongue", custom: "the map's name set" }, help: "How the invented names of places, rivers, ranges, seas and the rest sound (a name set of your own: Name Sets). A name you give a place or feature is kept; the others are made from the land, so they change when the land is made again" },
   // The land itself (an overland map's Land group): changing one makes the land again, and the generator's towns,
   // roads and realms are placed again on it
@@ -297,7 +297,7 @@ export const PLAN_FIELDS = [
   { path: "output.legend", label: "Key", kind: "boolean", overland: true, help: "A key in a corner of a dressed map: the symbols the map uses (towns, roads, bridges...), with the scale bar at its foot and the compass beside it. It's a tile of its own in the scene; the places it covers have no label" },
   { path: "output.scene.labelLook", label: "Label look", kind: "enum", values: ["bold", "ink"], overland: true, auto: "bold", names: { bold: "White with a black outline", ink: "Map ink: dark with a light outline" }, help: "How the made names look: white reads on any ground; map ink looks more like a printed map. Labels you place keep the Label Color" },
   { path: "output.places", label: "Places and roads", kind: "boolean", overland: true, help: "Show the towns, roads and bridges. They're saved as a layer of their own over the land: in the scene a tile you can hide or show, and the land is also saved without them" },
-  { path: "output.realms", label: "Show realms", kind: "boolean", overland: true, auto: true, help: "Show the realms: their borders and color, their names and their capitals' crowns. Their borders, color and crowns are saved as a layer of their own under the places, in the scene a tile you can hide or show; their names are text on the scene, like the map's other names" },
+  { path: "output.realms", label: "Show realms", kind: "boolean", overland: true, auto: true, help: "Show the realms: their borders and color, their names and their capitals' crowns. Their borders, color and crowns are saved as a layer of their own under the places, in the scene a tile you can hide or show; their names are on the scene's labels layer, like the map's other names." },
   { path: "ground", label: "Ground", kind: "enum", values: SURFACES },
   { path: "size.squares.0", label: "Width", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's width in squares" },
   { path: "size.squares.1", label: "Height", kind: "number", unit: "squares", min: 1, step: 1, required: true, help: "The map's height in squares" },

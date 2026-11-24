@@ -60,7 +60,8 @@ export function placeCultures(plan, land, { seed = plan?.seed ?? 1 } = {}) {
   const kept = keep.filter((f) => f?.type === "culture" && Array.isArray(f.at));
   const f = land.frame, MW = f.mapW / f.mpu, MH = f.mapH / f.mpu, r = rng(seed, "cultures");
   const [lo, hi] = CULTURE_COUNTS[f.scale] ?? CULTURE_COUNTS.realm;
-  const want = Math.max(0, lo + r.int(hi - lo + 1) - kept.length);
+  // (every culture kept, as Keep the Cultures does: none is added, so the kept ones keep their land and tongues)
+  const want = kept.length && !gone.length ? 0 : Math.max(0, lo + r.int(hi - lo + 1) - kept.length);
   const area = nodeAreas(land);
   const U = (i) => [(land.x[i] - f.margin) / f.mpu, (land.y[i] - f.margin) / f.mpu];
   const inMap = (i) => { const [u, v] = U(i); return u >= 0 && v >= 0 && u <= MW && v <= MH; };

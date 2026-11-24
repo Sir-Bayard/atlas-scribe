@@ -378,6 +378,10 @@
   grid-template-columns: 1fr 1fr;
   column-gap: 0.8rem;
 }
+/* (a long label, as Points of Interest, stays on one line; its choice takes the narrower part) */
+.atlas-scribe.as-quick .as-qs-two .form-group > label {
+  white-space: nowrap;
+}
 /* (long choices shrink to the column rather than push past it) */
 .atlas-scribe.as-quick .as-qs-two > *,
 .atlas-scribe.as-quick .as-qs-two select {

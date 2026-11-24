@@ -51,7 +51,9 @@ function keyFor(L, miles, withCovers = true) {
   if (!L.dressing || !L.overland || L.legend === false || L.places === false || !(L.size?.squares?.[0] > 0)) return null;
   const items = L.items ?? [];
   const realms = L.showRealms !== false && L.realms?.list?.length > 0;
-  const has = (kind, cls) => (kind === "port" ? items.some((i) => i.kind === "place" && i.port) : kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === (kind === "site" ? "place" : kind) && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
+  // (a trail to a secret place is on the GM's hidden tile, so it doesn't count for the key)
+  const secretIds = new Set(items.filter((i) => i.kind === "place" && SECRET_SITES.includes(i.class)).map((i) => i.id));
+  const has = (kind, cls) => (kind === "port" ? items.some((i) => i.kind === "place" && i.port) : kind === "cover" ? withCovers && Array.isArray(L.covers) && L.covers.includes(cls) : kind === "realm" ? realms && (cls === "border" ? L.realms.borders?.length > 0 : items.some((i) => i.capital)) : items.some((i) => i.kind === (kind === "site" ? "place" : kind) && !(kind === "route" && secretIds.has(i.to)) && (kind !== "way" ? i.class === cls : (cls === "street" ? !["highway", "track", "path"].includes(i.class) : cls === "track" ? i.class === "track" || i.class === "path" : i.class === cls))));
   // (the secret points of interest stay out of the key the players see)
   const shown = KEY_ENTRIES.filter((e) => !(e.kind === "site" && SECRET_SITES.includes(e.cls)) && has(e.kind, e.cls));
   if (!shown.some((e) => e.kind === "place" || e.kind === "way")) return null;

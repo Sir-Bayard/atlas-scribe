@@ -15,6 +15,7 @@ import { placeFacts } from "../core/land/facts.mjs";
 import { gazetteerOf } from "../core/land/gazetteer.mjs";
 import { placeSites, BORDER_SITES, SITE_CLASSES, MARK_ONLY } from "../core/land/sites.mjs";
 import { normalize } from "../core/plan.mjs";
+import { GEN as LAND_GEN } from "../core/land/schema.mjs";
 import { generateLand } from "../core/land/index.mjs";
 import { makeKept, provideKept, missingKept, hasKept, forgetKept, keptFor } from "../core/land/kept.mjs";
 import { fromDataUrl } from "../core/land/pngio.mjs";
@@ -62,15 +63,15 @@ export async function prepare(payload) {
   }
 }
 
-/** The views the window's layer switch offers (beside the map itself). */
 // (the made names of places drawn as marks only, which have no label: the window shows them and keeps them on a drag)
 const markNamesOf = (layout) => Object.fromEntries((layout.items ?? []).filter((i) => i.kind === "place" && MARK_ONLY.includes(i.class) && typeof i.name === "string").map((i) => [i.from ?? i.id, i.name]));
+/** The views the window's layer switch offers (beside the map itself). */
 export const LAND_VIEWS = ["shade", "uplift", "rain", "temp", "flow", "biome", "plates", "site"];
 
 // (the last full land made for a layer view, so switching views doesn't make it again)
 let viewLand = null;
 // (as the layout's own key: what the land is made from, and whether its kept file was read)
-const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
+const viewKey = (plan) => { const { names, keptNames, nameStyle, nameSet, towns, realms, sites, realmSizes, realmGrowth, troubles, gen, ...landIn } = plan.land ?? {}; return JSON.stringify([landIn, plan.seed, plan.size, plan.output?.grid ?? null, plan.output?.pxPerSquare ?? null, (plan.features ?? []).filter((f) => f && (f.type === "terrain" || f.type === "water")), keptFor(plan)?.error ?? null]); };
 
 export const jobs = {
   /**
@@ -166,6 +167,9 @@ export const jobs = {
     progress(0.99, "Placing routes");
     const T = placeRoutes(S.plan, layout.land, { seed, reserve: gone });
     const routes = T.added["sea-lane"] + T.added.ferry + T.added.caravan + T.added.trail;
+    // (an older generator's land that wasn't kept is this generator's now, and its places are placed on it: the plan
+    // records it, so the older generator's warning stops)
+    if (T.plan.land && !T.plan.land.keep && Number.isInteger(T.plan.land.gen) && T.plan.land.gen < LAND_GEN) T.plan.land = { ...T.plan.land, gen: LAND_GEN };
     return { plan: T.plan, added, removed, notes: [...notes, ...S.notes], ...(realms ? { realms } : {}), sites: S.added, routes, ports: T.added.ports };
   },
 

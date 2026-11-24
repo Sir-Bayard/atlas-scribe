@@ -4,12 +4,13 @@
  * the land by a least-cost flood, dearer up steep slopes, onto high ground, into marsh, desert and the cold, and cheap
  * along a navigable river (a main river from where it carries a tenth of its water at the mouth), so farms follow the
  * valleys and the roads and stop at the hills. The painter clears the forest by it into woods with edges and paints
- * fields on it; the labels put a forest's name in what's left of it. Deterministic (plain arithmetic and Math.exp on
- * one computer). Pure.
+ * fields on it; the labels put a forest's name in what's left of it. Deterministic (plain arithmetic and dmath's exp on
+ * every computer). Pure.
  */
 import { Heap } from "./heap.mjs";
 import { BIOMES } from "./biome.mjs";
 import { nearestOf } from "./realms.mjs";
+import { exp, log, len as hyp } from "./dmath.mjs";
 
 /**
  * How much each kind of place clears and how far (miles of easy ground over which its clearing falls by e). Land over
@@ -22,7 +23,7 @@ export const SETTLE_ROAD = { highway: [0.75, 5.5], road: [0.65, 4], track: [0.45
 /** Settled enough to be cleared and farmed. */
 export const SETTLED = 0.35;
 // (a clearing fainter than this is none: the flood stops there)
-const FAINTEST = 0.02, CUT = -Math.log(FAINTEST);
+const FAINTEST = 0.02, CUT = -log(FAINTEST);
 // (a land's nearest-node lookup, made once)
 const NEAR = new WeakMap();
 const nearOf = (land) => { let f = NEAR.get(land); if (!f) { f = nearestOf(land); NEAR.set(land, f); } return f; };
@@ -63,7 +64,7 @@ function settledOf(land, items) {
   const heap = new Heap(4096);
   const seed = (i, strength, r) => {
     if (i < 0 || !dry(i)) return;
-    const k = -Math.log(strength);
+    const k = -log(strength);
     if (k < key[i] - 1e-12 || (Math.abs(k - key[i]) <= 1e-12 && r > reach[i])) { key[i] = k; reach[i] = r; heap.push(k, i); }
   };
   for (const p of places) { const [s, r] = SETTLE_PLACE[p.class]; seed(nearest(p.x, p.y, dry), s, r); }
@@ -71,7 +72,7 @@ function settledOf(land, items) {
   for (const w of roads) {
     const [s, r] = SETTLE_ROAD[w.class] ?? SETTLE_ROAD.road;
     for (let m = 1; m < w.path.length; m++) {
-      const [ax, ay] = w.path[m - 1], [bx, by] = w.path[m], k = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+      const [ax, ay] = w.path[m - 1], [bx, by] = w.path[m], k = Math.max(1, Math.ceil(hyp(bx - ax, by - ay) / step));
       for (let q = 0; q <= k; q++) seed(nearest(ax + ((bx - ax) * q) / k, ay + ((by - ay) * q) / k, dry), s, r);
     }
   }
@@ -93,7 +94,7 @@ function settledOf(land, items) {
     for (let q = indptr[i]; q < indptr[i + 1]; q++) {
       const j = indices[q];
       if (!dry(j)) continue;
-      const mi = Math.hypot(x[j] - x[i], y[j] - y[i]), grade = (Math.abs(h[j] - h[i]) * FT_PER_UNIT) / Math.max(1e-6, mi * 5280);
+      const mi = hyp(x[j] - x[i], y[j] - y[i]), grade = (Math.abs(h[j] - h[i]) * FT_PER_UNIT) / Math.max(1e-6, mi * 5280);
       let c = mi * (1 + 200 * grade * grade + (h[j] > 0.42 ? 2 : 0) + (costMul[land.biome[j]] ?? 0));
       if (navigable[i] && navigable[j]) c *= RIVER_EASE;
       const k = key[i] + c / reach[i];
@@ -103,7 +104,7 @@ function settledOf(land, items) {
   for (let i = 0; i < n; i++) if (dry(i) && key[i] < Infinity) {
     // (what's left of a node's clearing on its own ground: little on high mountains, in marsh and desert)
     const high = h[i] > 0.55 ? 0.2 : h[i] > 0.45 ? 0.6 : 1;
-    out[i] = Math.exp(-key[i]) * high * (keepOf[land.biome[i]] ?? 1);
+    out[i] = exp(-key[i]) * high * (keepOf[land.biome[i]] ?? 1);
   }
   return out;
 }

@@ -33,9 +33,10 @@ export function placeFacts(layout, plan) {
   const capitals = new Map((R?.list ?? []).filter((q) => q.capital).map((q) => [q.capital, q]));
   const sites = items.filter((i) => SITE_CLASSES.includes(i.class) && i.class !== "hamlet");
   const [MW, MH] = layout.size?.squares ?? [1, 1];
-  const day = Math.max(MW, MH) / 12;
-  // (a realm's rank from its cells in the map and its towns, for a name that doesn't say it)
+  // (a day's travel, about 22 miles, in map squares, never under a square and a half on the biggest maps)
   const mi = (plan.size?.ftPerSquare ?? 5280) / 5280;
+  const day = Math.max(1.5, 22 / mi), near1 = Math.max(1.5, 0.4 * day);
+  // (a realm's rank from its cells in the map and its towns, for a name that doesn't say it)
   const rankOf = (k) => {
     if (k < 0 || !R?.grid) return null;
     let cells = 0; for (const v of R.grid.ids) if (v === k) cells++;
@@ -67,12 +68,12 @@ export function placeFacts(layout, plan) {
     const h = hashAt(strHash(p.id) % 1000003, 101, plan.seed ?? 1);
     const people = roundPeople((PEOPLE[p.class] ?? 100) * (0.7 + 0.6 * h) * (cap ? CAPITAL[rank] ?? 1.5 : 1) * (port ? 1.25 : 1));
     // (walls: a city, a capital, a town on a border or a frontier; a citadel in a capital city or a frontier city)
-    const onBorder = !!realm && (R.borders ?? []).some((b) => b.some((q) => (q[0] - p.x) ** 2 + (q[1] - p.y) ** 2 < (day * 0.4) ** 2));
+    const onBorder = !!realm && (R.borders ?? []).some((b) => b.some((q) => (q[0] - p.x) ** 2 + (q[1] - p.y) ** 2 < near1 ** 2));
     const walls = p.class === "city" || !!cap || (p.class === "town" && onBorder);
     const citadel = p.class === "city" && (!!cap || onBorder);
     const temple = p.class !== "hamlet" && (p.class !== "village" || h > 0.5);
     // (what kind of place it is, in its own class's word: a mining city, a fortress town, a farming hamlet)
-    const kind = port ? "port" : `${near.includes("mine") || near.includes("quarry") ? "mining" : citadel || (onBorder && walls) ? "fortress" : site.river && p.class !== "hamlet" ? "river" : p.class === "city" || p.class === "town" ? "market" : "farming"} ${p.class}`;
+    const kind = port ? `port ${p.class}` : `${near.includes("mine") || near.includes("quarry") ? "mining" : citadel || (onBorder && walls) ? "fortress" : site.river && p.class !== "hamlet" ? "river" : p.class === "city" || p.class === "town" ? "market" : "farming"} ${p.class}`;
     out.set(p.id, {
       port, walls, citadel, temple, people, kind,
       realm: realm ? { id: realm.id, name: realm.name ?? null, rank } : null, capital: !!cap,

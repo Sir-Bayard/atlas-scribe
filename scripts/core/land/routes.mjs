@@ -7,12 +7,12 @@
  * place whose site says so (`site.port`). Pure.
  */
 import { Heap } from "./heap.mjs";
-import { len } from "./dmath.mjs";
+import { len, len as hyp } from "./dmath.mjs";
 import { hashAt } from "../rng.mjs";
 import { nearestOf } from "./realms.mjs";
 import { BIOMES } from "./biome.mjs";
 import { madeMark, untouched } from "./places.mjs";
-import { SITE_CLASSES } from "./sites.mjs";
+import { SITE_CLASSES, SECRET_SITES } from "./sites.mjs";
 
 /** The kinds of route. */
 export const ROUTE_CLASSES = ["sea-lane", "ferry", "caravan", "trail"];
@@ -57,7 +57,7 @@ function lineDist(p, line) {
   for (let k = 1; k < line.length; k++) {
     const a = line[k - 1], b = line[k], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
     const t = L2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
-    best = Math.min(best, Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy));
+    best = Math.min(best, hyp(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy));
   }
   return best;
 }
@@ -217,7 +217,9 @@ export function placeRoutes(plan, land, { seed = plan?.seed ?? 1, reserve = [] }
   if (MOST.trail[scale]) {
     const onRoad = new Uint8Array(n);
     for (const rd of roads) for (const i of nodesAlong(rd.path)) onRoad[i] = 1;
-    for (const r of kept) if (r.class === "trail") for (const i of nodesAlong(r.path)) onRoad[i] = 1;
+    // (a trail to a secret place is on the GM's hidden tile, so no trail players see is led onto it)
+    const secretIds = new Set(places.filter((p) => SECRET_SITES.includes(p.class)).map((p) => p.id));
+    for (const r of kept) if (r.class === "trail" && !secretIds.has(r.to)) for (const i of nodesAlong(r.path)) onRoad[i] = 1;
     for (const p of places) if (["city", "town", "village"].includes(p.class)) { const i = placeNode(p); if (i >= 0) onRoad[i] = 1; }
     const trailed = new Set(kept.filter((r) => r.class === "trail" && r.to).map((r) => r.to));
     const lonely = places.filter((p) => (p.class === "hamlet" || SITE_CLASSES.includes(p.class)) && !["wreck", "cove", "lighthouse"].includes(p.class) && !trailed.has(p.id));
@@ -235,7 +237,7 @@ export function placeRoutes(plan, land, { seed = plan?.seed ?? 1, reserve = [] }
       const nodes = cheapest(land, c.i, (i) => onRoad[i] === 1, (i, j, d) => { if (!dry(j)) return Infinity; const g = (Math.abs(land.h[j] - land.h[i]) * 3.1) / Math.max(1e-9, d); return d * (1 + 20 * g * g); }, 40 * spacing);
       if (!nodes || nodes.length < 3) continue;
       add("trail", pathOf(land, nodes, 2), { to: c.p.id });
-      for (const i of nodes) onRoad[i] = 1;
+      if (!secretIds.has(c.p.id)) for (const i of nodes) onRoad[i] = 1;
       counts.trail++;
     }
   }

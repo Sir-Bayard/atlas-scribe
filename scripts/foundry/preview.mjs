@@ -153,6 +153,7 @@ export class AtlasScribeApp extends Base {
   #sceneNotes = null; // what the last Make scene or Update scene said: { name, notes: [text] }
   #draftTimer = null;
   #result = null;
+  #gazetteering = false;
   #url = null;
   /** The layer view shown over an overland map ("map": none), and its picture's URL (null while it's made). */
   #layerView = "map";
@@ -457,7 +458,7 @@ export class AtlasScribeApp extends Base {
       el.innerHTML = `<div class="as-pv-welcome">
           <i class="fa-solid fa-map-location-dot"></i>
           <h2>Make a Map</h2>
-          <p>Quick Start makes a hamlet, village, town or city, or a battle map, from a few choices or a few words. Then change anything on the map here (reroll, reshape, change settings, draw new things) and make it into a scene.</p>
+          <p>Quick Start makes a hamlet, village, town or city, a battle map, or a region from a kingdom to a whole world, from a few choices or a few words. Then change anything on the map here (reroll, reshape, change settings, draw new things) and make it into a scene.</p>
           <div class="as-pv-tools">
             <button type="button" data-action="asQuick"><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Start</button>
             <button type="button" data-action="asOpen"><i class="fa-solid fa-folder-open"></i> Open a Saved Plan</button>
@@ -1417,12 +1418,16 @@ export class AtlasScribeApp extends Base {
 
   /** Make Gazetteer: the map's gazetteer as a journal entry for the GM, with map notes on its scene's towns. */
   static async #onGazetteer() {
-    if (!this.#plan || this.#working) return;
+    if (!this.#plan || this.#working || this.#gazetteering) return;
+    // (a second click while one is being made would make a second entry)
+    this.#gazetteering = true;
     try {
       const res = await this.#host.makeGazetteer(this.#plan);
       ui.notifications.info(`AtlasScribe: the gazetteer "${res.entry.name}" has ${res.pages} page${res.pages === 1 ? "" : "s"}${res.notes ? `, with ${res.notes} map note${res.notes === 1 ? "" : "s"} on its scene` : ", and no map notes: make the scene first to have them"}. Only you can see it until you share it.`);
     } catch (e) {
       note.error(e.message);
+    } finally {
+      this.#gazetteering = false;
     }
   }
 

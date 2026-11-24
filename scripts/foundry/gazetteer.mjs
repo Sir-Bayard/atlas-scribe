@@ -36,6 +36,9 @@ export function gazetteerPages(G) {
   return pages;
 }
 
+// (the secrets page is the GM's alone even when the entry is shared: made with no one else's ownership)
+const secretPage = (d) => (d.flags[MOD].gazetteer === "secrets" ? { ...d, ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE } } : d);
+
 /**
  * Makes (or makes again) the gazetteer entry for a plan: G (gazetteerOf's), scene (the scene its map is on, or null:
  * then no map notes), pps (pixels a map unit). Returns { entry, pages, notes }.
@@ -51,27 +54,35 @@ export async function makeGazetteer(G, { planId, scene = null, pps = 100 } = {})
     const mine = new Map(entry.pages.filter((p) => typeof p.flags?.[MOD]?.gazetteer === "string").map((p) => [p.flags[MOD].gazetteer, p]));
     const keys = new Set(pages.map((p) => p.key));
     const update = data.filter((d) => mine.has(d.flags[MOD].gazetteer)).map((d) => ({ _id: mine.get(d.flags[MOD].gazetteer).id, name: d.name, sort: d.sort, text: d.text }));
-    const create = data.filter((d) => !mine.has(d.flags[MOD].gazetteer));
+    const create = data.filter((d) => !mine.has(d.flags[MOD].gazetteer)).map(secretPage);
     const gone = [...mine].filter(([k]) => !keys.has(k)).map(([, p]) => p.id);
     if (update.length) await entry.updateEmbeddedDocuments("JournalEntryPage", update);
     if (create.length) await entry.createEmbeddedDocuments("JournalEntryPage", create);
     if (gone.length) await entry.deleteEmbeddedDocuments("JournalEntryPage", gone);
   } else {
-    entry = await JournalEntry.create({ name, ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE }, flags: { [MOD]: { gazetteer: planId } }, pages: data });
+    entry = await JournalEntry.create({ name, ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE }, flags: { [MOD]: { gazetteer: planId } }, pages: data.map(secretPage) });
   }
   // map notes on the towns and cities, each opening the towns page; the ones this placed before, on any scene, come out
   let notes = 0;
   const placesPage = entry.pages.find((p) => p.flags?.[MOD]?.gazetteer === "places");
-  const make = scene ? G.places.filter((p) => p.cls === "city" || p.cls === "town").map((p) => ({
+  // (with no scene for the map, the notes already placed stay as they are)
+  if (!scene) return { entry, pages: pages.length, notes: 0 };
+  const want = G.places.filter((p) => p.cls === "city" || p.cls === "town");
+  // (a note this placed before on this scene is updated where it stands, so one the GM moved or restyled keeps that)
+  const here = new Map(scene.notes.filter((n) => n.flags?.[MOD]?.gazetteer === planId && typeof n.flags[MOD].place === "string").map((n) => [n.flags[MOD].place, n]));
+  const update = want.filter((p) => here.has(p.id)).map((p) => ({ _id: here.get(p.id).id, entryId: entry.id, pageId: placesPage?.id ?? null, text: p.name }));
+  const make = want.filter((p) => !here.has(p.id)).map((p) => ({
     entryId: entry.id, pageId: placesPage?.id ?? null, x: Math.round(scene.dimensions.sceneX + p.at[0] * pps), y: Math.round(scene.dimensions.sceneY + p.at[1] * pps),
     text: p.name, iconSize: 32, fontSize: 18, global: false, flags: { [MOD]: { gazetteer: planId, place: p.id } },
-  })) : [];
+  }));
+  if (update.length) await scene.updateEmbeddedDocuments("Note", update);
   const created = make.length ? await scene.createEmbeddedDocuments("Note", make) : [];
-  const made = new Set(created.map((n) => n.id));
+  const keep = new Set([...created.map((n) => n.id), ...update.map((u) => u._id)]);
+  // (the rest it placed, on this scene or another, come out)
   for (const sc of game.scenes) {
-    const old = sc.notes.filter((n) => n.flags?.[MOD]?.gazetteer === planId && !made.has(n.id)).map((n) => n.id);
+    const old = sc.notes.filter((n) => n.flags?.[MOD]?.gazetteer === planId && !keep.has(n.id)).map((n) => n.id);
     if (old.length) await sc.deleteEmbeddedDocuments("Note", old);
   }
-  notes = make.length;
+  notes = keep.size;
   return { entry, pages: pages.length, notes };
 }

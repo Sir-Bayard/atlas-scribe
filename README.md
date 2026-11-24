@@ -24,17 +24,21 @@ The same thing in the inked look, a village street in autumn:
 
 ![A village street in autumn drawn in the inked look, with slate and shingle roofs, fenced yards and a temple](docs/images/battle-inked.jpg)
 
-A kingdom 240 miles across from Quick Start's Region tab, its land generated, with its towns, roads, bridges and names:
+A kingdom 240 miles across from Quick Start's Region tab, its land generated, with its towns, fields, roads, bridges, points of interest and names:
 
-![A generated coastal kingdom: forested hills and snowy peaks inland, a sea to the east, towns and roads in red, and a key](docs/images/kingdom.jpg)
+![A generated coastal kingdom: forested hills and snowy peaks inland, drowned inlets and islands on the coast, fields around the towns, roads in red, and a key](docs/images/kingdom.jpg)
 
-A realm 720 miles across, ruled by five realms whose borders follow its ranges and rivers:
+A map at realm scale, 720 miles across, divided among realms whose borders follow its ranges and rivers, with ports and sea lanes:
 
-![A generated realm map with five realms, their borders dashed and washed in color, a crown on each capital and their names across their land](docs/images/realms.jpg)
+![A generated realm map with several realms, a band of color inside each border, a crown on each capital, their names curved across their land, and sea lanes between the ports](docs/images/realms.jpg)
+
+The same realm in its political view, each realm in flat color with its provinces:
+
+![The realm map's political view: realms in flat colors, faint province lines, capitals and realm names](docs/images/realms-political.jpg)
 
 Quick Start, for a town or a battle map, from a few choices or a few words:
 
-![The Quick Start window, a town described in words and read into choices](docs/images/quick-start.png) ![The Battle map tab, a roadside inn described in words](docs/images/quick-start-battle.png)
+![The Quick Start window, a town described in words and read into choices](docs/images/quick-start.png) ![The Battle Map tab, a roadside inn described in words](docs/images/quick-start-battle.png)
 
 ## Install
 
@@ -70,12 +74,14 @@ You can also drag a box on a town map with the **Battle Map** tool, then click *
 
    ![The Region tab of Quick Start, set to a coastal realm with some realms](docs/images/quick-start-region.png)
 
-2. Pick the Land (a coast, an island, many islands, continents, an inland sea and more), the climate, how many mountains, towns and realms, and how names sound. A choice on Any lets the seed pick.
-3. **Make the Plan.** The land is simulated: ranges rise where plates meet, rivers wear their valleys and join on their way to the sea, the far side of a range from the wind is drier, and warmth and rain decide what grows. Towns, villages, castles and the roads between them go where people would build them, and everything gets a name.
-4. Plan Settings (the gear) has the land's own settings and **Reroll Land**, **Reroll Places** (it places the towns again) and **Place Realms**. Click a place to rename it, or drag it to move it; click a realm's name to rename or recolor it or give it another capital. What you change stays when you reroll. The Draw palette's **Shape the Land** tools draw a range, a peak, a sea or a biome for the land to follow.
-5. **Make Scene.** The scene has a grid of hexes (or squares) in miles, its towns, realms and key are tiles you can hide, and the names are hidden from players until you show them.
+2. Pick the Land (a coast, an island, many islands, continents, an inland sea and more), the climate, how many mountains, towns, points of interest and realms, and how names sound. A choice on Any lets the seed pick.
+3. **Make the Plan.** The land is simulated: ranges rise where plates meet, rivers wear their valleys and join on their way to the sea, the sea floods the valleys into inlets and leaves hilltops as islands, rivers crossing dry country run out in salt pans and marshes, the far side of a range from the wind is drier, and warmth, rain and the rock underneath decide what grows. Towns, villages, castles and the roads between them go where people would build them, with fields around them, inns, mines, shrines and lairs where they'd be, ports and sea lanes on the coast, and peoples who name the land in their own way.
+4. Plan Settings (the gear) has **Reroll Places** (it places the towns again) and, once there's a city or town, **Place Realms** (**Reroll Realms** once there are realms): realms of their own kind and rule, with neighbors, provinces and named wild lands between them. Its **Land** group has the land's own settings, **Reroll Land** and **Keep This Land**. Click a place to rename it, or drag it to move it; click a realm's name to rename or recolor it, change its rule or give it another capital. What you change stays when you reroll. The Draw palette's **Shape the Land** tools draw a range, a peak, a sea or a biome for the land to follow.
+5. **Make Scene.** The scene has a grid of hexes (or squares) in miles, and its towns, realms and key are tiles you can hide. The map's name and its names are hidden from players until you show them: show the name's cartouche from the Tiles controls, and the names from the **AtlasScribe Labels and Views** control in the scene controls (**Show Every Label to Players**, or right-click one name). There, drag a name to move it, or double-click it to change its words, size, bend or color on this scene (rename a place or realm in the window to change it everywhere). The same control switches the physical, political and cultural views, when the map has realms or peoples.
 
-**Keep This Land** saves a land you like, so a later version of AtlasScribe won't move its coasts, ranges or rivers. **Name Sets** let you write how your world's names sound. Click a city, town, village or hamlet and **Make This Town**: Quick Start opens filled in with what the map shows of it (its size, name, river, coast or lake, roads and the way each runs, its hills and the land around it), for you to change before making it. A castle's **Make This Castle** makes its battle map. Either one replaces the overland map in the window, so save the map first.
+**Make Gazetteer** (in Plan Settings) writes a journal entry only you see, with a page per realm, the towns and what the map decided of them, and the points of interest and secrets with a note on each; once the map has a scene, it also puts map notes on its cities and towns. **Troubles** (in Plan Settings) marks invasions, rebels, floods and plague on a scene tile only you see.
+
+**Keep This Land** (in the Land group) saves a land you like, so a later version of AtlasScribe won't move its coasts, ranges or rivers. **Name Sets** let you write how your world's names sound. Click a city, town, village or hamlet and **Make This Town**: Quick Start opens filled in with what the map shows of it (its size, name, river, coast or lake, roads and the way each runs, its hills and the land around it, its walls and temple), for you to change before making it. A castle's **Make This Castle** makes its battle map. Either one replaces the overland map in the window, so save the map first.
 
 ## Local regions and imports
 

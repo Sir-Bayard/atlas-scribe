@@ -180,11 +180,19 @@ export async function publish({ plan, image, width, height, folder, layout = nul
     const { sceneX, sceneY } = scene.dimensions;
     const drawings = oldDrawings.map((d) => ({ feature: d.flags[MOD].feature ?? null, hidden: d.hidden }));
     const same = !heldPlan || heldPlan === (plan.id ?? null);
-    const made = sceneLabelsOf(layout.labels ?? [], { pps: plan.output.pxPerSquare, sceneX, sceneY, old: same ? scene.flags?.[MOD]?.labels : [], drawings: same ? drawings : [] });
+    // (the ids whose thing is still on the map: its places, realms and named land)
+    const alive = new Set([...(layout.items ?? []).filter((i) => i.kind === "place").map((i) => `@place:${i.id}`), ...(layout.realms?.list ?? []).map((q) => `@realm:${q.id}`), ...Object.keys(layout.landNames ?? {}).map((k) => `@land:${k}`)]);
+    const made = sceneLabelsOf(layout.labels ?? [], { pps: plan.output.pxPerSquare, sceneX, sceneY, old: same ? scene.flags?.[MOD]?.labels : [], drawings: same ? drawings : [], alive });
     await scene.update({ [`flags.${MOD}.labels`]: made.labels });
     labels = made.labels;
     if (old.length) await sceneById(sceneId).deleteEmbeddedDocuments("Drawing", old);
+    if (made.dropped) warnings.push(`${made.dropped} label${made.dropped === 1 ? "" : "s"} you had changed named something the map now places elsewhere under another name, so ${made.dropped === 1 ? "it was" : "they were"} laid out as the map makes ${made.dropped === 1 ? "it" : "them"}.`);
     if (made.kept) warnings.push(`${made.kept} label${made.kept === 1 ? "" : "s"} you had moved or edited ${made.kept === 1 ? "was" : "were"} kept as you left ${made.kept === 1 ? "it" : "them"}; Put Back in a label's window lays one out as the map makes it.`);
+  } else if (!layout && plan.kind === "region" && isObj(plan.land) && Array.isArray(scene.flags?.[MOD]?.labels)) {
+    // (an overland map whose layout couldn't be made again: its names on the labels layer, the GM's edits with them,
+    // stay as they were)
+    labels = scene.flags[MOD].labels;
+    warnings.push("The map's names on the labels layer were left as they were: its layout couldn't be made again to place them.");
   } else {
     labels = (await labelDrawings(plan, sceneById(sceneId), warnings, layout)).map((d) => (levelOf?.get(0) ? { ...d, levels: [levelOf.get(0)] } : d));
     if (labels.length) await sceneById(sceneId).createEmbeddedDocuments("Drawing", tagAll(labels));

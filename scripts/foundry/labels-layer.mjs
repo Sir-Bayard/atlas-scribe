@@ -290,10 +290,10 @@ export async function labelWindow(layer, id) {
   const row = (label, input, help = "") => `<div class="form-group"><label>${label}</label><div class="form-fields">${input}</div>${help ? `<p class="hint">${help}</p>` : ""}</div>`;
   const content = `<div class="as-label-edit">
     ${row("Text", `<input type="text" name="text" value="${esc(l.text)}" maxlength="200" autofocus>`)}
-    ${row("Size", `<input type="number" name="size" value="${l.size}" min="8" max="256" step="1">`, "Font size in pixels")}
-    ${row("Turn", `<input type="number" name="angle" value="${l.angle}" min="-180" max="180" step="1">`, "Degrees clockwise")}
-    ${row("Bend", `<input type="range" name="bend" value="${l.bend}" min="-0.35" max="0.35" step="0.01">`, "Right arches it, left makes it sag; the middle is straight")}
-    ${row("Spacing", `<input type="range" name="spacing" value="${l.spacing}" min="0" max="2" step="0.05">`, "Room between the letters")}
+    ${row("Size", `<input type="number" name="size" value="${l.size}" min="8" max="512" step="1">`, "The font size in pixels.")}
+    ${row("Turn", `<input type="number" name="angle" value="${l.angle}" min="-180" max="180" step="1">`, "Degrees clockwise.")}
+    ${row("Bend", `<input type="range" name="bend" value="${l.bend}" min="-0.35" max="0.35" step="0.01">`, "Right arches it and left makes it sag. The middle is straight.")}
+    ${row("Spacing", `<input type="range" name="spacing" value="${l.spacing}" min="0" max="2" step="0.05">`, "The room between the letters.")}
     ${row("Color", `<input type="color" name="color" value="${esc(l.color)}">`)}
     ${row("Shown to Players", `<input type="checkbox" name="shown" ${l.shown ? "checked" : ""}>`)}
   </div>`;
@@ -335,7 +335,7 @@ function addControls(controls) {
   const views = new Set((scene?.tiles ?? []).map((t) => t.flags?.[MOD]?.kind).filter((v) => v === "political" || v === "cultural"));
   const tools = {
     // (not "select": the canvas draws a selection box for a tool of that name instead of passing the drag on)
-    move: { name: "move", order: 1, title: "Labels: drag to move, double-click to edit, right-click to show or hide; Tab picks one, the arrow keys move it, [ and ] bend it, Enter edits it", icon: "fa-solid fa-expand" },
+    move: { name: "move", order: 1, title: "Drag a label to move it, double-click it to edit it, or right-click it to show or hide it. Tab picks one, the arrow keys move it, [ and ] bend it, and Enter edits it.", icon: "fa-solid fa-expand" },
     showAll: { name: "showAll", order: 2, title: "Show Every Label to Players", icon: "fa-solid fa-eye", button: true, onChange: () => { const L = canvas.atlasLabels; L?.change(showAll(L.labels, true), { now: true }); } },
     hideAll: { name: "hideAll", order: 3, title: "Hide Every Label From Players", icon: "fa-solid fa-eye-slash", button: true, onChange: () => { const L = canvas.atlasLabels; L?.change(showAll(L.labels, false), { now: true }); } },
   };
@@ -355,6 +355,13 @@ export async function switchView(id) {
   const scene = canvas?.scene;
   if (!scene || !game.user.isGM) return;
   const updates = viewChanges(scene.tiles.map((t) => ({ id: t.id, layer: t.flags?.[MOD]?.kind ?? null, alpha: t.alpha })), id);
+  // (the political map is hidden from players while the realms are: a GM who hid the realms' tile keeps them hidden)
+  const realms = scene.tiles.find((t) => t.flags?.[MOD]?.kind === "realms");
+  for (const t of scene.tiles) {
+    if (t.flags?.[MOD]?.kind !== "political" || !realms || t.hidden === realms.hidden) continue;
+    const u = updates.find((q) => q._id === t.id);
+    if (u) u.hidden = realms.hidden; else updates.push({ _id: t.id, hidden: realms.hidden });
+  }
   if (updates.length) await scene.updateEmbeddedDocuments("Tile", updates);
   ui.notifications.info(`AtlasScribe: the ${VIEWS.find((v) => v.id === id)?.label.toLowerCase() ?? id} view.`);
 }
@@ -372,7 +379,8 @@ export function registerLabels() {
   let had = null;
   const recheck = () => { const has = hasLabels(canvas?.scene); if (has !== had) { had = has; ui.controls?.render({ reset: true }); } };
   Hooks.on("canvasReady", () => { had = hasLabels(canvas?.scene); });
-  for (const h of ["createTile", "deleteTile"]) Hooks.on(h, (doc) => { if (doc.parent?.id === canvas?.scene?.id) recheck(); });
+  // (a view tile made or taken out, as Make Scene does, can change the view: the names are drawn again for it)
+  for (const h of ["createTile", "deleteTile"]) Hooks.on(h, (doc) => { if (doc.parent?.id !== canvas?.scene?.id) return; recheck(); if (["political", "cultural", "realms"].includes(doc.flags?.[MOD]?.kind)) canvas.atlasLabels?.refresh(); });
   // (a view switched: the cultural map's own names stand in for the realms')
   Hooks.on("updateTile", (doc, changes) => { if (doc.parent?.id === canvas?.scene?.id && "alpha" in changes && ["political", "cultural", "realms"].includes(doc.flags?.[MOD]?.kind)) canvas.atlasLabels?.refresh(); });
   Hooks.on("updateScene", (scene, changes) => { if (scene.id === canvas?.scene?.id && foundry.utils.hasProperty(changes, `flags.${MOD}`)) recheck(); });
@@ -381,7 +389,7 @@ export function registerLabels() {
   for (const [name, key, action] of keys) {
     game.keybindings.register(MOD, name, {
       name: names[action],
-      hint: "On the AtlasScribe Labels layer, with a label picked (Tab picks one). Shift for bigger steps.",
+      hint: "Works on the AtlasScribe Labels and Views control with a label picked (Tab picks one). Hold Shift for bigger steps.",
       editable: [{ key }, ...(action === "open" ? [] : [{ key, modifiers: ["Shift"] }])],
       // (held down, a move or bend repeats, as the canvas's own pan would on these keys)
       repeat: action !== "open",

@@ -163,6 +163,16 @@ const hexColor = (s) => (typeof s === "string" && /^#[0-9a-f]{6}$/i.test(s) ? [1
 
 /** The key's land cover swatches: each the color its cover is painted, near enough to find on the map. */
 const COVER_SWATCH = { farmland: LOOK.farm, broadleaf: LOOK.forest, conifer: LOOK.conifer, rainforest: LOOK.rainforest, grassland: LOOK.meadow, desert: LOOK.dry, marsh: [124, 140, 100], tundra: LOOK.heath, snow: LOOK.snow };
+/** The swatches for a season: the woods, fields and grass turned as the painting turns them, near enough to match. */
+export function coverSwatches(season) {
+  const out = Object.fromEntries(Object.entries(COVER_SWATCH).map(([k, c]) => [k, [...c]]));
+  const mix = (k, to, t) => mixTo(out[k], to, t);
+  if (season === "winter") { out.farmland = [...LOOK.fields.winter[0]]; out.broadleaf = [146, 141, 130]; mix("grassland", LOOK.straw, 0.45); mix("marsh", LOOK.straw, 0.35); }
+  else if (season === "autumn") { out.farmland = [...LOOK.fields.autumn[0]]; mix("broadleaf", LOOK.autumn[0], 0.6); mix("grassland", LOOK.autumn[2], 0.18); }
+  else if (season === "spring") { out.farmland = [...LOOK.fields.spring[0]]; mix("broadleaf", LOOK.spring, 0.25); mix("grassland", LOOK.spring, 0.3); }
+  for (const k of Object.keys(out)) out[k] = out[k].map(Math.round);
+  return out;
+}
 /**
  * How a layout is painted (options kept for side-by-sides): forest "speckle" (crowns as a fine speckle, the default)
  * or "plain"; heights "refined" (the graph subdivided and a few solver steps run at the finer spacing, the default)
@@ -628,6 +638,25 @@ export function smoothImage(R, L, seed, { settled = null } = {}) {
  * [{ name, shown, box? }] (box: [x0, y0, x1, y1] in map units, the part of the map a layer covers; else all of it).
  */
 // (the key's box with a little room, in map units: its layer is saved as that much of the map, not all of it)
+// (a box in map units about some points, padded, inside the map; null with none)
+const boxAbout = (layout, pts, padX, padY = padX) => {
+  if (!pts.length) return null;
+  const [MW, MH] = layout.size?.squares ?? [0, 0];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y, r = 0] of pts) { x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); }
+  return [Math.max(0, x0 - padX), Math.max(0, y0 - padY), Math.min(MW, x1 + padX), Math.min(MH, y1 + padY)];
+};
+const secretsBox = (layout) => {
+  const items = layout.items ?? [], ids = new Set(items.filter((i) => i.kind === "place" && SECRET_SITES.includes(i.class)).map((i) => i.id));
+  const pts = [...items.filter((i) => ids.has(i.id)).map((i) => [i.x, i.y]), ...items.filter((i) => i.kind === "route" && ids.has(i.to)).flatMap((i) => i.path ?? [])];
+  return boxAbout(layout, pts, Math.max(...(layout.size?.squares ?? [1])) * 0.02 + 1);
+};
+const troublesBox = (layout) => {
+  const side = Math.max(...(layout.size?.squares ?? [1]));
+  const pts = (layout.troubles ?? []).flatMap((t) => [...(Array.isArray(t.line) ? t.line.map(([x, y]) => [x, y, t.width ?? 0]) : []), ...(Array.isArray(t.at) ? [[t.at[0], t.at[1], t.radius ?? 0]] : [])]);
+  // (room for the words: they're centered on the middle and up to a fifth of the map wide)
+  return boxAbout(layout, pts, side * 0.12, side * 0.03);
+};
 const keyBox = (layout) => { const k = keyOf(layout); if (!k) return null; const p = k.unit; return [Math.max(0, k.x - p), Math.max(0, k.y - p), k.x + k.w + p, k.y + k.h + p]; };
 
 export function layers(layout) {
@@ -636,7 +665,8 @@ export function layers(layout) {
   // (the political and cultural views: hidden tiles over the map the GM switches to)
   const views = [...(layout.realms?.list?.length && layout.showRealms !== false ? [{ name: "political", shown: false }] : []), ...(layout.cultures?.grid ? [{ name: "cultural", shown: false }] : [])];
   // (the GM's own tiles, kept hidden from the players: the secret points of interest and the troubles)
-  const gmOnly = [...((layout.items ?? []).some((i) => i.kind === "place" && SECRET_SITES.includes(i.class)) ? [{ name: "secrets", shown: false }] : []), ...(layout.troubles?.length ? [{ name: "troubles", shown: false }] : [])];
+  // (each saved as just the part of the map it covers: a few marks, or a few rings and their words)
+  const gmOnly = [...((layout.items ?? []).some((i) => i.kind === "place" && SECRET_SITES.includes(i.class)) ? [{ name: "secrets", shown: false, box: secretsBox(layout) }] : []), ...(layout.troubles?.length ? [{ name: "troubles", shown: false, box: troublesBox(layout) }] : [])];
   return [...(layout.realms?.list?.length ? [{ name: "realms", shown: layout.showRealms !== false }] : []), ...views, { name: "places", shown: layout.places !== false }, ...gmOnly, ...(layout.dressing ? [{ name: "dressing", shown: true }] : []), ...(keyBox(layout) ? [{ name: "legend", shown: true, box: keyBox(layout) }] : [])];
 }
 
@@ -680,7 +710,7 @@ export function paint(ctx) {
     return;
   }
   if (layer === "legend") {
-    if (L.dressing) paintKey(ctx, { ...PALETTE }, { miles: true, covers: COVER_SWATCH });
+    if (L.dressing) paintKey(ctx, { ...PALETTE }, { miles: true, covers: coverSwatches(L.season ?? "summer") });
     progress(1, "Done");
     return;
   }
@@ -857,23 +887,23 @@ function paintTroubles(ctx, L, outPx) {
     const pad = (t.width ?? 0) + (t.radius ?? 0) + (300 * u) / pp;
     const pts = [...(Array.isArray(t.line) ? t.line : []), ...(Array.isArray(t.at) ? [t.at] : [])];
     if (!pts.some(([x, y]) => x >= x0 - pad && y >= y0 - pad && x <= tx1 + pad && y <= ty1 + pad)) continue;
-    // (the shape on the scratch canvas, then hatched through it)
+    // (the tint and its hatch over the whole scratch canvas, then cut to the trouble's shape)
     s.setTransform(1, 0, 0, 1, 0, 0); s.globalCompositeOperation = "source-over"; s.clearRect(0, 0, W, H);
+    s.fillStyle = `rgba(${r},${gg},${b},0.28)`; s.fillRect(0, 0, W, H);
+    // (hatched on lines x - y = a whole number of steps over the whole picture, so tiles join)
+    s.strokeStyle = `rgba(${r},${gg},${b},0.85)`; s.lineWidth = Math.max(1.5, 3.5 * u); s.lineCap = "butt";
+    const step = Math.max(5, 18 * u), off = (((y0 - x0) * pp) % step + step) % step;
+    s.beginPath();
+    for (let k = off - Math.ceil((H + step) / step) * step; k < W + step; k += step) { s.moveTo(k, 0); s.lineTo(k + H, H); }
+    s.stroke();
+    s.globalCompositeOperation = "destination-in";
     s.lineCap = "round"; s.lineJoin = "round"; s.strokeStyle = "#000"; s.fillStyle = "#000";
     if (Array.isArray(t.line) && t.line.length >= 2) {
       s.lineWidth = Math.max(2, (t.width ?? 1) * pp);
       s.beginPath(); t.line.forEach(([x, y], k) => (k ? s.lineTo(X(x), Y(y)) : s.moveTo(X(x), Y(y)))); s.stroke();
     }
     if (Array.isArray(t.at)) { s.beginPath(); s.arc(X(t.at[0]), Y(t.at[1]), Math.max(2, (t.radius ?? 1) * pp), 0, 2 * Math.PI); s.fill(); }
-    s.globalCompositeOperation = "source-in";
-    s.fillStyle = `rgba(${r},${gg},${b},0.28)`; s.fillRect(0, 0, W, H);
-    // (hatched through the tinted shape, on lines x - y = a whole number of steps over the whole picture, so tiles join)
-    s.globalCompositeOperation = "source-atop";
-    s.strokeStyle = `rgba(${r},${gg},${b},0.85)`; s.lineWidth = Math.max(1.5, 3.5 * u);
-    const step = Math.max(5, 18 * u), off = (((y0 - x0) * pp) % step + step) % step;
-    s.beginPath();
-    for (let k = off - Math.ceil((H + step) / step) * step; k < W + step; k += step) { s.moveTo(k, 0); s.lineTo(k + H, H); }
-    s.stroke();
+    s.globalCompositeOperation = "source-over";
     g.drawImage(m, 0, 0);
     // (its words, over its middle)
     const mid = Array.isArray(t.at) ? t.at : t.line[Math.floor(t.line.length / 2)];
@@ -882,7 +912,10 @@ function paintTroubles(ctx, L, outPx) {
     g.font = `bold italic ${Math.round(size)}px serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.lineJoin = "round"; g.strokeStyle = "rgba(255,250,240,0.9)"; g.lineWidth = Math.max(2, size * 0.18);
     g.fillStyle = `rgba(${Math.round(r * 0.7)},${Math.round(gg * 0.7)},${Math.round(b * 0.7)},1)`;
-    g.strokeText(t.text, X(mid[0]), Y(mid[1])); g.fillText(t.text, X(mid[0]), Y(mid[1]));
+    // (kept inside the map, so a trouble near its edge isn't cut off by the frame)
+    const [MW] = L.size?.squares ?? [0], half = g.measureText(t.text).width / 2 + size * 0.6;
+    const tx = MW > 0 ? Math.min(Math.max(X(mid[0]), X(0) + half), X(MW) - half) : X(mid[0]);
+    g.strokeText(t.text, tx, Y(mid[1])); g.fillText(t.text, tx, Y(mid[1]));
     g.restore();
   }
 }

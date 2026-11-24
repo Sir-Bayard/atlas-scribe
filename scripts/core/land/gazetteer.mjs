@@ -50,6 +50,9 @@ export function gazetteerOf(layout, plan) {
       if (has.length) words.push(`It has ${has.length > 1 ? `${has.slice(0, -1).join(", ")} and ${has[has.length - 1]}` : has[0]}.`);
       if (k.realm?.name && !k.capital) words.push(`In ${mid(k.realm.name)}${k.province?.name ? `, ${mid(k.province.name)}` : ""}.`);
     }
+    // (the place's own note, the GM's or the generator's, after the map's facts)
+    const note = feat.get(t.id)?.note;
+    if (typeof note === "string" && note.trim()) words.push(note.trim());
     return { id: t.id, name: nameOf(t.id), cls: t.class, title: TITLE[t.class], at: [t.x, t.y], facts: words, realm: k?.realm?.name ?? null };
   });
   // (hamlets are among the towns and villages, not the points of interest)

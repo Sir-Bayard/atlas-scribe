@@ -134,6 +134,9 @@ export function generateOnce(plan, opts = {}) {
       outlet[i] = !landMask[i] || g.border[i] ? 1 : 0;
       fixedH[i] = outlet[i] ? (landMask[i] ? 0.004 : 0) : 0;
     }
+    // (read back exactly on a land whose coast was made with cause: the distance from the sea and the plateau's hard rock
+    // from the kept coast, as coastsNow left them when it was made)
+    if (exact && stepsGen >= 3 && land.type !== "landlocked") { up.distSea = graphDistance(g, Uint8Array.from(landMask, (v) => (v ? 0 : 1))); refadePlateau(g, up, landMask); }
   }
 
   // heights: uplift against erosion; rain from the wind from 45% of the run on
@@ -176,7 +179,10 @@ export function generateOnce(plan, opts = {}) {
     accumulate(w, g.area, np0);
     const inMap0 = (i) => landMask[i] && frame.inMap(g.x[i], g.y[i]);
     const fit0 = Math.min(1, Math.max(0.1, Math.max(0, ...components(g, inMap0).areas) / (0.25 * frame.mapW * frame.mapH)));
-    const forms = coastForms({ g, h, landMask, outlet, fixedH, held: fixed, A: w.A, rec: w.rec, frame, seed: subSeed, scale: frame.scale, threshold: RIVER_CATCHMENT[frame.scale] * fit0, spacing: up.spacing });
+    // (land the GM painted is held too: the sea never drowns it)
+    let held = fixed;
+    if (intent?.water) { held = fixed ? Uint8Array.from(fixed) : new Uint8Array(n); for (let i = 0; i < n; i++) if (intent.water[i] > 0.6) held[i] = 1; }
+    const forms = coastForms({ g, h, landMask, outlet, fixedH, held, A: w.A, rec: w.rec, frame, seed: subSeed, scale: frame.scale, threshold: RIVER_CATCHMENT[frame.scale] * fit0, spacing: up.spacing });
     coastFeatures = forms.features.map(({ nodes, ...f }) => ({ ...f, size: Math.round(nodes.reduce((t, i) => t + g.area[i], 0) * 10) / 10, n: nodes.length }));
     // (the distance from the sea, from the new coast: a plateau fades to it, and the hollows keep off it)
     if (forms.drowned || forms.raised) { up.distSea = graphDistance(g, Uint8Array.from(landMask, (v) => (v ? 0 : 1))); refadePlateau(g, up, landMask); }

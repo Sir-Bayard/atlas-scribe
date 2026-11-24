@@ -526,7 +526,8 @@ export function placeRealms(plan, land, { count = "some", seed = plan?.seed ?? 1
   let landMi = 0;
   for (let i = 0; i < land.n; i++) if (land.landMask[i] && !land.lake[i] && inMap(i)) landMi += area[i];
   const landArea = landMi / (f.mpu * f.mpu);
-  const want = Math.max(2, Math.min(16, Math.round(landArea / (S * S) * 1.3))) - kept.length;
+  // (every realm kept, as Keep the Realms does: none is added)
+  const want = kept.length && !gone.length ? 0 : Math.max(2, Math.min(16, Math.round(landArea / (S * S) * 1.3))) - kept.length;
   // farthest first: each next capital the candidate best placed and farthest from those chosen, never closer than
   // half a spacing
   const chosen = kept.map((q) => q.at);

@@ -18,6 +18,12 @@ const FIRST = ["Ash", "Elm", "Oak", "Thorn", "Mill", "Stone", "Fen", "Holt", "La
   "Marsh", "Nether", "Old", "Pen", "Red", "Rook", "Sand", "Shep", "Silver", "Stan", "Swan", "Thistle", "Upper", "Wether", "White", "Wil", "Wood", "Yew", "Ember", "Copper",
   "Hollin", "Mor", "Ravens", "Lang", "Crow", "Kestrel", "Heron", "Otter", "Badger", "Bell", "Cherry", "Dew", "Elder", "Flint", "Hay", "Ivy", "Linden", "Maple", "Moss", "Pike",
   "Reed", "Salt", "Sloe", "Tor", "Willow", "Wolf", "Chalk", "Bridle", "Cinder", "Dale", "Glen", "Horn", "Ox", "Ram", "Shire", "Sorrel"];
+// (the first words that are only the front of a word, made whole where a word stands alone: the Bramble Folk, not
+// the Bram Folk)
+const WHOLE = { Bram: "Bramble", Bur: "Burdock", Cran: "Crane", Haw: "Hawthorn", Shep: "Shepherd", Stan: "Stone", Wil: "Willow", Lang: "Long", Mor: "Moor", Ley: "Meadow", Brack: "Bracken", Hollin: "Holly", Kings: "King's" };
+const whole = (w) => WHOLE[w] ?? w;
+// (a province takes -shire only after an ending that reads well with it: Ashtonshire, Longfordshire, not Foxbyshire)
+const SHIRE_OK = /(ton|ford|ley|ham|bury|field|wick|worth|dale|well|stead)$/i;
 const ENDS = {
   river: ["ford", "bridge", "brook", "wick", "ton", "mere", "ford", "bridge", "lock", "weir"],
   mouth: ["mouth", "haven", "port", "wick"],
@@ -210,11 +216,11 @@ export function namer(style = "english", seed = 1, { set = null } = {}) {
             return r.pick(info.form && RULE_FORMS[info.form] ? RULE_FORMS[info.form] : realmForms(info.rank, w)).replace("{name}", w);
           }
           // a people: the folk of a place-word, or a tongue's own word
-          case "culture": { const w = root(r.pick(FIRST)); return inventedFeatures ? r.pick([`the ${w}i`, `the ${w}an`, `the ${w}ar`]) : r.pick([`the ${w} Folk`, `the ${w}landers`, `the ${w}men`]); }
+          case "culture": { const w = root(whole(r.pick(FIRST))); return inventedFeatures ? r.pick([`the ${w}i`, `the ${w}an`, `the ${w}ar`]) : r.pick([`the ${w} Folk`, `the ${w}landers`, `the ${w}men`]); }
           // a province within a realm: its seat's name, or a word of its own
-          case "province": { const w = info.near ?? root(r.pick(FIRST)); return /shire$/i.test(w) ? `the Province of ${w}` : r.pick([/s$/i.test(w) ? `the ${w} Riding` : `${w}shire`, `the Province of ${w}`, `the ${w} Riding`]); }
+          case "province": { const w = info.near ?? root(whole(r.pick(FIRST))); return /shire$/i.test(w) ? `the Province of ${w}` : r.pick([SHIRE_OK.test(w) ? `${w}shire` : `the ${w} Riding`, `the Province of ${w}`, `the ${w} Riding`]); }
           // land no realm holds
-          case "wilds": { const w = root(r.pick(FIRST)); return r.pick([`the ${w} Wilds`, `the Waste of ${w}`, `the ${inventedFeatures ? root() : r.pick(LAND_ADJ)} Barrens`]); }
+          case "wilds": { const w = root(whole(r.pick(FIRST))); return r.pick([`the ${w} Wilds`, `the Waste of ${w}`, `the ${inventedFeatures ? root() : r.pick(LAND_ADJ)} Barrens`]); }
           default: return null;
         }
       });
@@ -255,7 +261,7 @@ const COMMON = {
   monster: ["The Beast of {name}"],
   sea: ["the {name} Sea", "the Sea of {name}"], ocean: ["the {name} Ocean"], bay: ["{name} Bay", "the Bay of {name}"], lake: ["Lake {name}"], river: ["the {name}", "River {name}"],
   hills: ["the {name} Hills"], mountains: ["the {name} Mountains"], range: ["the {name} Range"], forest: ["the {name} Forest"], desert: ["the {name} Waste"], marsh: ["the {name} Marsh"],
-  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], delta: ["the {name} Delta"], estuary: ["the {name} Firth"], spit: ["{name} Spit"], lagoon: ["the {name} Lagoon"], "salt-pan": ["the {name} Pan"], "seasonal-lake": ["{name} Dry Lake"], "inland-marsh": ["the {name} Swamp"], oasis: ["{name} Oasis"], culture: ["the {name}"], province: ["{name}"], wilds: ["the {name} Wilds"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
+  island: ["{name} Isle", "the Isle of {name}"], cape: ["Cape {name}"], delta: ["the {name} Delta"], estuary: ["the {name} Firth"], spit: ["{name} Spit"], lagoon: ["the {name} Lagoon"], "salt-pan": ["the {name} Pan"], "seasonal-lake": ["{name} Dry Lake"], "inland-marsh": ["the {name} Swamp"], oasis: ["{name} Oasis"], culture: ["the {name}"], province: ["the Province of {name}", "{name} Province"], wilds: ["the {name} Wilds"], falls: ["{name} Falls"], pass: ["{name} Pass"], volcano: ["Mount {name}"],
   spring: ["{name} Springs"], tree: ["The {name} Oak"], stacks: ["The {name} Stacks"], land: ["{name}"], realm: ["the Kingdom of {name}", "{name}"],
 };
 
